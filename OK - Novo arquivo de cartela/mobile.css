@@ -1,0 +1,150 @@
+/* mobile.css */
+
+
+/* Esconde painéis de PC em dispositivos móveis */
+body[data-device="mobile"] #pc-number-panel,
+body[data-device="mobile"] #pc-prize-panel,
+body[data-device="mobile"] #pc-cartelas-em-jogo-container {
+    display: none;
+}
+
+/* Exibe painéis de mobile em dispositivos móveis */
+body[data-device="mobile"] #mobile-number-panel,
+body[data-device="mobile"] #mobile-last-balls-panel,
+body[data-device="mobile"] #mobile-buscando-panel,
+body[data-device="mobile"] #mobile-prizes-panel,
+body[data-device="mobile"] #mobile-gerenciar-cartelas-panel,
+body[data-device="mobile"] #mobile-loaded-cards-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+body[data-device="mobile"] {
+    padding: 0.5rem !important; /* Valor menor para espaçamento do corpo */
+}
+
+/* Sobrescreve o espaçamento entre os painéis */
+body[data-device="mobile"] main {
+    gap: 0.5rem !important; /* Ajusta o gap entre os containers */
+}
+
+/* Diminui a margem vertical entre os painéis mobile */
+body[data-device="mobile"] #mobile-last-balls-panel,
+body[data-device="mobile"] #mobile-buscando-panel,
+body[data-device="mobile"] #mobile-prizes-panel,
+body[data-device="mobile"] #mobile-gerenciar-cartelas-panel,
+body[data-device="mobile"] #mobile-loaded-cards-panel,
+body[data-device="mobile"] .bg-gray-700.p-1 {
+    margin-bottom: 0.2rem !important;
+}
+
+/* Animação para alternar cor de fundo e texto */
+@keyframes blink-red-white {
+    0%, 100% {
+        background-color: #ef4444; /* Cor de fundo vermelha */
+        color: #fff; /* Cor do texto branca */
+    }
+    50% {
+        background-color: #fff; /* Cor de fundo branca */
+        color: #ef4444; /* Cor do texto vermelha */
+    }
+}
+
+/* Aplica a animação com a classe do Tailwind */
+.animate-blink-red-white {
+    animation: blink-red-white 1.5s infinite; /* 1.5s de duração, repete infinitamente */
+}
+
+/* Bolas Sorteadas (sem título e sem espaçamento) */
+body[data-device="mobile"] #mobile-number-grid {
+    padding: 0;
+    gap: 0;
+    border-radius: 0;
+}
+
+body[data-device="mobile"] #mobile-number-grid > div {
+    height: 0.90rem;
+    width: 1.20rem;
+    font-size: 0.70rem;
+    margin: 0;
+    border-radius: 0;
+}
+
+/* Torna o novo contêiner um Flexbox e alinha os itens */
+body[data-device="mobile"] #mobile-panels-container {
+    display: flex !important;
+    flex-direction: row;
+    gap: 0.5rem; /* Adiciona um espaço entre os painéis */
+}
+
+/* Ajusta a largura do painel de números */
+body[data-device="mobile"] #mobile-number-panel {
+    width: 62% !important;
+    height: auto !important; /* A altura será ajustada automaticamente */
+}
+
+/* Ajusta a largura do painel das últimas bolas */
+body[data-device="mobile"] #mobile-last-balls-panel {
+    width: 38%;
+    /* remove o padding para evitar o espaçamento extra */
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+body[data-device="mobile"] #mobile-buscando-panel #mobile-prize-info span {
+    font-size: 1.00rem !important; /* text-xs */
+}
+
+/* Opcional: Garante que a altura do contêiner se ajuste */
+body[data-device="mobile"] #mobile-buscando-panel #mobile-prize-info {
+    height: 6 !important;
+}
+
+/* Por padrão, oculta os painéis específicos para mobile em telas grandes (PC) */
+@media (min-width: 768px) {
+    #mobile-panels-container,
+    #mobile-prizes-panel,
+    #mobile-gerenciar-cartelas-panel,
+    #mobile-loaded-cards-panel {
+        display: none !important;
+    }
+ /* Outras regras para exibir os painéis de PC */
+}
+
+@media (min-width: 768px) {
+    /* Esta regra esconde o painel de prêmios do celular em telas de PC */
+    #mobile-prizes-panel {
+        display: none !important;
+    }
+    
+    /* Esta regra exibe o painel de prêmios do PC */
+    #pc-prize-panel {
+        display: flex !important;
+    }
+}
+/* NOVO: Estilo para o Contêiner de Alerta */
+.prize-alert-container {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90%;
+    max-width: 400px;
+    z-index: 100;
+    transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
+    opacity: 0;
+    visibility: hidden;
+}
+
+.prize-alert-container.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.prize-alert-container .winner-card-alert {
+    background-color: #fca5a5; /* Red-300 */
+    color: #4b5563; /* Gray-700 */
+    padding: 0.5rem;
+    border-radius: 0.375rem; /* rounded-md */
+    font-weight: bold;
+}

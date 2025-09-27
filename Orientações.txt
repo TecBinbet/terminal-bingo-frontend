@@ -1,0 +1,10 @@
+>Criar backend Front - criar exe do backend hibrido
+
+pyinstaller --name "ServerFront" --onefile --hidden-import gevent.hub --hidden-import geventwebsocket.handler server.py
+
+
+---------------------------------------------------
+
+>Criar backend Front Celular - criar exe do backend para acesso do celular
+
+pyinstaller --name "BackEndCelular" --onefile --add-data "index.html;." --add-data "script.js;." --add-data "mobile.css;." --add-data "fundo.jpg;." --add-data "bingo.mp3;." frontend_server_celular.py

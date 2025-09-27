@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dados do Sorteio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f3f4f6;
+        }
+    </style>
+</head>
+<body>
+    <div class="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-6 font-sans">
+        <header class="mb-4 text-center">
+            <h1 class="text-4xl font-bold text-gray-900">Dados do Sorteio</h1>
+            <p class="mt-2 text-lg text-gray-600">Frontend para o seu backend de loteria</p>
+        </header>
+
+        <div id="version-info" class="text-sm text-gray-500 mb-8">
+            Versão do Frontend: <strong id="frontend-version">1.0.62</strong> | Versão do Backend: <strong id="backend-version">...</strong>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl mb-8">
+            <div class="md:col-span-2 rounded-xl p-4 bg-white shadow-lg">
+                <h2 class="text-2xl font-semibold mb-4 text-center text-gray-800">Painel Númerico</h2>
+                <div id="number-grid" class="grid grid-cols-10 gap-2">
+                    </div>
+            </div>
+            
+            <div class="flex flex-col gap-8">
+                <div class="rounded-xl p-4 bg-white shadow-lg flex flex-col items-center">
+                    <h2 class="text-2xl font-semibold mb-4 text-center text-gray-800">3 Últimas Cantadas</h2>
+                    <div id="last-three-balls" class="flex justify-around items-center w-full mb-4">
+                        <span id="last-ball-1" class="flex items-center justify-center w-16 h-16 text-2xl font-bold rounded-full bg-gray-300 text-gray-800 transition-colors duration-300"></span>
+                        <span id="last-ball-2" class="flex items-center justify-center w-16 h-16 text-2xl font-bold rounded-full bg-gray-300 text-gray-800 transition-colors duration-300"></span>
+                        <span id="last-ball-3" class="flex items-center justify-center w-16 h-16 text-2xl font-bold rounded-full bg-gray-300 text-gray-800 transition-colors duration-300"></span>
+                    </div>
+                    <div class="flex justify-around w-full">
+                        <div class="flex flex-col items-center text-center">
+                            <h3 class="text-xl font-semibold text-gray-800">RODADA</h3>
+                            <span id="last-round" class="flex items-center justify-center text-2xl font-bold text-gray-800">...</span>
+                        </div>
+                        <div class="flex flex-col items-center text-center">
+                            <h3 class="text-xl font-semibold text-gray-800">ORDEM</h3>
+                            <span id="last-order" class="flex items-center justify-center text-2xl font-bold text-gray-800">...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="rounded-xl p-4 bg-blue-500 shadow-lg flex flex-col items-center">
+                    <h2 class="text-2xl font-semibold mb-4 text-center text-white">PREMIAÇÃO</h2>
+                    <div id="prize-info" class="flex flex-col items-center text-center w-full space-y-2">
+                        <span class="text-lg text-white">Carregando informações do prêmio...</span>
+                    </div>
+                </div>
+
+                <div class="rounded-xl p-4 bg-gray-700 shadow-lg flex flex-col items-center">
+                    <h2 class="text-2xl font-semibold mb-4 text-center text-white">CARTELA: <span id="card-number">Aguardando...</span></h2>
+                    <div id="conference-panel" class="flex flex-col items-center w-full text-white">
+                        <p class="text-lg font-bold mb-1">GANHADOR(A):</p>
+                        <p class="text-4xl font-extrabold" id="winner-name">Aguardando...</p>
+                    </div>
+
+                    <div class="mt-8 w-full flex flex-col items-center">
+                        <div id="card-grid" class="grid grid-cols-5 gap-2 w-full text-center">
+                            </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <main id="content-area" class="grid w-full max-w-6xl grid-cols-1 md:grid-cols-2 gap-8">
+            <div id="loader" class="md:col-span-2 flex items-center justify-center p-4 text-blue-500">
+                <svg class="h-8 w-8 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 1-6.219-8.56" />
+                </svg>
+                <span class="ml-2 text-lg font-medium text-gray-700">Carregando dados...</span>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:3001';
+        
+        const contentArea = document.getElementById('content-area');
+        const backendVersionElement = document.getElementById('backend-version');
+        const frontendVersionElement = document.getElementById('frontend-version');
+        const loader = document.getElementById('loader');
+        const numberGrid = document.getElementById('number-grid');
+        const prizeInfoContainer = document.getElementById('prize-info');
+        
+        const lastRoundElement = document.getElementById('last-round');
+        const lastOrderElement = document.getElementById('last-order');
+        const lastBall1 = document.getElementById('last-ball-1');
+        const lastBall2 = document.getElementById('last-ball-2');
+        const lastBall3 = document.getElementById('last-ball-3');
+
+        const cardNumberElement = document.getElementById('card-number');
+        const winnerNameElement = document.getElementById('winner-name');
+        const cardGridElement = document.getElementById('card-grid');
+
+        let ws = null;
+        let reconnectInterval = null;
+        
+        function showMessage(message, type = 'error') {
+            const className = type === 'error' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-200 text-gray-800';
+            contentArea.innerHTML = `
+                <div class="md:col-span-2 p-4 text-center ${className} rounded-lg">
+                    <p class="font-semibold text-lg">${message}</p>
+                </div>
+            `;
+        }
+
+        function createNumberPanel() {
+            for (let i = 1; i <= 90; i++) {
+                const numberDiv = document.createElement('div');
+                numberDiv.id = `ball-${i}`;
+                numberDiv.textContent = i;
+                numberDiv.className = 'flex items-center justify-center h-8 w-8 text-sm font-medium rounded-full bg-gray-200 text-gray-700 transition-colors duration-300';
+                numberGrid.appendChild(numberDiv);
+            }
+        }
+
+        function updateNumericPanel(bolasCantadas) {
+            document.querySelectorAll('#number-grid > div').forEach(div => {
+                div.classList.remove('bg-green-500', 'bg-red-500', 'text-white', 'text-lg');
+                div.classList.add('bg-gray-200', 'text-gray-700');
+            });
+
+            if (Array.isArray(bolasCantadas) && bolasCantadas.length > 0) {
+                bolasCantadas.forEach(bola => {
+                    const numberDiv = document.getElementById(`ball-${bola}`);
+                    if (numberDiv) {
+                        numberDiv.classList.remove('bg-gray-200', 'text-gray-700');
+                        numberDiv.classList.add('bg-green-500', 'text-white');
+                    }
+                });
+
+                const lastBall = bolasCantadas[bolasCantadas.length - 1];
+                const lastBallDiv = document.getElementById(`ball-${lastBall}`);
+                if (lastBallDiv) {
+                    lastBallDiv.classList.remove('bg-green-500');
+                    lastBallDiv.classList.add('bg-red-500', 'text-lg');
+                }
+            }
+        }
+
+        function displayLastThree(bolasData) {
+            lastRoundElement.textContent = '...';
+            lastOrderElement.textContent = '...';
+            lastBall1.textContent = '';
+            lastBall2.textContent = '';
+            lastBall3.textContent = '';
+
+            if (bolasData && typeof bolasData === 'object' && Array.isArray(bolasData.bolas_cantadas)) {
+                const bolasCantadas = bolasData.bolas_cantadas;
+                const lastThree = bolasCantadas.slice(-3);
+                
+                lastRoundElement.textContent = bolasData.rodada || 'N/A';
+                lastOrderElement.textContent = bolasData.ordem === 0 || bolasData.ordem ? bolasData.ordem : '0';
+                
+                if (lastThree.length >= 1) {
+                    lastBall1.textContent = lastThree[lastThree.length - 1];
+                }
+                if (lastThree.length >= 2) {
+                    lastBall2.textContent = lastThree[lastThree.length - 2];
+                }
+                if (lastThree.length >= 3) {
+                    lastBall3.textContent = lastThree[lastThree.length - 3];
+                }
+            } else {
+                 lastOrderElement.textContent = '0';
+            }
+        }
+        
+        function displayPrizeInfo(buscandoData) {
+            prizeInfoContainer.innerHTML = ''; 
+
+            const prizeValue = (buscandoData && buscandoData.length > 0) ? buscandoData[0].buscando_o_premio : null;
+
+            const prizeItem = document.createElement('div');
+            prizeItem.className = 'text-2xl font-bold text-white';
+
+            if (!prizeValue || String(prizeValue).toLowerCase() === 'null') {
+                prizeItem.innerHTML = 'AGUARDANDO...';
+            } else {
+                prizeItem.innerHTML = prizeValue;
+            }
+            prizeInfoContainer.appendChild(prizeItem);
+        }
+
+        function updateCardHighlighting(bolasCantadas) {
+            const lastBall = bolasCantadas[bolasCantadas.length - 1];
+            const cardNumbersDivs = cardGridElement.querySelectorAll('.p-2');
+            
+            cardNumbersDivs.forEach(div => {
+                const numeroNaCartela = parseInt(div.textContent, 10);
+                
+                // Remove as classes de destaque anteriores
+                div.classList.remove('bg-red-500', 'bg-green-500', 'text-white');
+                div.classList.add('bg-white', 'text-gray-800'); // Cor padrão para números não cantados
+
+                if (bolasCantadas.includes(numeroNaCartela)) {
+                    // Adiciona a cor de destaque para números já cantados
+                    div.classList.remove('bg-white', 'text-gray-800');
+                    div.classList.add('bg-green-500', 'text-white');
+                    
+                    // Se for o último número cantado, usa a cor de destaque final
+                    if (numeroNaCartela === lastBall) {
+                        div.classList.remove('bg-green-500');
+                        div.classList.add('bg-red-500');
+                    }
+                }
+            });
+        }
+
+        function displayCardGrid(numerosString, bolasCantadas) {
+            cardGridElement.innerHTML = '';
+            
+            let cardHasNumbers = false;
+            if (numerosString && typeof numerosString === 'string') {
+                const numerosArray = numerosString.match(/.{1,3}/g) || [];
+                
+                if (numerosArray.length > 0) {
+                    cardHasNumbers = true;
+                    numerosArray.forEach(subtext => {
+                        const numero = subtext.replace(/[+*]/g, '').trim();
+                        if (numero) {
+                            const numberDiv = document.createElement('div');
+                            numberDiv.className = 'p-2 bg-white rounded-lg text-gray-800 font-bold text-2xl';
+                            numberDiv.textContent = numero;
+                            cardGridElement.appendChild(numberDiv);
+                        }
+                    });
+                }
+            }
+
+            if (!cardHasNumbers) {
+                for (let i = 0; i < 15; i++) {
+                    const placeholderDiv = document.createElement('div');
+                    placeholderDiv.className = 'p-2 bg-white rounded-lg text-gray-800 font-bold text-2xl';
+                    placeholderDiv.textContent = '00';
+                    cardGridElement.appendChild(placeholderDiv);
+                }
+            }
+            
+            updateCardHighlighting(bolasCantadas);
+        }
+        
+        function displayConferencePanel(confereData, bolasCantadas) {
+            if (confereData && confereData.length > 0 && typeof confereData[0] === 'object') {
+                const data = confereData[0];
+                const numeroDoCartao = data.cartao;
+                const nomeDoGanhador = data.ganhador;
+                const numerosDaCartela = data.numeros;
+
+                cardNumberElement.textContent = numeroDoCartao || 'Aguardando...';
+                winnerNameElement.textContent = nomeDoGanhador || 'Aguardando...';
+                
+                displayCardGrid(numerosDaCartela, bolasCantadas);
+            } else {
+                cardNumberElement.textContent = 'Aguardando...';
+                winnerNameElement.textContent = 'Aguardando...';
+                
+                displayCardGrid(null, bolasCantadas);
+            }
+        }
+
+        function renderTables(data) {
+            const { bolasData, buscandoData, premioData, rodadaData, confereData } = data;
+            let allTablesHtml = '';
+            let bolasCantadas = [];
+
+            if (bolasData && Array.isArray(bolasData) && bolasData.length > 0) {
+                bolasCantadas = bolasData[0].bolas_cantadas;
+                const bolasTableHtml = `
+                    <div class="rounded-xl border bg-card text-card-foreground shadow">
+                        <div class="flex flex-col space-y-1.5 p-6">
+                            <h3 class="text-2xl font-semibold leading-none tracking-tight">Tabela de Bolas</h3>
+                            <p class="text-sm text-muted-foreground">Dados das bolas sorteadas por rodada.</p>
+                        </div>
+                        <div class="p-6 pt-0">
+                            <div class="relative w-full overflow-auto">
+                                <table class="w-full caption-bottom text-sm">
+                                    <thead class="[&_tr]:border-b">
+                                        <tr>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Rodada</th>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Ordem</th>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Bolas</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="[&_tr:last-child]:border-0">
+                                        ${bolasData.map(item => `
+                                            <tr class="border-b transition-colors hover:bg-muted/50">
+                                                <td class="p-4 align-middle font-medium">${item.rodada || 'N/A'}</td>
+                                                <td class="p-4 align-middle">${item.ordem || '-'}</td>
+                                                <td class="p-4 align-middle">${Array.isArray(item.bolas_cantadas) ? item.bolas_cantadas.join(', ') : 'Dados indisponíveis'}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                allTablesHtml += bolasTableHtml;
+            }
+
+            if (buscandoData && Array.isArray(buscandoData) && buscandoData.length > 0) {
+                const buscandoTableHtml = `
+                    <div class="rounded-xl border bg-card text-card-foreground shadow">
+                        <div class="flex flex-col space-y-1.5 p-6">
+                            <h3 class="text-2xl font-semibold leading-none tracking-tight">Dados de Busca</h3>
+                            <p class="text-sm text-muted-foreground">Informações sobre a busca por linhas.</p>
+                        </div>
+                        <div class="p-6 pt-0">
+                            <div class="relative w-full overflow-auto">
+                                <table class="w-full caption-bottom text-sm">
+                                    <thead class="[&_tr]:border-b">
+                                        <tr>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Rodada</th>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Qtde Linha</th>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Buscando</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="[&_tr:last-child]:border-0">
+                                        ${buscandoData.map(item => `
+                                            <tr class="border-b transition-colors hover:bg-muted/50">
+                                                <td class="p-4 align-middle font-medium">${item.rodada || 'N/A'}</td>
+                                                <td class="p-4 align-middle">${item.qtde_linha || 'N/A'}</td>
+                                                <td class="p-4 align-middle">${item.buscando_a_linha || 'N/A'}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                allTablesHtml += buscandoTableHtml;
+            }
+
+            if (premioData && Array.isArray(premioData) && premioData.length > 0) {
+                 const premioTableHtml = `
+                    <div class="rounded-xl border bg-card text-card-foreground shadow">
+                        <div class="flex flex-col space-y-1.5 p-6">
+                            <h3 class="text-2xl font-semibold leading-none tracking-tight">Tabela de Prêmios</h3>
+                            <p class="text-sm text-muted-foreground">Informações sobre os prêmios.</p>
+                        </div>
+                        <div class="p-6 pt-0">
+                            <div class="relative w-full overflow-auto">
+                                <table class="w-full caption-bottom text-sm">
+                                    <thead class="[&_tr]:border-b">
+                                        <tr>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Rodada</th>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Premio</th>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Ganhador</th>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Qtde Bolas</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="[&_tr:last-child]:border-0">
+                                        ${premioData.map(item => `
+                                            <tr class="border-b transition-colors hover:bg-muted/50">
+                                                <td class="p-4 align-middle font-medium">${item.rodada || 'N/A'}</td>
+                                                <td class="p-4 align-middle">${item.premio || 'N/A'}</td>
+                                                <td class="p-4 align-middle">${item.ganhador || 'N/A'}</td>
+                                                <td class="p-4 align-middle">${item.qtde_bolas || 'N/A'}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                allTablesHtml += premioTableHtml;
+            }
+
+            if (rodadaData && Array.isArray(rodadaData) && rodadaData.length > 0) {
+                const rodadaTableHtml = `
+                    <div class="rounded-xl border bg-card text-card-foreground shadow">
+                        <div class="flex flex-col space-y-1.5 p-6">
+                            <h3 class="text-2xl font-semibold leading-none tracking-tight">Tabela de Rodadas</h3>
+                            <p class="text-sm text-muted-foreground">Status atual das rodadas.</p>
+                        </div>
+                        <div class="p-6 pt-0">
+                            <div class="relative w-full overflow-auto">
+                                <table class="w-full caption-bottom text-sm">
+                                    <thead class="[&_tr]:border-b">
+                                        <tr>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Rodada</th>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Data do Sorteio</th>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="[&_tr:last-child]:border-0">
+                                        ${rodadaData.map(item => `
+                                            <tr class="border-b transition-colors hover:bg-muted/50">
+                                                <td class="p-4 align-middle font-medium">${item.rodada || 'N/A'}</td>
+                                                <td class="p-4 align-middle">${item.data_sorteio ? new Date(item.data_sorteio).toLocaleDateString() : 'N/A'}</td>
+                                                <td class="p-4 align-middle">${item.estado || 'N/A'}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                allTablesHtml += rodadaTableHtml;
+            }
+
+            if (confereData && Array.isArray(confereData) && confereData.length > 0) {
+                const confereTableHtml = `
+                    <div class="rounded-xl border bg-card text-card-foreground shadow">
+                        <div class="flex flex-col space-y-1.5 p-6">
+                            <h3 class="text-2xl font-semibold leading-none tracking-tight">Tabela de Conferência</h3>
+                            <p class="text-sm text-muted-foreground">Resultados da conferência de bilhetes.</p>
+                        </div>
+                        <div class="p-6 pt-0">
+                            <div class="relative w-full overflow-auto">
+                                <table class="w-full caption-bottom text-sm">
+                                    <thead class="[&_tr]:border-b">
+                                        <tr>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Campo</th>
+                                            <th class="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Valor</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="[&_tr:last-child]:border-0">
+                                        ${Object.entries(confereData[0]).filter(([key]) => key !== '_id').map(([key, value]) => `
+                                            <tr class="border-b transition-colors hover:bg-muted/50">
+                                                <td class="p-4 align-middle font-medium">${key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
+                                                <td class="p-4 align-middle">${Array.isArray(value) ? value.join(', ') : value}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                allTablesHtml += confereTableHtml;
+            }
+
+            if (allTablesHtml) {
+                contentArea.innerHTML = allTablesHtml;
+            } else {
+                showMessage('Sem dados para mostrar. Por favor, verifique se a sua base de dados tem dados para as coleções "bolas", "buscando", "premio", "rodada" e "confere".', 'info');
+            }
+
+            updateNumericPanel(bolasCantadas);
+            displayPrizeInfo(buscandoData);
+            displayConferencePanel(confereData, bolasCantadas);
+            displayLastThree(bolasData[0]);
+        }
+
+        function connectWebSocket() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                return;
+            }
+
+            ws = new WebSocket('ws://localhost:3001');
+
+            ws.onopen = () => {
+                console.log('Conexão WebSocket estabelecida.');
+                clearInterval(reconnectInterval);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('Dados recebidos via WebSocket:', data);
+                    if (data.type === 'UPDATE') {
+                        renderTables(data.payload);
+                    }
+                } catch (e) {
+                    console.error("Erro ao analisar dados do WebSocket:", e);
+                }
+            };
+
+            ws.onerror = (err) => {
+                console.warn("Erro no WebSocket. A tentar reconectar...");
+            };
+
+            ws.onclose = (event) => {
+                console.log(`Conexão WebSocket fechada. Código: ${event.code}`);
+                if (event.code !== 1000) {
+                    showMessage('Conexão WebSocket perdida. A tentar reconectar...', 'error');
+                    clearInterval(reconnectInterval);
+                    reconnectInterval = setInterval(connectWebSocket, 3000);
+                }
+            };
+        }
+
+        async function initApp() {
+            try {
+                const versionResponse = await fetch(`${API_BASE_URL}/api/version`);
+                if (versionResponse.ok) {
+                    const versionData = await versionResponse.json();
+                    backendVersionElement.textContent = versionData.version;
+                }
+            } catch (e) {
+                console.error('Erro ao buscar a versão do backend:', e);
+                backendVersionElement.textContent = 'Indisponível';
+            }
+
+            createNumberPanel();
+
+            try {
+                const dataResponse = await fetch(`${API_BASE_URL}/api/initial-data`);
+                if (!dataResponse.ok) {
+                    throw new Error('Erro ao buscar dados iniciais.');
+                }
+                const data = await dataResponse.json();
+                console.log('Dados iniciais recebidos via HTTP:', data);
+                
+                renderTables(data);
+
+            } catch (e) {
+                console.error('Erro:', e);
+                showMessage('Não foi possível carregar os dados. Verifique se o servidor de backend está a correr.', 'error');
+            } finally {
+                loader.remove();
+            }
+
+            connectWebSocket();
+        }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>

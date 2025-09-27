@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dados do Sorteio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f3f4f6;
+        }
+    </style>
+</head>
+<body>
+    <div class="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-6 font-sans">
+        <header class="mb-4 text-center">
+            <h1 class="text-4xl font-bold text-gray-900">Dados do Sorteio</h1>
+            <p class="mt-2 text-lg text-gray-600">Frontend para o seu backend de loteria</p>
+        </header>
+
+        <div id="version-info" class="text-sm text-gray-500 mb-8">
+            Versão do Frontend: <strong id="frontend-version">1.0.62</strong> | Versão do Backend: <strong id="backend-version">...</strong>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-8 w-full max-w-6xl mb-8">
+            <div class="md:col-span-3 rounded-xl p-4 bg-white shadow-lg">
+                <h2 class="text-2xl font-semibold mb-4 text-center text-gray-800">Painel Númerico</h2>
+                <div id="number-grid" class="grid grid-cols-10 gap-2">
+                </div>
+            </div>
+            
+            <div class="md:col-span-2 flex flex-col gap-8">
+            <div class="rounded-xl p-4 bg-white shadow-lg flex flex-col items-center">
+
+             <div class="flex justify-around w-full h-14">
+                <div class="flex flex-col items-center text-center">
+                <h3 class="text-xl font-semibold text-gray-800">Rodada</h3>
+                    <span id="last-round" class="flex items-center justify-center text-2xl font-bold text-gray-800">...</span>
+                </div>
+                <div class="flex flex-col items-center text-center">
+                <h3 class="text-xl font-semibold text-gray-800">Ordem</h3>
+                    <span id="last-order" class="flex items-center justify-center text-2xl font-bold text-gray-800">...</span>
+                </div>
+                </div>
+                    <h3 class="text-xl font-semibold mb-4 mt-6 text-center text-gray-800">3 Últimas Cantadas</h3>
+                    <div id="last-three-balls" class="flex justify-around items-center w-full mb-4">
+                        <span id="last-ball-1" class="flex items-center justify-center w-12 h-12 text-xl font-bold rounded-full bg-gray-300 text-gray-800 transition-colors duration-300"></span>
+                        <span id="last-ball-2" class="flex items-center justify-center w-12 h-12 text-xl font-bold rounded-full bg-gray-300 text-gray-800 transition-colors duration-300"></span>
+                        <span id="last-ball-3" class="flex items-center justify-center w-12 h-12 text-xl font-bold rounded-full bg-gray-300 text-gray-800 transition-colors duration-300"></span>
+                    </div>
+                </div>
+
+                <div class="rounded-xl p-0 bg-blue-500 shadow-lg flex flex-col items-center justify-center h-12">
+                   <div id="prize-info" class="flex flex-col items-center text-center w-full space-y-2">
+                      <span class="text-3xl text-white"> . . . </span>
+                    </div>
+                </div>
+
+                <div class="rounded-xl p-4 bg-gray-700 shadow-lg flex flex-col items-center">
+                    <h2 class="text-2xl font-semibold mb-4 text-center text-white">VALORES DOS PRÊMIOS</h2>
+                    <div id="prize-values" class="flex flex-col items-center text-center w-full space-y-2">
+                        <span class="text-lg text-white">Carregando...</span>
+                    </div>
+                </div>
+
+                <div class="rounded-xl p-4 bg-gray-700 shadow-lg flex flex-col items-center">
+                    <h2 class="text-2xl font-semibold mb-4 text-center text-white">Cartelas em Jogo</h2>
+                    <div class="flex items-center justify-between w-full space-x-2">
+                        <div class="flex flex-col items-center">
+                            <span class="text-white text-md font-bold mb-1">INICIAL</span>
+                            <input type="number" id="cartela-inicial" maxlength="6" inputmode="numeric" class="w-24 px-2 py-1 rounded-md text-gray-900 focus:outline-none focus:ring focus:border-blue-300">
+                        </div>
+                        <div class="flex flex-col items-center">
+                            <span class="text-white text-md font-bold mb-1">FINAL</span>
+                            <input type="number" id="cartela-final" maxlength="6" inputmode="numeric" class="w-24 px-2 py-1 rounded-md text-gray-900 focus:outline-none focus:ring focus:border-blue-300">
+                        </div>
+                        <div class="flex flex-col items-center">
+                            <span class="text-white text-md font-bold mb-1">CARTELAS</span>
+                            <span id="resultado-soma" class="text-white text-lg font-bold">0</span>
+                        </div>
+                        <button id="adicionar-cartelas" class="bg-blue-500 text-white font-bold py-1 px-3 rounded-md hidden self-end">OK</button>
+                    </div>
+                    <div id="faixas-adicionadas" class="flex flex-col items-center w-full mt-4 space-y-2">
+                        </div>
+                    
+                    <div class="w-full mt-4">
+                        <h3 class="text-white text-xl font-bold mb-2 text-center">Cartelas Carregadas</h3>
+                        <div id="loaded-cards-list" class="flex flex-col items-center w-full mt-4 space-y-2">
+                            <p class="text-white text-center">Nenhuma cartela carregada.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex flex-col items-center w-full mt-4">
+                        <span class="text-white text-lg font-bold">TOTAL DE CARTELAS</span>
+                        <span id="total-cartelas" class="text-white text-3xl font-extrabold mt-1">0</span>
+                    </div>
+                </div>
+                <div id="conference-panel-container" class="rounded-xl p-4 bg-gray-700 shadow-lg flex-col items-center hidden">
+                    <h2 class="text-2xl font-semibold mb-4 text-center text-white">CARTELA: <span id="card-number">Aguardando...</span></h2>
+                    <div id="conference-panel" class="flex flex-col items-center w-full text-white">
+                        <p class="text-lg font-bold mb-1">GANHADOR(A):</p>
+                        <p class="text-4xl font-extrabold" id="winner-name">Aguardando...</p>
+                    </div>
+
+                    <div class="mt-8 w-full flex flex-col items-center">
+                        <div id="card-grid" class="grid grid-cols-5 gap-2 w-full text-center">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <main id="content-area" class="grid w-full max-w-6xl grid-cols-1 md:grid-cols-2 gap-8">
+            <div id="loader" class="md:col-span-2 flex items-center justify-center p-4 text-blue-500">
+                <svg class="h-8 w-8 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 1-6.219-8.56" />
+                </svg>
+                <span class="ml-2 text-lg font-medium text-gray-700">Carregando dados...</span>
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
