@@ -9,8 +9,8 @@
 //const API_BASE_URL = 'http://192.168.0.5:3001';
 //const WS_URL = 'ws://192.168.0.5:3001';
 
-const API_BASE_URL = 'http://192.168.1.132:3001';
-const WS_URL = 'ws://192.168.1.132:3001';
+const API_BASE_URL = 'https://orca-app-dp256.ondigitalocean.app';
+const WS_URL = 'https://orca-app-dp256.ondigitalocean.app';
 
 // Temporizadores (em segundos)
 const secundsCardsoutId = 6;
