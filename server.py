@@ -5,7 +5,7 @@ import json
 import threading
 import time
 from datetime import datetime
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
@@ -334,16 +334,16 @@ def watch_collections():
 
 
 # Rotas da API e WebSocket
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 @app.route('/')
-def health_check():
-    status = 'healthy'
-    # Avoid truth-value testing on PyMongo Database objects
-    database = 'local_files' if is_local_mode else ('connected' if db is not None else 'disconnected')
-    return jsonify({
-        'status': status,
-        'version': VERSION,
-        'database': database
-    })
+def serve_index():
+    return send_from_directory(BASE_DIR, 'index.html')
+
+# Static assets (scripts, css, images, audio)
+@app.route('/<path:path>')
+def serve_static(path):
+    return send_from_directory(BASE_DIR, path)
 
 @app.route('/api/initial-data')
 def initial_data():
@@ -356,6 +356,12 @@ def initial_data():
 @app.route('/api/version')
 def get_version():
     return jsonify({'version': VERSION})
+
+@app.route('/health')
+def health_check():
+    status = 'healthy'
+    database = 'local_files' if is_local_mode else ('connected' if db is not None else 'disconnected')
+    return jsonify({'status': status, 'version': VERSION, 'database': database})
 
 @app.route('/api/cartelas', methods=['POST'])
 def get_cartelas():
