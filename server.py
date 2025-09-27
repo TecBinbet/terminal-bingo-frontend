@@ -9,6 +9,12 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
+try:
+    import certifi  # For trusted CA bundle (fixes SSL on macOS/Windows)
+    _TLS_CA_FILE = certifi.where()
+except Exception:
+    certifi = None
+    _TLS_CA_FILE = None
 from gevent.pywsgi import WSGIServer
 from geventwebsocket.handler import WebSocketHandler
 from geventwebsocket.exceptions import WebSocketError
@@ -331,7 +337,8 @@ def watch_collections():
 @app.route('/')
 def health_check():
     status = 'healthy'
-    database = 'local_files' if is_local_mode else ('connected' if db else 'disconnected')
+    # Avoid truth-value testing on PyMongo Database objects
+    database = 'local_files' if is_local_mode else ('connected' if db is not None else 'disconnected')
     return jsonify({
         'status': status,
         'version': VERSION,
@@ -447,7 +454,13 @@ def main():
     global db
     if not is_local_mode:
         try:
-            client = MongoClient(MONGO_URI, server_api=ServerApi('1'))
+            mongo_kwargs = { 'server_api': ServerApi('1') }
+            # Use certifi CA bundle when available to avoid SSL CERTIFICATE_VERIFY_FAILED on Atlas
+            if _TLS_CA_FILE:
+                mongo_kwargs['tlsCAFile'] = _TLS_CA_FILE
+            else:
+                print("Aviso: pacote 'certifi' não encontrado. Se ocorrer erro SSL, instale com 'pip install certifi'.")
+            client = MongoClient(MONGO_URI, **mongo_kwargs)
             db = client.get_database(DB_NAME)
             client.admin.command('ping') 
             print("Conexão com MongoDB bem-sucedida!")
