@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 import os
 import json
 import threading
@@ -19,15 +21,18 @@ VERSION = "1.0.60"
 
 # --- VARIÁVEIS PARA MODO HÍBRIDO ---
 # O caminho para a pasta "json" é fixo e externo ao executável
-LOCAL_PATH = "c:/chefemesa/json_"
+# Allow overriding LOCAL_PATH via env; default keeps Windows dev path
+LOCAL_PATH = os.environ.get("LOCAL_PATH", "c:/chefemesa/json_")
 is_local_mode = os.path.exists(LOCAL_PATH)
-MONGO_URI = "mongodb+srv://rivaldosp:TecBin24@tecbinon.3zsz7md.mongodb.net/"
-DB_NAME = "dados_do_sorteio"
+# Prefer env vars in production; fall back to current defaults
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://rivaldosp:TecBin24@tecbinon.3zsz7md.mongodb.net/")
+DB_NAME = os.environ.get("DB_NAME", "dados_do_sorteio")
 
 # Configurações do servidor
 app = Flask(__name__)
 CORS(app)
-port = os.environ.get('sPORT', 3001)
+# Bind to platform-provided PORT when available (e.g., DigitalOcean/Heroku)
+port = int(os.environ.get('PORT') or os.environ.get('sPORT', 3001))
 
 db = None
 
