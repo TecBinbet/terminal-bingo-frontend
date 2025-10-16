@@ -1,0 +1,1 @@
+pyinstaller --onefile --name "NovoServer" NewServer.py

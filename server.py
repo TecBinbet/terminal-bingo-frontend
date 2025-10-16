@@ -23,12 +23,12 @@ import sys
 
 
 # Versão da aplicação
-VERSION = "1.0.60"
+VERSION = "1.2.60"
 
 # --- VARIÁVEIS PARA MODO HÍBRIDO ---
 # O caminho para a pasta "json" é fixo e externo ao executável
 # Allow overriding LOCAL_PATH via env; default keeps Windows dev path
-LOCAL_PATH = os.environ.get("LOCAL_PATH", "c:/chefemesa/json_")
+LOCAL_PATH = os.environ.get("LOCAL_PATH", "c:/chefemesa/json")
 is_local_mode = os.path.exists(LOCAL_PATH)
 # Prefer env vars in production; fall back to current defaults
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://rivaldosp:TecBin24@tecbinon.3zsz7md.mongodb.net/")
@@ -62,6 +62,7 @@ except Exception as e:
 
 clients = set()
 local_data = {}
+mongo_data = {}
 intervalo_busca_local = 0.4 # segundos
 stop_flag = threading.Event()
 
@@ -84,6 +85,50 @@ def parse_numeric_fields(data):
             parsed_data[key] = value
     return parsed_data
 
+# NOVO: Função para buscar os dados da tabela 'parametros' (ou arquivo local)
+def get_parametros_data(db):
+    if is_local_mode:
+        local_file_path = os.path.join(LOCAL_PATH, 'parametros.json')
+        
+        if os.path.exists(local_file_path):
+            try:
+                with open(local_file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    
+                    # CORREÇÃO CRÍTICA: Extrai o primeiro item da lista se for uma lista
+                    if isinstance(data, list) and data:
+                        # Retorna o dicionário com os parâmetros (ex: {"nome_sala": "..."})
+                        return data[0] 
+                    elif isinstance(data, dict):
+                         # Retorna o dicionário puro, se o usuário mudar o formato do arquivo
+                         return data
+                    else:
+                        print(f"AVISO: 'parametros.json' tem formato JSON interno inválido (não é lista nem dicionário).")
+                        return {}
+
+            except json.JSONDecodeError as e:
+                print(f"ERRO FATAL: Sintaxe JSON inválida em 'parametros.json'. Detalhes: {e}")
+                return {}
+            except Exception as e:
+                print(f"ERRO: Falha geral na leitura de 'parametros.json': {e}")
+                return {}
+        else:
+            print(f"AVISO: Arquivo 'parametros.json' não encontrado em {local_file_path}")
+            return {}
+            
+    # Modo MongoDB (se 'is_local_mode' for False)
+    else: 
+        # ... (Sua lógica de busca no MongoDB)
+        try:
+            parametros_doc = db['parametros'].find_one()
+            if parametros_doc:
+                parametros_doc.pop('_id', None)
+                return parametros_doc
+            return {}
+        except Exception as e:
+            print(f"Erro ao buscar parâmetros no MongoDB: {e}")
+            return {}
+
 # --- LÊ DADOS DOS ARQUIVOS JSON LOCAIS ---
 def fetch_data_from_local_files():
     global UltAlt_Cartelas, cartelas_data
@@ -103,6 +148,12 @@ def fetch_data_from_local_files():
         
         with open(os.path.join(LOCAL_PATH, 'confere.json'), 'r', encoding='utf-8') as f:
             confere_data = json.load(f)
+
+        with open(os.path.join(LOCAL_PATH, 'parametros.json'), 'r', encoding='utf-8') as f:
+            parametros_data_raw = json.load(f) # Lê o arquivo
+
+        with open(os.path.join(LOCAL_PATH, 'promocional.json'), 'r', encoding='utf-8') as f:
+            promocional_data = json.load(f)
         
         # Verifica se o arquivo cartelas.json foi alterado e o carrega se necessário
         current_cartelas_mtime = os.path.getmtime(os.path.join(LOCAL_PATH, 'cartelas.json'))
@@ -115,6 +166,7 @@ def fetch_data_from_local_files():
         premio_info = {}
         tope_data = []
         card_ranges = []
+        parametros = parametros_data_raw[0] if isinstance(parametros_data_raw, list) and parametros_data_raw else {}
 
         if premio_raw_data:
             premio_doc = premio_raw_data[0]
@@ -167,7 +219,9 @@ def fetch_data_from_local_files():
             'confereData': confere_data,
             'maxCardNumber': max_card_number,
             'topeData': tope_data,
-            'cardRanges': card_ranges
+            'cardRanges': card_ranges,
+            'promocionalData': promocional_data,
+            'parametrosInfo': parametros # usa o dicionário real
         }
 
     except Exception as e:
@@ -181,7 +235,9 @@ def fetch_data_from_local_files():
             'confereData': [],
             'maxCardNumber': 0,
             'topeData': [],
-            'cardRanges': []
+            'cardRanges': [],
+            'promocionalData': [],
+            'parametrosInfo': {}
         }
 
 # --- LÊ DADOS DO MONGODB ---
@@ -197,6 +253,7 @@ def fetch_data_from_collections():
         premio_raw_data = list(db.premio.find({}))
         rodada_data = list(db.rodada.find({}))
         confere_data = list(db.confere.find({}))
+        parametros_info = list(db.parametros.find({}))
         max_card_result = list(db.cartelas.find({}, {'cartao': 1, '_id': 0}).sort('cartao', -1).limit(1))
 
         # CONVERTE ObjectId para string para evitar erro 500
@@ -210,11 +267,19 @@ def fetch_data_from_collections():
             doc['_id'] = str(doc['_id'])
         for doc in confere_data:
             doc['_id'] = str(doc['_id'])
+        for doc in parametros_data:
+            doc['_id'] = str(doc['_id'])
 
         premio_data = []
         premio_info = {}
         tope_data = []
         card_ranges = []
+        parametros_info = parametros_data[0] if parametros_data else {}
+        
+        promocional_collection = db.get_collection('promocional')
+        # Limita a busca a 1 documento, assume que o texto promo está em um único documento
+        promocional_cursor = promocional_collection.find({}, {'_id': 0}).limit(1) 
+        promocional_data = [doc for doc in promocional_cursor]
 
         if premio_raw_data:
             premio_doc = premio_raw_data[0]
@@ -266,7 +331,9 @@ def fetch_data_from_collections():
             'confereData': confere_data,
             'maxCardNumber': max_card_number,
             'topeData': tope_data,
-            'cardRanges': card_ranges
+            'cardRanges': card_ranges,
+            'promocionalData': promocional_data,
+            'parametrosInfo': parametros_info    
         }
 
     except Exception as e:
@@ -303,35 +370,64 @@ def broadcast(data):
 
 # Monitora as alterações e transmite atualizações
 mongo_data = {}
+
 def watch_collections():
+    global local_data, mongo_data
+    first_run = True
+    
     if is_local_mode:
-        global local_data
         while not stop_flag.is_set():
+            
             new_data = fetch_data_from_local_files()
-            if json.dumps(new_data) != json.dumps(local_data):
-                local_data = new_data
+
+            main_data_changed = json.dumps(new_data) != json.dumps(local_data)
+            
+            if main_data_changed or first_run:
+                if main_data_changed:
+                    local_data = new_data
+                
+                payload_para_broadcast = local_data.copy()
+                
                 hora_formatada = datetime.now().strftime("%H:%M:%S")
                 print(f"Atualização detectada em arquivos locais... ({hora_formatada})")
-                broadcast(local_data)
+
+                broadcast( payload_para_broadcast)
+                first_run = False
+
             time.sleep(intervalo_busca_local)
+            
     else:
         # Modo de produção: Monitora o MongoDB
-        global mongo_data
-        while not stop_flag.is_set():           
+        while not stop_flag.is_set():
+            # 2. REMOVE: parametros_data = get_parametros_data(db)
             try:
-                new_data = fetch_data_from_collections() # Use a função que busca do MongoDB
-           #     print(f"DEBUG: Conteúdo de new_data: {new_data}")
-            #    print(f"DEBUG: Conteúdo de mongo_data: {mongo_data}")
-                if json.dumps(new_data) != json.dumps(mongo_data):
-                    mongo_data = new_data
+                # new_data AGORA CONTÉM OS PARÂMETROS E OS DADOS PRINCIPAIS
+                new_data = fetch_data_from_collections()
+                
+                # 3. main_data_changed AGORA CHECA TUDO (Dados + Parâmetros)
+                main_data_changed = json.dumps(new_data) != json.dumps(mongo_data)
+                # 4. REMOVE: parameters_changed
+                
+                if main_data_changed or first_run:
+                    
+                    if main_data_changed:
+                        mongo_data = new_data
+                    
+                    # 5. REMOVE: Lógica de 'if parameters_changed' e a atualização de 'last_sent_parametros_data'
+                        
+                    # O payload_para_broadcast JÁ ESTÁ COMPLETO
+                    payload_para_broadcast = mongo_data.copy()
+                    # 6. REMOVE: O bloco 'if parametros_data:' e a adição de "parametrosData"
+                        
                     hora_formatada = datetime.now().strftime("%H:%M:%S")
                     print(f"Atualização detectada no MongoDB... ({hora_formatada})")
-                    broadcast(mongo_data)
+                    broadcast( payload_para_broadcast)
+                    first_run = False
+                        
             except Exception as e:
                 print(f"Erro ao monitorar o MongoDB: {e}")
                 
-            time.sleep(1) # intervalo_busca_local Intervalo de 1 segundo para checar o MongoDB
-
+            time.sleep(1)
 
 # Rotas da API e WebSocket
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -439,6 +535,8 @@ def websocket_app(environ, start_response):
     if 'wsgi.websocket' in environ:
         ws = environ['wsgi.websocket']
         clients.add(ws)
+        current_payload = local_data.copy()
+        current_payload["parametrosData"] = get_parametros_data(db) # Lê os parâmetros novamente
         try:
             initial_data = fetch_data_from_local_files() if is_local_mode else fetch_data_from_collections()
             ws.send(json.dumps({'type': 'UPDATE', **initial_data}, default=str))

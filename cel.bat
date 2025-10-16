@@ -1,1 +1,2 @@
-python frontend_server_celular.py
+
+python -m http.server 8000

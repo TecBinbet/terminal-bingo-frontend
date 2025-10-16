@@ -4,7 +4,20 @@ pyinstaller --name "ServerFront" --onefile --hidden-import gevent.hub --hidden-i
 
 
 ---------------------------------------------------
-
 >Criar backend Front Celular - criar exe do backend para acesso do celular
 
 pyinstaller --name "BackEndCelular" --onefile --add-data "index.html;." --add-data "script.js;." --add-data "mobile.css;." --add-data "fundo.jpg;." --add-data "bingo.mp3;." frontend_server_celular.py
+
+------------------------------
+Ajustes
+> Arquivo config.json ou tabela
+  - url > padrao - markting
+  - url > live ao vivo
+  - nome da Sala
+
+> se local desabilita YouTube
+
+> capturar bola da extratora
+   - diponibilizar video futebol
+   - imagem extratora
+

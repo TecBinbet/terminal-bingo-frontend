@@ -1,4 +1,3 @@
-
 const backendVersionElement = document.getElementById('backend-version');
 const frontendVersionElement = document.getElementById('frontend-version');
 const loader = document.getElementById('loader');
@@ -17,6 +16,32 @@ const precoSerieElement = document.getElementById('preco-serie');
 const lastBall1 = document.getElementById('last-ball-1');
 const lastBall2 = document.getElementById('last-ball-2');
 const lastBall3 = document.getElementById('last-ball-3');
+
+// ... (após mobileLastBall3, etc.) ...
+const youtubePanel = document.getElementById('youtube-panel'); // Já deve existir
+const youtubeIframe = document.getElementById('youtube-iframe'); // Já deve existir
+const abrirYoutubeBtn = document.getElementById('abrir-youtube-btn'); // Já deve existir
+
+//
+let cartelasEmJogo = 0;
+// Timer promocionais
+let seePromocoes = true; // Controla se o sistema deve verificar e exibir promoções
+let promocionalTimer = null; // Armazena a referência do temporizador
+
+let globalPromocionalData = [];
+
+// NOVOS ELEMENTOS:
+const salaTitleElement = document.getElementById('sala-title');
+let currentVideoUrl = ''; // Variável global para a URL dinâmica
+
+// SE TELA CHEIA
+let telaFull = false;
+
+// NOVOS ELEMENTOS PARA O PAINEL PROMOCIONAL
+const youtubePlaceholder = document.getElementById('youtube-placeholder'); // Certifique-se de que este elemento existe no seu HTML
+const promocionalContainer = document.getElementById('promocional-container');
+const promocionalContent = document.getElementById('promocional-content');
+const promocionalText = document.getElementById('promocional-text');
 
 const mobileLastRoundElement = document.getElementById('mobile-last-round');
 const mobileLastOrderElement = document.getElementById('mobile-last-order');
@@ -37,6 +62,7 @@ const adicionarCartelasBtn = document.getElementById('adicionar-cartelas');
 const faixasAdicionadasDiv = document.getElementById('faixas-adicionadas');
 const totalCartelasSpan = document.getElementById('total-cartelas');
 const validationMessage = document.getElementById('validation-message');
+const loadedCardsHeader = document.getElementById('loaded-cards-header'); 
 
 const mobileCartelaInicialInput = document.getElementById('mobile-cartela-inicial-input');
 const mobileCartelaFinalInput = document.getElementById('mobile-cartela-final-input');
@@ -45,6 +71,7 @@ const mobileAdicionarCartelasBtn = document.getElementById('mobile-adicionar-car
 const mobileFaixasAdicionadasDiv = document.getElementById('mobile-faixas-adicionadas');
 const mobileTotalCartelasSpan = document.getElementById('mobile-total-cartelas');
 const mobileValidationMessage = document.getElementById('mobile-validation-message');
+const mobileLoadedCardsHeader = document.getElementById('mobile-loaded-cards-header'); 
 
 const toggleCartelasButton = document.getElementById('toggle-cartelas-button');
 const mobileCartelasContent = document.getElementById('mobile-cartelas-content');
@@ -56,6 +83,8 @@ const togglePrizesButton = document.getElementById('toggle-prizes-button');
 const mobilePrizesContent = document.getElementById('mobile-prizes-content');
 const cardRangesDisplay = document.getElementById('card-ranges-display');
 
+let lastRodadaState = null;
+
 // Sua nova variável global
 let ValorSerie = 0;
 
@@ -65,6 +94,9 @@ let timeoutId = null;
 let prizeTimeoutId = null;
 
 let ws = null;
+
+let iniciandoRodada = true;
+let winnerBingo = false;
 
 let reconnectInterval = null;
 let cartelaRanges = [];
@@ -82,8 +114,9 @@ let minCartelas = 0;
 let maxCartelas = 0;
 let cardRanges = [];
 let buscando_o_premio = '';
+let bolaBuscandoPremio = 0;
 let buscando_a_linha = '';
-
+let cartelaEmJogo = 0;
 let ultimaBolaCantada = null;
 
 let wakeLock = null;
@@ -122,15 +155,209 @@ function isMobileDevice() {
 }
 
 // Função para tocar o som
-function playBingoSound() {
-    // Toca o som do início
-    bingoSound.currentTime = 0; 
-    bingoSound.play().catch(e => {
+function playPremiadoSound(soundElement) {
+    if (!soundElement || typeof soundElement.play !== 'function') {
+        console.error('Erro: Elemento de som não fornecido ou inválido.');
+        return;
+    }
+    soundElement.currentTime = 0; 
+    soundElement.play().catch(e => {
         console.error('Erro ao tentar tocar o som:', e);
         // Este erro geralmente acontece porque o navegador bloqueia a reprodução automática.
-        // Para resolver, a função play() precisa ser chamada a partir de uma interação do usuário.
-        // Ex: um clique num botão.
     });
+}
+
+function showPremiadoGif(gifFileName) {
+    if (!labelPremiado) {
+        console.error('Erro: Elemento #labelPremiado não encontrado.');
+        return;
+    }
+
+    // 1. Monta o caminho do arquivo (Ajuste o '/gifs/' se necessário)
+    const gifUrl = `/gifs/${gifFileName}.gif`;
+    
+    // 2. Aplica os estilos para exibir a imagem
+    labelPremiado.style.display = 'block'; // Torna o overlay visível
+    labelPremiado.style.backgroundImage = `url('${gifUrl}')`; 
+    labelPremiado.style.backgroundSize = 'contain';      // Garante que o GIF se ajuste
+    labelPremiado.style.backgroundRepeat = 'no-repeat';  // Não repete a imagem
+    labelPremiado.style.backgroundPosition = 'center';   // Centraliza na tela
+    
+    // OPCIONAL: Oculta o GIF após alguns segundos (ex: 3 segundos)
+    setTimeout(hidePremiadoGif, secundsGifPremiadoTimeout * 1000); 
+}
+
+function hidePremiadoGif() {
+    if (labelPremiado) {
+        labelPremiado.style.display = 'none';
+        labelPremiado.style.backgroundImage = 'none'; // Limpa a imagem
+    }
+}
+
+/**
+ * Verifica se um recurso existe na URL fornecida usando o método HEAD.
+ * @param {string} url O caminho para o recurso (ex: '/gifs/promocional.gif').
+ * @returns {Promise<boolean>} Retorna true se o recurso for acessível (status 200/204), false caso contrário.
+ */
+// A função de verificação permanece correta
+async function checkIfFileExists(url) {
+    try {
+        const response = await fetch(url, {
+            method: 'HEAD',
+            cache: 'no-store'
+        });
+        return response.ok;
+    } catch (error) {
+        console.error("Erro ao tentar verificar o arquivo:", error);
+        return false;
+    }
+}
+
+// 🛑 A função precisa ser 'async' para usar 'await'
+async function updatePromocionalPanelPosition() {
+    // 🛑 Obtenha o elemento de texto aqui (ou certifique-se que é uma variável global)
+    // Assumindo que você usa uma variável global ou que o elemento deve ser obtido:
+    const promocionalText = document.getElementById('promocional-text-id'); // 🚨 Substitua pelo ID real se não for global!
+
+    if (!promocionalContainer || !youtubePlaceholder || promocionalContainer.classList.contains('hidden')) {
+        return; 
+    }
+
+    const content = document.getElementById('promocional-content'); 
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+    const isYoutubePanelVisible = !youtubePlaceholder.classList.contains('hidden');
+
+    // 1. Definição da Largura Manual (100% da viewport, com 1px de margem de segurança)
+    content.style.width = `${windowWidth}px`; 
+    content.style.left = '0px'; 
+    content.style.right = '0px';
+    
+    // Reseta propriedades verticais do content
+    content.style.height = '';
+    content.style.bottom = '';
+    
+    // ----------------------------------------------------
+    // 🚨 Verifica a existência do arquivo e controla a execução
+    // ----------------------------------------------------
+    const gifUrl = '/gifs/promocional.gif';
+    const fileExists = await checkIfFileExists(gifUrl); // Aguarda a resposta
+
+    if (fileExists) {
+        // Arquivo existe. Aplica o background.
+        content.style.backgroundImage = `url('${gifUrl}?t=${new Date().getTime()}')`;
+        // OBS: O texto já foi carregado pela função 'displayPromocionalText',
+        // então não precisamos redefinir o innerHTML aqui.
+        
+    } else {
+        // 🛑 Arquivo NÃO existe. Esconde o painel, limpa o fundo e SAI.
+        content.style.backgroundImage = 'none'; // Garante que nenhum GIF antigo seja exibido
+        promocionalContainer.classList.add('hidden'); // Esconde o painel principal
+        if (promocionalText) {
+             promocionalText.innerHTML = ''; // Limpa o texto
+        }
+        
+        console.warn(`O arquivo promocional não foi encontrado em: ${gifUrl}. Painel escondido.`);
+        
+        return; // 🛑 SAI DA FUNÇÃO. Nenhum código de posicionamento será executado.
+    }
+    // ----------------------------------------------------
+    
+    // O contêiner principal (#promocional-container) só serve de wrapper fixo.
+    // O restante do código de posicionamento SÓ é executado se o GIF existir.
+
+    if (isYoutubePanelVisible) {
+        // --- CENÁRIO 1: VÍDEO ATIVO (usa top e bottom para esticar) ---
+        let topText = 180;        
+        let fonteText = 24;
+        if (!telaFull) { 
+            topText = 108;
+            fonteText = 16;
+        }
+        const placeholderRect = youtubePlaceholder.getBoundingClientRect();
+        
+        // TOP: Colado ao bottom do placeholder (posição de viewport)
+        const contentTop = placeholderRect.bottom; 
+        
+        // Define a altura forçando o esticamento
+        content.style.top = `${contentTop}px`; 
+        content.style.bottom = '0px'; // Estica até o final da tela
+        if (promocionalText) {
+            promocionalText.style.paddingTop =`${topText}px`;
+            promocionalText.style.fontSize =`${fonteText}px`;
+        }
+    } else {
+        // --- CENÁRIO 2: VÍDEO INATIVO (92% da tela total) ---
+        let topMargin = 20;
+        let percento = 0.92;
+        let topText = 250;    
+
+        if (!telaFull) { 
+            topMargin = 55;
+            topText = 200;
+        }    
+        const heightPercent = windowHeight * percento;
+        // Define a altura manualmente
+        content.style.top = `${topMargin}px`; 
+        content.style.height = `${heightPercent}px`; 
+        if (promocionalText) {
+            promocionalText.style.paddingTop =`${topText}px`; 
+            promocionalText.style.fontSize = '28px';
+        }
+    }
+}
+
+// NOVO: Função para verificar e exibir a promoção (se houver dados)
+function checkAndDisplayPromocionalContent() {
+    // 1. Check A: O sistema está autorizado a mostrar a promoção?
+    if (!seePromocoes) {
+        return; 
+    }
+
+    // 2. Check B: Temos dados promocionais válidos para exibir?
+    // Verifica se a array não está vazia, o que indica que o server enviou dados.
+    const hasPromoData = globalPromocionalData && globalPromocionalData.length > 0;
+
+    if (hasPromoData) {
+       
+        // *OPCIONAL:* Chame a função que insere o texto no painel aki
+        displayPromocionalText(globalPromocionalData);
+
+        if (promocionalContainer.classList.contains('hidden')) {
+            promocionalContainer.classList.remove('hidden');
+            // Garante que o painel pegue as dimensões corretas (no modo INATIVO)
+            updatePromocionalPanelPosition(); 
+        }
+ //   }  else {
+//        if (!promocionalContainer.classList.contains('hidden')) {
+//             promocionalContainer.classList.add('hidden');
+//         }
+    }
+}
+
+// NOVO: Inicia ou reseta a contagem regressiva
+function startPromocionalTimer() {
+    if (promocionalTimer) {
+        clearTimeout(promocionalTimer);
+    }
+    // Inicia um novo temporizador
+    promocionalTimer = setTimeout(() => {
+        checkAndDisplayPromocionalContent();
+    }, secundsPromocoesTimeout * 1000); // Converte segundos para milissegundos
+}
+
+// NOVO: Oculta o painel e desativa a visualização de promoções
+function hidePromocionalPanel() {
+    if (!promocionalContainer.classList.contains('hidden')) {
+        promocionalContainer.classList.add('hidden');
+    }
+    // Desativa a variável global para parar as verificações
+    
+    // Limpa o timer para evitar que a promoção apareça após o bingo
+    if (promocionalTimer) {
+        clearTimeout(promocionalTimer);
+        promocionalTimer = null;
+    }
 }
 
 // NOVA FUNÇÃO: Exibe os períodos de cartelas
@@ -179,15 +406,38 @@ function goFullscreen() {
     }
 }
 
+function lockSizeScreen() {
+    const isMobileTest = isMobileDevice();
+     if (!isMobileTest) {
+         return;
+     }              
+     if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('portrait').catch((err) => {
+             console.error("Erro ao travar a orientação da tela:", err);
+            });
+     }
+}  
+ 
 // Oculta ou exibe o botão com base no modo de tela cheia
 function handleFullscreenChange() {
     const fullscreenButton = document.getElementById('fullscreen-button');
     if (document.fullscreenElement) {
         // Se o sistema está em tela cheia, esconde o botão
+        lockSizeScreen() 
+        telaFull = true;
         fullscreenButton.classList.add('hidden');
+        if (cartelas_Em_Jogo === 0 && rodadaState === 'intervalo') {
+           seePromocoes = true;
+           startPromocionalTimer();
+        }
     } else {
         // Se o sistema saiu da tela cheia, mostra o botão novamente
+        telaFull = false;
         fullscreenButton.classList.remove('hidden');
+        if (cartelas_Em_Jogo === 0 && rodadaState === 'intervalo') {
+           seePromocoes = true;
+           startPromocionalTimer();
+        }      
     }
 }
 
@@ -195,6 +445,7 @@ function handleFullscreenChange() {
 const fullscreenButton = document.getElementById('fullscreen-button');
 if (fullscreenButton) {
     fullscreenButton.addEventListener('click', goFullscreen);
+    startPromocionalTimer();
 }
 // Adiciona um listener ao documento para o evento de mudança de tela cheia
 document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -244,23 +495,23 @@ function setupCartelasEmJogo(maxCardNumber) {
                 }, 4000); // 4000 milissegundos = 4 segundos
                 return;
              }
-            console.error("validade 3 : ", isInputRangeValid);
             const resultado = (valorFinal - valorInicial) + 1;
             resultadoSpan.textContent = resultado;
             adicionarBtn.classList.remove('hidden');
         } else {
             resultadoSpan.textContent = '0';
-            adicionarBtn.classList.add('hidden');
-           }
+            adicionarBtn.classList.add('hidden');           
         }
 
-        const corrigirValor = (event) => {
-        let value = parseInt(event.target.value, 10);
-        if (value > maxCardNumber) {
-            event.target.value = maxCardNumber;
-        }
-        validarECalcular();
     };
+
+    const corrigirValor = (event) => {
+           let value = parseInt(event.target.value, 10);
+           if (value > maxCardNumber) {
+               event.target.value = maxCardNumber;           
+           }   
+        validarECalcular();
+     }  
 
     inputInicial.addEventListener('input', corrigirValor);
     inputFinal.addEventListener('input', corrigirValor);
@@ -271,6 +522,7 @@ function setupCartelasEmJogo(maxCardNumber) {
     inputInicial.addEventListener('input', startHideTimer);
     inputFinal.addEventListener('input', startHideTimer);
     adicionarBtn.addEventListener('click', () => {
+        startPromocionalTimer();
         const valorInicial = parseInt(inputInicial.value, 10);
         const valorFinal = parseInt(inputFinal.value, 10);
         const novaFaixa = { inicial: valorInicial, final: valorFinal };
@@ -288,7 +540,6 @@ function setupCartelasEmJogo(maxCardNumber) {
 
         const totalCartelasSpanCurrent = isMobile ? mobileTotalCartelasSpan : totalCartelasSpan;
         const novaSoma = parseInt(totalCartelasSpanCurrent.textContent) + ((valorFinal - valorInicial) + 1);
-
 
         cartelaRanges.push(novaFaixa);
         displayCartelaRanges();
@@ -327,29 +578,37 @@ function displayCartelaRanges() {
     });
 
     totalSpan.textContent = total;
+    cartelasEmJogo = total
     checkTotalCards();
-
-    document.querySelectorAll('.remover-faixa').forEach(button => {
-        button.addEventListener('click', (e) => {
+    if (total > 0 ) { 
+       cartelaEmJogo = total;
+       seePromocoes = false; 
+       hidePromocionalPanel();
+    }
+       document.querySelectorAll('.remover-faixa').forEach(button => {
+       button.addEventListener('click', (e) => {
+            startPromocionalTimer(); 
             const index = parseInt(e.target.dataset.index, 10);
-
             const numCartelasRemovidas = (cartelaRanges[index].final - cartelaRanges[index].inicial) + 1;
             const novoTotal = parseInt(totalSpan.textContent) - numCartelasRemovidas;
 
             if (cartelaRanges.length > 0 && novoTotal < minCartelas) {
                 const confirmacao = confirm(`Remover a última faixa de cartelas (${numCartelasRemovidas}) fará com que o total fique abaixo do mínimo exigido de ${minCartelas}. Deseja continuar?`);
-                if (!confirmacao) {
+                 if (!confirmacao) {
                     return;
                 }
+           }
+            if (novoTotal === 0) {
+                cartelaEmJogo = 0;
+                seePromocoes = true; 
+                startPromocionalTimer();                               
             }
-
             cartelaRanges.splice(index, 1);
             displayCartelaRanges();
             fetchAndProcessCards();
         });
     });
 }
-
 
 function checkTotalCards(total) {
     const isMobile = isMobileDevice();
@@ -363,22 +622,23 @@ function checkTotalCards(total) {
     if (isNaN(total) || total <= 0) {
 //        validationMessageCurrent.textContent = "A quantidade de cartelas deve ser um número válido e maior que 0.";
 //        validationMessageCurrent.classList.remove('hidden');
-        return; // Para a execução da função aqui
+        return; // Para a execução da função aki
     }
 
     // 2. Verifica se o total está abaixo do mínimo exigido
     if (total < minCartelas) {
         validationMessageCurrent.textContent = `Atenção: A quantidade de cartelas (${total}) está abaixo do mínimo exigido (${minCartelas}).`;
         validationMessageCurrent.classList.remove('hidden');
-        return; // Para a execução da função aqui
+        return; // Para a execução da função aki
     }
 
     // 3. Verifica se o total está acima do máximo exigido
     if (total > maxCartelas) {
         validationMessageCurrent.textContent = `Atenção: A quantidade de cartelas (${total}) excede o máximo permitido (${maxCartelas}).`;
         validationMessageCurrent.classList.remove('hidden');
-        return; // Para a execução da função aqui
+        return; // Para a execução da função aki
     }
+    cartelaEmJogo = total;
 }
 
 async function fetchAndProcessCards() {
@@ -433,9 +693,9 @@ async function fetchAndProcessCards() {
         }
 
         const initialData = await fetchDataFromCollections();
+        
         const premioBuscadoAPI = initialData.buscandoData[0]?.buscando_o_premio || '';
         const premioBuscadoNormalized = premioBuscadoAPI.replace(/\s+/g, '').trim();
-
         processCards(cards, initialData.bolasData[0]?.bolas_cantadas || [], premioBuscadoNormalized, initialData.buscandoData[0]?.buscando_a_linha || '');
         
         validationMessageCurrent.classList.add('hidden');
@@ -503,8 +763,9 @@ function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
                 if (activeLinesArray.includes(line.id)) {
                     let premioEncontradoLinha = null;
                     if (line.count === 5) {
-                        premioEncontradoLinha = 'LINHA'; 
-                        playBingoSound()
+                        premioEncontradoLinha = 'LINHA';
+                        playPremiadoSound(linhaSound);
+                        showPremiadoGif('linha'); 
                     }
 
                     processedCards.push({
@@ -531,10 +792,13 @@ function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
                 let premioEncontradoLinha = null;
                 if (premioBuscado.includes('QUADRA') && line.count === 4) {
                     premioEncontradoLinha = 'Q U A D R A';
-                    playBingoSound();
+                    playPremiadoSound(quadraSound);
+                    showPremiadoGif('quadra');                   
+playBingoSound();
                 } else if (premioBuscado.includes('LINHA') && line.count === 5) {
                     premioEncontradoLinha = 'L I N H A';
-                    playBingoSound();
+                    showPremiadoGif('linha');                    
+                    playPremiadoSound(linhaSound);                    
                 }
                 
                 processedCards.push({
@@ -551,18 +815,26 @@ function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
             });
         } else {
             let premioEncontrado = null;
-            if (premioBuscado.includes('DUPLOBINGO') && count.geral === 15) {
+            const xBolasCantadas =  bolasCantadas.length; 
+            if (premioBuscado.includes('DUPLOBINGO') && count.geral === 15 && xBolasCantadas !== bolaBuscandoPremio) {
+ console.error(' houve alteração ' ,bolaBuscandoPremio); // aquix 
                 premioEncontrado = 'DUPLO BINGO';
-                playBingoSound();
-            } else if (premioBuscado.includes('TRIPLO BINGO') && count.geral === 15) {
+                showPremiadoGif('duplobingo');
+                playPremiadoSound(duplobingoSound);              
+            } else if (premioBuscado.includes('TRIPLO BINGO') && count.geral === 15  && xBolasCantadas !== bolaBuscandoPremio) {
                 premioEncontrado = 'TRIPLO BINGO';
-                playBingoSound();
-            } else if (premioBuscado.includes('BINGO') && count.geral === 15) {
+                showPremiadoGif('triplobingo');
+                playPremiadoSound(triplobingoSound);
+            } else if (premioBuscado.includes('BINGO') && count.geral === 15 && xBolasCantadas !== bolaBuscandoPremio) {
                 premioEncontrado = 'B I N G O';
-                playBingoSound();
+                showPremiadoGif('bingo');
+                playPremiadoSound(bingoSound);                
+playBingoSound();
             } else if (premioBuscado.includes('FALTAUM') && count.geral === 14) {
                 premioEncontrado = 'FALTA UM';
-                playBingoSound();
+                showPremiadoGif('faltaum');
+                playPremiadoSound(faltaumSound);                
+playBingoSound();
             }
 
             processedCards.push({
@@ -622,7 +894,8 @@ function recalculateAndDisplayCards(bolasCantadas, premioBuscado, linhasAtivas) 
 
                 if (count === 5) {
                     premioEncontrado = 'LINHA';
-                    playBingoSound();
+                    showPremiadoGif('linha');   
+                    playPremiadoSound(linhaSound);                    
                 }
             }
         }
@@ -640,10 +913,14 @@ function recalculateAndDisplayCards(bolasCantadas, premioBuscado, linhasAtivas) 
             
             if (normalizedPremioBuscado.includes('QUADRA') && count === 4) {
                 premioEncontrado = 'Q U A D R A';
-                playBingoSound();
+                showPremiadoGif('quadra');
+                playPremiadoSound(quadraSound);                
+playBingoSound();
             } else if (normalizedPremioBuscado.includes('LINHA') && count === 5) {
                 premioEncontrado = 'L I N H A';
-                playBingoSound();
+                showPremiadoGif('linha');
+                playPremiadoSound(linhaSound);                 
+playBingoSound();
             }
         } else {
             let count = 0;
@@ -655,19 +932,24 @@ function recalculateAndDisplayCards(bolasCantadas, premioBuscado, linhasAtivas) 
             card.counts.geral = count;
             sourceNumbers = card.originalData.geral;
             missingNumbers = sourceNumbers.filter(num => !bolasCantadas.includes(num));
-            
-            if (normalizedPremioBuscado.includes('DUPLOBINGO') && count === 15) {
+            const xBolasCantadas =  bolasCantadas.length; 
+            if (normalizedPremioBuscado.includes('DUPLOBINGO') && count === 15 && xBolasCantadas !== bolaBuscandoPremio) {
                 premioEncontrado = 'DUPLO BINGO';
-                playBingoSound();
-            } else if (normalizedPremioBuscado.includes('TRIPLO BINGO') && count === 15) {
+                showPremiadoGif('duplobingo');
+                playPremiadoSound(duplobingoSound);               
+            } else if (normalizedPremioBuscado.includes('TRIPLO BINGO') && count === 15 && xBolasCantadas !== bolaBuscandoPremio) {
                 premioEncontrado = 'TRIPLO BINGO';
-                playBingoSound();
-            } else if (normalizedPremioBuscado.includes('BINGO') && count === 15) {
+                showPremiadoGif('triplobingo');
+                playPremiadoSound(triplobingoSound);                
+playBingoSound();
+            } else if (normalizedPremioBuscado.includes('BINGO') && count === 15 && xBolasCantadas !== bolaBuscandoPremio) {
                 premioEncontrado = 'B I N G O';
-                playBingoSound();
+                showPremiadoGif('bingo');
+                playPremiadoSound(bingoSound);
             } else if (normalizedPremioBuscado.includes('FALTAUM') && count === 14) {
                 premioEncontrado = 'FALTA UM';
-                playBingoSound();
+                showPremiadoGif('faltaum');
+                playPremiadoSound(faltaumSound);
             }
         }
 
@@ -689,6 +971,13 @@ function displayLoadedCards(bolasCantadas) {
     const isMobile = isMobileDevice();
     const cardsList = isMobile ? mobileLoadedCardsList : loadedCardsList;
     
+    const headerElement = isMobile ? mobileLoadedCardsHeader : loadedCardsHeader; 
+    const totalCards = loadedCards.length;
+    const formattedCount = new Intl.NumberFormat('pt-BR').format(cartelasEmJogo);
+    if (headerElement) {
+        headerElement.textContent = `Cartelas Carregadas = ${formattedCount}`;
+    }
+ 
     cardsList.innerHTML = '';
     
     const isLinePrize = buscando_o_premio.includes('QUADRA') || buscando_o_premio.includes('LINHA');
@@ -718,9 +1007,13 @@ function displayLoadedCards(bolasCantadas) {
     if (cardsToDisplay.length === 0) {
         const p = document.createElement('p');
         p.className = 'text-white text-center';
-        p.textContent = 'Nenhuma cartela carregada ou com números faltantes.';
+        if (totalCards === 0 && headerElement) {
+             headerElement.textContent = ``;  // texto acima CART... xxx
+        }
+        p.textContent = '';  // texto para linha inferior, abaixo do CARTELA   NÚMEROS FALTANTES xxx
         fragment.appendChild(p);
     } else {
+    // Atualiza o texto do cabeçalho com a contagem total
         cardsToDisplay.forEach(card => {
             const formattedCardNumber = String(card.cartao);
             
@@ -798,16 +1091,16 @@ function createNumberPanel() {
     }
 }
 
+// limpar painel
 function clearPanels() {
     updateNumericPanel([]);
-    
     const isMobile = isMobileDevice();
     const loadedCardsListCurrent = isMobile ? mobileLoadedCardsList : loadedCardsList;
     const faixasDiv = isMobile ? mobileFaixasAdicionadasDiv : faixasAdicionadasDiv;
     const totalSpan = isMobile ? mobileTotalCartelasSpan : totalCartelasSpan;
     const lastRound = isMobile ? mobileLastRoundElement : lastRoundElement;
     const lastOrder = isMobile ? mobileLastOrderElement : lastOrderElement;
-    const precoSerie =  isMobile ? mobilePrecoSerieElement :PrecoSerieElement;
+    const precoSerie =  isMobile ? mobilePrecoSerieElement :precoSerieElement;
     const ball1 = isMobile ? mobileLastBall1 : lastBall1;
     const ball2 = isMobile ? mobileLastBall2 : lastBall2;
     const ball3 = isMobile ? mobileLastBall3 : lastBall3;
@@ -816,9 +1109,11 @@ function clearPanels() {
     const cartelaInicial = isMobile ? mobileCartelaInicialInput : cartelaInicialInput;
     const cartelaFinal = isMobile ? mobileCartelaFinalInput : cartelaFinalInput;
     const resultadoSoma = isMobile ? mobileResultadoSomaSpan : resultadoSomaSpan;
-
+    const headerElement = isMobile ? mobileLoadedCardsHeader : loadedCardsHeader; 
+    cartelaEmJogo = 0;
     loadedCardsListCurrent.innerHTML = `<p class="text-white text-center">Nenhuma cartela carregada.</p>`;
     prizeValues.innerHTML = '';
+    headerElement.textContent = `Nenhuma Cartela Carregada`;
     conferencePanelContainer.classList.remove('flex');
     conferencePanelContainer.classList.add('hidden');
     cardNumberElement.textContent = 'Aguardando...';
@@ -826,29 +1121,37 @@ function clearPanels() {
     cardGridElement.innerHTML = '';
     lastRound.textContent = '...';
     lastOrder.textContent = '...';
-    PrecoSerie.textContent = '.,..'
     ball1.textContent = '';
     ball2.textContent = '';
     ball3.textContent = '';
     
+    precoSerie.textContent = '';    
     cartelaRanges = [];
     loadedCards = [];
+    displayLoadedCards([]);
+    isFetchingCards = false;
+   
     bingoWinners.clear();
     ultimaBolaCantada = null;
     buscando_o_premio = '';
+    bolaBuscandoPremio = 0;
     buscando_a_linha = '';
     faixasDiv.innerHTML = '';
     totalSpan.textContent = '0';
+    cartelasEmJogo = 0;
     cartelaInicial.value = '';
     cartelaFinal.value = '';
     resultadoSoma.textContent = '0';
     if (isMobile) {
         mobileCartelasContent.classList.add('hidden');
         mobilePrizesContent.classList.add('hidden');
-        toggleCartelasButton.textContent = 'Apresentar Painel';
+        toggleCartelasButton.textContent = 'INCLUIR Cartelas';
         togglePrizesButton.textContent = 'Apresentar Prêmios';
     }    
-    displayPrizeInfo([{ buscando_o_premio: null }]);
+    displayPrizeInfo([{ buscando_o_premio: null }],[]);
+    iniciandoRodada = true;
+    startPromocionalTimer();     
+    seePromocoes = true;
 }
 
 function updateNumericPanel(bolasCantadas) {
@@ -856,7 +1159,7 @@ function updateNumericPanel(bolasCantadas) {
     const gridToUse = isMobile ? mobileNumberGrid : numberGrid;
 
     document.querySelectorAll(`#${gridToUse.id} > div`).forEach(div => {
-        div.classList.remove('text-green-800', 'text-red-700');
+        div.classList.remove('text-green-700', 'text-red-700');
         div.classList.add('text-gray-900');
     });
 
@@ -865,13 +1168,13 @@ function updateNumericPanel(bolasCantadas) {
             const numberDiv = gridToUse.querySelector(`#ball-${bola}`);
             if (numberDiv) {
                 numberDiv.classList.remove('text-gray-900');
-                numberDiv.classList.add('text-green-800');
+                numberDiv.classList.add('text-green-700');
             }
         });
         const lastBall = bolasCantadas[bolasCantadas.length - 1];
         const lastBallDiv = gridToUse.querySelector(`#ball-${lastBall}`);
         if (lastBallDiv) {
-            lastBallDiv.classList.remove('text-green-800');
+            lastBallDiv.classList.remove('text-green-700');
             lastBallDiv.classList.add('text-red-700');
         }
     }
@@ -912,15 +1215,53 @@ function displayLastThree(bolasData) {
     }
 }
 
-function displayPrizeInfo(buscandoData) {
+function displayPrizeInfo(buscandoData, premioData = null) {
     const isMobile = isMobileDevice();
     const prizeInfoContainerCurrent = isMobile ? mobilePrizeInfoContainer : prizeInfoContainer;
     
+    const cleanTextForComparison = (text) => {
+        if (!text) return "";
+        // Remove todos os espaços em branco (\s) globalmente (g) e converte para MAIÚSCULAS
+        return text.toString().replace(/\s/g, '').toUpperCase();
+    }
     prizeInfoContainerCurrent.innerHTML = '';
     const prizeItem = document.createElement('span');
     prizeItem.className = 'text-3xl text-gray-200 font-semibold';
-    const buscandoValue = buscandoData && buscandoData.length > 0 ? buscandoData[0].buscando_o_premio : null;
-    
+
+    let buscandoValue = buscandoData && buscandoData.length > 0 ? buscandoData[0].buscando_o_premio : null;
+    const linhasTaisLinhas = buscandoData[0]?.buscando_a_linha || '';
+    const qtdeLinhas = buscandoData[0]?.qtde_linha || '';
+
+    let prizeToFind = cleanTextForComparison(buscandoValue);
+
+    if (qtdeLinhas === 3 && buscandoValue === "L I N H A")  {
+        const linhasEmJogo = `L I N H A S: ( ${linhasTaisLinhas.toUpperCase()} )`  
+        buscandoValue = linhasEmJogo;
+        prizeToFind = '3LINHAS'
+    }
+    if (prizeToFind === 'FALTAUM') {
+       prizeToFind ='FALTA1';
+    }
+    // --- LÓGICA DE BUSCA DO PRÊMIO ---
+    let valorPremio = '';
+    let nomePremio = '';
+    if (premioData && premioData.length > 0 && prizeToFind) {
+        
+        // Loop FOR...OF para iterar por todos os prêmios
+        for (const item of premioData) {
+            // Normaliza o tipo de prêmio do item atual para comparação
+            const itemPrizeType =cleanTextForComparison(item.tipo_premio);
+            if (itemPrizeType === prizeToFind ) {
+                // Encontrado! Extrai os dados
+                nomePremio = item.tipo_premio;
+                valorPremio = item.valor; // Assumindo que 'valor' já está formatado como R$
+                const comValor = `${buscandoValue}  -  ${valorPremio}`  
+                buscandoValue = comValor;
+                break; // Sai do loop imediatamente, pois já encontramos o prêmio
+            }
+        }
+    }
+   
     if (!buscandoValue || buscandoValue.toString().trim().toLowerCase() === 'null' || buscandoValue.trim() === '') {
         prizeItem.innerHTML = '. . .';
     } else {
@@ -968,8 +1309,28 @@ function displayPrizeValues(premioData, topeData = null) {
         });
 
         validPrizes.forEach(premio => {
-            let prizeText = `${premio.tipo_premio}: ${premio.valor}`;
-            
+            let prizeText = `${premio.tipo_premio}: ${premio.valor}`;   
+            if (iniciandoRodada) {
+               if (premio.tipo_premio=== 'BINGO') {
+                  const valorLimpo = premio.valor
+                      .replace('R$', '')  // Remove o símbolo da moeda
+                      .replace(/\./g, '') // Remove o separador de milhares (ponto)
+                      .replace(',', '.')  // Troca a vírgula por ponto (separador decimal do JS)
+                      .trim();             // Remove espaços extras
+                  const valorNumerico = parseFloat(valorLimpo);
+                  if (valorNumerico > 0 )  {   
+                      if (mobilePrizesContent.classList.contains('hidden')) {
+                         seePromocoes = false; 
+                         hidePromocionalPanel();
+                         startPrizeHideTimer();
+                         mobilePrizesContent.classList.remove('hidden'); 
+                         togglePrizesButton.textContent = 'Ocultar Prêmios';
+                         togglePrizesButton.classList.remove('bg-green-800');
+                         togglePrizesButton.classList.add('bg-red-800'); 
+                      }
+                   }
+               }
+            }    
             if (topeData && topeData.length > 0) {
                 const currentTopeData = topeData[0];
                 if (premio.tipo_premio.includes('SUPER BINGO') && currentTopeData.bola_tope_sb) {
@@ -1084,8 +1445,18 @@ async function fetchDataFromCollections() {
 
 async function renderMainContent(data) {
     if (!data) return;
+    const { bolasData, buscandoData, premioData, promocionalData, rodadaData, confereData, topeData, premioInfo,parametrosInfo = {}  } = data;
 
-    const { bolasData, buscandoData, premioData, rodadaData, confereData, topeData } = data;
+    const rodadaState = rodadaData && rodadaData.length > 0 ? rodadaData[0].estado.trim() : null;
+     if (rodadaState === 'intervalo' && lastRodadaState !== 'intervalo') {
+        clearPanels();
+        lastRodadaState = rodadaState; // Atualiza o estado
+        return;
+    }
+    else if (rodadaState !== null) {
+  //   Atualiza o estado para que a próxima iteração saiba qual é o estado atual.
+         lastRodadaState = rodadaState;
+    }
     
     const bolasCantadas = bolasData && Array.isArray(bolasData) && bolasData.length > 0
         ? bolasData[0].bolas_cantadas : [];
@@ -1098,6 +1469,8 @@ async function renderMainContent(data) {
     if (premioBuscadoDaAPI !== buscando_o_premio.replace(/\s+/g, '').trim() || linhasAtivasDaAPI !== buscando_a_linha) {
         buscando_o_premio = premioBuscadoDaAPI;
         buscando_a_linha = linhasAtivasDaAPI;
+        
+        bolaBuscandoPremio = bolasCantadas.length
         if (cartelaRanges.length > 0) {
             fetchAndProcessCards();
         } else {
@@ -1110,26 +1483,72 @@ async function renderMainContent(data) {
             recalculateAndDisplayCards(bolasCantadas, premioBuscadoDaAPI, linhasAtivasDaAPI);
         }
     }
-  
+    
+    globalPromocionalData = promocionalData;
+//    displayPromocionalText(promocionalData); 
+
+    if (parametrosInfo) {
+         const nome_da_sala = parametrosInfo.nome_sala; 
+
+        if (nome_da_sala && salaTitleElement) {
+            salaTitleElement.textContent = nome_da_sala;
+        }
+        const rawVideoID = parametrosInfo.url_live || parametrosInfo.url_padrao || '';
+        const videoID = rawVideoID.split('&')[0];
+        video_local = parametrosInfo.video_local;
+        currentVideoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1`;
+        
+        if (abrirYoutubeBtn) {
+            // Converte o valor do banco (string 'false' ou boolean) para booleano seguro
+            const isLocal = String(video_local).toLowerCase() === 'true'; 
+            if (isLocal) {
+                abrirYoutubeBtn.classList.add('hidden');
+                if (youtubePanel && !youtubePanel.classList.contains('hidden')) {
+                    abrirYoutubeBtn.click(); 
+                }
+            } else {
+                abrirYoutubeBtn.classList.remove('hidden');
+            }
+        }
+    }
+    if (promocionalContainer) {
+        promocionalContainer.addEventListener('click', () => {
+            hidePromocionalPanel();
+            startPromocionalTimer();
+                 // Você pode adicionar um pequeno feedback visual ou log aki
+        });
+    }
+
+
     if (data.cardRanges) {
         cardRanges = data.cardRanges;
     }  
     updateNumericPanel(bolasCantadas);
     displayLastThree(bolasData?.[0]);
     displayConferencePanel(confereData, bolasCantadas);
-    
-    const rodadaState = rodadaData && rodadaData.length > 0 ? rodadaData[0].estado.trim() : null;
-    if (rodadaState === 'intervalo') {
-        clearPanels();
-        return;
+
+    if (premioInfo && typeof premioInfo.preco_da_serie === 'number') {
+        const preco = premioInfo.preco_da_serie;
+        ValorSerie = preco;
+        const formattedPreco = new Intl.NumberFormat('pt-BR', {
+            style: 'decimal',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(preco);
+        precoSerieElement.textContent = formattedPreco;
+        mobilePrecoSerieElement.textContent = formattedPreco;
+
+        // DEBUG: Confirme se o elemento está sendo encontrado
+        if (!precoSerieElement) console.error("Elemento 'preco-serie' não encontrado!");
+        if (!mobilePrecoSerieElement) console.error("Elemento 'mobile-preco-serie' não encontrado!");
     }
- 
+
     // NOVA CHAMADA: Exibe os períodos de cartelas
     if (data.cardRanges) {
         displayCardRanges(data.cardRanges);
     }
-   
-    displayPrizeInfo(buscandoData);
+
+    displayPrizeInfo(buscandoData, premioData);
     displayPrizeValues(premioData, topeData);
     checkTotalCards();
 }
@@ -1138,7 +1557,6 @@ async function init() {
     checkDeviceType();
     createNumberPanel();
     showMessage('Carregando dados...');
-
     try {
         const initialData = await fetchDataFromCollections();
         if (!initialData) {
@@ -1160,9 +1578,9 @@ async function init() {
             const preco = premioInfo.preco_da_serie;
             ValorSerie = preco;
             const formattedPreco = new Intl.NumberFormat('pt-BR', {
-               style: 'decimal',
-               minimumFractionDigits: 2,
-               maximumFractionDigits: 2
+                 style: 'decimal',
+                 minimumFractionDigits: 2,
+                 maximumFractionDigits: 2
             }).format(preco);
             precoSerieElement.textContent = formattedPreco;
             mobilePrecoSerieElement.textContent = formattedPreco;
@@ -1180,7 +1598,7 @@ async function init() {
         mobileCartelaInicialInput.min = 1;
         mobileCartelasContent.classList.add('hidden');
         mobilePrizesContent.classList.add('hidden');
-        toggleCartelasButton.textContent = 'Apresentar Painel';
+        toggleCartelasButton.textContent = 'INCLUIR Cartelas';
         togglePrizesButton.textContent = 'Apresentar Prêmios';
 
         loader.style.display = 'none';
@@ -1197,7 +1615,7 @@ function startHideTimer() {
     if (timeoutId) {
         clearTimeout(timeoutId);
     }
-
+    startPromocionalTimer();
     // Inicia um novo temporizador
     timeoutId = setTimeout(() => {
         const isMobile = isMobileDevice();
@@ -1207,9 +1625,13 @@ function startHideTimer() {
         if (cartelasContent) {
             cartelasContent.classList.add('hidden');
             if (toggleButton) {
-                toggleButton.textContent = 'Apresentar Painel';
+                toggleButton.textContent = 'INCLUIR Cartelas';
                 toggleButton.classList.remove('bg-red-800');
                 toggleButton.classList.add('bg-green-light');
+                if (cartelas_Em_Jogo === 0 && rodadaState === 'intervalo') {
+                   seePromocoes = true;
+                   startPromocionalTimer();
+                }
             }
         }
     }, secundsCardsoutId * 1000); // x segundos 8 1000
@@ -1221,6 +1643,11 @@ function startPrizeHideTimer() {
         clearTimeout(prizeTimeoutId);
     }
     // Inicia um novo temporizador
+    let Mutiplicador = 1000;
+    if (iniciandoRodada) {
+       Mutiplicador = 3000; 
+       iniciandoRodada = false;
+    } 
     prizeTimeoutId = setTimeout(() => {
         const isMobile = isMobileDevice();
         const prizesContent = isMobile ? mobilePrizesContent : document.getElementById('prizes-content'); // Ajuste o ID se necessário
@@ -1232,12 +1659,17 @@ function startPrizeHideTimer() {
                 toggleButton.textContent = 'Apresentar Prêmios';
                 toggleButton.classList.remove('bg-red-800'); // Ou a classe que define a cor padrão
                 toggleButton.classList.add('bg-green-800'); // Classe para a cor verde
+                if (cartelas_Em_Jogo === 0 && rodadaState === 'intervalo') {
+                   seePromocoes = true;
+                   startPromocionalTimer();
+                }
             }
         }
-    }, secundsPrizeTimeoutId * 1000); // x segundos * 1000
+    }, secundsPrizeTimeoutId * Mutiplicador); // x segundos * 1000 (Mutiplicador)
 }
 
 togglePrizesButton.addEventListener('click', () => {
+    startPromocionalTimer();
     mobilePrizesContent.classList.toggle('hidden');
     if (mobilePrizesContent.classList.contains('hidden')) {
         // Se o painel for ocultado, cancela qualquer temporizador em execução
@@ -1245,7 +1677,7 @@ togglePrizesButton.addEventListener('click', () => {
             clearTimeout(prizeTimeoutId);
         }
         togglePrizesButton.textContent = 'Apresentar Prêmios';
-       togglePrizesButton.classList.remove('bg-red-800'); // Ou a classe que define a cor padrão
+        togglePrizesButton.classList.remove('bg-red-800'); // Ou a classe que define a cor padrão
         togglePrizesButton.classList.add('bg-green-800');
     } else {
         // Se o painel for exibido, inicia o temporizador
@@ -1253,12 +1685,12 @@ togglePrizesButton.addEventListener('click', () => {
         togglePrizesButton.textContent = 'Ocultar Prêmios';
         togglePrizesButton.classList.remove('bg-green-800');
         togglePrizesButton.classList.add('bg-red-800'); // Ou a classe que define a cor padrã//o
-//        playBingoSound()
     }
 });
 
 if (toggleCartelasButton && mobileCartelasContent) {
     toggleCartelasButton.addEventListener('click', () => {
+        startPromocionalTimer();
         const isMobile = isMobileDevice();
         const cartelasContent = isMobile ? mobileCartelasContent : document.getElementById('cartelas-content');
         
@@ -1270,7 +1702,7 @@ if (toggleCartelasButton && mobileCartelasContent) {
             if (timeoutId) {
                 clearTimeout(timeoutId);
             }
-            toggleCartelasButton.textContent = 'Apresentar Painel';
+            toggleCartelasButton.textContent = 'INCLUIR Cartelas';
             toggleCartelasButton.classList.remove('bg-red-800');
             toggleCartelasButton.classList.add('bg-green-light');
         } else {
@@ -1310,6 +1742,9 @@ function connectWebSocket() {
             reconnectInterval = null;
         }
         requestWakeLock(); // <--- Adicione esta linha
+        const initialRequest = { action: "GET_INITIAL_STATE" };
+        ws.send(JSON.stringify(initialRequest));
+        console.log("Conexão aberta. Solicitando estado inicial ao servidor.");
     };
     ws.onmessage = (event) => {
         try {
@@ -1338,27 +1773,42 @@ function connectWebSocket() {
 // Adiciona o ouvinte de evento para redimensionamento da janela
 window.addEventListener('resize', checkDeviceType);
 
-//document.addEventListener('DOMContentLoaded', init);
 document.addEventListener('DOMContentLoaded', () => {
-    // Trava a orientação da tela em retrato
-    if (screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock('portrait').catch((err) => {
-            console.error("Erro ao travar a orientação da tela:", err);
-        });
-    }
-    
+    const isMobileTest = isMobileDevice();
+    if (isMobileTest) {
+        if (screen.orientation && screen.orientation.lock) {
+            screen.orientation.lock('portrait').catch((err) => {
+                console.error("Erro ao travar a orientação da tela:", err);
+            });
+        }
+    }   
  
 // Referencia os painéis e botões
-    const youtubePanel = document.getElementById('youtube-panel');
     const mobilePanelsContainer = document.getElementById('mobile-panels-container');
-    const abrirYoutubeBtn = document.getElementById('abrir-youtube-btn');
-    const youtubePlaceholder = document.getElementById('youtube-placeholder');
-    const youtubeIframe = document.getElementById('youtube-iframe');
-
     if (abrirYoutubeBtn && youtubePanel && mobilePanelsContainer && youtubePlaceholder) {
         abrirYoutubeBtn.addEventListener('click', () => {
-            const videoUrl = `https://www.youtube.com/embed/${YOUTUBE_VIDEO_ID}`;
+            startPromocionalTimer();
+   
+            const videoToLoad = currentVideoUrl; 
 
+            if (!videoToLoad) {
+                alert('Nenhuma URL de vídeo LIVE ou PADRÃO configurada.');
+                return;
+            }
+        
+            // Define a URL do iframe
+            let videoUrl;
+        
+            // 1. Tenta identificar se já é um link de embed ou uma URL completa
+            if (videoToLoad.includes('youtube.com/embed/')) {
+                videoUrl = videoToLoad; 
+            } else {
+                // 2. Assume que é o ID do vídeo (ou link curto) e cria o link de embed
+                // Adicionamos o autoplay=1 para iniciar o vídeo
+                const videoID = videoToLoad.split('&')[0];
+
+                videoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1`;
+            }
             // Alterna a visibilidade do painel do YouTube
             youtubePanel.classList.toggle('hidden');
             
@@ -1373,12 +1823,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isYoutubePanelVisible) {
                 // Se o painel for exibido, altere o texto e inicie o vídeo
                 abrirYoutubeBtn.textContent = 'Fechar YouTube';
-                youtubeIframe.src =videoUrl;
+                youtubeIframe.src =currentVideoUrl;
+                 if (!telaFull) { 
+                    goFullscreen(); 
+                 } 
             } else {
                 // Se o painel for ocultado, altere o texto e pare o vídeo
                 abrirYoutubeBtn.textContent = 'Abrir YouTube';
                 youtubeIframe.src = ''; // Define o src vazio para parar o vídeo
             }
+            updatePromocionalPanelPosition();
         });
     }
 
@@ -1388,6 +1842,6 @@ document.addEventListener('DOMContentLoaded', () => {
     adicionarBtn = document.getElementById('adicionar-cartela');
     resultadoSpan = document.getElementById('resultado');
     cardRangeValidation = document.getElementById('card-range-validation');
-    // Chama a sua função de inicialização
+   // Chama a sua função de inicialização
     init();
 });
