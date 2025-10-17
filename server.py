@@ -253,7 +253,7 @@ def fetch_data_from_collections():
         premio_raw_data = list(db.premio.find({}))
         rodada_data = list(db.rodada.find({}))
         confere_data = list(db.confere.find({}))
-        parametros_info = list(db.parametros.find({}))
+        parametros_data = list(db.parametros.find({}))
         max_card_result = list(db.cartelas.find({}, {'cartao': 1, '_id': 0}).sort('cartao', -1).limit(1))
 
         # CONVERTE ObjectId para string para evitar erro 500
@@ -274,7 +274,7 @@ def fetch_data_from_collections():
         premio_info = {}
         tope_data = []
         card_ranges = []
-        parametros_info = parametros_data[0] if parametros_data else {}
+        parametros_data = parametros_data[0] if parametros_data else {}
         
         promocional_collection = db.get_collection('promocional')
         # Limita a busca a 1 documento, assume que o texto promo está em um único documento
@@ -333,7 +333,7 @@ def fetch_data_from_collections():
             'topeData': tope_data,
             'cardRanges': card_ranges,
             'promocionalData': promocional_data,
-            'parametrosInfo': parametros_info    
+            'parametrosInfo': parametros_data    
         }
 
     except Exception as e:
