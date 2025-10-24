@@ -20,7 +20,6 @@ const lastBall1 = document.getElementById('last-ball-1');
 const lastBall2 = document.getElementById('last-ball-2');
 const lastBall3 = document.getElementById('last-ball-3');
 
-// ... (após mobileLastBall3, etc.) ...
 const youtubePanel = document.getElementById('youtube-panel'); // Já deve existir
 const youtubeIframe = document.getElementById('youtube-iframe'); // Já deve existir
 const abrirYoutubeBtn = document.getElementById('abrir-youtube-btn'); // Já deve existir
@@ -88,7 +87,6 @@ const cardRangesDisplay = document.getElementById('card-ranges-display');
 
 let lastRodadaState = null;
 
-// Sua nova variável global
 let ValorSerie = 0;
 
 // Variável global para armazenar o ID do temporizador.

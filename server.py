@@ -284,7 +284,6 @@ def fetch_data_from_collections():
         parametros_data = list(db.parametros.find({}))
         max_card_result = list(db.cartelas.find({}, {'cartao': 1, '_id': 0}).sort('cartao', -1).limit(1))
 
-       # NEW: Busca dados de 'melhores' no MongoDB (limitado a 25, ordenado por 'numeros' - menor é melhor)
         melhores_collection = db.get_collection(MELHORES_COLLECTION)
         melhores_cursor = melhores_collection.find({}, {'_id': 0}).sort('id_posicao', 1).limit(25)
         #melhores_cursor = melhores_collection.find({}, {'_id': 0}).sort('numeros', 1).limit(25)
@@ -307,7 +306,6 @@ def fetch_data_from_collections():
         melhores_data_processed = []
         if melhores_data_raw:
             for doc in melhores_data_raw:
-                # O campo 'numeros' (lista) é formatado para string (ex: "1, 5, 22")
                 numeros_faltantes_str = ', '.join(map(str, doc.get('numeros', [])))
                 melhores_data_processed.append({
                     'cartela': doc.get('cartela', 0),
