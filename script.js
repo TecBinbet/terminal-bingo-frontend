@@ -5,6 +5,9 @@ const loader = document.getElementById('loader');
 const numberGrid = document.getElementById('number-grid');
 const mobileNumberGrid = document.getElementById('mobile-number-grid');
 
+const estatisticasBody = document.getElementById('estatisticas-body');
+const loadingStats = document.getElementById('loading-stats');
+
 const prizeInfoContainer = document.getElementById('prize-info');
 const prizeValuesContainer = document.getElementById('prize-values');
 const mobilePrizeInfoContainer = document.getElementById('mobile-prize-info');
@@ -1062,12 +1065,10 @@ function displayLoadedCards(bolasCantadas) {
                     numbersContainer.appendChild(numberSpan);
                 });
             }
-
             cardDiv.appendChild(numbersContainer);
             fragment.appendChild(cardDiv);
         });
     }
-
     cardsList.appendChild(fragment);
 }
 
@@ -1291,7 +1292,6 @@ function displayPrizeValues(premioData, topeData = null) {
             return;
         }
 
-
         const prizeOrder = ['QUADRA', 'LINHA', '3 LINHAS', 'FALTA 1', 'BINGO', 'DUPLO BINGO', 'TRIPLO BINGO', 'SUPER BINGO', 'ACUMULADO'];
 
         validPrizes.sort((a, b) => {
@@ -1307,7 +1307,6 @@ function displayPrizeValues(premioData, topeData = null) {
             
             return indexA - indexB;
         });
-
         validPrizes.forEach(premio => {
             let prizeText = `${premio.tipo_premio}: ${premio.valor}`;   
             if (iniciandoRodada) {
@@ -1339,7 +1338,6 @@ function displayPrizeValues(premioData, topeData = null) {
                     prizeText += ` (TOPE: ${currentTopeData.bola_tope_ac})`;
                 }
             }
-
             const prizeItem = document.createElement('div');
             prizeItem.className = 'text-lg text-white font-medium text-center';
             prizeItem.textContent = prizeText;
@@ -1441,6 +1439,76 @@ async function fetchDataFromCollections() {
         console.error("Erro ao buscar dados iniciais:", error);
         return null;
     }
+}
+
+// Função para renderizar os dados de "Melhores"
+function renderMelhores(melhoresData) {
+    estatisticasBody.innerHTML = ''; 
+
+    if (!melhoresData || melhoresData.length === 0) {
+        estatisticasBody.innerHTML = '<p class="text-center text-gray-500 mt-6 text-xs">Nenhuma cartela no topo.</p>';
+        return;
+    }
+	
+    melhoresData.forEach(item => {
+        let posicaoWidth = '13px'; // Largura padrão se 'posicao' não for vazio
+        let haGanhador = false;
+        // Verifica se 'posicao' é uma string vazia ("") ou nula.
+        if (!item.posicao || item.posicao === "") {
+            posicaoWidth = '4px'; 
+        }
+
+        // 2. Constrói a string da classe
+        // Usa template literals (crase `) para injetar a variável
+        const gridClasses = `grid-cols-[23px_${posicaoWidth}_1fr_53px]`;
+
+        const row = document.createElement('div');
+        row.className = `grid ${gridClasses} text-[8px] leading-none text-white p-0.5 rounded hover:bg-gray-800`;
+        
+        // 1. Cartela
+        const cartela = document.createElement('span');
+        cartela.className = 'text-center font-bold text-yellow-600';
+        cartela.textContent = item.cartela;
+
+        // 2. Posição
+        const posicao = document.createElement('span');
+        posicao.className = 'text-center';
+        posicao.textContent = item.posicao;
+        if (posicaoWidth === '0px') {
+            posicao.classList.add('hidden');
+        }
+
+        // 3. Números Faltantes (A chave é 'numeros_faltantes')
+        let winnerPremio = ''; 
+        if (item.premio && item.premio !== null  && item.premio !== "null") {
+           winnerPremio = item.premio;
+           haGanhador = true; 
+        }
+      
+        const numerosFaltantes = document.createElement('span');
+        if  (haGanhador) {
+            numerosFaltantes.className = 'truncate text-[10px] text-yellow-300 font-bold';
+        } else {
+            numerosFaltantes.className = 'truncate text-[8px] text-green-500 font-medium';
+        } 
+        numerosFaltantes.textContent = `${item.numeros_faltantes} ${winnerPremio}`; 
+
+        // 4. Nome (Player)
+        const nome = document.createElement('span');
+        if  (haGanhador) {
+           nome.className = 'truncate text-[9px] text-yellow-300 font-bold';     
+        } else {   
+           nome.className = 'truncate text-gray-300';
+        }
+        nome.textContent = item.nome;
+
+        row.appendChild(cartela);
+        row.appendChild(posicao);
+        row.appendChild(numerosFaltantes);
+        row.appendChild(nome);
+        
+        estatisticasBody.appendChild(row);
+    });
 }
 
 async function renderMainContent(data) {
@@ -1563,6 +1631,21 @@ async function init() {
             showMessage('Não foi possível conectar ao servidor. Verifique se o backend está em execução.', 'error');
             return;
         }
+
+// NEW: Busca e renderiza os dados iniciais de "Melhores"
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/melhores`);
+        if (response.ok) {
+            const melhoresData = await response.json();
+            renderMelhores(melhoresData);
+        } else {
+            console.error('Erro ao buscar dados iniciais de melhores.');
+            renderMelhores([]);
+        }
+    } catch (error) {
+        console.error('Erro ao buscar dados iniciais de melhores:', error);
+        renderMelhores([]);
+    }
 
         const versionResponse = await fetch(`${API_BASE_URL}/api/version`);
         const versionData = await versionResponse.json();
@@ -1746,16 +1829,46 @@ function connectWebSocket() {
         ws.send(JSON.stringify(initialRequest));
         console.log("Conexão aberta. Solicitando estado inicial ao servidor.");
     };
-    ws.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'UPDATE') {
-                renderMainContent(data);
+//    ws.onmessage = (event) => {
+//        try {
+//            const melhoresData = payload.melhoresData; 
+//            const data = JSON.parse(event.data);
+//            if (data.type === 'UPDATE') {
+//                renderMainContent(data);
+//            }
+//            if (melhoresData) {
+//                renderMelhores(melhoresData);
+//             }
+//        } catch (e) {
+//            console.error('Falha ao processar mensagem do WebSocket:', e);
+//        }
+//    };
+ws.onmessage = (event) => {
+    try {
+        // 1. CRIA O OBJETO 'payload' a partir do texto (event.data)
+        const payload = JSON.parse(event.data);
+        
+        // 2. EXTRAI AS PROPRIEDADES (agora 'payload' existe!)
+        const melhoresData = payload.melhoresData;
+        
+        // O restante do seu código pode continuar usando 'payload.data' ou 'payload'
+        // Eu renomeei 'data' para 'mainData' para evitar confusão.
+        const mainData = payload.data; 
+
+        if (payload.type === 'UPDATE') {
+            // Se o payload for 'UPDATE', renderiza o conteúdo principal
+            renderMainContent(payload); 
+            
+            // E se houver dados de melhores, renderiza-os
+            if (melhoresData) {
+                renderMelhores(melhoresData);
             }
-        } catch (e) {
-            console.error('Falha ao processar mensagem do WebSocket:', e);
         }
-    };
+    } catch (e) {
+        console.error('Falha ao processar mensagem do WebSocket:', e);
+    }
+};
+
     ws.onclose = (event) => {
         releaseWakeLock(); // <--- Adicione esta linha
         if (!reconnectInterval) {

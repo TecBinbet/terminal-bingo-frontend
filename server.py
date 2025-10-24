@@ -33,6 +33,7 @@ is_local_mode = os.path.exists(LOCAL_PATH)
 # Prefer env vars in production; fall back to current defaults
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://rivaldosp:TecBin24@tecbinon.3zsz7md.mongodb.net/")
 DB_NAME = os.environ.get("DB_NAME", "dados_do_sorteio")
+MELHORES_COLLECTION = "melhores"
 
 # Configurações do servidor
 app = Flask(__name__)
@@ -44,6 +45,7 @@ db = None
 
 # Evitar recarregar cartelas continuamente
 UltAlt_Cartelas = ""
+melhores_data = []
 cartelas_data = {}  # <-- AQUI: Inicialize a variável
 try:
     if is_local_mode: 
@@ -65,6 +67,7 @@ local_data = {}
 mongo_data = {}
 intervalo_busca_local = 0.4 # segundos
 stop_flag = threading.Event()
+
 
 # Função para converter strings numéricas em inteiros
 def parse_numeric_fields(data):
@@ -154,6 +157,16 @@ def fetch_data_from_local_files():
 
         with open(os.path.join(LOCAL_PATH, 'promocional.json'), 'r', encoding='utf-8') as f:
             promocional_data = json.load(f)
+
+        # NEW: LER DADOS DE MELHORES.JSON
+        melhores_data_raw = []
+        try:
+            with open(os.path.join(LOCAL_PATH, 'melhores.json'), 'r', encoding='utf-8') as f:
+                melhores_data_raw = json.load(f)
+        except FileNotFoundError:
+            print("Aviso: Arquivo 'melhores.json' não encontrado localmente.")
+        except Exception as e:
+            print(f"Erro ao carregar 'melhores.json': {e}")
         
         # Verifica se o arquivo cartelas.json foi alterado e o carrega se necessário
         current_cartelas_mtime = os.path.getmtime(os.path.join(LOCAL_PATH, 'cartelas.json'))
@@ -161,6 +174,20 @@ def fetch_data_from_local_files():
             UltAlt_Cartelas = current_cartelas_mtime
             with open(os.path.join(LOCAL_PATH, 'cartelas.json'), 'r', encoding='utf-8') as f:
                 cartelas_data = json.load(f)
+
+# Processar dados de Melhores
+        melhores_data_processed = []
+        if melhores_data_raw:
+            for doc in melhores_data_raw:
+                # O campo 'numeros' (lista) é formatado para string (ex: "1, 5, 22")
+                numeros_faltantes_str = ', '.join(map(str, doc.get('numeros', [])))
+                melhores_data_processed.append({
+                    'cartela': doc.get('cartela', 0),
+                    'posicao': doc.get('posicao', 'N/A'),
+                    'nome': doc.get('nome', 'Anônimo'),
+                    'premio': doc.get('premio', 'N/A'),
+                    'numeros_faltantes': numeros_faltantes_str # Chave que o frontend espera
+                })
 
         premio_data = []
         premio_info = {}
@@ -221,7 +248,8 @@ def fetch_data_from_local_files():
             'topeData': tope_data,
             'cardRanges': card_ranges,
             'promocionalData': promocional_data,
-            'parametrosInfo': parametros # usa o dicionário real
+            'parametrosInfo': parametros, # usa o dicionário real 
+            'melhoresData': melhores_data_processed # <--- NEW: Retorna os dados processados
         }
 
     except Exception as e:
@@ -256,6 +284,12 @@ def fetch_data_from_collections():
         parametros_data = list(db.parametros.find({}))
         max_card_result = list(db.cartelas.find({}, {'cartao': 1, '_id': 0}).sort('cartao', -1).limit(1))
 
+       # NEW: Busca dados de 'melhores' no MongoDB (limitado a 25, ordenado por 'numeros' - menor é melhor)
+        melhores_collection = db.get_collection(MELHORES_COLLECTION)
+        melhores_cursor = melhores_collection.find({}, {'_id': 0}).sort('id_posicao', 1).limit(25)
+        #melhores_cursor = melhores_collection.find({}, {'_id': 0}).sort('numeros', 1).limit(25)
+        melhores_data_raw = [doc for doc in melhores_cursor]
+
         # CONVERTE ObjectId para string para evitar erro 500
         for doc in bolas_data:
             doc['_id'] = str(doc['_id'])
@@ -269,6 +303,19 @@ def fetch_data_from_collections():
             doc['_id'] = str(doc['_id'])
         for doc in parametros_data:
             doc['_id'] = str(doc['_id'])
+        
+        melhores_data_processed = []
+        if melhores_data_raw:
+            for doc in melhores_data_raw:
+                # O campo 'numeros' (lista) é formatado para string (ex: "1, 5, 22")
+                numeros_faltantes_str = ', '.join(map(str, doc.get('numeros', [])))
+                melhores_data_processed.append({
+                    'cartela': doc.get('cartela', 0),
+                    'posicao': doc.get('posicao', 'N/A'),
+                    'nome': doc.get('nome', 'Anônimo'),
+                    'premio': doc.get('premio', 'N/A'),
+                    'numeros_faltantes': numeros_faltantes_str
+                })
 
         premio_data = []
         premio_info = {}
@@ -333,7 +380,8 @@ def fetch_data_from_collections():
             'topeData': tope_data,
             'cardRanges': card_ranges,
             'promocionalData': promocional_data,
-            'parametrosInfo': parametros_data    
+            'parametrosInfo': parametros_data,
+            'melhoresData': melhores_data_processed    # <--- NOVO: Retorna os dados processados    
         }
 
     except Exception as e:
@@ -452,6 +500,18 @@ def initial_data():
 @app.route('/api/version')
 def get_version():
     return jsonify({'version': VERSION})
+
+# BUSCA MELHORES
+@app.route('/api/melhores', methods=['GET'])
+def get_melhores():
+    # Esta rota usará as funções de fetch existentes, que agora incluem 'melhoresData'
+    try:
+        data = fetch_data_from_local_files() if is_local_mode else fetch_data_from_collections()
+        # Retorna apenas a chave 'melhoresData'
+        return jsonify(data.get('melhoresData', []))
+    except Exception as e:
+        print(f"Erro ao buscar dados de melhores (API): {e}")
+        return jsonify([]), 500
 
 @app.route('/health')
 def health_check():
