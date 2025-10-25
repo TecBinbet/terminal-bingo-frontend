@@ -6,6 +6,8 @@ const numberGrid = document.getElementById('number-grid');
 const mobileNumberGrid = document.getElementById('mobile-number-grid');
 
 const estatisticasBody = document.getElementById('estatisticas-body');
+const estatisticasPanel = document.getElementById('estatisticas-panel');
+
 const loadingStats = document.getElementById('loading-stats');
 
 const prizeInfoContainer = document.getElementById('prize-info');
@@ -20,9 +22,13 @@ const lastBall1 = document.getElementById('last-ball-1');
 const lastBall2 = document.getElementById('last-ball-2');
 const lastBall3 = document.getElementById('last-ball-3');
 
-const youtubePanel = document.getElementById('youtube-panel'); // Já deve existir
-const youtubeIframe = document.getElementById('youtube-iframe'); // Já deve existir
-const abrirYoutubeBtn = document.getElementById('abrir-youtube-btn'); // Já deve existir
+const digitalBolaPanel = document.getElementById('digital-bola-panel'); 
+const bolaDigitalElement = document.getElementById('bola-digital');
+let tipoDoSorteio = "";
+
+const youtubePanel = document.getElementById('youtube-panel'); 
+const youtubeIframe = document.getElementById('youtube-iframe');
+const abrirYoutubeBtn = document.getElementById('abrir-youtube-btn');
 
 //
 let cartelasEmJogo = 0;
@@ -690,6 +696,7 @@ async function fetchAndProcessCards() {
             loadedCards = [];
             displayLoadedCards([]);
             isFetchingCards = false;
+            updateDigitalBola("--");
             return;
         }
 
@@ -818,7 +825,7 @@ playBingoSound();
             let premioEncontrado = null;
             const xBolasCantadas =  bolasCantadas.length; 
             if (premioBuscado.includes('DUPLOBINGO') && count.geral === 15 && xBolasCantadas !== bolaBuscandoPremio) {
- console.error(' houve alteração ' ,bolaBuscandoPremio); // aquix 
+ console.error(' houve alteração ' ,bolaBuscandoPremio);  
                 premioEncontrado = 'DUPLO BINGO';
                 showPremiadoGif('duplobingo');
                 playPremiadoSound(duplobingoSound);              
@@ -976,6 +983,7 @@ function displayLoadedCards(bolasCantadas) {
     const totalCards = loadedCards.length;
     const formattedCount = new Intl.NumberFormat('pt-BR').format(cartelasEmJogo);
     if (headerElement) {
+        headerElement.className = 'text-center text-sm text-yellow-500 font-bold mb-0'
         headerElement.textContent = `Cartelas Carregadas = ${formattedCount}`;
     }
  
@@ -983,9 +991,9 @@ function displayLoadedCards(bolasCantadas) {
     
     const isLinePrize = buscando_o_premio.includes('QUADRA') || buscando_o_premio.includes('LINHA');
     const isMultiLinePrize = isLinePrize && !!buscando_a_linha;
-
+// aquix
     const headerDiv = document.createElement('div');
-    headerDiv.className = 'flex justify-between w-full p-2 bg-gray-800 rounded-t-lg text-gray-300 font-bold mb-1';
+    headerDiv.className = 'flex justify-between w-full p-0 bg-gray-800 rounded-t-lg text-sm text-gray-400 font-bold mb-0';
     
     let headerText = 'Cartelas com Maior Pontuação';
     if (isMultiLinePrize) {
@@ -995,7 +1003,6 @@ function displayLoadedCards(bolasCantadas) {
     } else {
         headerText = 'Números Faltantes (Cartela)';
     }
-
     headerDiv.innerHTML = `
         <span class="w-1/4">Cartela</span>
         <span class="w-3/4 text-right">${headerText}</span>
@@ -1019,7 +1026,7 @@ function displayLoadedCards(bolasCantadas) {
             const formattedCardNumber = String(card.cartao);
             
             const cardDiv = document.createElement('div');
-            cardDiv.className = 'flex h-8 w-full p-0 bg-transparent rounded-lg text-white font-medium mb-0';
+            cardDiv.className = 'flex h-6 w-full p-0 bg-transparent rounded-lg text-white font-medium mb-0';
             cardDiv.setAttribute('data-card-number', card.cartao);
             
             if (isLinePrize) {
@@ -1027,8 +1034,8 @@ function displayLoadedCards(bolasCantadas) {
             }
 
             const cardLabelHtml = isLinePrize
-                ? `<div class="flex-shrink-0 flex gap-1"><span class="w-14 p-2 bg-gray-700 rounded-lg text-center font-bold">${formattedCardNumber}</span><span class="w-10 p-2 bg-gray-800 rounded-lg text-center font-bold">${card.linhaId}</span></div>`
-                : `<div class="flex-shrink-0 p-2 bg-gray-700 rounded-lg text-center font-bold w-14"><span>${formattedCardNumber}</span></div>`;
+                ? `<div class="flex-shrink-0 flex gap-1"><span class="w-14 p-0 bg-gray-700 rounded-lg text-center font-bold flex items-center justify-center text-sm gap-y-0 ">${formattedCardNumber}</span><span class="w-10 p-0 bg-gray-800 rounded-lg text-center font-bold  flex items-center justify-center">${card.linhaId}</span></div>`
+                : `<div class="flex-shrink-0 p-0 bg-gray-700 rounded-lg text-center font-bold  flex items-center justify-center text-sm gap-y-0 w-14"><span>${formattedCardNumber}</span></div>`;
 
             cardDiv.innerHTML = cardLabelHtml;
 
@@ -1043,7 +1050,7 @@ function displayLoadedCards(bolasCantadas) {
                 numbersContainer.appendChild(premioSpan);
                 numbersContainer.classList.add('items-center', 'justify-center');
             } else {
-               numbersContainer.className = 'flex-1 ml-2 p-0 bg-transparent rounded-lg flex h-8 flex-wrap gap-1 justify-start';
+               numbersContainer.className = 'flex-1 ml-2 p-0 bg-transparent rounded-lg flex h-5 gap-x-1 gap-y-0 justify-start';
  
                const missingNumbers = card.missingNumbers || [];
                 
@@ -1057,7 +1064,7 @@ function displayLoadedCards(bolasCantadas) {
                         bgColorClass = 'bg-orange-700';
                     }
                     
-                    const numberClass = `p-4 rounded-lg text-white font-bold ${bgColorClass} text-sm w-8 h-6 flex items-center justify-center flex-shrink-0`;
+                    const numberClass = `py-3 px-2 rounded-lg text-white font-bold ${bgColorClass} text-sm w-8 h-5 flex items-center justify-center flex-shrink-0`;
                     numberSpan.className = numberClass;
                     numberSpan.textContent = num;
                     numbersContainer.appendChild(numberSpan);
@@ -1124,6 +1131,8 @@ function clearPanels() {
     ball2.textContent = '';
     ball3.textContent = '';
     
+    updateDigitalBola("--");
+
     precoSerie.textContent = '';    
     cartelaRanges = [];
     loadedCards = [];
@@ -1192,7 +1201,6 @@ function displayLastThree(bolasData) {
     if (bolasData && typeof bolasData === 'object' && Array.isArray(bolasData.bolas_cantadas)) {
         const bolasCantadas = bolasData.bolas_cantadas;
         const lastThree = bolasCantadas.slice(-3).reverse();
-
         lastRound.textContent = bolasData.rodada || 'N/A';
         lastOrder.textContent = bolasData.ordem === 0 || bolasData.ordem ? bolasData.ordem : '0';
 
@@ -1442,8 +1450,11 @@ async function fetchDataFromCollections() {
 // Função para renderizar os dados de "Melhores"
 function renderMelhores(melhoresData) {
     estatisticasBody.innerHTML = ''; 
-
     if (!melhoresData || melhoresData.length === 0) {
+        estatisticasBody.innerHTML = '<p class="text-center text-gray-500 mt-6 text-xs">Nenhuma cartela no topo.</p>';
+        return;
+    }
+    if (melhoresData[0].cartela === "null") {
         estatisticasBody.innerHTML = '<p class="text-center text-gray-500 mt-6 text-xs">Nenhuma cartela no topo.</p>';
         return;
     }
@@ -1509,6 +1520,58 @@ function renderMelhores(melhoresData) {
     });
 }
 
+// Função para mapear o número da bola à cor (padrão de bingo)
+function getBallColorClass(numero) {
+    if (numero >= 1 && numero <= 18) return 'bg-blue-600 border-4 border-blue-400';
+    if (numero >= 19 && numero <= 36) return 'bg-red-600 border-4 border-red-400';
+    if (numero >= 37 && numero <= 54) return 'bg-purple-600 border-4 border-purple-400';
+    if (numero >= 55 && numero <= 72) return 'bg-green-600 border-4 border-green-400';
+    if (numero >= 73 && numero <= 90) return 'bg-yellow-600 border-4 border-yellow-400';
+    return 'bg-gray-700 border-4 border-gray-400'; // Cor padrão
+}
+
+function updateDigitalBola(numeroBola) {
+    if (!bolaDigitalElement) return;
+    
+    const allBgColors = [
+        'bg-gray-700', 'bg-blue-600', 'bg-red-600', 
+        'bg-purple-600', 'bg-green-600', 'bg-yellow-600'
+    ];
+    
+    const allBorderColors = [
+        'border-gray-400', 'border-blue-400', 'border-red-400', 
+        'border-purple-400', 'border-green-400', 'border-yellow-400'
+    ];
+
+    const corClasses = getBallColorClass(numeroBola);
+    
+    // Remove todas as cores antigas (necessário para a mudança de cor)
+
+    bolaDigitalElement.classList.remove(...allBgColors);
+    bolaDigitalElement.classList.remove(...allBorderColors);   
+ //   bolaDigitalElement.className = bolaDigitalElement.className.replace(/bg-[\w-]+ border-[\w-]+/g, '');
+
+    // Adiciona o novo número e as novas classes de cor
+    bolaDigitalElement.textContent = numeroBola;
+    bolaDigitalElement.classList.add(...corClasses.split(' '));
+    
+    // Opcional: Adicionar uma classe de animação de contorno se necessário
+    bolaDigitalElement.classList.add('animate-pulsing-border'); 
+}
+
+function updateEstatisticasPanelWidth(tipoSorteio) {
+    const classDigital = 'w-3/5';
+    const classPadrao = 'w-2/4';
+
+    estatisticasPanel.classList.remove(classDigital, classPadrao);
+
+    if (tipoSorteio === "digital") {
+        estatisticasPanel.classList.add(classDigital);
+    } else {
+        estatisticasPanel.classList.add(classPadrao);
+    }
+}
+
 async function renderMainContent(data) {
     if (!data) return;
     const { bolasData, buscandoData, premioData, promocionalData, rodadaData, confereData, topeData, premioInfo,parametrosInfo = {}  } = data;
@@ -1527,10 +1590,15 @@ async function renderMainContent(data) {
     const bolasCantadas = bolasData && Array.isArray(bolasData) && bolasData.length > 0
         ? bolasData[0].bolas_cantadas : [];
     
-    const ultimaBolaDaLista = bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : null;
+    const proximaBola = bolasData[0].proxima_bola ? bolasData[0].proxima_bola : "--" ; 
 
+    const ultimaBolaDaLista = bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : null;
     const premioBuscadoDaAPI = buscandoData[0]?.buscando_o_premio.replace(/\s+/g, '').trim() || '';
     const linhasAtivasDaAPI = buscandoData[0]?.buscando_a_linha || '';
+
+    if (tipoDoSorteio === 'digital') {
+       updateDigitalBola(proximaBola);
+    }
 
     if (premioBuscadoDaAPI !== buscando_o_premio.replace(/\s+/g, '').trim() || linhasAtivasDaAPI !== buscando_a_linha) {
         buscando_o_premio = premioBuscadoDaAPI;
@@ -1559,20 +1627,31 @@ async function renderMainContent(data) {
         if (nome_da_sala && salaTitleElement) {
             salaTitleElement.textContent = nome_da_sala;
         }
+        const tipoSorteio = parametrosInfo.tipo_sorteio;
         const rawVideoID = parametrosInfo.url_live || parametrosInfo.url_padrao || '';
         const videoID = rawVideoID.split('&')[0];
         video_local = parametrosInfo.video_local;
         currentVideoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1`;
-        
+        tipoDoSorteio = tipoSorteio;
+    
         if (abrirYoutubeBtn) {
+
             // Converte o valor do banco (string 'false' ou boolean) para booleano seguro
             const isLocal = String(video_local).toLowerCase() === 'true'; 
-            if (isLocal) {
+            updateEstatisticasPanelWidth(tipoSorteio);
+
+            if (isLocal || tipoSorteio === "digital") {
                 abrirYoutubeBtn.classList.add('hidden');
                 if (youtubePanel && !youtubePanel.classList.contains('hidden')) {
                     abrirYoutubeBtn.click(); 
-                }
+                }  
+                if ( tipoSorteio === "digital") {
+                   digitalBolaPanel.classList.remove('hidden');
+                }  
             } else {
+                if ( tipoSorteio !== "digital") {
+                   digitalBolaPanel.classList.add('hidden');
+                }  
                 abrirYoutubeBtn.classList.remove('hidden');
             }
         }
@@ -1843,14 +1922,10 @@ function connectWebSocket() {
 //    };
 ws.onmessage = (event) => {
     try {
-        // 1. CRIA O OBJETO 'payload' a partir do texto (event.data)
         const payload = JSON.parse(event.data);
         
-        // 2. EXTRAI AS PROPRIEDADES (agora 'payload' existe!)
         const melhoresData = payload.melhoresData;
         
-        // O restante do seu código pode continuar usando 'payload.data' ou 'payload'
-        // Eu renomeei 'data' para 'mainData' para evitar confusão.
         const mainData = payload.data; 
 
         if (payload.type === 'UPDATE') {

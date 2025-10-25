@@ -286,7 +286,6 @@ def fetch_data_from_collections():
 
         melhores_collection = db.get_collection(MELHORES_COLLECTION)
         melhores_cursor = melhores_collection.find({}, {'_id': 0}).sort('id_posicao', 1).limit(25)
-        #melhores_cursor = melhores_collection.find({}, {'_id': 0}).sort('numeros', 1).limit(25)
         melhores_data_raw = [doc for doc in melhores_cursor]
 
         # CONVERTE ObjectId para string para evitar erro 500

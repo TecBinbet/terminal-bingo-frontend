@@ -17,8 +17,7 @@
     </style>
 </head>
 
-
-<body class="bg-gray-800 text-white min-h-screen p-2">
+<body class="bg-gray-800 text-white min-h-screen overflow-hidden">
     <button id="fullscreen-button">Entrar em Tela Cheia</button>    
     <div id="loader" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75 z-50 hidden">
         <div class="flex flex-col items-center">
@@ -40,6 +39,18 @@
     </button>
 
     <div id="video-e-estatisticas-container" class="mt-0 mb-1 flex w-full space-x-1 items-start">
+
+    <section id="digital-bola-panel" class="w-2/5 bg-gray-900 p-0 rounded-lg shadow-xl h-[135px] hidden flex items-center justify-center">
+        <div id="bola-container" class="w-full h-full flex items-center justify-center">        
+            <div id="bola-digital" 
+                 class="flex items-center justify-center 
+                    text-white font-black text-4xl 
+                    bg-gray-700 border-4 border-white
+                    rounded-full transition-all duration-300"
+                 style="width: 70%; height: 70%;">
+            </div>
+        </div>
+    </section>
 
     <section id="youtube-panel" class="w-2/4 bg-gray-900 p-0 rounded-lg shadow-xl h-[135px]">
         <div style="height: 100%;">
@@ -97,7 +108,7 @@
                 </div>
         </section>
         
-        <section id="mobile-panels-container" class="hidden">
+        <section id="mobile-panels-container" class="hidden -mt-1">
             <div id="mobile-number-panel" class="bg-black p-0 rounded-lg shadow-lg col-span-1 lg:col-span-2">
                 <div class="grid grid-cols-10 gap-0 bg-black" id="mobile-number-grid">
                     </div>
@@ -160,13 +171,13 @@
                 </div>
         </section>
 
-        <aside id="mobile-buscando-panel" class="hidden flex-col bg-gray-900 rounded-lg shadow-lg">
+        <aside id="mobile-buscando-panel" class="hidden flex-col bg-gray-900 rounded-lg shadow-lg  -mt-1">
            <div id="mobile-prize-info" class="flex items-center justify-center p-0 bg-blue-800 rounded-lg shadow-md h-6 w-full">
               <span class="text-sm text-gray-200 font-semibold">...</span>
            </div>
         </aside>
 
-        <section id="mobile-gerenciar-cartelas-panel" class="p-2 bg-gray-900 rounded-lg shadow-lg">
+        <section id="mobile-gerenciar-cartelas-panel" class="p-2 bg-gray-900 rounded-lg shadow-lg -mt-2">
             <div class="p-2 flex justify-between items-center bg-gray-900 rounded-t-lg -m-2">
                 <h2 class="text-base font-bold text-gray-400">Entrada de Cartela</h2>
                 <button id="toggle-cartelas-button" class="mobile-hide-toggle text-xs font-medium text-gray-200 bg-green-800 px-3 py-1 rounded-full">Ocultar Painel</button>
@@ -243,7 +254,7 @@
             </div>
         </section>
 
-        <section id="mobile-prizes-panel" class="bg-gray-900 p-2 rounded-lg shadow-lg flex flex-col items-center space-y-2">
+        <section id="mobile-prizes-panel" class="bg-gray-900 p-2 rounded-lg shadow-lg flex flex-col items-center space-y-2 -mt-2">
            <div class="flex justify-between items-center w-full px-2">
               <h2 class="text-base font-bold text-gray-400">Prêmios</h2>
               <button id="toggle-prizes-button" class="mobile-hide-toggle text-xs font-medium text-gray-200 bg-green-800 px-3 py-1 rounded-full">Ocultar Prêmios</button>
@@ -254,11 +265,12 @@
            </div>
         </section>      
 
-        <section id="mobile-loaded-cards-panel" class="hidden col-span-1 md:col-span-2 lg:col-span-3 p-0 bg-black/30 rounded-lg shadow-lg">
-             <div class="loaded-cards-container p-0 bg-balck/30 rounded-lg shadow-md">
-                <h3 class="text-sm  text-center font-bold text-gray-400 mb-2" id="mobile-loaded-cards-header">Cartelas Carregadas</h3>
-                <div id="mobile-loaded-cards-list" class="space-y-2">
-                    </div>
+        <section id="mobile-loaded-cards-panel" class="hidden col-span-1 md:col-span-2 lg:col-span-3 p-0 bg-black/30 rounded-lg shadow-lg h-[580px] overflow-y-auto -mt-2 ">
+            <div class="loaded-cards-container p-0 bg-balck/30 rounded-lg shadow-md">
+                <h3 class="text-xl text-center font-bold text-yellow-600 mb-0" id="mobile-loaded-cards-header">Cartelas Carregadas</h3>
+        
+                <div id="mobile-loaded-cards-list" class="space-y-2 h-150 overflow-y-auto">
+                </div>   
             </div>
         </section>
 
