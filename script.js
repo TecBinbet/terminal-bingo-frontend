@@ -1469,7 +1469,7 @@ function renderMelhores(melhoresData) {
 
         // 2. Constrói a string da classe
         // Usa template literals (crase `) para injetar a variável
-        const gridClasses = `grid-cols-[23px_${posicaoWidth}_1fr_53px]`;
+        const gridClasses = `grid-cols-[23px_${posicaoWidth}_1fr_55px]`;
 
         const row = document.createElement('div');
         row.className = `grid ${gridClasses} text-[8px] leading-none text-white p-0.5 rounded hover:bg-gray-800`;
@@ -1495,12 +1495,15 @@ function renderMelhores(melhoresData) {
         }
       
         const numerosFaltantes = document.createElement('span');
+        const numerosFaltantesOriginal = item.numeros_faltantes; // Ex: "04,25,65"
+        const numerosComEspaco = numerosFaltantesOriginal.replaceAll(',', ' . ');
+        
         if  (haGanhador) {
             numerosFaltantes.className = 'truncate text-[10px] text-yellow-300 font-bold';
         } else {
             numerosFaltantes.className = 'truncate text-[8px] text-green-500 font-medium';
         } 
-        numerosFaltantes.textContent = `${item.numeros_faltantes} ${winnerPremio}`; 
+        numerosFaltantes.textContent = `${numerosComEspaco} ${winnerPremio}`; 
 
         // 4. Nome (Player)
         const nome = document.createElement('span');

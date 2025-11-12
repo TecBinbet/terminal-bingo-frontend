@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -40,7 +39,7 @@
 
     <div id="video-e-estatisticas-container" class="mt-0 mb-1 flex w-full space-x-1 items-start">
 
-    <section id="digital-bola-panel" class="w-2/5 bg-gray-900 p-0 rounded-lg shadow-xl h-[135px] hidden flex items-center justify-center">
+    <section id="digital-bola-panel" class="w-2/5 bg-gray-900 p-0 rounded-lg shadow-xl h-[133px] hidden flex items-center justify-center">
         <div id="bola-container" class="w-full h-full flex items-center justify-center">        
             <div id="bola-digital" 
                  class="flex items-center justify-center 
@@ -52,7 +51,7 @@
         </div>
     </section>
 
-    <section id="youtube-panel" class="w-2/4 bg-gray-900 p-0 rounded-lg shadow-xl h-[135px]">
+    <section id="youtube-panel" class="w-2/4 bg-gray-900 mb-1 p-0 rounded-lg shadow-xl h-[133px]">
         <div style="height: 100%;">
             <iframe id="youtube-iframe" width="100%" height="100%"
                 title="YouTube video player"
@@ -277,5 +276,85 @@
     </main>
     <script src="config.js"></script>
     <script src="script.js"></script>
-</body>
+
+<script>
+        // Tornamos a função 'onload' assíncrona (async) para usar 'await'
+        window.onload = async function() {
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            // 1. Usamos .getAll() para pegar TODOS os parâmetros 'periodo'
+            const periodosArr = urlParams.getAll('periodo'); // Ex: ["301,390", "421,480"]
+
+            // 2. Verificamos se o array tem algum item
+            if (periodosArr.length > 0) {
+                console.log("Parâmetros de período detectados:", periodosArr);
+                
+                // 3. Pegamos os elementos do formulário (só uma vez, no início)
+                const pcInicioInput = document.getElementById('cartela-inicial-input');
+                const pcFimInput = document.getElementById('cartela-final-input');
+                const pcAddButton = document.getElementById('adicionar-cartelas');
+                
+                const mobileInicioInput = document.getElementById('mobile-cartela-inicial-input');
+                const mobileFimInput = document.getElementById('mobile-cartela-final-input');
+                const mobileAddButton = document.getElementById('mobile-adicionar-cartelas');
+
+                // 4. Criamos uma função de pausa (helper)
+                const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+                // 5. Fazemos um loop por CADA período encontrado
+                for (const periodo of periodosArr) {
+                    try {
+                        const partes = periodo.split(',');
+                        const inicio = partes[0].trim();
+                        const fim = partes[1].trim();
+
+                        if (!inicio || !fim || isNaN(parseInt(inicio)) || isNaN(parseInt(fim))) {
+                            console.warn("Pulando período mal formatado:", periodo);
+                            continue; // Pula para o próximo item do loop
+                        }
+
+                        // 6. Preenche os valores dos inputs
+                        if (pcInicioInput && pcFimInput) {
+                            pcInicioInput.value = inicio;
+                            pcFimInput.value = fim;
+                            pcInicioInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            pcFimInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                        if (mobileInicioInput && mobileFimInput) {
+                            mobileInicioInput.value = inicio;
+                            mobileFimInput.value = fim;
+                            mobileInicioInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            mobileFimInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+
+                        // 7. Espera 150ms para o script.js (o seu) atualizar a UI
+                        await pause(150); 
+
+                        // 8. Clica em "Adicionar"
+                        if (pcAddButton && !pcAddButton.classList.contains('hidden')) {
+                            pcAddButton.click();
+                            console.log(`Período ${inicio}-${fim} (PC) adicionado.`);
+                        }
+                        if (mobileAddButton && !mobileAddButton.classList.contains('hidden')) {
+                            mobileAddButton.click();
+                            console.log(`Período ${inicio}-${fim} (Mobile) adicionado.`);
+                        }
+                        
+                        // 9. Espera mais 150ms antes de ir para o próximo período
+                        await pause(150); 
+
+                    } catch (e) {
+                        console.error("Erro ao processar período:", periodo, e);
+                    }
+                } // Fim do loop 'for'
+                
+                console.log("Todos os períodos da URL foram processados.");
+
+            } else {
+                console.log("Nenhum parâmetro 'periodo' encontrado. Carregamento normal.");
+            }
+        };
+    </script>
+    </body>
 </html>
