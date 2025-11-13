@@ -17,7 +17,7 @@
 </head>
 
 <body class="bg-gray-800 text-white min-h-screen overflow-hidden">
-    <button id="fullscreen-button">Entrar Tela Cheia</button>    
+    <button id="fullscreen-button">Entrar em Tela Cheia</button>    
     <div id="loader" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75 z-50 hidden">
         <div class="flex flex-col items-center">
             <div class="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-green-500"></div>
@@ -278,136 +278,176 @@
     <script src="script.js"></script>
 
     <script>
-        // --- NOVO: Variável Global para a Rodada ---
-        let idRodada = 0; // O valor padrão será 0 se o parâmetro não for encontrado
-        // ------------------------------------------
+        // --- Variável Global para a Rodada ---
+        let idRodada = 0;
 
         // Função de pausa (helper)
         const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-        // Função principal que processa os parâmetros (agora é async)
+        // --- NOVO: Helper para esperar o loader SUMIR ---
+        async function aguardarLoader(loaderElement) {
+            // Primeiro, espera o loader APARECER (dá 300ms para o script.js reagir)
+            await pause(300);
+            
+            if (loaderElement.classList.contains('hidden')) {
+                // O loader nem apareceu (carga foi instantânea ou o botão não funcionou)
+                console.log("Loader não apareceu, seguindo...");
+                return;
+            }
+
+            // Agora, espera o loader SUMIR
+            console.log("Aguardando carregamento (loader visível)...");
+            let tentativas = 0;
+            while (!loaderElement.classList.contains('hidden')) {
+                await pause(200); // Verifica a cada 200ms
+                tentativas++;
+                if (tentativas > 150) { // Timeout de 30 segundos
+                    console.error("Timeout! Loader travou.");
+                    throw new Error("Timeout: O loader ficou visível por mais de 30s.");
+                }
+            }
+            console.log("Carregamento concluído (loader escondido).");
+        }
+        // --- FIM DO NOVO HELPER ---
+
+
+        // Função principal que processa os parâmetros
         async function processarParametrosURL() {
             
             const urlParams = new URLSearchParams(window.location.search);
             
-            // --- NOVO: Processa o idrodada ---
+            // --- Processa o idrodada ---
             const idRodadaParam = urlParams.get('idrodada');
             if (idRodadaParam) {
                 try {
-                    // Tenta converter para inteiro e salvar na variável global
                     idRodada = parseInt(idRodadaParam);
-                    if (isNaN(idRodada)) {
-                        idRodada = 0;
-                        console.warn("Parâmetro 'idrodada' não é um número. Usando 0.");
-                    } else {
-                        // SUCESSO! A variável global agora está definida.
-                        console.log("ID da Rodada definido globalmente:", idRodada);
-                    }
-                } catch (e) {
-                    console.error("Erro ao processar 'idrodada'.", e);
-                    idRodada = 0;
-                }
+                    if (isNaN(idRodada)) idRodada = 0;
+                    console.log("ID da Rodada definido globalmente:", idRodada);
+                } catch (e) { idRodada = 0; }
             }
-            // --- FIM DO NOVO BLOCO 'idrodada' ---
             
-            // 1. Usamos .getAll() para pegar TODOS os parâmetros 'periodo'
-            const periodosArr = urlParams.getAll('periodo'); // Ex: ["301,390", "421,480"]
-
-            // 2. Verificamos se o array tem algum item
-            if (periodosArr.length > 0) {
-                console.log("Parâmetros de período detectados:", periodosArr);
-                
-                const pcInicioInput = document.getElementById('cartela-inicial-input');
-                const pcFimInput = document.getElementById('cartela-final-input');
-                const pcAddButton = document.getElementById('adicionar-cartelas');
-                
-                const mobileInicioInput = document.getElementById('mobile-cartela-inicial-input');
-                const mobileFimInput = document.getElementById('mobile-cartela-final-input');
-                const mobileAddButton = document.getElementById('mobile-adicionar-cartelas');
-
-                // 3. Fazemos um loop por CADA período encontrado
-                for (const periodo of periodosArr) {
-                    try {
-                        const partes = periodo.split(',');
-                        const inicio = partes[0].trim();
-                        const fim = partes[1].trim();
-
-                        if (!inicio || !fim || isNaN(parseInt(inicio)) || isNaN(parseInt(fim))) {
-                            console.warn("Pulando período mal formatado:", periodo);
-                            continue; // Pula para o próximo item do loop
-                        }
-
-                        // Preenche os valores dos inputs
-                        if (pcInicioInput && pcFimInput) {
-                            pcInicioInput.value = inicio;
-                            pcFimInput.value = fim;
-                            pcInicioInput.dispatchEvent(new Event('input', { bubbles: true }));
-                            pcFimInput.dispatchEvent(new Event('input', { bubbles: true }));
-                        }
-                        if (mobileInicioInput && mobileFimInput) {
-                            mobileInicioInput.value = inicio;
-                            mobileFimInput.value = fim;
-                            mobileInicioInput.dispatchEvent(new Event('input', { bubbles: true }));
-                            mobileFimInput.dispatchEvent(new Event('input', { bubbles: true }));
-                        }
-
-                        // Espera a UI (do script.js) atualizar
-                        await pause(150); 
-
-                        // Clica em "Adicionar"
-                        if (pcAddButton && !pcAddButton.classList.contains('hidden')) {
-                            pcAddButton.click();
-                            console.log(`Período ${inicio}-${fim} (PC) adicionado.`);
-                        }
-                        if (mobileAddButton && !mobileAddButton.classList.contains('hidden')) {
-                            mobileAddButton.click();
-                            console.log(`Período ${inicio}-${fim} (Mobile) adicionado.`);
-                        }
-                        
-                        // Espera antes do próximo loop
-                        await pause(150); 
-
-                    } catch (e) {
-                        console.error("Erro ao processar período:", periodo, e);
-                    }
-                } // Fim do loop 'for'
-                
-                console.log("Todos os períodos da URL foram processados.");
-
-            } else {
-                console.log("Nenhum parâmetro 'periodo' encontrado. Carregamento normal.");
+            // --- Processa os Períodos ---
+            const periodosArr = urlParams.getAll('periodo');
+            if (periodosArr.length === 0) {
+                console.log("Nenhum parâmetro 'periodo' encontrado.");
+                return;
             }
+
+            console.log("Parâmetros de período detectados:", periodosArr);
+            
+            // Pega os elementos (incluindo o loader)
+            const loader = document.getElementById('loader');
+            const pcInicioInput = document.getElementById('cartela-inicial-input');
+            const pcFimInput = document.getElementById('cartela-final-input');
+            const pcAddButton = document.getElementById('adicionar-cartelas');
+            const mobileInicioInput = document.getElementById('mobile-cartela-inicial-input');
+            const mobileFimInput = document.getElementById('mobile-cartela-final-input');
+            const mobileAddButton = document.getElementById('mobile-adicionar-cartelas');
+
+            // Loop por CADA período
+            for (const periodo of periodosArr) {
+                try {
+                    const partes = periodo.split(',');
+                    const inicio = partes[0].trim();
+                    const fim = partes[1].trim();
+
+                    if (!inicio || !fim || isNaN(parseInt(inicio)) || isNaN(parseInt(fim))) {
+                        console.warn("Pulando período mal formatado:", periodo);
+                        continue;
+                    }
+
+                    // Preenche os inputs
+                    if (pcInicioInput && pcFimInput) {
+                        pcInicioInput.value = inicio;
+                        pcFimInput.value = fim;
+                        pcInicioInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        pcFimInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    if (mobileInicioInput && mobileFimInput) {
+                        mobileInicioInput.value = inicio;
+                        mobileFimInput.value = fim;
+                        mobileInicioInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        mobileFimInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+
+                    // Espera a UI (do script.js) atualizar (mostrar o botão)
+                    await pause(150); 
+
+                    // Clica em "Adicionar"
+                    if (pcAddButton && !pcAddButton.classList.contains('hidden')) {
+                        pcAddButton.click();
+                        console.log(`Período ${inicio}-${fim} (PC) adicionado. Aguardando carga...`);
+                        await aguardarLoader(loader); // <-- ESPERA A CARGA TERMINAR
+                    }
+                    else if (mobileAddButton && !mobileAddButton.classList.contains('hidden')) {
+                        mobileAddButton.click();
+                        console.log(`Período ${inicio}-${fim} (Mobile) adicionado. Aguardando carga...`);
+                        await aguardarLoader(loader); // <-- ESPERA A CARGA TERMINAR
+                    }
+                    
+                    // Espera antes do próximo loop (opcional, para estabilidade)
+                    await pause(100); 
+
+                } catch (e) {
+                    console.error("Erro ao processar período:", periodo, e);
+                    alert(`Erro ao processar o período ${periodo}. Verifique o console.`);
+                    // Para o loop se um período falhar
+                    break;
+                }
+            } 
+            console.log("Todos os períodos da URL foram processados.");
         }
 
-        // --- A "ESPERA INTELIGENTE" ---
-        // (Esta função fica "olhando" para o app principal)
+        // --- A "ESPERA INTELIGENTE" (LÓGICA CORRIGIDA) ---
         function aguardarAppEProcessar() {
             console.log("Aguardando app principal (script.js) ficar pronto...");
+            
+            let appIniciouCarregamento = false; 
 
             const waiter = setInterval(() => {
                 const loader = document.getElementById('loader');
                 
-                // O app está 'pronto' quando o loader existe E está escondido.
-                if (loader && loader.classList.contains('hidden')) {
-                    
-                    clearInterval(waiter); // Para o 'timer'
+                if (!loader) {
+                    clearInterval(waiter);
+                    console.warn("Elemento #loader não encontrado. Tentando executar imediatamente...");
+                    setTimeout(processarParametrosURL, 500);
+                    return;
+                }
+
+                const loaderEstaVisivel = !loader.classList.contains('hidden');
+
+                if (loaderEstaVisivel) {
+                    appIniciouCarregamento = true; 
+                    console.log("App está carregando (loader visível)...");
+                } 
+                
+                // Se o app JÁ iniciou E AGORA o loader está escondido?
+                if (appIniciouCarregamento && !loaderEstaVisivel) {
+                    // O app terminou de carregar!
+                    clearInterval(waiter); 
                     console.log("App principal pronto. Processando parâmetros da URL...");
                     
                     // Roda a nossa função
                     setTimeout(processarParametrosURL, 200); 
-                    
-                } else if (!loader) {
-                     clearInterval(waiter);
-                     console.warn("Elemento #loader não encontrado. Não foi possível aguardar.");
-                } else {
-                    console.log("App ainda carregando (loader visível)...");
                 }
+                
+                // --- NOVO: Fallback para o caso do loader começar escondido ---
+                // Se o app não iniciou o carregamento (flag é false)
+                // e o loader está escondido, talvez ele já tenha carregado.
+                // Damos a ele 1 segundo para começar.
+                setTimeout(() => {
+                    if (!appIniciouCarregamento && !loaderEstaVisivel) {
+                         clearInterval(waiter); 
+                         console.log("App parece já estar pronto (loader não apareceu). Processando...");
+                         setTimeout(processarParametrosURL, 200); 
+                    }
+                }, 1000); // Timeout de 1 segundo
+
             }, 200); // Verifica a cada 200ms
         }
         
-        // Inicia a espera assim que o HTML básico for lido.
         document.addEventListener('DOMContentLoaded', aguardarAppEProcessar);
 
     </script>
-    </body>
+</body>
 </html>
