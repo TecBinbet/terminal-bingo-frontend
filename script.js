@@ -91,9 +91,8 @@ const togglePrizesButton = document.getElementById('toggle-prizes-button');
 const mobilePrizesContent = document.getElementById('mobile-prizes-content');
 const cardRangesDisplay = document.getElementById('card-ranges-display');
 
-// --- INÍCIO DA MODIFICAÇÃO (Variável Global) ---
-let idRodada = 0; // O valor padrão será 0 se o parâmetro não for encontrado
-// --- FIM DA MODIFICAÇÃO ---
+// --- Variável Global para a Rodada (vinda da URL) ---
+let idRodada = 0; 
 
 let lastRodadaState = null;
 
@@ -532,36 +531,78 @@ function setupCartelasEmJogo(maxCardNumber) {
 
     inputInicial.addEventListener('input', startHideTimer);
     inputFinal.addEventListener('input', startHideTimer);
+    
+    // --- INÍCIO DA MODIFICAÇÃO (Listener do Botão) ---
     adicionarBtn.addEventListener('click', () => {
-        startPromocionalTimer();
-        const valorInicial = parseInt(inputInicial.value, 10);
-        const valorFinal = parseInt(inputFinal.value, 10);
-        const novaFaixa = { inicial: valorInicial, final: valorFinal };
-
-        const sobreposicao = cartelaRanges.some(faixa =>
-            (valorInicial >= faixa.inicial && valorInicial <= faixa.final) ||
-            (valorFinal >= faixa.inicial && valorFinal <= faixa.final) ||
-            (faixa.inicial >= valorInicial && faixa.inicial <= valorFinal)
-        );
-
-        if (sobreposicao) {
-            alert('Erro: Esta faixa de cartelas se sobrepõe a uma faixa já adicionada.');
-            return;
+        // 1. Chama a nova função helper
+        // O 'true' indica que foi um clique do usuário (para disparar timers)
+        if (adicionarFaixaDeCartelas(true)) {
+            // 2. Se a faixa foi adicionada com sucesso, busca no servidor
+            fetchAndProcessCards();
         }
-
-        const totalCartelasSpanCurrent = isMobile ? mobileTotalCartelasSpan : totalCartelasSpan;
-        const novaSoma = parseInt(totalCartelasSpanCurrent.textContent) + ((valorFinal - valorInicial) + 1);
-
-        cartelaRanges.push(novaFaixa);
-        displayCartelaRanges();
-        fetchAndProcessCards();
-        inputInicial.value = '';
-        inputFinal.value = '';
-        validarECalcular();
-    // Inicia/reinicia o temporizador após a interação
-        startHideTimer();
     });
+    // --- FIM DA MODIFICAÇÃO ---
 }
+
+// --- INÍCIO DA NOVA FUNÇÃO (Helper para Adicionar Faixa) ---
+/**
+ * Lógica central para adicionar uma faixa de cartelas.
+ * Não busca os dados, apenas atualiza o array 'cartelaRanges' e a UI.
+ * @param {boolean} disparadoPorUsuario - Controla se os timers (promo/hide) devem ser acionados.
+ * @returns {boolean} - Retorna 'true' se a faixa foi adicionada, 'false' se falhou (ex: sobreposição).
+ */
+function adicionarFaixaDeCartelas(disparadoPorUsuario = false) {
+    const isMobile = isMobileDevice();
+    const inputInicial = isMobile ? mobileCartelaInicialInput : cartelaInicialInput;
+    const inputFinal = isMobile ? mobileCartelaFinalInput : cartelaFinalInput;
+    
+    if (disparadoPorUsuario) {
+         startPromocionalTimer();
+    }
+
+    const valorInicial = parseInt(inputInicial.value, 10);
+    const valorFinal = parseInt(inputFinal.value, 10);
+    
+    // Validação de segurança (caso o 'validarECalcular' falhe)
+    if (!valorInicial || !valorFinal || valorFinal < valorInicial) {
+        console.warn("Tentativa de adicionar faixa inválida.");
+        return false;
+    }
+    
+    const novaFaixa = { inicial: valorInicial, final: valorFinal };
+
+    // Validação de sobreposição
+    const sobreposicao = cartelaRanges.some(faixa =>
+        (valorInicial >= faixa.inicial && valorInicial <= faixa.final) ||
+        (valorFinal >= faixa.inicial && valorFinal <= faixa.final) ||
+        (faixa.inicial >= valorInicial && faixa.inicial <= valorFinal)
+    );
+
+    if (sobreposicao) {
+        alert('Erro: Esta faixa de cartelas se sobrepõe a uma faixa já adicionada.');
+        return false; // Falhou
+    }
+
+    const totalCartelasSpanCurrent = isMobile ? mobileTotalCartelasSpan : totalCartelasSpan;
+    const novaSoma = parseInt(totalCartelasSpanCurrent.textContent) + ((valorFinal - valorInicial) + 1);
+
+    cartelaRanges.push(novaFaixa);
+    displayCartelaRanges(); // Atualiza a UI e o total
+    
+    // Limpa os campos
+    inputInicial.value = '';
+    inputFinal.value = '';
+    (isMobile ? mobileResultadoSomaSpan : resultadoSomaSpan).textContent = '0';
+    (isMobile ? mobileAdicionarCartelasBtn : adicionarCartelasBtn).classList.add('hidden');
+
+    if (disparadoPorUsuario) {
+        startHideTimer();
+    }
+    
+    return true; // Sucesso
+}
+// --- FIM DA NOVA FUNÇÃO ---
+
 
 function displayCartelaRanges() {
     const isMobile = isMobileDevice();
@@ -1770,17 +1811,13 @@ async function init() {
 
         loader.style.display = 'none';
         
-        // --- INÍCIO DA MODIFICAÇÃO ---
-        // 1. Renderiza o estado inicial (que pode chamar clearPanels())
+        // Renderiza o estado inicial (que pode chamar clearPanels())
         renderMainContent(initialData); 
         
-        // 2. Conecta ao WebSocket
+        // Conecta ao WebSocket
         connectWebSocket();
         
-        // 3. AGORA, após a primeira limpeza, processamos a URL.
-        // (A função processarParametrosURL() foi movida para o final do arquivo)
-        // (Mas ela será chamada de dentro do ws.onopen)
-        // --- FIM DA MODIFICAÇÃO ---
+        // A função processarParametrosURL() agora é chamada dentro do 'ws.onopen'
         
     } catch (error) {
         console.error('Erro ao iniciar a aplicação:', error);
@@ -1924,11 +1961,11 @@ function connectWebSocket() {
         ws.send(JSON.stringify(initialRequest));
         console.log("Conexão aberta. Solicitando estado inicial ao servidor.");
 
-        // --- INÍCIO DA MODIFICAÇÃO ---
-        // Chama a função de processar a URL APÓS a conexão estar aberta
-        // e o estado inicial ter sido solicitado (e recebido, na próxima etapa).
-        // Damos um pequeno atraso para o 'onmessage' inicial rodar.
-        setTimeout(processarParametrosURL, 500); 
+        // --- INÍCIO DA MODIFICAÇÃO (CHAMADA DA FUNÇÃO) ---
+        // Agora que o app está conectado, processamos os parâmetros da URL.
+        // Damos um pequeno atraso para garantir que a primeira mensagem (estado inicial)
+        // seja processada antes de tentarmos carregar as cartelas.
+        setTimeout(processarParametrosURL, 500); // 500ms de atraso
         // --- FIM DA MODIFICAÇÃO ---
     };
 
@@ -2045,40 +2082,15 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // --- INÍCIO DAS NOVAS FUNÇÕES (Movidas do index.html para cá) ---
+// (Estas funções agora são parte do script.js e não estão mais no index.html)
 
-// Função de pausa (helper)
-const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Helper para esperar o loader SUMIR
-async function aguardarLoader(loaderElement) {
-    // Primeiro, espera o loader APARECER (dá 300ms para o script.js reagir)
-    await pause(300);
-    
-    if (loaderElement.classList.contains('hidden')) {
-        // O loader nem apareceu (carga foi instantânea ou o botão não funcionou)
-        console.log("Loader não apareceu, seguindo...");
-        return;
-    }
-
-    // Agora, espera o loader SUMIR
-    console.log("Aguardando carregamento (loader visível)...");
-    let tentativas = 0;
-    while (!loaderElement.classList.contains('hidden')) {
-        await pause(200); // Verifica a cada 200ms
-        tentativas++;
-        if (tentativas > 150) { // Timeout de 30 segundos
-            console.error("Timeout! Loader travou.");
-            throw new Error("Timeout: O loader ficou visível por mais de 30s.");
-        }
-    }
-    console.log("Carregamento concluído (loader escondido).");
-}
-
-
-// Função principal que processa os parâmetros
+/**
+ * Função principal que processa os parâmetros da URL.
+ * É chamada pelo ws.onopen
+ */
 async function processarParametrosURL() {
     
-    console.log("Iniciando processamento de parâmetros da URL...");
+    console.log("Processando parâmetros da URL...");
     
     const urlParams = new URLSearchParams(window.location.search);
     
@@ -2096,19 +2108,19 @@ async function processarParametrosURL() {
     const periodosArr = urlParams.getAll('periodo');
     if (periodosArr.length === 0) {
         console.log("Nenhum parâmetro 'periodo' encontrado.");
-        return;
+        return; // Sai da função
     }
 
     console.log("Parâmetros de período detectados:", periodosArr);
     
-    // Pega os elementos (incluindo o loader)
+    // Pega os elementos
     const loader = document.getElementById('loader');
     const pcInicioInput = document.getElementById('cartela-inicial-input');
     const pcFimInput = document.getElementById('cartela-final-input');
-    const pcAddButton = document.getElementById('adicionar-cartelas');
     const mobileInicioInput = document.getElementById('mobile-cartela-inicial-input');
     const mobileFimInput = document.getElementById('mobile-cartela-final-input');
-    const mobileAddButton = document.getElementById('mobile-adicionar-cartelas');
+
+    let faixasAdicionadas = false;
 
     // Loop por CADA período
     for (const periodo of periodosArr) {
@@ -2119,47 +2131,45 @@ async function processarParametrosURL() {
 
             if (!inicio || !fim || isNaN(parseInt(inicio)) || isNaN(parseInt(fim))) {
                 console.warn("Pulando período mal formatado:", periodo);
-                continue;
+                continue; // Pula para o próximo
             }
 
-            // Preenche os inputs
-            if (pcInicioInput && pcFimInput) {
-                pcInicioInput.value = inicio;
-                pcFimInput.value = fim;
-                pcInicioInput.dispatchEvent(new Event('input', { bubbles: true }));
-                pcFimInput.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-            if (mobileInicioInput && mobileFimInput) {
-                mobileInicioInput.value = inicio;
-                mobileFimInput.value = fim;
-                mobileInicioInput.dispatchEvent(new Event('input', { bubbles: true }));
-                mobileFimInput.dispatchEvent(new Event('input', { bubbles: true }));
-            }
+            // Preenche os inputs (ambos os modos)
+            // (Não precisamos disparar 'input' pois vamos chamar o helper diretamente)
+            pcInicioInput.value = inicio;
+            pcFimInput.value = fim;
+            mobileInicioInput.value = inicio;
+            mobileFimInput.value = fim;
 
-            // Espera a UI (do script.js) atualizar (mostrar o botão)
-            await pause(150); 
-
-            // Clica em "Adicionar"
-            if (pcAddButton && !pcAddButton.classList.contains('hidden')) {
-                pcAddButton.click();
-                console.log(`Período ${inicio}-${fim} (PC) adicionado. Aguardando carga...`);
-                await aguardarLoader(loader); // <-- ESPERA A CARGA TERMINAR
+            // Chama a função helper DIRETAMENTE
+            // (O 'false' impede que os timers de esconder/promo sejam disparados)
+            if (adicionarFaixaDeCartelas(false)) {
+                console.log(`Período ${inicio}-${fim} adicionado ao cartelaRanges.`);
+                faixasAdicionadas = true;
+            } else {
+                console.warn(`Falha ao adicionar período ${inicio}-${fim} (provavelmente sobreposição).`);
             }
-            else if (mobileAddButton && !mobileAddButton.classList.contains('hidden')) {
-                mobileAddButton.click();
-                console.log(`Período ${inicio}-${fim} (Mobile) adicionado. Aguardando carga...`);
-                await aguardarLoader(loader); // <-- ESPERA A CARGA TERMINAR
-            }
-            
-            // Espera antes do próximo loop
-            await pause(100); 
 
         } catch (e) {
             console.error("Erro ao processar período:", periodo, e);
-            alert(`Erro ao processar o período ${periodo}. Verifique o console.`);
-            break; 
         }
-    } 
+    } // Fim do loop 'for'
+    
+    // --- CHAMADA ÚNICA ---
+    // Se adicionamos pelo menos uma faixa, agora buscamos TODAS de uma vez
+    if (faixasAdicionadas) {
+        console.log("Todas as faixas processadas. Buscando todas as cartelas de uma vez...");
+        
+        // Mostra o loader manualmente
+        loader.classList.remove('hidden'); 
+        loader.style.display = 'flex';
+        
+        // Chama a função de busca
+        await fetchAndProcessCards();
+        
+        // fetchAndProcessCards() já esconde o loader no 'finally'
+    }
+    
     console.log("Todos os períodos da URL foram processados.");
 }
 

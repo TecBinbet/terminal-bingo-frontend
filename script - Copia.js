@@ -91,6 +91,10 @@ const togglePrizesButton = document.getElementById('toggle-prizes-button');
 const mobilePrizesContent = document.getElementById('mobile-prizes-content');
 const cardRangesDisplay = document.getElementById('card-ranges-display');
 
+// --- INÍCIO DA MODIFICAÇÃO (Variável Global) ---
+let idRodada = 0; // O valor padrão será 0 se o parâmetro não for encontrado
+// --- FIM DA MODIFICAÇÃO ---
+
 let lastRodadaState = null;
 
 let ValorSerie = 0;
@@ -1765,8 +1769,19 @@ async function init() {
         togglePrizesButton.textContent = 'Apresentar Prêmios';
 
         loader.style.display = 'none';
-        renderMainContent(initialData);
+        
+        // --- INÍCIO DA MODIFICAÇÃO ---
+        // 1. Renderiza o estado inicial (que pode chamar clearPanels())
+        renderMainContent(initialData); 
+        
+        // 2. Conecta ao WebSocket
         connectWebSocket();
+        
+        // 3. AGORA, após a primeira limpeza, processamos a URL.
+        // (A função processarParametrosURL() foi movida para o final do arquivo)
+        // (Mas ela será chamada de dentro do ws.onopen)
+        // --- FIM DA MODIFICAÇÃO ---
+        
     } catch (error) {
         console.error('Erro ao iniciar a aplicação:', error);
         showMessage('Não foi possível conectar ao servidor. Verifique se o backend está em execução.', 'error');
@@ -1904,25 +1919,19 @@ function connectWebSocket() {
             clearInterval(reconnectInterval);
             reconnectInterval = null;
         }
-        requestWakeLock(); // <--- Adicione esta linha
+        requestWakeLock(); 
         const initialRequest = { action: "GET_INITIAL_STATE" };
         ws.send(JSON.stringify(initialRequest));
         console.log("Conexão aberta. Solicitando estado inicial ao servidor.");
+
+        // --- INÍCIO DA MODIFICAÇÃO ---
+        // Chama a função de processar a URL APÓS a conexão estar aberta
+        // e o estado inicial ter sido solicitado (e recebido, na próxima etapa).
+        // Damos um pequeno atraso para o 'onmessage' inicial rodar.
+        setTimeout(processarParametrosURL, 500); 
+        // --- FIM DA MODIFICAÇÃO ---
     };
-//    ws.onmessage = (event) => {
-//        try {
-//            const melhoresData = payload.melhoresData; 
-//            const data = JSON.parse(event.data);
-//            if (data.type === 'UPDATE') {
-//                renderMainContent(data);
-//            }
-//            if (melhoresData) {
-//                renderMelhores(melhoresData);
-//             }
-//        } catch (e) {
-//            console.error('Falha ao processar mensagem do WebSocket:', e);
-//        }
-//    };
+
 ws.onmessage = (event) => {
     try {
         const payload = JSON.parse(event.data);
@@ -2034,3 +2043,124 @@ document.addEventListener('DOMContentLoaded', () => {
    // Chama a sua função de inicialização
     init();
 });
+
+// --- INÍCIO DAS NOVAS FUNÇÕES (Movidas do index.html para cá) ---
+
+// Função de pausa (helper)
+const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Helper para esperar o loader SUMIR
+async function aguardarLoader(loaderElement) {
+    // Primeiro, espera o loader APARECER (dá 300ms para o script.js reagir)
+    await pause(300);
+    
+    if (loaderElement.classList.contains('hidden')) {
+        // O loader nem apareceu (carga foi instantânea ou o botão não funcionou)
+        console.log("Loader não apareceu, seguindo...");
+        return;
+    }
+
+    // Agora, espera o loader SUMIR
+    console.log("Aguardando carregamento (loader visível)...");
+    let tentativas = 0;
+    while (!loaderElement.classList.contains('hidden')) {
+        await pause(200); // Verifica a cada 200ms
+        tentativas++;
+        if (tentativas > 150) { // Timeout de 30 segundos
+            console.error("Timeout! Loader travou.");
+            throw new Error("Timeout: O loader ficou visível por mais de 30s.");
+        }
+    }
+    console.log("Carregamento concluído (loader escondido).");
+}
+
+
+// Função principal que processa os parâmetros
+async function processarParametrosURL() {
+    
+    console.log("Iniciando processamento de parâmetros da URL...");
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // --- Processa o idrodada ---
+    const idRodadaParam = urlParams.get('idrodada');
+    if (idRodadaParam) {
+        try {
+            idRodada = parseInt(idRodadaParam);
+            if (isNaN(idRodada)) idRodada = 0;
+            console.log("ID da Rodada definido globalmente:", idRodada);
+        } catch (e) { idRodada = 0; }
+    }
+    
+    // --- Processa os Períodos ---
+    const periodosArr = urlParams.getAll('periodo');
+    if (periodosArr.length === 0) {
+        console.log("Nenhum parâmetro 'periodo' encontrado.");
+        return;
+    }
+
+    console.log("Parâmetros de período detectados:", periodosArr);
+    
+    // Pega os elementos (incluindo o loader)
+    const loader = document.getElementById('loader');
+    const pcInicioInput = document.getElementById('cartela-inicial-input');
+    const pcFimInput = document.getElementById('cartela-final-input');
+    const pcAddButton = document.getElementById('adicionar-cartelas');
+    const mobileInicioInput = document.getElementById('mobile-cartela-inicial-input');
+    const mobileFimInput = document.getElementById('mobile-cartela-final-input');
+    const mobileAddButton = document.getElementById('mobile-adicionar-cartelas');
+
+    // Loop por CADA período
+    for (const periodo of periodosArr) {
+        try {
+            const partes = periodo.split(',');
+            const inicio = partes[0].trim();
+            const fim = partes[1].trim();
+
+            if (!inicio || !fim || isNaN(parseInt(inicio)) || isNaN(parseInt(fim))) {
+                console.warn("Pulando período mal formatado:", periodo);
+                continue;
+            }
+
+            // Preenche os inputs
+            if (pcInicioInput && pcFimInput) {
+                pcInicioInput.value = inicio;
+                pcFimInput.value = fim;
+                pcInicioInput.dispatchEvent(new Event('input', { bubbles: true }));
+                pcFimInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            if (mobileInicioInput && mobileFimInput) {
+                mobileInicioInput.value = inicio;
+                mobileFimInput.value = fim;
+                mobileInicioInput.dispatchEvent(new Event('input', { bubbles: true }));
+                mobileFimInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+
+            // Espera a UI (do script.js) atualizar (mostrar o botão)
+            await pause(150); 
+
+            // Clica em "Adicionar"
+            if (pcAddButton && !pcAddButton.classList.contains('hidden')) {
+                pcAddButton.click();
+                console.log(`Período ${inicio}-${fim} (PC) adicionado. Aguardando carga...`);
+                await aguardarLoader(loader); // <-- ESPERA A CARGA TERMINAR
+            }
+            else if (mobileAddButton && !mobileAddButton.classList.contains('hidden')) {
+                mobileAddButton.click();
+                console.log(`Período ${inicio}-${fim} (Mobile) adicionado. Aguardando carga...`);
+                await aguardarLoader(loader); // <-- ESPERA A CARGA TERMINAR
+            }
+            
+            // Espera antes do próximo loop
+            await pause(100); 
+
+        } catch (e) {
+            console.error("Erro ao processar período:", periodo, e);
+            alert(`Erro ao processar o período ${periodo}. Verifique o console.`);
+            break; 
+        }
+    } 
+    console.log("Todos os períodos da URL foram processados.");
+}
+
+// --- FIM DAS NOVAS FUNÇÕES ---
