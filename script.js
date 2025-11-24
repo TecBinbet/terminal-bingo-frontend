@@ -29,7 +29,6 @@ let tipoDoSorteio = "";
 const youtubePanel = document.getElementById('youtube-panel'); 
 const youtubeIframe = document.getElementById('youtube-iframe');
 const abrirYoutubeBtn = document.getElementById('abrir-youtube-btn');
-
 //
 let cartelasEmJogo = 0;
 // Timer promocionais
@@ -37,6 +36,10 @@ let seePromocoes = true; // Controla se o sistema deve verificar e exibir promo�
 let promocionalTimer = null; // Armazena a referência do temporizador
 
 let globalPromocionalData = [];
+
+let clienteLogadoId = null;
+
+let eventoCarregadoAtual = null;
 
 // NOVOS ELEMENTOS:
 const salaTitleElement = document.getElementById('sala-title');
@@ -159,6 +162,140 @@ const releaseWakeLock = () => {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
     }
 };
+
+
+/**
+ * Converte uma lista de números [1, 2, 3, 5, 6] em objetos de faixa
+ * [{inicial: 1, final: 3}, {inicial: 5, final: 6}]
+ * Isso otimiza o processamento no backend.
+ */
+function agruparNumerosEmRanges(numeros) {
+    if (!numeros || numeros.length === 0) return [];
+    
+    // Ordena numericamente (crescente)
+    numeros.sort((a, b) => a - b);
+    
+    const ranges = [];
+    let inicio = numeros[0];
+    let anterior = numeros[0];
+    
+    for (let i = 1; i < numeros.length; i++) {
+        if (numeros[i] === anterior + 1) {
+            // É sequencial, continua a faixa
+            anterior = numeros[i];
+        } else {
+            // Quebrou a sequência, fecha a faixa anterior
+            ranges.push({ inicial: inicio, final: anterior });
+            inicio = numeros[i];
+            anterior = numeros[i];
+        }
+    }
+    // Adiciona a última faixa
+    ranges.push({ inicial: inicio, final: anterior });
+    
+    return ranges;
+}
+
+// Funções de busca de cartelas compradas
+async function carregarCartelasAutomaticas(idEvento) {
+    // Verifica se já carregamos este evento para não ficar piscando a tela
+    if (eventoCarregadoAtual === idEvento && cartelaRanges.length > 0) {
+        return; 
+    }
+
+    // Obtém ID do cliente da URL (modo quiosque/link único)
+    const urlParamsGlobal = new URLSearchParams(window.location.search);
+    // Tenta pegar da URL, se não tiver, tenta de alguma variável de sessão ou define fixo para teste
+    //const clienteLogadoId = urlParamsGlobal.get('id_cliente'); 
+
+    if (!clienteLogadoId) {
+        console.log("Modo Espectador: Nenhum ID de cliente na URL.");
+        return;
+    }
+
+    // Feedback visual (opcional)
+    const headerElement = isMobileDevice() ? document.getElementById('mobile-loaded-cards-header') : document.getElementById('loaded-cards-header');
+    if(headerElement) headerElement.textContent = "Buscando suas cartelas...";
+
+    try {
+        const url = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idEvento}&id_cliente=${clienteLogadoId}`;
+        console.log("🔄 Buscando cartelas do cliente:", url);
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.error) {
+            console.error("Erro API Vendas:", data.error);
+            return;
+        }
+
+        // Se encontrou cartelas
+        if (data.cartelas && data.cartelas.length > 0) {
+            console.log(`✅ Cliente possui ${data.quantidade} cartelas. Processando...`);
+            
+            // 1. Converte a lista de IDs em faixas otimizadas
+            const novasFaixas = agruparNumerosEmRanges(data.cartelas);
+            
+            // 2. Atualiza a variável global que o sistema usa
+            cartelaRanges = novasFaixas;
+            
+            // 3. Atualiza a visualização da lista de faixas (aqueles botões de remover)
+            displayCartelaRanges(); 
+            
+            // 4. Dispara o motor principal do jogo!
+            // Isso vai baixar os números de cada cartela e começar a conferência
+            await fetchAndProcessCards(); 
+            
+            // Atualiza controle para não recarregar à toa
+            eventoCarregadoAtual = idEvento;
+
+            // Feedback para o usuário
+            const msg = `Carregadas ${data.quantidade} cartelas para o Sorteio ${idEvento}!`;
+            if(isMobileDevice()) {
+               const validationMsg = document.getElementById('mobile-validation-message');
+               validationMsg.textContent = msg;
+               validationMsg.classList.remove('hidden');
+               validationMsg.classList.remove('text-red-500');
+               validationMsg.classList.add('text-green-500');
+               setTimeout(() => validationMsg.classList.add('hidden'), 5000);
+            }
+
+        } else {
+            console.log("⚠️ Nenhuma cartela encontrada para este evento/cliente.");
+            // Opcional: Se mudou de evento e o cliente não comprou nada, limpa a tela?
+            if (eventoCarregadoAtual !== idEvento) {
+                clearPanels(); // Limpa se for um evento novo sem compras
+                eventoCarregadoAtual = idEvento;
+            }
+        }
+
+    } catch (error) {
+        console.error("❌ Erro na requisição automática:", error);
+    }
+}
+
+
+// Função auxiliar para transformar [1, 2, 3, 5, 6] em [{inicial:1, final:3}, {inicial:5, final:6}]
+function agruparNumerosEmRanges(numeros) {
+    if (numeros.length === 0) return [];
+    numeros.sort((a, b) => a - b);
+    
+    let ranges = [];
+    let start = numeros[0];
+    let prev = numeros[0];
+    
+    for (let i = 1; i < numeros.length; i++) {
+        if (numeros[i] === prev + 1) {
+            prev = numeros[i];
+        } else {
+            ranges.push({ inicial: start, final: prev });
+            start = numeros[i];
+            prev = numeros[i];
+        }
+    }
+    ranges.push({ inicial: start, final: prev });
+    return ranges;
+}
 
 function isMobileDevice() {
     return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -777,6 +914,21 @@ function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
         let central = card.central;
         let inferior = card.inferior;
 
+        // --- INÍCIO DA ALTERAÇÃO: Captura do Layout Visual ---
+        // Tenta pegar o campo 'numeros' (que geralmente é a string visual bruta do banco)
+        // Se não existir, usa 'em_ordem' como fallback.
+        let rawLayout = superior + ',' + central + ',' + inferior; // card.numeros || card.em_ordem; 
+        let layoutGrid = [];
+        console.error("rawLayout     :",rawLayout);
+        if (typeof rawLayout === 'string') {
+            // Remove caracteres não numéricos (como * ou +) exceto espaço e vírgula
+            // Divide por espaço ou vírgula e converte para número
+            layoutGrid = rawLayout.replace(/[^\d, ]/g, ' ').trim().split(/[\s,]+/).map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+        } else if (Array.isArray(rawLayout)) {
+            layoutGrid = rawLayout.map(Number);
+        }
+        // --- FIM DA ALTERAÇÃO ---
+
         if (typeof emOrdem === 'string' && emOrdem) emOrdem = emOrdem.split(',').map(Number);
         if (typeof superior === 'string' && superior) superior = superior.split(',').map(Number);
         if (typeof central === 'string' && central) central = central.split(',').map(Number);
@@ -805,6 +957,20 @@ function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
             bingoWinners.add(card.cartao);
         }
 
+        // Objeto base que será inserido no array
+        let cardObj = {
+            cartao: card.cartao,
+            linhaId: null,
+            counts: { geral: count.geral },
+            premioEncontrado: null,
+            originalData: {
+                geral: emOrdem,
+                linha: [] 
+            },
+            layoutGrid: layoutGrid, // <--- AQUI: Adicionamos o campo novo
+            missingNumbers: []
+        };
+
         if (isMultiLinePrize) {
             const lines = [
                 { id: 'Sup', numbers: superior, count: count.superior },
@@ -814,24 +980,20 @@ function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
             
             lines.forEach(line => {
                 if (activeLinesArray.includes(line.id)) {
-                    let premioEncontradoLinha = null;
+                    // Clona o objeto base para não misturar referências
+                    let lineCardObj = JSON.parse(JSON.stringify(cardObj)); 
+                    lineCardObj.linhaId = line.id;
+                    lineCardObj.counts.linha = line.count;
+                    lineCardObj.originalData.linha = line.numbers;
+                    lineCardObj.layoutGrid = layoutGrid; // Garante que o layout vai junto
+                    lineCardObj.missingNumbers = line.numbers.filter(num => !bolasCantadas.includes(num));
+
                     if (line.count === 5) {
-                        premioEncontradoLinha = 'LINHA';
+                        lineCardObj.premioEncontrado = 'LINHA';
                         playPremiadoSound(linhaSound);
                         showPremiadoGif('linha'); 
                     }
-
-                    processedCards.push({
-                        cartao: card.cartao,
-                        linhaId: line.id,
-                        counts: { geral: count.geral, linha: line.count },
-                        premioEncontrado: premioEncontradoLinha,
-                        originalData: {
-                            geral: emOrdem,
-                            linha: line.numbers
-                        },
-                        missingNumbers: line.numbers.filter(num => !bolasCantadas.includes(num))
-                    });
+                    processedCards.push(lineCardObj);
                 }
             });
         } else if (premioBuscado.includes('QUADRA') || premioBuscado.includes('LINHA')) {
@@ -842,35 +1004,34 @@ function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
             ];
             
             lines.forEach(line => {
-                let premioEncontradoLinha = null;
+                let lineCardObj = JSON.parse(JSON.stringify(cardObj));
+                lineCardObj.linhaId = line.id;
+                lineCardObj.counts.linha = line.count;
+                lineCardObj.originalData.linha = line.numbers;
+                lineCardObj.layoutGrid = layoutGrid;
+                lineCardObj.missingNumbers = line.numbers.filter(num => !bolasCantadas.includes(num));
+
                 if (premioBuscado.includes('QUADRA') && line.count === 4) {
-                    premioEncontradoLinha = 'Q U A D R A';
+                    lineCardObj.premioEncontrado = 'Q U A D R A';
                     playPremiadoSound(quadraSound);
                     showPremiadoGif('quadra');                   
-playBingoSound();
+                    playBingoSound();
                 } else if (premioBuscado.includes('LINHA') && line.count === 5) {
-                    premioEncontradoLinha = 'L I N H A';
+                    lineCardObj.premioEncontrado = 'L I N H A';
                     showPremiadoGif('linha');                    
                     playPremiadoSound(linhaSound);                    
                 }
-                
-                processedCards.push({
-                    cartao: card.cartao,
-                    linhaId: line.id,
-                    counts: { geral: count.geral, linha: line.count },
-                    premioEncontrado: premioEncontradoLinha,
-                    originalData: {
-                        geral: emOrdem,
-                        linha: line.numbers
-                    },
-                    missingNumbers: line.numbers.filter(num => !bolasCantadas.includes(num))
-                });
+                processedCards.push(lineCardObj);
             });
         } else {
+            // Processamento padrão (Cartela Cheia, Duplo Bingo, etc)
+            cardObj.originalData.geral = emOrdem;
+            cardObj.missingNumbers = emOrdem.filter(num => !bolasCantadas.includes(num));
+            
             let premioEncontrado = null;
-            const xBolasCantadas =  bolasCantadas.length; 
+            const xBolasCantadas = bolasCantadas.length; 
+            
             if (premioBuscado.includes('DUPLOBINGO') && count.geral === 15 && xBolasCantadas !== bolaBuscandoPremio) {
- console.error(' houve alteração ' ,bolaBuscandoPremio);  
                 premioEncontrado = 'DUPLO BINGO';
                 showPremiadoGif('duplobingo');
                 playPremiadoSound(duplobingoSound);              
@@ -882,24 +1043,15 @@ playBingoSound();
                 premioEncontrado = 'B I N G O';
                 showPremiadoGif('bingo');
                 playPremiadoSound(bingoSound);                
-playBingoSound();
+                playBingoSound();
             } else if (premioBuscado.includes('FALTAUM') && count.geral === 14) {
                 premioEncontrado = 'FALTA UM';
                 showPremiadoGif('faltaum');
                 playPremiadoSound(faltaumSound);                
-playBingoSound();
+                playBingoSound();
             }
-
-            processedCards.push({
-                cartao: card.cartao,
-                linhaId: null,
-                counts: { geral: count.geral },
-                premioEncontrado: premioEncontrado,
-                originalData: {
-                    geral: emOrdem
-                },
-                missingNumbers: emOrdem.filter(num => !bolasCantadas.includes(num))
-            });
+            cardObj.premioEncontrado = premioEncontrado;
+            processedCards.push(cardObj);
         }
     });
 
@@ -1079,7 +1231,7 @@ function displayLoadedCards(bolasCantadas) {
             }
 
             const cardLabelHtml = isLinePrize
-                ? `<div class="flex-shrink-0 flex gap-1"><span class="w-14 p-0 bg-gray-700 rounded-lg text-center font-bold flex items-center justify-center text-sm gap-y-0 ">${formattedCardNumber}</span><span class="w-10 p-0 bg-gray-800 rounded-lg text-center font-bold  flex items-center justify-center">${card.linhaId}</span></div>`
+                ? `<div class="flex-shrink-0 flex gap-1"><span class="w-14 p-0 bg-gray-700 rounded-lg text-center font-bold flex items-center justify-center text-sm gap-y-0 ">${formattedCardNumber}</span><span class="w-5 p-0 bg-gray-800 rounded-lg text-center font-bold  flex items-center justify-center">${card.linhaId[0]}</span></div>`
                 : `<div class="flex-shrink-0 p-0 bg-gray-700 rounded-lg text-center font-bold  flex items-center justify-center text-sm gap-y-0 w-14"><span>${formattedCardNumber}</span></div>`;
 
             cardDiv.innerHTML = cardLabelHtml;
@@ -1095,7 +1247,7 @@ function displayLoadedCards(bolasCantadas) {
                 numbersContainer.appendChild(premioSpan);
                 numbersContainer.classList.add('items-center', 'justify-center');
             } else {
-               numbersContainer.className = 'flex-1 ml-2 p-0 bg-transparent rounded-lg flex h-5 gap-x-1 gap-y-0 justify-start';
+               numbersContainer.className = 'flex-1 ml-1 p-0 bg-transparent rounded-lg flex h-5 gap-x-1 gap-y-0 justify-start';
  
                const missingNumbers = card.missingNumbers || [];
                 
@@ -1109,7 +1261,7 @@ function displayLoadedCards(bolasCantadas) {
                         bgColorClass = 'bg-orange-700';
                     }
                     
-                    const numberClass = `py-3 px-2 rounded-lg text-white font-bold ${bgColorClass} text-sm w-8 h-5 flex items-center justify-center flex-shrink-0`;
+                    const numberClass = `py-3 px-2 rounded-lg text-white font-bold ${bgColorClass} text-sm w-7 h-5 flex items-center justify-center flex-shrink-0`;
                     numberSpan.className = numberClass;
                     numberSpan.textContent = num;
                     numbersContainer.appendChild(numberSpan);
@@ -1120,6 +1272,7 @@ function displayLoadedCards(bolasCantadas) {
         });
     }
     cardsList.appendChild(fragment);
+    renderOscartoes(bolasCantadas);
 }
 
 function showMessage(message, type = 'error') {
@@ -1620,71 +1773,232 @@ function updateEstatisticasPanelWidth(tipoSorteio) {
     }
 }
 
+// ATUALIZADO: Renderiza as 8 melhores cartelas em 2 Colunas (PC e Mobile)
+function renderOscartoes(bolasCantadas) {
+    const containers = [
+        document.getElementById('oscartoes-content'),       
+        document.getElementById('mobile-oscartoes-content') 
+    ];
+
+    let conteudoVazio = false;
+    let dadosParaRenderizar = [];
+
+    if (!loadedCards || loadedCards.length === 0) {
+        conteudoVazio = true;
+    } else {
+        // LIMITA AO TOP 8 (Para caber na tela sem scroll excessivo)
+        dadosParaRenderizar = loadedCards.slice(0, 8);
+    }
+
+    containers.forEach(container => {
+        if (!container) return; 
+
+        container.innerHTML = '';
+
+        // Define o Grid do Container Principal para 2 Colunas
+        // gap-2 = Espaço pequeno entre as cartelas
+        container.className = 'grid grid-cols-2 gap-2 pb-4 content-start';
+
+        if (conteudoVazio) {
+            // Remove o grid se estiver vazio para centralizar a mensagem
+            container.className = 'flex flex-col items-center justify-center h-full';
+            container.innerHTML = '<p class="text-center text-gray-500 text-xs mt-4">Nenhuma cartela processada.</p>';
+            return;
+        }
+
+        dadosParaRenderizar.forEach(cardData => {
+            const numeroCartao = cardData.cartao;
+            
+            const numerosGerais = cardData.layoutGrid && cardData.layoutGrid.length > 0 
+                                  ? cardData.layoutGrid 
+                                  : (cardData.originalData ? cardData.originalData.geral : []);
+
+            if (!numerosGerais || numerosGerais.length === 0) return;
+
+            // Container da Cartela
+            const cardDiv = document.createElement('div');
+            // Removido mb-2, pois o gap do grid pai já cuida do espaço
+            cardDiv.className = 'bg-gray-900 border border-gray-700 rounded p-1 flex flex-col gap-0.5 shadow-sm';
+
+            // Header (Número e Faltantes)
+            const faltam = cardData.missingNumbers ? cardData.missingNumbers.length : 15;
+            const faltamClass = faltam <= 1 ? 'text-red-500 animate-pulse' : 'text-blue-400';
+
+            const header = document.createElement('div');
+            // Padding e margens ajustados para economia de espaço
+            header.className = 'flex justify-between items-center border-b border-gray-700 pb-0.5 mb-0.5';
+            // Texto menor (text-[10px] e text-[9px]) para caber na meia-largura
+            header.innerHTML = `
+                <span class="text-gray-400 font-bold text-[10px]">Cartela:<span class="text-yellow-500">${numeroCartao}</span></span>
+                <span class="text-[10px] font-bold ${faltamClass}">Faltam: ${faltam}</span>
+            `;
+            cardDiv.appendChild(header);
+
+            // Grid Interno da Cartela (3x5 ou 5x5 dependendo do jogo, aqui assumindo 15 números = 3x5)
+            const grid = document.createElement('div');
+            grid.className = 'grid grid-cols-5 gap-0.5'; // Gap ultra-fino
+
+            numerosGerais.forEach(num => {
+                const cell = document.createElement('div');
+                // Células menores (h-4 e text-[9px]) para caberem duas cartelas lado a lado
+                let cellClass = 'h-4 w-full flex items-center justify-center text-[9px] font-bold rounded border ';
+                
+                if (bolasCantadas.includes(num)) {
+                    // JÁ SORTEADO
+                    cellClass += 'bg-gray-800 text-gray-600 border-gray-800'; 
+                } else {
+                    // FALTANTE (DESTAQUE)
+                    cellClass += 'bg-gray-800 text-gray-250 border-yellow-600 shadow-sm'; 
+                }
+                
+                cell.className = cellClass;
+                cell.textContent = num;
+                grid.appendChild(cell);
+            });
+
+            cardDiv.appendChild(grid);
+            
+            // Footer de Ganhou (se houver)
+            if (cardData.premioEncontrado) {
+                const footer = document.createElement('div');
+                footer.className = 'mt-0.5 text-center bg-green-800 text-white text-[8px] font-bold rounded py-0.5';
+                footer.textContent = `${cardData.premioEncontrado}`;
+                cardDiv.appendChild(footer);
+            }
+
+            container.appendChild(cardDiv);
+        });
+    });
+}
+
 async function renderMainContent(data) {
     if (!data) return;
-    const { bolasData, buscandoData, premioData, promocionalData, rodadaData, confereData, topeData, premioInfo,parametrosInfo = {}  } = data;
 
-    const rodadaState = rodadaData && rodadaData.length > 0 ? rodadaData[0].estado.trim() : null;
-     if (rodadaState === 'intervalo' && lastRodadaState !== 'intervalo') {
-        clearPanels();
-        lastRodadaState = rodadaState; // Atualiza o estado
-        return;
+    // 1. Desestruturação dos dados recebidos
+    const { 
+        bolasData, 
+        buscandoData, 
+        premioData, 
+        promocionalData, 
+        rodadaData, 
+        confereData, 
+        topeData, 
+        premioInfo, 
+        parametrosInfo = {} 
+    } = data;
+
+    // =========================================================================
+    // >>> LÓGICA DE CARREGAMENTO AUTOMÁTICO DE CARTELAS (PRIORIDADE ALTA) <<<
+    // =========================================================================
+    // Movemos isso para o topo para garantir que cartelas sejam carregadas 
+    // assim que soubermos qual é o evento, independente de bolas ou prêmios.
+    
+    if (typeof clienteLogadoId !== 'undefined' && clienteLogadoId) {
+        // Verifica se temos a informação da rodada (evento) atual
+        // Pode vir em premioInfo.rodada OU rodadaData[0].id_evento (depende do seu backend)
+        const eventoAtual = premioInfo?.rodada || rodadaData?.[0]?.id_evento;
+
+        if (eventoAtual) {
+            // Inicializa a variável de controle se não existir
+            if (typeof window.ultimoEventoProcessado === 'undefined') {
+                window.ultimoEventoProcessado = null;
+            }
+
+            // Se o evento mudou OU se é a primeira carga (null) e temos evento
+            if (window.ultimoEventoProcessado != eventoAtual) {
+                console.log(`[AutoLoad] Novo evento detectado: ${window.ultimoEventoProcessado} -> ${eventoAtual}`);
+                console.log("Buscando cartelas para o cliente ID:", clienteLogadoId);
+                
+                // Atualiza o controle para não buscar repetidamente
+                window.ultimoEventoProcessado = eventoAtual;
+                
+                // Chama a função que vai no server.py -> mongo vendas -> busca cartelas
+                // IMPORTANTE: Não usamos 'await' aqui para não bloquear a renderização da tela
+                carregarCartelasAutomaticas(eventoAtual);
+            }
+        }
     }
-    else if (rodadaState !== null) {
-  //   Atualiza o estado para que a próxima iteração saiba qual é o estado atual.
-         lastRodadaState = rodadaState;
+    // =========================================================================
+
+    // 2. Gerenciamento de Estado da Rodada (Intervalo vs Em Jogo)
+    const rodadaState = rodadaData && rodadaData.length > 0 ? rodadaData[0].estado.trim() : null;
+    
+    if (rodadaState === 'intervalo' && lastRodadaState !== 'intervalo') {
+        clearPanels();
+        lastRodadaState = rodadaState; 
+        // Resetamos o controle de evento para forçar recarga quando o intervalo acabar
+        window.ultimoEventoProcessado = null; 
+        return; 
+    } else if (rodadaState !== null) {
+        lastRodadaState = rodadaState;
     }
     
+    // 3. Processamento das Bolas
     const bolasCantadas = bolasData && Array.isArray(bolasData) && bolasData.length > 0
         ? bolasData[0].bolas_cantadas : [];
     
-    const proximaBola = bolasData[0].proxima_bola ? bolasData[0].proxima_bola : "--" ; 
-
+    const proximaBola = bolasData[0]?.proxima_bola ? bolasData[0].proxima_bola : "--"; 
     const ultimaBolaDaLista = bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : null;
-    const premioBuscadoDaAPI = buscandoData[0]?.buscando_o_premio.replace(/\s+/g, '').trim() || '';
-    const linhasAtivasDaAPI = buscandoData[0]?.buscando_a_linha || '';
 
+    // 4. Atualização do Painel Digital
     if (tipoDoSorteio === 'digital') {
        updateDigitalBola(proximaBola);
     }
+
+    // 5. Verificação de Mudança de Prêmio ou Linha
+    // Essa parte REPROCESSA cartelas JÁ carregadas. A busca de NOVAS cartelas foi feita no passo 1.
+    const premioBuscadoDaAPI = buscandoData[0]?.buscando_o_premio.replace(/\s+/g, '').trim() || '';
+    const linhasAtivasDaAPI = buscandoData[0]?.buscando_a_linha || '';
 
     if (premioBuscadoDaAPI !== buscando_o_premio.replace(/\s+/g, '').trim() || linhasAtivasDaAPI !== buscando_a_linha) {
         buscando_o_premio = premioBuscadoDaAPI;
         buscando_a_linha = linhasAtivasDaAPI;
         
-        bolaBuscandoPremio = bolasCantadas.length
+        bolaBuscandoPremio = bolasCantadas.length;
+        
+        // Se já temos faixas definidas (carregadas pelo passo 1), processamos a conferência
         if (cartelaRanges.length > 0) {
             fetchAndProcessCards();
         } else {
+            // Se não tem faixas, limpa a tela (mas não reseta o evento, pois o cliente pode estar só esperando)
             loadedCards = [];
             displayLoadedCards([]);
         }
     } else if (ultimaBolaDaLista !== ultimaBolaCantada) {
+        // Se saiu bola nova, recalcula as cartelas já carregadas
         ultimaBolaCantada = ultimaBolaDaLista;
         if (loadedCards.length > 0) {
             recalculateAndDisplayCards(bolasCantadas, premioBuscadoDaAPI, linhasAtivasDaAPI);
         }
     }
     
+    // 6. Dados Promocionais
     globalPromocionalData = promocionalData;
-//    displayPromocionalText(promocionalData); 
 
+    // 7. Configurações da Sala e Vídeo
     if (parametrosInfo) {
-         const nome_da_sala = parametrosInfo.nome_sala; 
+        const nome_da_sala = parametrosInfo.nome_sala; 
 
         if (nome_da_sala && salaTitleElement) {
             salaTitleElement.textContent = nome_da_sala;
         }
+        
         const tipoSorteio = parametrosInfo.tipo_sorteio;
         const rawVideoID = parametrosInfo.url_live || parametrosInfo.url_padrao || '';
-        const videoID = rawVideoID.split('&')[0];
         video_local = parametrosInfo.video_local;
-        currentVideoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1`;
+        
+        // Só atualiza vídeo se mudar (evita reload do iframe)
+        const videoID = rawVideoID.split('&')[0];
+        const newVideoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1`;
+        
+        if (currentVideoUrl !== newVideoUrl) {
+             currentVideoUrl = newVideoUrl;
+             // Lógica de atualização do iframe se necessário
+        }
+        
         tipoDoSorteio = tipoSorteio;
     
         if (abrirYoutubeBtn) {
-
-            // Converte o valor do banco (string 'false' ou boolean) para booleano seguro
             const isLocal = String(video_local).toLowerCase() === 'true'; 
             updateEstatisticasPanelWidth(tipoSorteio);
 
@@ -1693,33 +2007,32 @@ async function renderMainContent(data) {
                 if (youtubePanel && !youtubePanel.classList.contains('hidden')) {
                     abrirYoutubeBtn.click(); 
                 }  
-                if ( tipoSorteio === "digital") {
+                if (tipoSorteio === "digital") {
                    digitalBolaPanel.classList.remove('hidden');
                 }  
             } else {
-                if ( tipoSorteio !== "digital") {
+                if (tipoSorteio !== "digital") {
                    digitalBolaPanel.classList.add('hidden');
                 }  
                 abrirYoutubeBtn.classList.remove('hidden');
             }
         }
     }
+
+    // 8. Listeners de Promoção
     if (promocionalContainer) {
-        promocionalContainer.addEventListener('click', () => {
+        promocionalContainer.onclick = () => {
             hidePromocionalPanel();
             startPromocionalTimer();
-                 // Você pode adicionar um pequeno feedback visual ou log aki
-        });
+        };
     }
 
-
-    if (data.cardRanges) {
-        cardRanges = data.cardRanges;
-    }  
+    // 9. Atualização de Paineis Visuais
     updateNumericPanel(bolasCantadas);
     displayLastThree(bolasData?.[0]);
     displayConferencePanel(confereData, bolasCantadas);
 
+    // 10. Preço da Série
     if (premioInfo && typeof premioInfo.preco_da_serie === 'number') {
         const preco = premioInfo.preco_da_serie;
         ValorSerie = preco;
@@ -1728,23 +2041,32 @@ async function renderMainContent(data) {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         }).format(preco);
-        precoSerieElement.textContent = formattedPreco;
-        mobilePrecoSerieElement.textContent = formattedPreco;
-
-        // DEBUG: Confirme se o elemento está sendo encontrado
-        if (!precoSerieElement) console.error("Elemento 'preco-serie' não encontrado!");
-        if (!mobilePrecoSerieElement) console.error("Elemento 'mobile-preco-serie' não encontrado!");
+        
+        if(precoSerieElement) precoSerieElement.textContent = formattedPreco;
+        if(mobilePrecoSerieElement) mobilePrecoSerieElement.textContent = formattedPreco;
     }
 
-    // NOVA CHAMADA: Exibe os períodos de cartelas
-    if (data.cardRanges) {
-        displayCardRanges(data.cardRanges);
+    // 11. Exibe os períodos de cartelas na tela (Tags azuis)
+    // Se o backend mandar ranges globais, exibe. 
+    // Se preferir exibir os locais (do cliente), use 'cartelaRanges'
+    if (cartelaRanges && cartelaRanges.length > 0) {
+        displayCardRanges(cartelaRanges);
+    } else if (data.cardRanges) {
+        displayCardRanges(data.cardRanges); 
     }
 
+    // 12. Exibe informações de Prêmios e Totais
     displayPrizeInfo(buscandoData, premioData);
     displayPrizeValues(premioData, topeData);
-    checkTotalCards();
+    
+    // Atualiza totalizadores visuais
+    const totalAtual = isMobileDevice() ? 
+        (mobileTotalCartelasSpan ? parseInt(mobileTotalCartelasSpan.textContent) : 0) : 
+        (totalCartelasSpan ? parseInt(totalCartelasSpan.textContent) : 0);
+        
+    checkTotalCards(totalAtual);
 }
+
 
 async function init() {
     checkDeviceType();
@@ -2009,6 +2331,7 @@ ws.onmessage = (event) => {
 window.addEventListener('resize', checkDeviceType);
 
 document.addEventListener('DOMContentLoaded', () => {
+
     const isMobileTest = isMobileDevice();
     if (isMobileTest) {
         if (screen.orientation && screen.orientation.lock) {
@@ -2017,6 +2340,40 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     }   
+
+    const btnIrTop10 = document.getElementById('btn-ir-para-top10');
+    const btnIrLista = document.getElementById('btn-ir-para-lista');
+    const viewLista = document.getElementById('view-lista-numerica');
+    const viewTop10 = document.getElementById('view-top10-grafico');
+
+    if (btnIrTop10 && btnIrLista && viewLista && viewTop10) {
+        btnIrTop10.addEventListener('click', () => {
+            viewLista.classList.add('hidden');
+            viewTop10.classList.remove('hidden');
+        });
+
+        btnIrLista.addEventListener('click', () => {
+            viewTop10.classList.add('hidden');
+            viewLista.classList.remove('hidden');
+        });
+    }
+// --- LÓGICA PARA ALTERNAR VISUALIZAÇÃO NO MOBILE ---
+    const btnMobileTop10 = document.getElementById('btn-ir-para-top10-mobile');
+    const btnMobileLista = document.getElementById('btn-ir-para-lista-mobile');
+    const viewMobileLista = document.getElementById('view-lista-numerica-mobile');
+    const viewMobileTop10 = document.getElementById('view-top10-grafico-mobile');
+
+    if (btnMobileTop10 && btnMobileLista && viewMobileLista && viewMobileTop10) {
+        btnMobileTop10.addEventListener('click', () => {
+            viewMobileLista.classList.add('hidden');
+            viewMobileTop10.classList.remove('hidden');
+        });
+
+        btnMobileLista.addEventListener('click', () => {
+            viewMobileTop10.classList.add('hidden');
+            viewMobileLista.classList.remove('hidden');
+        });
+    }
  
 // Referencia os painéis e botões
     const mobilePanelsContainer = document.getElementById('mobile-panels-container');
@@ -2093,7 +2450,12 @@ async function processarParametrosURL() {
     console.log("Processando parâmetros da URL...");
     
     const urlParams = new URLSearchParams(window.location.search);
-    
+    // --- Processa o idcliente --- 
+    clienteLogadoId =  urlParams.get('idcliente');
+    //if (!clienteLogadoId) {
+    //    console.log("Nenhum parâmetro 'idcliente' encontrado.");
+    //}
+    console.log("idcliente encontrado  :",clienteLogadoId);
     // --- Processa o idrodada ---
     const idRodadaParam = urlParams.get('idrodada');
     if (idRodadaParam) {
@@ -2111,7 +2473,7 @@ async function processarParametrosURL() {
         return; // Sai da função
     }
 
-    console.log("Parâmetros de período detectados:", periodosArr);
+    //console.log("Parâmetros de período detectados:", periodosArr);
     
     // Pega os elementos
     const loader = document.getElementById('loader');

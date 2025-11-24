@@ -1,3 +1,5 @@
+#mongodb+srv://rivaldosp_db_user:TecBin24@vendas.ifpeimn.mongodb.net/?appName=vendas
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import os
@@ -42,6 +44,12 @@ CORS(app)
 port = int(os.environ.get('PORT') or os.environ.get('sPORT', 3001))
 
 db = None
+
+# --- CACHE CONEXÃO VENDAS ---
+sales_client = None
+current_sales_uri = None
+SALES_DB_NAME = "bingo_vendas_db" # Nome padrão do banco de vendas (ou pegue da URI)
+
 
 # Evitar recarregar cartelas continuamente
 UltAlt_Cartelas = ""
@@ -88,48 +96,50 @@ def parse_numeric_fields(data):
             parsed_data[key] = value
     return parsed_data
 
-# NOVO: Função para buscar os dados da tabela 'parametros' (ou arquivo local)
+# NOVO: Função para buscar os dados da tabela 'parametros'
 def get_parametros_data(db):
+    # Modo Local
     if is_local_mode:
         local_file_path = os.path.join(LOCAL_PATH, 'parametros.json')
-        
         if os.path.exists(local_file_path):
             try:
                 with open(local_file_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    
-                    # CORREÇÃO CRÍTICA: Extrai o primeiro item da lista se for uma lista
                     if isinstance(data, list) and data:
-                        # Retorna o dicionário com os parâmetros (ex: {"nome_sala": "..."})
-                        return data[0] 
+                        return data[0]
                     elif isinstance(data, dict):
-                         # Retorna o dicionário puro, se o usuário mudar o formato do arquivo
                          return data
-                    else:
-                        print(f"AVISO: 'parametros.json' tem formato JSON interno inválido (não é lista nem dicionário).")
-                        return {}
-
-            except json.JSONDecodeError as e:
-                print(f"ERRO FATAL: Sintaxe JSON inválida em 'parametros.json'. Detalhes: {e}")
-                return {}
+                    return {}
             except Exception as e:
-                print(f"ERRO: Falha geral na leitura de 'parametros.json': {e}")
+                print(f"ERRO ao ler parametros.json: {e}")
                 return {}
         else:
-            print(f"AVISO: Arquivo 'parametros.json' não encontrado em {local_file_path}")
             return {}
             
     # Modo MongoDB (se 'is_local_mode' for False)
     else: 
-        # ... (Sua lógica de busca no MongoDB)
         try:
+            # Tenta buscar o documento
             parametros_doc = db['parametros'].find_one()
+            
             if parametros_doc:
+                # Debug: Mostra no terminal que achou (ajuda a confirmar a conexão)
+                # print(f"[DEBUG] Parâmetros carregados do Mongo: Sala {parametros_doc.get('nome_sala')}")
+                
+                # Remove o _id para não quebrar o JSON
                 parametros_doc.pop('_id', None)
+                
+                # Verifica se a URL de vendas existe
+                if 'url_mongo_vendas' not in parametros_doc:
+                    print("[AVISO] Campo 'url_mongo_vendas' NÃO encontrado na tabela parametros.")
+                
                 return parametros_doc
+            
+            print("[AVISO] Tabela 'parametros' está vazia no MongoDB.")
             return {}
+            
         except Exception as e:
-            print(f"Erro ao buscar parâmetros no MongoDB: {e}")
+            print(f"ERRO CRÍTICO ao buscar parâmetros no MongoDB: {e}")
             return {}
 
 # --- LÊ DADOS DOS ARQUIVOS JSON LOCAIS ---
@@ -588,6 +598,86 @@ def set_current_prize():
     except Exception as e:
         return jsonify({'error': "Erro ao atualizar o prêmio em jogo."}), 500
 
+# consulta cartelas por evento
+@app.route('/api/consultar_cartelas_evento')
+def api_consultar_cartelas_evento():
+    # 1. Valida parâmetros da URL
+    try:
+        id_evento = request.args.get('id_evento') # String (ex: "105")
+        id_cliente_str = request.args.get('id_cliente')
+        
+        if not id_evento or not id_cliente_str:
+             return jsonify({'error': 'Parâmetros faltando'}), 400
+             
+        id_cliente = int(id_cliente_str)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Parâmetros inválidos'}), 400
+
+    # 2. Obtém a conexão com o banco de VENDAS
+    sales_db_conn = get_sales_db_connection()
+    if sales_db_conn is None:
+        return jsonify({'error': 'DB Vendas Offline'}), 500
+
+    # 3. Define o nome da coleção (Ajuste que você fez: SEM PONTO)
+    nome_colecao = f"vendas{id_evento}" 
+    
+    # =====================================================================
+    # >>> DEBUG: MOSTRAR O QUE EXISTE NO BANCO <<<
+    # =====================================================================
+    try:
+        colecoes_existentes = sales_db_conn.list_collection_names()
+        
+        print("\n=== 🕵️ DEBUG DO BANCO DE VENDAS ===")
+        print(f"Nome do Banco Conectado: '{sales_db_conn.name}'")
+        print(f"O sistema está procurando por: '{nome_colecao}'")
+        print(f"LISTA REAL DE COLEÇÕES NO BANCO:")
+        print(colecoes_existentes)
+        print("====================================\n")
+        
+        cartelas_formatadas = []
+
+        # 4. Verifica se a coleção existe e busca
+        if nome_colecao in colecoes_existentes:
+            print(f"✅ SUCESSO: Coleção '{nome_colecao}' encontrada! Buscando cartelas...")
+            
+            vendas_cursor = sales_db_conn[nome_colecao].find(
+                {'id_cliente': id_cliente},
+                {'_id': 0, 'numero_inicial': 1, 'numero_final': 1, 'numero_inicial2': 1, 'numero_final2': 1}
+            )
+            
+            # 5. Processa os intervalos
+            count = 0
+            for venda in vendas_cursor:
+                # Intervalo 1
+                if venda.get('numero_inicial') is not None and venda.get('numero_final') is not None:
+                    for num in range(venda['numero_inicial'], venda['numero_final'] + 1):
+                        cartelas_formatadas.append(num)
+                        count += 1
+                
+                # Intervalo 2 (se houver)
+                if venda.get('numero_inicial2') and venda.get('numero_final2') and venda.get('numero_inicial2') > 0:
+                    for num in range(venda['numero_inicial2'], venda['numero_final2'] + 1):
+                        cartelas_formatadas.append(num)
+                        count += 1
+            
+            print(f"Total de cartelas encontradas para o cliente {id_cliente}: {count}")
+
+        else:
+            print(f"❌ AVISO: A coleção '{nome_colecao}' NÃO existe na lista acima.")
+
+        return jsonify({
+            'id_evento': id_evento,
+            'id_cliente': id_cliente,
+            'quantidade': len(cartelas_formatadas),
+            'cartelas': cartelas_formatadas
+        })
+
+    except Exception as e:
+        print(f"Erro ao buscar cartelas na coleção de vendas: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# Defs
 def websocket_app(environ, start_response):
     if 'wsgi.websocket' in environ:
         ws = environ['wsgi.websocket']
@@ -609,6 +699,95 @@ def websocket_app(environ, start_response):
     else:
         # Standard HTTP requests
         return app(environ, start_response)
+
+#Conexão Vendas
+def get_sales_db_connection():
+    global sales_client, current_sales_uri, db
+    
+    param_doc = None
+
+    # 1. Lógica Híbrida: Define de onde ler os parâmetros
+    if is_local_mode:
+        # --- MODO LOCAL: Lê do arquivo JSON ---
+        try:
+            path_params = os.path.join(LOCAL_PATH, 'parametros.json')
+            if os.path.exists(path_params):
+                with open(path_params, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # O arquivo costuma ser uma lista [{...}], pegamos o primeiro item
+                    if isinstance(data, list) and len(data) > 0:
+                        param_doc = data[0]
+                    elif isinstance(data, dict):
+                        param_doc = data
+            else:
+                print(f"ERRO: Arquivo 'parametros.json' não encontrado em {LOCAL_PATH}")
+                return None
+        except Exception as e:
+            print(f"ERRO ao ler parametros.json local: {e}")
+            return None
+            
+    else:
+        # --- MODO NUVEM: Lê do MongoDB Principal ---
+        if db is None: 
+            print("ERRO FATAL: DB Principal desconectado em modo nuvem.")
+            return None
+        try:
+            param_doc = db.parametros.find_one({})
+        except Exception as e:
+            print(f"ERRO de leitura no DB Principal: {e}")
+            return None
+
+    # ==============================================================================
+    # >>>>>>>>>> LOGS DE DEBUG (ADICIONE ISTO AQUI) <<<<<<<<<<
+    # ==============================================================================
+    print("\n--- DEBUG PARAMETROS ---")
+    print(f"Modo Local Ativo? {is_local_mode}")
+    if param_doc:
+        # Remove dados sensíveis ou grandes se necessário, mas queremos ver as chaves
+        print(f"Chaves encontradas: {list(param_doc.keys())}")
+        url_vendas = param_doc.get('url_mongo_vendas', 'NÃO ENCONTRADA')
+        print(f"Valor de 'url_mongo_vendas': {url_vendas}")
+    else:
+        print("param_doc está VAZIO ou NULO.")
+    print("------------------------\n")
+    # ==============================================================================
+
+    # 2. Validação dos Dados Encontrados
+    if not param_doc:
+        print("ERRO: Documento de parâmetros vazio ou não encontrado.")
+        return None
+
+    if 'url_mongo_vendas' not in param_doc:
+        print("ERRO: O campo 'url_mongo_vendas' NÃO EXISTE no parametros.json (ou no Mongo).")
+        return None
+        
+    new_uri = param_doc['url_mongo_vendas']
+    
+    # 3. Gerencia a Conexão com o Banco de Vendas
+    try:
+        if sales_client is None or new_uri != current_sales_uri:
+            if sales_client:
+                sales_client.close()
+            
+            print(f"Conectando ao Banco de Vendas (Origem: {'Local' if is_local_mode else 'Mongo'})...")
+            
+            mongo_kwargs = { 'server_api': ServerApi('1') }
+            if _TLS_CA_FILE: mongo_kwargs['tlsCAFile'] = _TLS_CA_FILE
+                
+            sales_client = MongoClient(new_uri, **mongo_kwargs)
+            current_sales_uri = new_uri
+            sales_client.admin.command('ping')
+            print("Sucesso: Conectado ao Banco de Vendas!")
+
+        try:
+            return sales_client.get_default_database()
+        except:
+            return sales_client[SALES_DB_NAME]
+
+    except Exception as e:
+        print(f"Erro crítico ao conectar no banco de vendas: {e}")
+        return None
+
 
 # Inicialização
 def main():

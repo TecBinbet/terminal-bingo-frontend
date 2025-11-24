@@ -15,6 +15,9 @@ const WS_URL = 'https://orca-app-dp256.ondigitalocean.app';
 // note p2
 //const API_BASE_URL = 'http://192.168.1.147:3001';
 //const WS_URL = 'ws://192.168.1.147:3001';
+//const API_BASE_URL = 'http://192.168.0.6:3001';
+//const WS_URL = 'ws://192.168.0.6:3001';
+
 
 // Ativar Localhost para uso da câmera (Contexto Seguro)
 //const API_BASE_URL = 'http://localhost:3001';
