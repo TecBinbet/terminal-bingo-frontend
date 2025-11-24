@@ -109,7 +109,7 @@
             <div id="mobile-number-panel" class="bg-black p-0 rounded-lg shadow-lg col-span-1 lg:col-span-2">
                 <div class="grid grid-cols-10 gap-0 bg-black" id="mobile-number-grid"></div>
             </div>
-            <aside id="mobile-last-balls-panel" class=" justify-center bg-gray-800 p-2 rounded-lg shadow-lg">
+            <aside id="mobile-last-balls-panel" class="relative justify-center bg-gray-800 p-2 rounded-lg shadow-lg">
                 <div class="flex justify-center items-center space-x-2">
                     <div id="mobile-last-ball-1" class="h-5 w-5 flex items-center justify-center rounded-full bg-gray-300 text-gray-800 text-[12px] shadow-md"></div>
                     <div id="mobile-last-ball-2" class="h-5 w-5 flex items-center justify-center rounded-full bg-gray-300 text-gray-800 text-[12px] shadow-md"></div>
@@ -122,6 +122,11 @@
                 <div class="mt-0 flex justify-center items-center space-x-2 text-sm font-bold text-gray-300">
                      <span>Série R$: <span id="mobile-preco-serie" class="text-xl font-bold text-blue-400">0</span></span>
                 <div>
+                <button id="btn-toggle-voz" class="absolute top-1 left-1 text-white bg-gray-700 hover:bg-gray-600 rounded-full p-1.5 shadow-md focus:outline-none" title="Ligar/Desligar Voz">
+                    <span id="icon-voz-on">🔊</span>
+                    <span id="icon-voz-off" class="hidden">🔇</span>
+                </button>
+
             </aside>
         </section>
 
@@ -249,7 +254,7 @@
 
                 <div id="view-top10-grafico" class="hidden">
                     <div class="flex justify-between items-center mb-2">
-                        <h3 class="text-sm font-bold text-yellow-500">Top 10 Cartelas (Gráfico)</h3>
+                        <h3 id="oscartoes-header" class="text-xl font-bold text-yellow-500">8 Melhores Cartelas</h3>
                         <button id="btn-ir-para-lista" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded text-sm flex items-center gap-2">
                             <span>Ver Lista Numérica</span>
                             <span class="text-lg">📋</span>
@@ -291,7 +296,7 @@
 
                 <div id="view-top10-grafico-mobile" class="hidden">
                     <div class="flex justify-between items-center mb-0 sticky top-0 bg-gray-900 z-10 pt-0 pb-1">
-                        <h3 class="text-sm font-bold text-yellow-500">8 Melhores Cartelas</h3>
+                        <h3 id="mobile-oscartoes-header" class="text-sm font-bold text-yellow-500">8 Melhores</h3>
                         <button id="btn-ir-para-lista-mobile" class="bg-gray-700 active:bg-gray-600 text-white text-xs font-bold py-1.5 px-3 rounded-full shadow-md flex items-center -mt-1 gap-1">
                             <span>Ver Lista</span>
                             <span>📊</span>

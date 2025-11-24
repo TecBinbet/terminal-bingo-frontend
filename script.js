@@ -1,3 +1,6 @@
+//Criar menu
+//Destacar Linha ou quadra
+//
 const backendVersionElement = document.getElementById('backend-version');
 const frontendVersionElement = document.getElementById('frontend-version');
 const loader = document.getElementById('loader');
@@ -38,6 +41,8 @@ let promocionalTimer = null; // Armazena a referência do temporizador
 let globalPromocionalData = [];
 
 let clienteLogadoId = null;
+
+let vozAtiva = true; 
 
 let eventoCarregadoAtual = null;
 
@@ -551,6 +556,7 @@ function goFullscreen() {
     } else if (element.msRequestFullscreen) { // IE/Edge
         element.msRequestFullscreen();
     }
+    desbloquearAudio();
 }
 
 function lockSizeScreen() {
@@ -1772,9 +1778,18 @@ function updateEstatisticasPanelWidth(tipoSorteio) {
         estatisticasPanel.classList.add(classPadrao);
     }
 }
-
-// ATUALIZADO: Renderiza as 8 melhores cartelas em 2 Colunas (PC e Mobile)
+// ATUALIZADO: Renderiza as 8 melhores cartelas com Destaque APENAS na Linha Alvo
 function renderOscartoes(bolasCantadas) {
+    const totalCartelas = loadedCards ? loadedCards.length : 0;
+    const formattedCount = new Intl.NumberFormat('pt-BR').format(cartelasEmJogo);
+    const textoTitulo = `8 Melhores Cartelas (${formattedCount})`;
+
+    const pcHeader = document.getElementById('oscartoes-header');
+    const mobileHeader = document.getElementById('mobile-oscartoes-header');
+
+    if (pcHeader) pcHeader.textContent = textoTitulo;
+    if (mobileHeader) mobileHeader.textContent = textoTitulo;
+
     const containers = [
         document.getElementById('oscartoes-content'),       
         document.getElementById('mobile-oscartoes-content') 
@@ -1786,21 +1801,20 @@ function renderOscartoes(bolasCantadas) {
     if (!loadedCards || loadedCards.length === 0) {
         conteudoVazio = true;
     } else {
-        // LIMITA AO TOP 8 (Para caber na tela sem scroll excessivo)
         dadosParaRenderizar = loadedCards.slice(0, 8);
     }
+
+    // Verifica se é modo LINHA ou QUADRA
+    const premioAtual = buscando_o_premio.replace(/\s+/g, '').toUpperCase();
+    const isModoLinhaOuQuadra = premioAtual.includes('LINHA') || premioAtual.includes('QUADRA');
 
     containers.forEach(container => {
         if (!container) return; 
 
         container.innerHTML = '';
-
-        // Define o Grid do Container Principal para 2 Colunas
-        // gap-2 = Espaço pequeno entre as cartelas
         container.className = 'grid grid-cols-2 gap-2 pb-4 content-start';
 
         if (conteudoVazio) {
-            // Remove o grid se estiver vazio para centralizar a mensagem
             container.className = 'flex flex-col items-center justify-center h-full';
             container.innerHTML = '<p class="text-center text-gray-500 text-xs mt-4">Nenhuma cartela processada.</p>';
             return;
@@ -1815,40 +1829,60 @@ function renderOscartoes(bolasCantadas) {
 
             if (!numerosGerais || numerosGerais.length === 0) return;
 
-            // Container da Cartela
+            // Container
             const cardDiv = document.createElement('div');
-            // Removido mb-2, pois o gap do grid pai já cuida do espaço
             cardDiv.className = 'bg-gray-900 border border-gray-700 rounded p-1 flex flex-col gap-0.5 shadow-sm';
 
-            // Header (Número e Faltantes)
+            // Header
             const faltam = cardData.missingNumbers ? cardData.missingNumbers.length : 15;
             const faltamClass = faltam <= 1 ? 'text-red-500 animate-pulse' : 'text-blue-400';
 
             const header = document.createElement('div');
-            // Padding e margens ajustados para economia de espaço
             header.className = 'flex justify-between items-center border-b border-gray-700 pb-0.5 mb-0.5';
-            // Texto menor (text-[10px] e text-[9px]) para caber na meia-largura
             header.innerHTML = `
-                <span class="text-gray-400 font-bold text-[10px]">Cartela:<span class="text-yellow-500">${numeroCartao}</span></span>
+                <span class="text-gray-400 font-bold text-[10px]">Cartela: <span class="text-yellow-500">${numeroCartao}</span></span>
                 <span class="text-[10px] font-bold ${faltamClass}">Faltam: ${faltam}</span>
             `;
             cardDiv.appendChild(header);
 
-            // Grid Interno da Cartela (3x5 ou 5x5 dependendo do jogo, aqui assumindo 15 números = 3x5)
+            // Grid
             const grid = document.createElement('div');
-            grid.className = 'grid grid-cols-5 gap-0.5'; // Gap ultra-fino
+            grid.className = 'grid grid-cols-5 gap-0.5';
 
-            numerosGerais.forEach(num => {
+            numerosGerais.forEach((num, index) => {
                 const cell = document.createElement('div');
-                // Células menores (h-4 e text-[9px]) para caberem duas cartelas lado a lado
                 let cellClass = 'h-4 w-full flex items-center justify-center text-[9px] font-bold rounded border ';
                 
                 if (bolasCantadas.includes(num)) {
-                    // JÁ SORTEADO
+                    // 1. JÁ SORTEADO (Cinza Escuro / Apagado)
                     cellClass += 'bg-gray-800 text-gray-600 border-gray-800'; 
                 } else {
-                    // FALTANTE (DESTAQUE)
-                    cellClass += 'bg-gray-800 text-gray-250 border-yellow-600 shadow-sm'; 
+                    // 2. NÃO SORTEADO (Faltante)
+                    let isTargetLine = true;
+
+                    // Se for modo LINHA/QUADRA, verifica se o número pertence à linha "boa"
+                    if (isModoLinhaOuQuadra && cardData.linhaId) {
+                        let linhaDoNumero = '';
+                        if (index >= 0 && index <= 4) linhaDoNumero = 'Sup';
+                        else if (index >= 5 && index <= 9) linhaDoNumero = 'Cen';
+                        else if (index >= 10 && index <= 14) linhaDoNumero = 'Inf';
+
+                        // Se a linha do número não for a linha premiada da cartela
+                        if (linhaDoNumero !== cardData.linhaId) {
+                            isTargetLine = false;
+                        }
+                    }
+
+                    if (isTargetLine) {
+                        // DESTAQUE (Branco com Borda Amarela)
+                        // É um número faltante NA linha que estamos torcendo
+                        cellClass += 'bg-gray-700 text-white border-yellow-600 shadow-sm'; 
+                    } else {
+                        // "GRAY-250" (Cinza Claro mas sem destaque)
+                        // É um número faltante, mas numa linha que NÃO vai bater agora
+                        // Usamos text-gray-400 para simular o "gray-250" visível mas discreto
+                        cellClass += 'bg-gray-800 text-gray-300 border-gray-800'; 
+                    }
                 }
                 
                 cell.className = cellClass;
@@ -1858,10 +1892,9 @@ function renderOscartoes(bolasCantadas) {
 
             cardDiv.appendChild(grid);
             
-            // Footer de Ganhou (se houver)
             if (cardData.premioEncontrado) {
                 const footer = document.createElement('div');
-                footer.className = 'mt-0.5 text-center bg-green-800 text-white text-[8px] font-bold rounded py-0.5';
+                footer.className = 'mt-0.5 text-center text-[8px] font-bold rounded py-0.5 animate-prize-blink';
                 footer.textContent = `${cardData.premioEncontrado}`;
                 cardDiv.appendChild(footer);
             }
@@ -1965,6 +1998,10 @@ async function renderMainContent(data) {
             displayLoadedCards([]);
         }
     } else if (ultimaBolaDaLista !== ultimaBolaCantada) {
+        // Verifica se não é nulo e se realmente mudou
+        if (ultimaBolaDaLista !== null && ultimaBolaDaLista !== undefined) {
+             falarTexto(`${ultimaBolaDaLista}`);
+        }
         // Se saiu bola nova, recalcula as cartelas já carregadas
         ultimaBolaCantada = ultimaBolaDaLista;
         if (loadedCards.length > 0) {
@@ -2252,6 +2289,41 @@ if (toggleCartelasButton && mobileCartelasContent) {
     });
 }
 
+// Variável para controlar se a voz está ativa (pode virar um botão de "mudo" depois)
+
+function falarTexto(texto) {
+    if (!vozAtiva) return;
+
+    // Verifica se o navegador suporta a API
+    if ('speechSynthesis' in window) {
+        // Cancela qualquer fala que esteja ocorrendo (para não encavalar se o sorteio for rápido)
+        window.speechSynthesis.cancel();
+
+        const utter = new SpeechSynthesisUtterance();
+        utter.text = texto;
+        utter.lang = 'pt-BR'; // Define português
+        utter.volume = 1;     // 0 a 1
+        utter.rate = 1.1;     // Velocidade (1.1 fica mais dinâmico)
+        utter.pitch = 1;      // Tom de voz
+
+        // Tenta pegar uma voz específica (opcional, melhora a qualidade se disponível)
+        const vozes = window.speechSynthesis.getVoices();
+        // Procura voz do Google ou Microsoft em PT-BR (são mais naturais)
+        const vozMelhor = vozes.find(v => v.lang === 'pt-BR' && (v.name.includes('Google') || v.name.includes('Microsoft')));
+        if (vozMelhor) utter.voice = vozMelhor;
+
+        window.speechSynthesis.speak(utter);
+    } else {
+        console.warn("Navegador não suporta síntese de voz.");
+    }
+}
+
+function desbloquearAudio() {
+    if ('speechSynthesis' in window) {
+        const msg = new SpeechSynthesisUtterance(""); // Fala nada
+        window.speechSynthesis.speak(msg);
+    }
+}
 // A função que trava a orientação da tela em modo retrato
 function lockScreenOrientation() {
     // Verifica se a API de Orientação da Tela é suportada pelo navegador
@@ -2357,6 +2429,48 @@ document.addEventListener('DOMContentLoaded', () => {
             viewLista.classList.remove('hidden');
         });
     }
+
+// --- CONTROLE DE VOZ (MOBILE) ---
+    const btnToggleVoz = document.getElementById('btn-toggle-voz');
+    const iconVozOn = document.getElementById('icon-voz-on');
+    const iconVozOff = document.getElementById('icon-voz-off');
+
+    // Sincroniza o botão com o estado inicial (vozAtiva = true)
+    if (btnToggleVoz) {
+        // Função interna para atualizar os ícones
+        const updateVozIcons = () => {
+            if (vozAtiva) {
+                iconVozOn.classList.remove('hidden');
+                iconVozOff.classList.add('hidden');
+                btnToggleVoz.classList.add('bg-gray-700');     // Estilo Ativo
+                btnToggleVoz.classList.remove('bg-red-900');
+            } else {
+                iconVozOn.classList.add('hidden');
+                iconVozOff.classList.remove('hidden');
+                btnToggleVoz.classList.remove('bg-gray-700');
+                btnToggleVoz.classList.add('bg-red-900');      // Estilo Mudo (Vermelho escuro)
+            }
+        };
+
+        // Estado inicial
+        updateVozIcons();
+
+        // Clique no botão
+        btnToggleVoz.addEventListener('click', () => {
+            vozAtiva = !vozAtiva; // Inverte o estado (true <-> false)
+            
+            // Se ativou, tenta desbloquear o áudio (para iOS/Chrome)
+            if (vozAtiva) {
+                desbloquearAudio();
+                falarTexto("Áudio Ativado");
+            } else {
+                window.speechSynthesis.cancel(); // Para qualquer fala atual
+            }
+            
+            updateVozIcons();
+        });
+    }
+
 // --- LÓGICA PARA ALTERNAR VISUALIZAÇÃO NO MOBILE ---
     const btnMobileTop10 = document.getElementById('btn-ir-para-top10-mobile');
     const btnMobileLista = document.getElementById('btn-ir-para-lista-mobile');

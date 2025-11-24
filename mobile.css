@@ -197,3 +197,23 @@ html, body {
 .animate-pulsing-border {
     animation: pulse-border 1s infinite; /* Nome da animação, duração, repetição */
 }
+
+/* --- Adicione isto ao final do mobile.css --- */
+
+/* Animação para alternar cores do prêmio (Fundo Verde <-> Fundo Branco) */
+@keyframes flash-premio-verde {
+    0%, 100% { 
+        background-color: #166534; /* Cor do bg-green-800 */
+        color: #ffffff; 
+        border: 1px solid #166534; /* Borda mantida para evitar pulos de layout */
+    }
+    50% { 
+        background-color: #ffffff; 
+        color: #166534; /* Cor do text-green-800 */
+        border: 1px solid #166534;
+    }
+}
+
+.animate-prize-blink {
+    animation: flash-premio-verde 1s infinite; /* Pisca a cada 1 segundo */
+}
