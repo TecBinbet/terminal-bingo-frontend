@@ -1,5 +1,4 @@
 //Criar menu
-//Destacar Linha ou quadra
 //
 const backendVersionElement = document.getElementById('backend-version');
 const frontendVersionElement = document.getElementById('frontend-version');
@@ -32,6 +31,21 @@ let tipoDoSorteio = "";
 const youtubePanel = document.getElementById('youtube-panel'); 
 const youtubeIframe = document.getElementById('youtube-iframe');
 const abrirYoutubeBtn = document.getElementById('abrir-youtube-btn');
+
+// --- LÓGICA DO MENU LATERAL ---
+
+const menuOverlay = document.getElementById('side-menu-overlay');
+const menuBackdrop = document.getElementById('side-menu-backdrop');
+const menuPanel = document.getElementById('side-menu-panel');
+const btnOpenMenu = document.getElementById('btn-open-menu');
+const btnCloseMenu = document.getElementById('btn-close-menu');
+
+// Elementos internos do menu
+const menuBtnSom = document.getElementById('menu-btn-som');
+const menuIconSom = document.getElementById('menu-icon-som');
+const menuStatusSom = document.getElementById('menu-status-som');
+const menuBtnTema = document.getElementById('menu-btn-tema');
+const menuStatusTema = document.getElementById('menu-status-tema');
 //
 let cartelasEmJogo = 0;
 // Timer promocionais
@@ -45,6 +59,8 @@ let clienteLogadoId = null;
 let vozAtiva = true; 
 
 let eventoCarregadoAtual = null;
+
+let isDarkMode = true; // Padrão atual
 
 // NOVOS ELEMENTOS:
 const salaTitleElement = document.getElementById('sala-title');
@@ -304,6 +320,65 @@ function agruparNumerosEmRanges(numeros) {
 
 function isMobileDevice() {
     return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+// MENU
+function openSideMenu() {
+    if (!menuOverlay) return;
+    menuOverlay.classList.remove('hidden');
+    
+    // Pequeno delay para permitir a transição CSS
+    setTimeout(() => {
+        menuBackdrop.classList.remove('opacity-0');
+        menuPanel.classList.remove('-translate-x-full');
+    }, 10);
+
+    // Sincroniza o estado visual do som ao abrir
+    updateMenuSoundVisuals();
+}
+
+function closeSideMenu() {
+    if (!menuOverlay) return;
+    
+    menuBackdrop.classList.add('opacity-0');
+    menuPanel.classList.add('-translate-x-full');
+
+    // Espera a animação terminar para esconder o overlay
+    setTimeout(() => {
+        menuOverlay.classList.add('hidden');
+    }, 300);
+}
+
+// Atualiza os ícones e textos do menu baseado na variável global 'vozAtiva'
+function updateMenuSoundVisuals() {
+    if (vozAtiva) {
+        menuIconSom.textContent = '🔊';
+        menuStatusSom.textContent = 'LIGADO';
+        menuStatusSom.className = 'text-xs font-bold text-green-500';
+    } else {
+        menuIconSom.textContent = '🔇';
+        menuStatusSom.textContent = 'MUDO';
+        menuStatusSom.className = 'text-xs font-bold text-red-500';
+    }
+    
+    // Opcional: Sincroniza também o botãozinho do painel mobile se ele existir
+    const btnToggleVozMobile = document.getElementById('btn-toggle-voz');
+    const iconVozOnMobile = document.getElementById('icon-voz-on');
+    const iconVozOffMobile = document.getElementById('icon-voz-off');
+    
+    if (btnToggleVozMobile && iconVozOnMobile) {
+        if (vozAtiva) {
+            iconVozOnMobile.classList.remove('hidden');
+            iconVozOffMobile.classList.add('hidden');
+            btnToggleVozMobile.classList.add('bg-gray-700');
+            btnToggleVozMobile.classList.remove('bg-red-900');
+        } else {
+            iconVozOnMobile.classList.add('hidden');
+            iconVozOffMobile.classList.remove('hidden');
+            btnToggleVozMobile.classList.remove('bg-gray-700');
+            btnToggleVozMobile.classList.add('bg-red-900');
+        }
+    }
 }
 
 // Função para tocar o som
@@ -1324,8 +1399,7 @@ function clearPanels() {
     loadedCardsListCurrent.innerHTML = `<p class="text-white text-center">Nenhuma cartela carregada.</p>`;
     prizeValues.innerHTML = '';
     headerElement.textContent = `Nenhuma Cartela Carregada`;
-    conferencePanelContainer.classList.remove('flex');
-    conferencePanelContainer.classList.add('hidden');
+    ocultarConferencia();
     cardNumberElement.textContent = 'Aguardando...';
     winnerNameElement.textContent = 'O Próximo será Seu!';
     cardGridElement.innerHTML = '';
@@ -1590,7 +1664,7 @@ function displayCardGrid(numerosString, bolasCantadas) {
                 const numero = subtext.replace(/[+*]/g, '').trim();
                 if (numero) {
                     const numberDiv = document.createElement('div');
-                    numberDiv.className = 'card-number-item p-2 bg-gray-300 rounded-lg text-gray-800 font-bold text-2xl text-center';
+                    numberDiv.className = 'card-number-item p-1 bg-gray-300 rounded-lg text-gray-800 font-bold text-xl text-center';
                     numberDiv.textContent = numero;
                     cardGridElement.appendChild(numberDiv);
                 }
@@ -1600,7 +1674,7 @@ function displayCardGrid(numerosString, bolasCantadas) {
     if (!cardHasNumbers) {
         for (let i = 0; i <  15; i++) {
             const placeholderDiv = document.createElement('div');
-            placeholderDiv.className = 'card-number-item p-2 bg-gray-300 rounded-lg text-gray-800 font-bold text-2xl text-center';
+            placeholderDiv.className = 'card-number-item p-1 bg-gray-300 rounded-lg text-gray-800 font-bold text-xl text-center';
             placeholderDiv.textContent = '00';
             cardGridElement.appendChild(placeholderDiv);
         }
@@ -1609,6 +1683,8 @@ function displayCardGrid(numerosString, bolasCantadas) {
 }
 
 function displayConferencePanel(confereData, bolasCantadas) {
+    const container = document.getElementById('conference-panel-container');
+    
     if (confereData && confereData.length > 0 && typeof confereData[0] === 'object') {
         const data = confereData[0];
         const numeroDoCartao = parseInt(data.cartao, 10);
@@ -1617,27 +1693,33 @@ function displayConferencePanel(confereData, bolasCantadas) {
         const cartaoValido = !isNaN(numeroDoCartao) && numeroDoCartao > 0;
 
         if (cartaoValido) {
-            conferencePanelContainer.classList.remove('hidden');
-            conferencePanelContainer.classList.add('flex');
+            // Exibe o Overlay
+            container.classList.remove('hidden');
+            container.classList.add('flex'); // 'flex' é necessário para centralizar o conteúdo no CSS novo
+            
             cardNumberElement.textContent = numeroDoCartao;
             winnerNameElement.textContent = nomeDoGanhador || 'O Próximo será Seu!';
             displayCardGrid(numerosDaCartela, bolasCantadas);
+            
+            // Efeito Sonoro de Vitória (Opcional)
+            // playBingoSound(); 
         } else {
-            conferencePanelContainer.classList.remove('flex');
-            conferencePanelContainer.classList.add('hidden');
-            cardNumberElement.textContent = 'Aguardando...';
-            winnerNameElement.textContent = 'O Próximo será Seu!';
-            displayCardGrid(null, bolasCantadas);
+            ocultarConferencia();
         }
     } else {
-        conferencePanelContainer.classList.remove('flex');
-        conferencePanelContainer.classList.add('hidden');
-        cardNumberElement.textContent = 'Aguardando...';
-        winnerNameElement.textContent = 'O Próximo será Seu!';
-        displayCardGrid(null, bolasCantadas);
+        ocultarConferencia();
     }
 }
 
+// Função auxiliar para esconder e limpar
+function ocultarConferencia() {
+    const container = document.getElementById('conference-panel-container');
+    container.classList.remove('flex');
+    container.classList.add('hidden');
+    cardNumberElement.textContent = '...';
+    winnerNameElement.textContent = '...';
+    displayCardGrid(null, []);
+}
 async function fetchDataFromCollections() {
     try {
         const response = await fetch(`${API_BASE_URL}/api/initial-data`);
@@ -2429,6 +2511,13 @@ document.addEventListener('DOMContentLoaded', () => {
             viewLista.classList.remove('hidden');
         });
     }
+// --- BOTÃO FECHAR TELA CONFERENCIA ---
+    const btnCloseConf = document.getElementById('btn-close-conference');
+    if (btnCloseConf) {
+        btnCloseConf.addEventListener('click', () => {
+            ocultarConferencia();
+        });
+    }
 
 // --- CONTROLE DE VOZ (MOBILE) ---
     const btnToggleVoz = document.getElementById('btn-toggle-voz');
@@ -2470,6 +2559,44 @@ document.addEventListener('DOMContentLoaded', () => {
             updateVozIcons();
         });
     }
+
+
+// Listeners
+if (btnOpenMenu) btnOpenMenu.addEventListener('click', openSideMenu);
+if (btnCloseMenu) btnCloseMenu.addEventListener('click', closeSideMenu);
+if (menuBackdrop) menuBackdrop.addEventListener('click', closeSideMenu);
+
+// Lógica do Botão de Som (Dentro do Menu)
+if (menuBtnSom) {
+    menuBtnSom.addEventListener('click', () => {
+        vozAtiva = !vozAtiva; // Inverte o estado global
+        
+        if (vozAtiva) {
+            desbloquearAudio();
+            falarTexto("Som ativado");
+        } else {
+            window.speechSynthesis.cancel();
+        }
+        updateMenuSoundVisuals();
+    });
+}
+
+// Lógica do Botão de Tema (Placeholder para futuro)
+if (menuBtnTema) {
+    menuBtnTema.addEventListener('click', () => {
+        // Aqui entra a lógica futura de trocar classes no body
+        isDarkMode = !isDarkMode;
+        menuStatusTema.textContent = isDarkMode ? 'DARK' : 'LIGHT';
+        
+        // Feedback visual simples por enquanto
+        if (!isDarkMode) {
+            //alert("O modo Light será implementado em breve!");
+            // Reverte para dark visualmente por enquanto
+            isDarkMode = true; 
+            menuStatusTema.textContent = 'DARK';
+        }
+    });
+}
 
 // --- LÓGICA PARA ALTERNAR VISUALIZAÇÃO NO MOBILE ---
     const btnMobileTop10 = document.getElementById('btn-ir-para-top10-mobile');

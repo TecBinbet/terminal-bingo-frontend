@@ -11,11 +11,30 @@
     <link rel="stylesheet" href="mobile.css">
     <style>
         .hidden { display: none; }
+        
+        /* Animação para alternar cores do prêmio (Fundo Verde <-> Fundo Branco) */
+        @keyframes flash-premio {
+            0%, 100% { 
+                background-color: #166534; /* bg-green-800 */
+                color: #ffffff; 
+                border: 1px solid #166534;
+            }
+            50% { 
+                background-color: #ffffff; 
+                color: #166534; /* text-green-800 */
+                border: 1px solid #166534;
+            }
+        }
+
+        .animate-prize-blink {
+            animation: flash-premio 1s infinite; 
+        }
     </style>
 </head>
 
 <body class="bg-gray-800 text-white min-h-screen overflow-hidden">
     <button id="fullscreen-button">Entrar em Tela Cheia</button>    
+    
     <div id="loader" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75 z-50 hidden">
         <div class="flex flex-col items-center">
             <div class="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-green-500"></div>
@@ -23,8 +42,17 @@
         </div>
     </div>
 
-    <header class="flex justify-between items-center mb-0.5 border-b-2 border-gray-700 pb-0">
-         <h1 class="text-sm font-bold text-green-400" id="sala-title">Terminal OnLine</h1>
+    <header class="flex justify-between items-center mb-0.5 border-b-2 border-gray-700 pb-1 pl-2 pr-2 pt-1">
+        <div class="flex items-center gap-3">
+            <button id="btn-open-menu" class="text-gray-300 hover:text-white focus:outline-none">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+            </button>
+            
+            <h1 class="text-sm font-bold text-green-400" id="sala-title">Terminal OnLine</h1>
+        </div>
+
         <div class="text-sm text-gray-400">
             <p class="hidden">Backend: <span id="backend-version">...</span></p>
             <p>V.: <span id="frontend-version">1.0.0</span></p> 
@@ -86,7 +114,7 @@
 
     <div id="youtube-placeholder" class="hidden" style="height: 0.5vh; width: 0%;"></div>
 
-    <div id="promocional-container" class="fixed  z-50 hidden" style="top:0; left:0; width:100%; height:100%;">
+    <div id="promocional-container" class="fixed z-50 hidden" style="top:0; left:0; width:100%; height:100%;">
         <div id="promocional-content" class="absolute">         
              <div id="promocional-gif-bg" class="absolute inset-0 bg-contain bg-no-repeat bg-center" 
                  style="background-image: url('/gifs/promocional.gif');"> 
@@ -98,7 +126,7 @@
         </div>
     </div>
 
-<main class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <main class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         
         <section id="pc-number-panel" class="bg-gray-900 p-6 rounded-lg shadow-lg col-span-1 lg:col-span-2">
             <h2 id="pc-bolas-sorteadas-title" class="text-2xl font-bold text-white mb-4">Bolas Sorteadas</h2>
@@ -110,6 +138,12 @@
                 <div class="grid grid-cols-10 gap-0 bg-black" id="mobile-number-grid"></div>
             </div>
             <aside id="mobile-last-balls-panel" class="relative justify-center bg-gray-800 p-2 rounded-lg shadow-lg">
+                
+                <button id="btn-toggle-voz" class="absolute top-1 left-1 text-white bg-gray-700 hover:bg-gray-600 rounded-full p-1.5 shadow-md focus:outline-none" title="Ligar/Desligar Voz">
+                    <span id="icon-voz-on">🔊</span>
+                    <span id="icon-voz-off" class="hidden">🔇</span>
+                </button>
+
                 <div class="flex justify-center items-center space-x-2">
                     <div id="mobile-last-ball-1" class="h-5 w-5 flex items-center justify-center rounded-full bg-gray-300 text-gray-800 text-[12px] shadow-md"></div>
                     <div id="mobile-last-ball-2" class="h-5 w-5 flex items-center justify-center rounded-full bg-gray-300 text-gray-800 text-[12px] shadow-md"></div>
@@ -122,11 +156,6 @@
                 <div class="mt-0 flex justify-center items-center space-x-2 text-sm font-bold text-gray-300">
                      <span>Série R$: <span id="mobile-preco-serie" class="text-xl font-bold text-blue-400">0</span></span>
                 <div>
-                <button id="btn-toggle-voz" class="absolute top-1 left-1 text-white bg-gray-700 hover:bg-gray-600 rounded-full p-1.5 shadow-md focus:outline-none" title="Ligar/Desligar Voz">
-                    <span id="icon-voz-on">🔊</span>
-                    <span id="icon-voz-off" class="hidden">🔇</span>
-                </button>
-
             </aside>
         </section>
 
@@ -154,20 +183,6 @@
                 <div id="prize-values" class="space-y-1"></div>
             </div>
         </aside>
-
-        <section id="conference-panel-container" class="bg-gray-900 p-2 rounded-lg shadow-none col-span-1 md:col-span-2 lg:col-span-3 hidden flex-col space-y-1">
-            <h2 class="text-center text-xl font-bold text-white mb-0">Conferência da Cartela</h2>
-            <div class="flex flex-col md:flex-row items-center justify-center mb-0 md:space-x-8 space-y-0 md:space-y-0">
-                <div class="text-center mb-0 space-y-0">
-                    <span id="card-number" class="text-4xl font-black text-red-500">...</span>
-                </div>
-                <div class="text-center">
-                    <p class="text-lg text-gray-400 mb-0 space-y-0">Ganhador</p>
-                    <span id="winner-name" class="text-2xl font-bold text-yellow-400">O Próximo será Seu!</span>
-                </div>
-            </div>
-            <div id="card-grid" class="grid grid-cols-5 gap-2 md:grid-cols-15"></div>
-        </section>
 
         <aside id="mobile-buscando-panel" class="hidden flex-col bg-gray-900 rounded-lg shadow-lg -mt-2">
            <div id="mobile-prize-info" class="flex items-center justify-center p-0 bg-blue-800 rounded-lg shadow-md h-6 w-full">
@@ -240,12 +255,11 @@
             <span id="validation-message" class="text-red-500 text-sm font-medium hidden"></span>
 
             <div class="loaded-cards-container p-4 bg-gray-700 rounded-lg shadow-md">
-                
                 <div id="view-lista-numerica">
                     <div class="flex justify-between items-center mb-2">
                         <h3 class="text-xl font-bold text-gray-400" id="loaded-cards-header">Cartelas Carregadas</h3>
                         <button id="btn-ir-para-top10" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-1 px-3 rounded text-sm flex items-center gap-2">
-                            <span>Ver Top 10 Gráfico</span>
+                            <span>Ver Top 8 Gráfico</span>
                             <span class="text-lg">📊</span>
                         </button>
                     </div>
@@ -264,9 +278,8 @@
                         <p class="text-center text-gray-500 text-sm col-span-full">Aguardando sorteio...</p>
                     </div>
                 </div>
-
             </div>
-            </section>
+        </section>
 
         <section id="mobile-prizes-panel" class="hidden bg-gray-900 p-2 rounded-lg shadow-lg flex flex-col items-center space-y-2 -mt-2">
            <div class="flex justify-between items-center w-full px-2">
@@ -278,7 +291,7 @@
            </div>
         </section>      
 
-<section id="mobile-loaded-cards-panel" class="hidden col-span-1 md:col-span-2 lg:col-span-3 p-0 bg-black/30 rounded-lg shadow-lg h-[580px] overflow-y-auto -mt-2">
+        <section id="mobile-loaded-cards-panel" class="hidden col-span-1 md:col-span-2 lg:col-span-3 p-0 bg-black/30 rounded-lg shadow-lg h-[580px] overflow-y-auto -mt-2">
             <div class="loaded-cards-container p-2 bg-gray-900 rounded-lg shadow-md">
                 
                 <div id="view-lista-numerica-mobile">
@@ -288,7 +301,7 @@
                             </h3>
                             <button id="btn-ir-para-top10-mobile" class="bg-gray-700 active:bg-gray-600 text-white text-xs font-bold py-1.5 px-3 rounded-full shadow-md flex items-center -mt-1 gap-1">
                                  <span>Ver Top 8</span>
-                                 <span>📋</span>
+                                 <span>📊</span>
                             </button>
                        </div>
                     <div id="mobile-loaded-cards-list" class="space-y-2 h-150 overflow-y-auto pb-10"></div>   
@@ -299,10 +312,10 @@
                         <h3 id="mobile-oscartoes-header" class="text-sm font-bold text-yellow-500">8 Melhores</h3>
                         <button id="btn-ir-para-lista-mobile" class="bg-gray-700 active:bg-gray-600 text-white text-xs font-bold py-1.5 px-3 rounded-full shadow-md flex items-center -mt-1 gap-1">
                             <span>Ver Lista</span>
-                            <span>📊</span>
+                            <span>📋</span>
                         </button>
                     </div>
-                    <div id="mobile-oscartoes-content" class="flex flex-col gap-2 pb-10">
+                    <div id="mobile-oscartoes-content" class="gap-2 pb-10">
                         <p class="text-center text-gray-500 text-xs">Aguardando sorteio...</p>
                     </div>
                 </div>
@@ -311,11 +324,87 @@
         </section>
 
     </main>
-    <script src="config.js"></script>
-    <script src="script.js"></script>
 
-</body>
-</html>
+    <div id="conference-panel-container" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/80 backdrop-blur-sm">
+        
+        <div class="relative bg-gray-900 p-4 rounded-2xl border-4 border-yellow-500 shadow-2xl flex flex-col items-center space-y-2 w-[70%] max-w-[350px]">
+            
+            <button id="btn-close-conference" class="absolute top-1 right-2 text-gray-400 hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+
+            <h2 class="text-center text-xl text-white uppercase tracking-widest border-b-2 border-yellow-500 pb-0  w-full">
+                🎉 Conferência 🎉
+            </h2>
+            
+            <div class="flex flex-col items-center justify-center w-full space-y-1">
+                <div class="text-center">
+                    <p class="text-sm text-gray-400 uppercase tracking-wide">Cartela Vencedora</p>
+                    <span id="card-number" class="text-2xl font-bold text-yellow-400 drop-shadow-md">...</span>
+                </div>
+                <div class="text-center bg-gray-800 w-full py-1 rounded-lg">
+                    <p class="text-sm text-gray-400 mb-0">Ganhador</p>
+                    <span id="winner-name" class="text-2xl font-semibold text-white truncate block px-2">
+                        O Próximo será Seu!
+                    </span>
+                </div>
+            </div>
+
+            <div id="card-grid" class="grid grid-cols-5 gap-2 w-full p-2 bg-gray-800 rounded-xl"></div>
+
+        </div>
+    </div>
+
+    <div id="side-menu-overlay" class="hidden fixed inset-0 z-[200]">
+        <div id="side-menu-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity opacity-0"></div>
+        
+        <nav id="side-menu-panel" class="absolute left-0 top-0 bottom-0 w-64 bg-gray-900 border-r border-gray-700 transform -translate-x-full transition-transform duration-300 shadow-2xl flex flex-col">
+            
+            <div class="flex justify-between items-center p-2 border-b border-gray-700">
+                <h2 class="text-blue-400 font-semibold text-xs">Configurações</h2>
+                <button id="btn-close-menu" class="text-gray-400 hover:text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto py-2">
+                <ul class="space-y-1 px-2">
+                    
+                    <li>
+                        <button id="menu-btn-som" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
+                            <div class="flex items-center gap-2">
+                                <span id="menu-icon-som">🔊</span>
+                                <span class="font-medium">Som da Locução</span>
+                            </div>
+                            <span id="menu-status-som" class="text-xs font-bold text-green-500">LIGADO</span>
+                        </button>
+                    </li>
+
+                    <li>
+                        <button id="menu-btn-tema" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
+                            <div class="flex items-center gap-2">
+                                <span>🎨</span>
+                                <span class="font-medium">Cor de Fundo</span>
+                            </div>
+                            <span id="menu-status-tema" class="text-xs font-bold text-gray-500">DARK</span>
+                        </button>
+                    </li>
+
+                </ul>
+            </div>
+
+            <div class="p-2 border-t border-gray-700">
+                <button onclick="closeSideMenu()" class="w-full flex items-center justify-center gap-2 p-2 bg-red-900/50 hover:bg-red-900 text-red-200 rounded-lg transition-colors font-bold">
+                    <span>🚪</span> Sair do Menu
+                </button>
+            </div>
+        </nav>
+    </div>
+
     <script src="config.js"></script>
     <script src="script.js"></script>
 
