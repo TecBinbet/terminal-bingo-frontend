@@ -142,176 +142,75 @@ def get_parametros_data(db):
             print(f"ERRO CRÍTICO ao buscar parâmetros no MongoDB: {e}")
             return {}
 
-# --- LÊ DADOS DOS ARQUIVOS JSON LOCAIS ---
-def fetch_data_from_local_files():
-    global UltAlt_Cartelas, cartelas_data
 
-    try:
-        with open(os.path.join(LOCAL_PATH, 'bolas.json'), 'r', encoding='utf-8') as f:
-            bolas_data = json.load(f)
-        
-        with open(os.path.join(LOCAL_PATH, 'buscando.json'), 'r', encoding='utf-8') as f:
-            buscando_data = json.load(f)
-        
-        with open(os.path.join(LOCAL_PATH, 'premio.json'), 'r', encoding='utf-8') as f:
-            premio_raw_data = json.load(f)
-        
-        with open(os.path.join(LOCAL_PATH, 'rodada.json'), 'r', encoding='utf-8') as f:
-            rodada_data = json.load(f)
-        
-        with open(os.path.join(LOCAL_PATH, 'confere.json'), 'r', encoding='utf-8') as f:
-            confere_data = json.load(f)
-
-        with open(os.path.join(LOCAL_PATH, 'parametros.json'), 'r', encoding='utf-8') as f:
-            parametros_data_raw = json.load(f) # Lê o arquivo
-
-        with open(os.path.join(LOCAL_PATH, 'promocional.json'), 'r', encoding='utf-8') as f:
-            promocional_data = json.load(f)
-
-        # NEW: LER DADOS DE MELHORES.JSON
-        melhores_data_raw = []
-        try:
-            with open(os.path.join(LOCAL_PATH, 'melhores.json'), 'r', encoding='utf-8') as f:
-                melhores_data_raw = json.load(f)
-        except FileNotFoundError:
-            print("Aviso: Arquivo 'melhores.json' não encontrado localmente.")
-        except Exception as e:
-            print(f"Erro ao carregar 'melhores.json': {e}")
-        
-        # Verifica se o arquivo cartelas.json foi alterado e o carrega se necessário
-        current_cartelas_mtime = os.path.getmtime(os.path.join(LOCAL_PATH, 'cartelas.json'))
-        if UltAlt_Cartelas != current_cartelas_mtime:
-            UltAlt_Cartelas = current_cartelas_mtime
-            with open(os.path.join(LOCAL_PATH, 'cartelas.json'), 'r', encoding='utf-8') as f:
-                cartelas_data = json.load(f)
-
-# Processar dados de Melhores
-        melhores_data_processed = []
-        if melhores_data_raw:
-            for doc in melhores_data_raw:
-                # O campo 'numeros' (lista) é formatado para string (ex: "1, 5, 22")
-                numeros_faltantes_str = ', '.join(map(str, doc.get('numeros', [])))
-                melhores_data_processed.append({
-                    'cartela': doc.get('cartela', 0),
-                    'posicao': doc.get('posicao', 'N/A'),
-                    'nome': doc.get('nome', 'Anônimo'),
-                    'premio': doc.get('premio', 'N/A'),
-                    'numeros_faltantes': numeros_faltantes_str # Chave que o frontend espera
-                })
-
-        premio_data = []
-        premio_info = {}
-        tope_data = []
-        card_ranges = []
-        parametros = parametros_data_raw[0] if isinstance(parametros_data_raw, list) and parametros_data_raw else {}
-
-        if premio_raw_data:
-            premio_doc = premio_raw_data[0]
-            premio_info = premio_doc
-
-            if premio_doc.get('inicial1') is not None and premio_doc.get('final1') is not None:
-                card_ranges.append({'inicial': premio_doc['inicial1'], 'final': premio_doc['final1']})
-            if premio_doc.get('inicial2') is not None and premio_doc.get('final2') is not None:
-                card_ranges.append({'inicial': premio_doc['inicial2'], 'final': premio_doc['final2']})
-            if premio_doc.get('inicial3') is not None and premio_doc.get('final3') is not None:
-                card_ranges.append({'inicial': premio_doc['inicial3'], 'final': premio_doc['final3']})
-            if premio_doc.get('inicial4') is not None and premio_doc.get('final4') is not None:
-                card_ranges.append({'inicial': premio_doc['inicial4'], 'final': premio_doc['final4']})
-
-            if isinstance(premio_doc.get('bola_tope_sb'), (int, float)) or isinstance(premio_doc.get('bola_tope_ac'), (int, float)):
-                tope_data.append({
-                    'bola_tope_sb': premio_doc.get('bola_tope_sb'),
-                    'bola_tope_ac': premio_doc.get('bola_tope_ac')
-                })
-
-            if isinstance(premio_doc.get('premio_linha'), (int, float)):
-                tipo_premio_linha = 'LINHA'
-                if premio_doc.get('qtde_linha', 1) > 1:
-                    tipo_premio_linha = f"{premio_doc['qtde_linha']} LINHAS"
-                premio_data.append({'tipo_premio': tipo_premio_linha, 'valor': f"R$ {premio_doc['premio_linha']:.2f}".replace('.', ',')})
-
-            if isinstance(premio_doc.get('premio_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'BINGO', 'valor': f"R$ {premio_doc['premio_bingo']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_quadra'), (int, float)):
-                premio_data.append({'tipo_premio': 'QUADRA', 'valor': f"R$ {premio_doc['premio_quadra']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_falta_Um'), (int, float)):
-                premio_data.append({'tipo_premio': 'FALTA 1', 'valor': f"R$ {premio_doc['premio_falta_Um']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_duplo_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'DUPLO BINGO', 'valor': f"R$ {premio_doc['premio_duplo_bingo']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_triplo_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'TRIPLO BINGO', 'valor': f"R$ {premio_doc['premio_triplo_bingo']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_super_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'SUPER BINGO', 'valor': f"R$ {premio_doc['premio_super_bingo']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_acumulado'), (int, float)):
-                premio_data.append({'tipo_premio': 'ACUMULADO', 'valor': f"R$ {premio_doc['premio_acumulado']:.2f}".replace('.', ',')})
-        
-        max_card_number = max(c.get('cartao', 0) for c in cartelas_data) if cartelas_data else 0
-
-        return {
-            'bolasData': bolas_data,
-            'buscandoData': buscando_data,
-            'premioData': premio_data,
-            'premioInfo': premio_info,
-            'rodadaData': rodada_data,
-            'confereData': confere_data,
-            'maxCardNumber': max_card_number,
-            'topeData': tope_data,
-            'cardRanges': card_ranges,
-            'promocionalData': promocional_data,
-            'parametrosInfo': parametros, # usa o dicionário real 
-            'melhoresData': melhores_data_processed # <--- NEW: Retorna os dados processados
-        }
-
-    except Exception as e:
-        print(f"Erro ao ler dados dos arquivos locais: {e}")
-        return {
-            'bolasData': [],
-            'buscandoData': [],
-            'premioData': [],
-            'premioInfo': {},
-            'rodadaData': [],
-            'confereData': [],
-            'maxCardNumber': 0,
-            'topeData': [],
-            'cardRanges': [],
-            'promocionalData': [],
-            'parametrosInfo': {}
-        }
-
-# --- LÊ DADOS DO MONGODB ---
+# --- LÊ DADOS DO MONGODB (COM LOGS DETALHADOS) ---
 def fetch_data_from_collections():
     global db
     if db is None:
-        print("Erro: A conexão com o banco de dados não foi estabelecida.") # Verifique a indentação
-        return {'error': 'Conexão com o banco de dados não estabelecida.'} # Verifique a indentação
+        print("❌ ERRO: Conexão com o banco de dados é None.")
+        return {'error': 'Conexão com o banco de dados não estabelecida.'}
 
-    try:            
+    try:
+        # --- DEBUG INICIAL ---
+        print("\n🔍 [MONGO] Iniciando busca de dados...")
+        
+        # Buscas padrão
         bolas_data = list(db.bolas.find({}))
         buscando_data = list(db.buscando.find({}))
         premio_raw_data = list(db.premio.find({}))
         rodada_data = list(db.rodada.find({}))
         confere_data = list(db.confere.find({}))
         parametros_data = list(db.parametros.find({}))
+        
         max_card_result = list(db.cartelas.find({}, {'cartao': 1, '_id': 0}).sort('cartao', -1).limit(1))
+        
+        # --- DEBUG GANHADORES ---
+        print("🔍 [MONGO] Buscando coleção 'ganhadores'...")
+        ganhadores_raw = list(db.ganhadores.find({}))
+        print(f"   Found: {len(ganhadores_raw)} documentos.")
+        
+        if len(ganhadores_raw) > 0:
+            print(f"   Exemplo Raw: {ganhadores_raw[0]}")
+        
+        # Processamento Ganhadores
+        ganhadores_dict = {}
+        for g in ganhadores_raw:
+            tipo_premio = g.get('premio', 'N/A')
+            valor_total_premio = g.get('valor_total_premio', 'R$ 0,00')
+            
+            chave = f"{tipo_premio}|{valor_total_premio}"
+            
+            if chave not in ganhadores_dict:
+                ganhadores_dict[chave] = {
+                    "premio": tipo_premio,
+                    "valor": valor_total_premio,
+                    "ganhadores": []
+                }
+            
+            ganhadores_dict[chave]["ganhadores"].append({
+                "cartela": g.get('cartela'),
+                "nome": g.get('nome'),
+                "valor_rateio": g.get('valor_rateio')
+            })
+        
+        ganhadores_data_processed = list(ganhadores_dict.values())
+        print(f"✅ [MONGO] Ganhadores Processados: {len(ganhadores_data_processed)} grupos gerados.")
+        # -----------------------
 
+        # Busca Melhores
         melhores_collection = db.get_collection(MELHORES_COLLECTION)
         melhores_cursor = melhores_collection.find({}, {'_id': 0}).sort('id_posicao', 1).limit(25)
         melhores_data_raw = [doc for doc in melhores_cursor]
 
-        # CONVERTE ObjectId para string para evitar erro 500
-        for doc in bolas_data:
-            doc['_id'] = str(doc['_id'])
-        for doc in buscando_data:
-            doc['_id'] = str(doc['_id'])
-        for doc in premio_raw_data:
-            doc['_id'] = str(doc['_id'])
-        for doc in rodada_data:
-            doc['_id'] = str(doc['_id'])
-        for doc in confere_data:
-            doc['_id'] = str(doc['_id'])
-        for doc in parametros_data:
-            doc['_id'] = str(doc['_id'])
+        # CONVERSÕES ID
+        for doc in bolas_data: doc['_id'] = str(doc['_id'])
+        for doc in buscando_data: doc['_id'] = str(doc['_id'])
+        for doc in premio_raw_data: doc['_id'] = str(doc['_id'])
+        for doc in rodada_data: doc['_id'] = str(doc['_id'])
+        for doc in confere_data: doc['_id'] = str(doc['_id'])
+        for doc in parametros_data: doc['_id'] = str(doc['_id'])
         
+        # Processa Melhores
         melhores_data_processed = []
         if melhores_data_raw:
             for doc in melhores_data_raw:
@@ -324,59 +223,48 @@ def fetch_data_from_collections():
                     'numeros_faltantes': numeros_faltantes_str
                 })
 
+        # Processamento de Prêmios (Mantido igual)
         premio_data = []
         premio_info = {}
         tope_data = []
         card_ranges = []
-        parametros_data = parametros_data[0] if parametros_data else {}
+        parametros_doc = parametros_data[0] if parametros_data else {}
         
         promocional_collection = db.get_collection('promocional')
-        # Limita a busca a 1 documento, assume que o texto promo está em um único documento
         promocional_cursor = promocional_collection.find({}, {'_id': 0}).limit(1) 
         promocional_data = [doc for doc in promocional_cursor]
 
         if premio_raw_data:
             premio_doc = premio_raw_data[0]
-            premio_info = premio_doc
-            if premio_doc.get('inicial1') is not None and premio_doc.get('final1') is not None:
-                card_ranges.append({'inicial': premio_doc['inicial1'], 'final': premio_doc['final1']})
-            if premio_doc.get('inicial2') is not None and premio_doc.get('final2') is not None:
-                card_ranges.append({'inicial': premio_doc['inicial2'], 'final': premio_doc['final2']})
-            if premio_doc.get('inicial3') is not None and premio_doc.get('final3') is not None:
-                card_ranges.append({'inicial': premio_doc['inicial3'], 'final': premio_doc['final3']})
-            if premio_doc.get('inicial4') is not None and premio_doc.get('final4') is not None:
-                card_ranges.append({'inicial': premio_doc['inicial4'], 'final': premio_doc['final4']})
+            premio_info = premio_doc            
+            if premio_doc.get('inicial1') is not None: card_ranges.append({'inicial': premio_doc['inicial1'], 'final': premio_doc['final1']})
+            if premio_doc.get('inicial2') is not None: card_ranges.append({'inicial': premio_doc['inicial2'], 'final': premio_doc['final2']})
+            if premio_doc.get('inicial3') is not None: card_ranges.append({'inicial': premio_doc['inicial3'], 'final': premio_doc['final3']})
+            if premio_doc.get('inicial4') is not None: card_ranges.append({'inicial': premio_doc['inicial4'], 'final': premio_doc['final4']})
 
-            if isinstance(premio_doc.get('bola_tope_sb'), (int, float)) or isinstance(premio_doc.get('bola_tope_ac'), (int, float)):
-                tope_data.append({
-                    'bola_tope_sb': premio_doc.get('bola_tope_sb'),
-                    'bola_tope_ac': premio_doc.get('bola_tope_ac')
-                })
+            if isinstance(premio_doc.get('bola_tope_sb'), (int, float)):
+                tope_data.append({'bola_tope_sb': premio_doc.get('bola_tope_sb'), 'bola_tope_ac': premio_doc.get('bola_tope_ac')})
 
-            if isinstance(premio_doc.get('premio_linha'), (int, float)):
-                tipo_premio_linha = 'LINHA'
-                if premio_doc.get('qtde_linha', 1) > 1:
-                    tipo_premio_linha = f"{premio_doc['qtde_linha']} LINHAS"
-                premio_data.append({'tipo_premio': tipo_premio_linha, 'valor': f"R$ {premio_doc['premio_linha']:.2f}".replace('.', ',')})
-
-            if isinstance(premio_doc.get('premio_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'BINGO', 'valor': f"R$ {premio_doc['premio_bingo']:.2f}".replace('.', ',')})
+            # Lista Prêmios Simplificada para teste
             if isinstance(premio_doc.get('premio_quadra'), (int, float)):
-                premio_data.append({'tipo_premio': 'QUADRA', 'valor': f"R$ {premio_doc['premio_quadra']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_falta_Um'), (int, float)):
-                premio_data.append({'tipo_premio': 'FALTA 1', 'valor': f"R$ {premio_doc['premio_falta_Um']:.2f}".replace('.', ',')})
+                premio_data.append({'tipo_premio': 'QUADRA', 'valor': f"R$ {premio_doc['premio_quadra']:.2f}"})
+            if isinstance(premio_doc.get('premio_linha'), (int, float)):
+                premio_data.append({'tipo_premio': 'LINHA', 'valor': f"R$ {premio_doc['premio_linha']:.2f}"})
+            if isinstance(premio_doc.get('premio_falta_um'), (int, float)):
+                premio_data.append({'tipo_premio': 'FALTA 1', 'valor': f"R$ {premio_doc['premio_falta_um']:.2f}"})
+            if isinstance(premio_doc.get('premio_bingo'), (int, float)):
+                premio_data.append({'tipo_premio': 'BINGO', 'valor': f"R$ {premio_doc['premio_bingo']:.2f}"})
             if isinstance(premio_doc.get('premio_duplo_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'DUPLO BINGO', 'valor': f"R$ {premio_doc['premio_duplo_bingo']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_triplo_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'TRIPLO BINGO', 'valor': f"R$ {premio_doc['premio_triplo_bingo']:.2f}".replace('.', ',')})
+                premio_data.append({'tipo_premio': 'DUPLO BINGO', 'valor': f"R$ {premio_doc['premio_duplo_bingo']:.2f}"})
             if isinstance(premio_doc.get('premio_super_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'SUPER BINGO', 'valor': f"R$ {premio_doc['premio_super_bingo']:.2f}".replace('.', ',')})
+                premio_data.append({'tipo_premio': 'SUPER BINGO', 'valor': f"R$ {premio_doc['premio_super_bingo']:.2f}"})
             if isinstance(premio_doc.get('premio_acumulado'), (int, float)):
-                premio_data.append({'tipo_premio': 'ACUMULADO', 'valor': f"R$ {premio_doc['premio_acumulado']:.2f}".replace('.', ',')})
+                premio_data.append({'tipo_premio': 'ACUMULADO', 'valor': f"R$ {premio_doc['premio_acumulado']:.2f}"})
 
         max_card_number = max_card_result[0]['cartao'] if max_card_result else 0
 
-        return {
+        # Retorno
+        final_payload = {
             'bolasData': bolas_data,
             'buscandoData': buscando_data,
             'premioData': premio_data,
@@ -387,16 +275,157 @@ def fetch_data_from_collections():
             'topeData': tope_data,
             'cardRanges': card_ranges,
             'promocionalData': promocional_data,
-            'parametrosInfo': parametros_data,
-            'melhoresData': melhores_data_processed    # <--- NOVO: Retorna os dados processados    
+            'parametrosInfo': parametros_doc,
+            'melhoresData': melhores_data_processed,
+            'ganhadoresData': ganhadores_data_processed # <--- ESTE É O IMPORTANTE
         }
+        
+        print("✅ [MONGO] Dados prontos para envio.")
+        return final_payload
 
     except Exception as e:
-        print(f"Erro ao buscar dados do MongoDB: {e}")
+        print(f"❌ ERRO CRÍTICO no fetch_mongo: {e}")
+        import traceback
+        traceback.print_exc()
         return {'error': 'Erro ao buscar dados do MongoDB.'}
 
 
-# --- GRAVA DADOS EM ARQUIVOS LOCAIS OU NO MONGODB ---
+# --- LÊ DADOS DOS ARQUIVOS JSON LOCAIS (COM LOGS CORRIGIDOS) ---
+def fetch_data_from_local_files():
+    global UltAlt_Cartelas, cartelas_data
+
+    try:
+        
+        # Carregamento Básico
+        with open(os.path.join(LOCAL_PATH, 'bolas.json'), 'r', encoding='utf-8') as f: bolas_data = json.load(f)
+        with open(os.path.join(LOCAL_PATH, 'buscando.json'), 'r', encoding='utf-8') as f: buscando_data = json.load(f)
+        with open(os.path.join(LOCAL_PATH, 'premio.json'), 'r', encoding='utf-8') as f: premio_raw_data = json.load(f)
+        with open(os.path.join(LOCAL_PATH, 'rodada.json'), 'r', encoding='utf-8') as f: rodada_data = json.load(f)
+        with open(os.path.join(LOCAL_PATH, 'confere.json'), 'r', encoding='utf-8') as f: confere_data = json.load(f)
+        with open(os.path.join(LOCAL_PATH, 'parametros.json'), 'r', encoding='utf-8') as f: parametros_data_raw = json.load(f)
+        with open(os.path.join(LOCAL_PATH, 'promocional.json'), 'r', encoding='utf-8') as f: promocional_data = json.load(f)
+
+        ganhadores_raw = []
+        g_path = os.path.join(LOCAL_PATH, 'ganhadores.json')
+        if os.path.exists(g_path):
+            with open(g_path, 'r', encoding='utf-8') as f:
+                ganhadores_raw = json.load(f)
+
+        # Processamento Ganhadores
+        ganhadores_dict = {}
+        for g in ganhadores_raw:
+            tipo_premio = g.get('premio', 'N/A')
+            valor_total_premio = g.get('valor_total_premio', 'R$ 0,00')
+            chave = f"{tipo_premio}|{valor_total_premio}"
+            
+            if chave not in ganhadores_dict:
+                ganhadores_dict[chave] = {
+                    "premio": tipo_premio,
+                    "valor": valor_total_premio,
+                    "ganhadores": []
+                }
+            
+            ganhadores_dict[chave]["ganhadores"].append({
+                "cartela": g.get('cartela'),
+                "nome": g.get('nome'),
+                "valor_rateio": g.get('valor_rateio')
+            })
+        
+        ganhadores_data_processed = list(ganhadores_dict.values())
+ 
+        # --- MELHORES ---
+        melhores_data_raw = []
+        try:
+            with open(os.path.join(LOCAL_PATH, 'melhores.json'), 'r', encoding='utf-8') as f:
+                melhores_data_raw = json.load(f)
+        except: pass
+
+        # Verifica cartelas.json (Cache)
+        current_cartelas_mtime = os.path.getmtime(os.path.join(LOCAL_PATH, 'cartelas.json'))
+        if UltAlt_Cartelas != current_cartelas_mtime:
+            UltAlt_Cartelas = current_cartelas_mtime
+            with open(os.path.join(LOCAL_PATH, 'cartelas.json'), 'r', encoding='utf-8') as f:
+                cartelas_data = json.load(f)
+
+        # Processar dados de Melhores
+        melhores_data_processed = []
+        if melhores_data_raw:
+            for doc in melhores_data_raw:
+                numeros_faltantes_str = ', '.join(map(str, doc.get('numeros', [])))
+                melhores_data_processed.append({
+                    'cartela': doc.get('cartela', 0),
+                    'posicao': doc.get('posicao', 'N/A'),
+                    'nome': doc.get('nome', 'Anônimo'),
+                    'premio': doc.get('premio', 'N/A'),
+                    'numeros_faltantes': numeros_faltantes_str 
+                })
+
+        # Processamento de Prêmios (simplificado para o exemplo, mantenha sua lógica de ranges)
+        premio_data = []
+        premio_info = {}
+        tope_data = []
+        card_ranges = []
+        parametros = parametros_data_raw[0] if isinstance(parametros_data_raw, list) and parametros_data_raw else {}
+
+        if premio_raw_data:
+            premio_doc = premio_raw_data[0]
+            premio_info = premio_doc
+            
+            # Ranges
+            if premio_doc.get('inicial1') is not None: card_ranges.append({'inicial': premio_doc['inicial1'], 'final': premio_doc['final1']})
+            if premio_doc.get('inicial2') is not None: card_ranges.append({'inicial': premio_doc['inicial2'], 'final': premio_doc['final2']})
+            if premio_doc.get('inicial3') is not None: card_ranges.append({'inicial': premio_doc['inicial3'], 'final': premio_doc['final3']})
+            if premio_doc.get('inicial4') is not None: card_ranges.append({'inicial': premio_doc['inicial4'], 'final': premio_doc['final4']})
+
+            # Tope
+            if isinstance(premio_doc.get('bola_tope_sb'), (int, float)):
+                tope_data.append({'bola_tope_sb': premio_doc.get('bola_tope_sb'), 'bola_tope_ac': premio_doc.get('bola_tope_ac')})
+
+            # Lista Prêmios
+            if isinstance(premio_doc.get('premio_quadra'), (int, float)):
+                premio_data.append({'tipo_premio': 'QUADRA', 'valor': f"R$ {premio_doc['premio_quadra']:.2f}"})
+            if isinstance(premio_doc.get('premio_linha'), (int, float)):
+                premio_data.append({'tipo_premio': 'LINHA', 'valor': f"R$ {premio_doc['premio_linha']:.2f}"})
+            if isinstance(premio_doc.get('premio_falta_um'), (int, float)):
+                premio_data.append({'tipo_premio': 'FALTA 1', 'valor': f"R$ {premio_doc['premio_falta_um']:.2f}"})
+            if isinstance(premio_doc.get('premio_bingo'), (int, float)):
+                premio_data.append({'tipo_premio': 'BINGO', 'valor': f"R$ {premio_doc['premio_bingo']:.2f}"})
+            if isinstance(premio_doc.get('premio_duplo_bingo'), (int, float)):
+                premio_data.append({'tipo_premio': 'DUPLO BINGO', 'valor': f"R$ {premio_doc['premio_duplo_bingo']:.2f}"})
+            if isinstance(premio_doc.get('premio_super_bingo'), (int, float)):
+                premio_data.append({'tipo_premio': 'SUPER BINGO', 'valor': f"R$ {premio_doc['premio_super_bingo']:.2f}"})
+            if isinstance(premio_doc.get('premio_acumulado'), (int, float)):
+                premio_data.append({'tipo_premio': 'ACUMULADO', 'valor': f"R$ {premio_doc['premio_acumulado']:.2f}"})
+
+        max_card_number = max(c.get('cartao', 0) for c in cartelas_data) if cartelas_data else 0
+        # Retorno
+        return {
+            'bolasData': bolas_data,
+            'buscandoData': buscando_data,
+            'premioData': premio_data,
+            'premioInfo': premio_info,
+            'rodadaData': rodada_data,
+            'ganhadoresData': ganhadores_data_processed,  # <--- IMPORTANTE
+            'confereData': confere_data,
+            'maxCardNumber': max_card_number,
+            'topeData': tope_data,
+            'cardRanges': card_ranges,
+            'promocionalData': promocional_data,
+            'parametrosInfo': parametros,
+            'melhoresData': melhores_data_processed
+        }
+
+    except Exception as e:
+        print(f"❌ ERRO no fetch_local: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'bolasData': [], 'buscandoData': [], 'premioData': [], 'premioInfo': {},
+            'rodadaData': [], 'confereData': [], 'maxCardNumber': 0, 'topeData': [],
+            'cardRanges': [], 'promocionalData': [], 'parametrosInfo': {}, 
+            'melhoresData': [], 'ganhadoresData': []
+        }
+
 def update_prizes_func(busca, premio_info):
     if is_local_mode:
         with open(os.path.join(LOCAL_PATH, 'buscando.json'), 'w', encoding='utf-8') as f:

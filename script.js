@@ -32,8 +32,16 @@ const youtubePanel = document.getElementById('youtube-panel');
 const youtubeIframe = document.getElementById('youtube-iframe');
 const abrirYoutubeBtn = document.getElementById('abrir-youtube-btn');
 
-// --- LÓGICA DO MENU LATERAL ---
+// TELA GANHADORES
+const winnersPanelContainer = document.getElementById('winners-panel-container');
+const winnersListContent = document.getElementById('winners-list-content');
+const winnersProgressBar = document.getElementById('winners-progress-bar');
+const btnCloseWinners = document.getElementById('btn-close-winners');
 
+let winnersTimer = null; // Para controlar o fechamento automático
+let lastGanhadoresHash = ''; // Para evitar re-renderizar se os dados não mudaram
+
+// --- LÓGICA DO MENU LATERAL ---
 const menuOverlay = document.getElementById('side-menu-overlay');
 const menuBackdrop = document.getElementById('side-menu-backdrop');
 const menuPanel = document.getElementById('side-menu-panel');
@@ -1000,7 +1008,6 @@ function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
         // Se não existir, usa 'em_ordem' como fallback.
         let rawLayout = superior + ',' + central + ',' + inferior; // card.numeros || card.em_ordem; 
         let layoutGrid = [];
-        console.error("rawLayout     :",rawLayout);
         if (typeof rawLayout === 'string') {
             // Remove caracteres não numéricos (como * ou +) exceto espaço e vírgula
             // Divide por espaço ou vírgula e converte para número
@@ -1094,9 +1101,9 @@ function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
 
                 if (premioBuscado.includes('QUADRA') && line.count === 4) {
                     lineCardObj.premioEncontrado = 'Q U A D R A';
+                    console.error("quadra01    :");  
                     playPremiadoSound(quadraSound);
                     showPremiadoGif('quadra');                   
-                    playBingoSound();
                 } else if (premioBuscado.includes('LINHA') && line.count === 5) {
                     lineCardObj.premioEncontrado = 'L I N H A';
                     showPremiadoGif('linha');                    
@@ -1124,12 +1131,10 @@ function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
                 premioEncontrado = 'B I N G O';
                 showPremiadoGif('bingo');
                 playPremiadoSound(bingoSound);                
-                playBingoSound();
             } else if (premioBuscado.includes('FALTAUM') && count.geral === 14) {
                 premioEncontrado = 'FALTA UM';
                 showPremiadoGif('faltaum');
                 playPremiadoSound(faltaumSound);                
-                playBingoSound();
             }
             cardObj.premioEncontrado = premioEncontrado;
             processedCards.push(cardObj);
@@ -1199,14 +1204,13 @@ function recalculateAndDisplayCards(bolasCantadas, premioBuscado, linhasAtivas) 
             
             if (normalizedPremioBuscado.includes('QUADRA') && count === 4) {
                 premioEncontrado = 'Q U A D R A';
+                console.error("quadra02    :");
                 showPremiadoGif('quadra');
                 playPremiadoSound(quadraSound);                
-playBingoSound();
             } else if (normalizedPremioBuscado.includes('LINHA') && count === 5) {
                 premioEncontrado = 'L I N H A';
                 showPremiadoGif('linha');
                 playPremiadoSound(linhaSound);                 
-playBingoSound();
             }
         } else {
             let count = 0;
@@ -1227,7 +1231,6 @@ playBingoSound();
                 premioEncontrado = 'TRIPLO BINGO';
                 showPremiadoGif('triplobingo');
                 playPremiadoSound(triplobingoSound);                
-playBingoSound();
             } else if (normalizedPremioBuscado.includes('BINGO') && count === 15 && xBolasCantadas !== bolaBuscandoPremio) {
                 premioEncontrado = 'B I N G O';
                 showPremiadoGif('bingo');
@@ -1560,7 +1563,6 @@ function displayPrizeValues(premioData, topeData = null) {
     const prizeValuesContainerCurrent = isMobile ? mobilePrizeValuesContainer : prizeValuesContainer;
     
     prizeValuesContainerCurrent.innerHTML = '';
-    
     if (premioData && Array.isArray(premioData) && premioData.length > 0) {
         const validPrizes = premioData.filter(premio => {
             const cleanedValue = premio.valor.toString().replace('R$', '').replace('.', '').trim();
@@ -1664,7 +1666,7 @@ function displayCardGrid(numerosString, bolasCantadas) {
                 const numero = subtext.replace(/[+*]/g, '').trim();
                 if (numero) {
                     const numberDiv = document.createElement('div');
-                    numberDiv.className = 'card-number-item p-1 bg-gray-300 rounded-lg text-gray-800 font-bold text-xl text-center';
+                    numberDiv.className = 'card-number-item h-8 w-10 flex items-center justify-center p-0 bg-gray-300 rounded-lg text-gray-800 font-bold text-xl';
                     numberDiv.textContent = numero;
                     cardGridElement.appendChild(numberDiv);
                 }
@@ -1674,7 +1676,7 @@ function displayCardGrid(numerosString, bolasCantadas) {
     if (!cardHasNumbers) {
         for (let i = 0; i <  15; i++) {
             const placeholderDiv = document.createElement('div');
-            placeholderDiv.className = 'card-number-item p-1 bg-gray-300 rounded-lg text-gray-800 font-bold text-xl text-center';
+            placeholderDiv.className = 'card-number-item h-8 w-10 flex items-center justify-center p-0 bg-gray-300 rounded-lg text-gray-800 font-bold text-xl';
             placeholderDiv.textContent = '00';
             cardGridElement.appendChild(placeholderDiv);
         }
@@ -1699,10 +1701,7 @@ function displayConferencePanel(confereData, bolasCantadas) {
             
             cardNumberElement.textContent = numeroDoCartao;
             winnerNameElement.textContent = nomeDoGanhador || 'O Próximo será Seu!';
-            displayCardGrid(numerosDaCartela, bolasCantadas);
-            
-            // Efeito Sonoro de Vitória (Opcional)
-            // playBingoSound(); 
+            displayCardGrid(numerosDaCartela, bolasCantadas);            
         } else {
             ocultarConferencia();
         }
@@ -1720,6 +1719,85 @@ function ocultarConferencia() {
     winnerNameElement.textContent = '...';
     displayCardGrid(null, []);
 }
+
+// --- FUNÇÃO MOSTRAR GANHADORES (Agrupados) ---
+function displayWinnersPanel(ganhadoresData) {
+    if (!ganhadoresData || ganhadoresData.length === 0) return;
+
+    // Evita re-renderizar se os dados forem idênticos ao último e o painel já estiver aberto
+    const currentHash = JSON.stringify(ganhadoresData);
+    if (currentHash === lastGanhadoresHash && !winnersPanelContainer.classList.contains('hidden')) {
+        return;
+    }
+    lastGanhadoresHash = currentHash;
+
+    winnersListContent.innerHTML = '';
+    if (winnersTimer) clearTimeout(winnersTimer);
+
+    // O Backend já manda os dados agrupados. Iteramos sobre os grupos.
+    ganhadoresData.forEach(grupo => {
+        
+        // Container do Grupo (Prêmio)
+        const groupDiv = document.createElement('div');
+        groupDiv.className = 'bg-gray-800 rounded-lg p-1 border border-gray-700 mb-1';
+
+        // Cabeçalho do Prêmio
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'flex justify-between items-center border-b border-gray-600 pb-1 mb-1';
+        headerDiv.innerHTML = `
+            <span class="text-green-400 font-bold text-lg">${grupo.premio}</span>
+            <span class="text-white font-bold bg-green-700 px-1 py-0.5 rounded text-sm">${grupo.valor}</span>
+        `;
+        groupDiv.appendChild(headerDiv);
+
+        // Lista de Ganhadores deste prêmio
+        if (grupo.ganhadores && Array.isArray(grupo.ganhadores)) {
+            grupo.ganhadores.forEach(ganhador => {
+                const row = document.createElement('div');
+                row.className = 'flex justify-between items-center text-sm py-1 hover:bg-gray-700 rounded px-1';
+                row.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="bg-gray-900 text-yellow-500 font-bold px-1 py-0.5 rounded border border-gray-600">${ganhador.cartela}</span>
+                        <span class="text-gray-200 truncate max-w-[150px] uppercase font-medium">${ganhador.nome}</span>
+                    </div>
+                    <span class="text-green-300 font-bold">${ganhador.valor_rateio}</span>
+                `;
+                groupDiv.appendChild(row);
+            });
+        }
+
+        winnersListContent.appendChild(groupDiv);
+    });
+
+    // Exibe o painel
+    if (winnersPanelContainer) {
+        winnersPanelContainer.classList.remove('hidden');
+        winnersPanelContainer.classList.add('flex');
+    }
+
+    // Animação da barra de progresso
+    if (winnersProgressBar) {
+        winnersProgressBar.style.transition = 'none';
+        winnersProgressBar.style.width = '100%';
+        // Força reflow
+        void winnersProgressBar.offsetWidth; 
+        const emSegundos = WINNERS_DISPLAY_TIME * 1000
+        winnersProgressBar.style.transition = `width ${emSegundos}ms linear`;
+        winnersProgressBar.style.width = '0%';
+    }
+
+    // Auto-fechamento
+    winnersTimer = setTimeout(closeWinnersPanel, WINNERS_DISPLAY_TIME  * 1000);
+}
+
+function closeWinnersPanel() {
+    if (winnersPanelContainer) {
+        winnersPanelContainer.classList.remove('flex');
+        winnersPanelContainer.classList.add('hidden');
+    }
+    if (winnersTimer) clearTimeout(winnersTimer);
+}
+
 async function fetchDataFromCollections() {
     try {
         const response = await fetch(`${API_BASE_URL}/api/initial-data`);
@@ -1958,7 +2036,7 @@ function renderOscartoes(bolasCantadas) {
                     if (isTargetLine) {
                         // DESTAQUE (Branco com Borda Amarela)
                         // É um número faltante NA linha que estamos torcendo
-                        cellClass += 'bg-gray-700 text-white border-yellow-600 shadow-sm'; 
+                        cellClass += 'bg-gray-800 text-white border-yellow-600 shadow-sm'; 
                     } else {
                         // "GRAY-250" (Cinza Claro mas sem destaque)
                         // É um número faltante, mas numa linha que NÃO vai bater agora
@@ -1989,11 +2067,17 @@ function renderOscartoes(bolasCantadas) {
 async function renderMainContent(data) {
     if (!data) return;
 
+// --- DEBUG: O que está chegando do Python? ---
+    // Isso vai imprimir algo como: ['bolasData', 'premioData', ...]
+    // Verifique se 'ganhadoresData' aparece nessa lista no console.
+    // ------------
+
     // 1. Desestruturação dos dados recebidos
     const { 
         bolasData, 
         buscandoData, 
-        premioData, 
+        premioData,
+        ganhadoresData, 
         promocionalData, 
         rodadaData, 
         confereData, 
@@ -2145,7 +2229,7 @@ async function renderMainContent(data) {
             startPromocionalTimer();
         };
     }
-
+    
     // 9. Atualização de Paineis Visuais
     updateNumericPanel(bolasCantadas);
     displayLastThree(bolasData?.[0]);
@@ -2177,7 +2261,12 @@ async function renderMainContent(data) {
     // 12. Exibe informações de Prêmios e Totais
     displayPrizeInfo(buscandoData, premioData);
     displayPrizeValues(premioData, topeData);
-    
+   
+   // 13. Exibe Ganhadores da Rodada 
+   if (ganhadoresData && ganhadoresData.length > 0) {
+        displayWinnersPanel(ganhadoresData);
+    } 
+
     // Atualiza totalizadores visuais
     const totalAtual = isMobileDevice() ? 
         (mobileTotalCartelasSpan ? parseInt(mobileTotalCartelasSpan.textContent) : 0) : 
@@ -2511,6 +2600,12 @@ document.addEventListener('DOMContentLoaded', () => {
             viewLista.classList.remove('hidden');
         });
     }
+
+// --- BOTÃO FECHAR TELA GANHADORES ---
+    if (btnCloseWinners) {
+        btnCloseWinners.addEventListener('click', closeWinnersPanel);
+    }
+
 // --- BOTÃO FECHAR TELA CONFERENCIA ---
     const btnCloseConf = document.getElementById('btn-close-conference');
     if (btnCloseConf) {
@@ -2573,7 +2668,7 @@ if (menuBtnSom) {
         
         if (vozAtiva) {
             desbloquearAudio();
-            falarTexto("Som ativado");
+            falarTexto("Áudio Ativado");
         } else {
             window.speechSynthesis.cancel();
         }
