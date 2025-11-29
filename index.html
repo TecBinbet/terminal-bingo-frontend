@@ -33,8 +33,10 @@
 </head>
 
 <body class="bg-gray-800 text-white min-h-screen overflow-hidden">
+    <!-- Botão Fullscreen (F11) -->
     <button id="fullscreen-button">Entrar em Tela Cheia</button>    
     
+    <!-- Loader Global -->
     <div id="loader" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75 z-50 hidden">
         <div class="flex flex-col items-center">
             <div class="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-green-500"></div>
@@ -42,14 +44,17 @@
         </div>
     </div>
 
+    <!-- CABEÇALHO COM MENU HAMBÚRGUER -->
     <header class="flex justify-between items-center mb-0.5 border-b-2 border-gray-700 pb-1 pl-2 pr-2 pt-1">
         <div class="flex items-center gap-3">
+            <!-- Botão do Menu -->
             <button id="btn-open-menu" class="text-gray-300 hover:text-white focus:outline-none">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
             </button>
             
+            <!-- Título da Sala -->
             <h1 class="text-sm font-bold text-green-400" id="sala-title">Terminal OnLine</h1>
         </div>
 
@@ -59,12 +64,15 @@
         </div>
     </header>
 
+    <!-- Botão Flutuante YouTube -->
     <button id="abrir-youtube-btn" class="fixed top-0 right-4 bg-red-600 text-white px-2 py-0 rounded-lg shadow-lg z-50">
     Abrir YouTube
     </button>
 
+    <!-- Container de Vídeo e Estatísticas -->
     <div id="video-e-estatisticas-container" class="mt-0 mb-1 flex w-full space-x-1 items-start">
 
+        <!-- Bola Digital (Painel Alternativo) -->
         <section id="digital-bola-panel" class="w-2/5 bg-gray-900 p-0 rounded-lg shadow-xl h-[133px] hidden flex items-center justify-center">
             <div id="bola-container" class="w-full h-full flex items-center justify-center">        
                 <div id="bola-digital" 
@@ -77,6 +85,7 @@
             </div>
         </section>
 
+        <!-- Player YouTube -->
         <section id="youtube-panel" class="w-2/4 bg-gray-900 mb-1 p-0 rounded-lg shadow-xl h-[133px]">
             <div style="height: 100%;">
                 <iframe id="youtube-iframe" width="100%" height="100%"
@@ -90,6 +99,7 @@
             </div>
         </section>
 
+        <!-- Painel Melhores da Rodada -->
         <section id="estatisticas-panel" class="w-2/4 bg-gray-900 p-0 rounded-lg shadow-lg flex flex-col h-[133px] overflow-x-hidden">
             <h2 class="text-green-400 text-[7px] mb-0 text-center border-b border-gray-700 pb-0">Melhores da Rodada</h2>
 
@@ -114,6 +124,7 @@
 
     <div id="youtube-placeholder" class="hidden" style="height: 0.5vh; width: 0%;"></div>
 
+    <!-- Overlay Promocional -->
     <div id="promocional-container" class="fixed z-50 hidden" style="top:0; left:0; width:100%; height:100%;">
         <div id="promocional-content" class="absolute">         
              <div id="promocional-gif-bg" class="absolute inset-0 bg-contain bg-no-repeat bg-center" 
@@ -126,20 +137,24 @@
         </div>
     </div>
 
+    <!-- GRID PRINCIPAL (3 COLUNAS) -->
     <main class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         
+        <!-- Painel de Bolas PC -->
         <section id="pc-number-panel" class="bg-gray-900 p-6 rounded-lg shadow-lg col-span-1 lg:col-span-2">
             <h2 id="pc-bolas-sorteadas-title" class="text-2xl font-bold text-white mb-4">Bolas Sorteadas</h2>
             <div class="grid grid-cols-10 gap-2" id="number-grid"></div>
         </section>
         
+        <!-- Painéis Mobile (Ocultos no PC) -->
         <section id="mobile-panels-container" class="hidden -mt-1">
             <div id="mobile-number-panel" class="bg-black p-0 rounded-lg shadow-lg col-span-1 lg:col-span-2">
                 <div class="grid grid-cols-10 gap-0 bg-black" id="mobile-number-grid"></div>
             </div>
             <aside id="mobile-last-balls-panel" class="relative justify-center bg-gray-800 p-2 rounded-lg shadow-lg">
                 
-                <button id="btn-toggle-voz" class="absolute top-0 left-1 text-white bg-gray-700 hover:bg-gray-600 rounded-full p-1.5 shadow-md focus:outline-none" title="Ligar/Desligar Voz">
+                <!-- Botão de Som Mobile -->
+                <button id="btn-toggle-voz" class="absolute top-1 left-1 text-white bg-gray-700 hover:bg-gray-600 rounded-full p-1.5 shadow-md focus:outline-none" title="Ligar/Desligar Voz">
                     <span id="icon-voz-on">🔊</span>
                     <span id="icon-voz-off" class="hidden">🔇</span>
                 </button>
@@ -155,9 +170,11 @@
                 </div>
                 <div class="mt-0 flex justify-center items-center space-x-2 text-sm font-bold text-gray-300">
                      <span>Série R$: <span id="mobile-preco-serie" class="text-xl font-bold text-blue-400">0</span></span>
-                <div> </aside>
+                </div>
+            </aside>
         </section>
 
+        <!-- Painel de Prêmios PC -->
         <aside id="pc-prize-panel" class="bg-gray-900 p-6 rounded-lg shadow-lg flex flex-col justify-between lg:col-span-1">
             <div class="text-center mb-6">
                 <div class="flex justify-center items-center mt-2 space-x-4">
@@ -183,12 +200,14 @@
             </div>
         </aside>
 
+        <!-- Painéis Mobile Ocultos (Auxiliares) -->
         <aside id="mobile-buscando-panel" class="hidden flex-col bg-gray-900 rounded-lg shadow-lg -mt-2">
            <div id="mobile-prize-info" class="flex items-center justify-center p-0 bg-blue-800 rounded-lg shadow-md h-6 w-full">
               <span class="text-sm text-gray-200 font-semibold">...</span>
            </div>
         </aside>
 
+        <!-- Painel Gerenciar Cartelas Mobile (Entrada Manual) -->
         <section id="mobile-gerenciar-cartelas-panel" class="hidden p-2 bg-gray-900 rounded-lg shadow-lg -mt-2">
              <div class="p-2 flex justify-between items-center bg-gray-900 rounded-t-lg -m-2">
                 <h2 class="text-base font-bold text-gray-400">Entrada de Cartela</h2>
@@ -223,6 +242,7 @@
             </div>
         </section>
 
+        <!-- COLUNA ESQUERDA PC: Gerenciar Cartelas (3/4 LARGURA) -->
         <section id="pc-cartelas-em-jogo-container" class="col-span-1 md:col-span-2 lg:col-span-3 p-2 bg-gray-900 rounded-lg shadow-lg">
             <h2 class="text-2xl font-bold text-white mb-4">Gerenciar Cartelas em Jogo</h2>
             
@@ -253,7 +273,9 @@
             </div>
             <span id="validation-message" class="text-red-500 text-sm font-medium hidden"></span>
 
+            <!-- PAINEL HÍBRIDO PC -->
             <div class="loaded-cards-container p-4 bg-gray-700 rounded-lg shadow-md">
+                <!-- Modo Lista -->
                 <div id="view-lista-numerica">
                     <div class="flex justify-between items-center mb-2">
                         <h3 class="text-xl font-bold text-gray-400" id="loaded-cards-header">Cartelas Carregadas</h3>
@@ -265,6 +287,7 @@
                     <div id="loaded-cards-list" class="space-y-2"></div>
                 </div>
 
+                <!-- Modo Gráfico Top 8 -->
                 <div id="view-top10-grafico" class="hidden">
                     <div class="flex justify-between items-center mb-2">
                         <h3 id="oscartoes-header" class="text-xl font-bold text-yellow-500">8 Melhores Cartelas</h3>
@@ -280,6 +303,7 @@
             </div>
         </section>
 
+        <!-- Painel de Prêmios Mobile -->
         <section id="mobile-prizes-panel" class="hidden bg-gray-900 p-2 rounded-lg shadow-lg flex flex-col items-center space-y-2 -mt-2">
            <div class="flex justify-between items-center w-full px-2">
               <h2 class="text-base font-bold text-gray-400">Prêmios</h2>
@@ -290,9 +314,11 @@
            </div>
         </section>      
 
+        <!-- PAINEL HÍBRIDO MOBILE -->
         <section id="mobile-loaded-cards-panel" class="hidden col-span-1 md:col-span-2 lg:col-span-3 p-0 bg-black/30 rounded-lg shadow-lg h-[580px] overflow-y-auto -mt-2">
             <div class="loaded-cards-container p-2 bg-gray-900 rounded-lg shadow-md">
                 
+                <!-- Modo Lista Mobile -->
                 <div id="view-lista-numerica-mobile">
                       <div class="flex justify-between items-start mb-0 sticky top-0 bg-gray-900 z-10 pt-0 pb-1">    
                             <h3 class="text-lg text-center font-bold text-yellow-600 mb-0 mt-0.5" id="mobile-loaded-cards-header">
@@ -306,6 +332,7 @@
                     <div id="mobile-loaded-cards-list" class="space-y-2 h-150 overflow-y-auto pb-10"></div>   
                 </div>
 
+                <!-- Modo Gráfico Top 8 Mobile -->
                 <div id="view-top10-grafico-mobile" class="hidden">
                     <div class="flex justify-between items-center mb-0 sticky top-0 bg-gray-900 z-10 pt-0 pb-1">
                         <h3 id="mobile-oscartoes-header" class="text-sm font-bold text-yellow-500">8 Melhores</h3>
@@ -324,9 +351,10 @@
 
     </main>
 
-    <div id="conference-panel-container" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/25 backdrop-blur-sm">
+    <!-- PAINEL DE CONFERÊNCIA FLUTUANTE (MODAL) -->
+    <div id="conference-panel-container" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/80 backdrop-blur-sm">
         
-        <div class="relative bg-gray-900 p-4 rounded-2xl border-4 border-yellow-500 shadow-2xl flex flex-col items-center space-y-2 w-[80%] max-w-[350px]">
+        <div class="relative bg-gray-900 p-4 rounded-2xl border-4 border-yellow-500 shadow-2xl flex flex-col items-center space-y-2 w-[80%] max-w-[400px]">
             
             <button id="btn-close-conference" class="absolute top-1 right-2 text-gray-400 hover:text-white transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -356,13 +384,46 @@
         </div>
     </div>
 
+    <!-- PAINEL DE GANHADORES FLUTUANTE (MODAL) -->
+    <div id="winners-panel-container" class="hidden fixed inset-0 z-[110] items-center justify-center bg-black/80 backdrop-blur-sm">
+        
+        <!-- Conteúdo (Borda Verde para diferenciar) -->
+        <div class="relative bg-gray-900 p-4 rounded-2xl border-4 border-green-600 shadow-2xl flex flex-col items-center w-[90%] max-w-[500px] max-h-[90vh]">
+            
+            <!-- Botão Fechar -->
+            <button id="btn-close-winners" class="absolute top-2 right-2 text-gray-400 hover:text-white transition-colors z-10">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+
+            <!-- Título -->
+            <h2 class="text-center text-2xl font-black text-white uppercase tracking-widest border-b-2 border-green-600 pb-2 w-full mb-4">
+                🏆 Ganhadores 🏆
+            </h2>
+            
+            <!-- Lista Rolável -->
+            <div id="winners-list-content" class="w-full overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                <!-- O JavaScript vai injetar os ganhadores aqui -->
+            </div>
+
+            <!-- Barra de Timer (Visual Opcional) -->
+            <div class="w-full h-1 bg-gray-700 mt-4 rounded-full overflow-hidden">
+                <div id="winners-progress-bar" class="h-full bg-green-500 w-full transition-all linear"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- MENU LATERAL (SIDEBAR) -->
     <div id="side-menu-overlay" class="hidden fixed inset-0 z-[200]">
         <div id="side-menu-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity opacity-0"></div>
         
-        <nav id="side-menu-panel" class="absolute left-0 top-0 bottom-0 w-64 bg-gray-900 border-r border-gray-700 transform -translate-x-full transition-transform duration-300 shadow-2xl flex flex-col">
+        <!-- ALTERADO AQUI: Removido 'bottom-0', adicionado 'h-auto' e 'rounded-br-2xl' -->
+        <nav id="side-menu-panel" class="absolute left-0 top-0 w-64 h-auto bg-gray-900 border-r border-gray-700 transform -translate-x-full transition-transform duration-300 shadow-2xl flex flex-col rounded-br-2xl">
             
             <div class="flex justify-between items-center p-2 border-b border-gray-700">
-                <h2 class="text-blue-400 font-semibold text-xs">Configurações</h2>
+                <h2 class="text-blue-400 font-semibold text-xs">Menu de Opções</h2>
                 <button id="btn-close-menu" class="text-gray-400 hover:text-white">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -372,6 +433,39 @@
 
             <div class="flex-1 overflow-y-auto py-2">
                 <ul class="space-y-1 px-2">
+
+                    <!-- NOVA OPÇÃO: Minhas Cartelas -->
+                    <li>
+                        <button id="menu-btn-cartelas" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xl">🎟️</span>
+                                <span class="font-medium">Minhas Cartelas</span>
+                            </div>
+                        </button>
+                    </li>
+                    
+                    <!-- NOVA OPÇÃO: Comprar Cartelas -->
+                    <li>
+                        <button id="menu-btn-comprar" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xl">💸</span>
+                                <span class="font-medium">Comprar Cartelas</span>
+                            </div>
+                        </button>
+                    </li>
+                    
+                    <!-- NOVA OPÇÃO: Próximos Eventos -->
+                    <li>
+                        <button id="menu-btn-eventos" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xl">📅</span>
+                                <span class="font-medium">Próximos Eventos</span>
+                            </div>
+                        </button>
+                    </li>
+
+                    <!-- LINHA DIVISÓRIA -->
+                    <li><hr class="border-gray-700 my-1"></li>
                     
                     <li>
                         <button id="menu-btn-som" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
@@ -395,37 +489,7 @@
 
                 </ul>
             </div>
-
-            <div class="p-2 border-t border-gray-700">
-                <button onclick="closeSideMenu()" class="w-full flex items-center justify-center gap-2 p-2 bg-red-900/50 hover:bg-red-900 text-red-200 rounded-lg transition-colors font-bold">
-                    <span>🚪</span> Sair do Menu
-                </button>
-            </div>
         </nav>
-    </div>
-
-   <div id="winners-panel-container" class="hidden fixed inset-0 z-[110] items-center justify-center bg-black/40 backdrop-blur-sm">
-        
-        <div class="relative bg-gray-900 p-4 rounded-2xl border-4 border-yellow-500 shadow-2xl flex flex-col items-center w-[85%] max-w-[430px] max-h-[90vh]">
-            
-            <button id="btn-close-winners" class="absolute top-2 right-2 text-gray-400 hover:text-white transition-colors z-10">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-            </button>
-
-            <h2 class="text-center text-xl text-semobold text-white uppercase tracking-widest border-b-2 border-green-600 pb-1 w-full mb-2">
-                🏆 Ganhadores 🏆
-            </h2>
-            
-            <div id="winners-list-content" class="w-full overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                </div>
-
-            <div class="w-full h-1 bg-gray-700 mt-4 rounded-full overflow-hidden">
-                <div id="winners-progress-bar" class="h-full bg-blue-500 w-full transition-all linear"></div>
-            </div>
-
-        </div>
     </div>
 
     <script src="config.js"></script>

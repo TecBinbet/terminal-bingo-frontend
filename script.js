@@ -28,6 +28,7 @@ const digitalBolaPanel = document.getElementById('digital-bola-panel');
 const bolaDigitalElement = document.getElementById('bola-digital');
 let tipoDoSorteio = "";
 
+let encontradoGanhadores = false;
 const youtubePanel = document.getElementById('youtube-panel'); 
 const youtubeIframe = document.getElementById('youtube-iframe');
 const abrirYoutubeBtn = document.getElementById('abrir-youtube-btn');
@@ -1720,18 +1721,28 @@ function ocultarConferencia() {
     displayCardGrid(null, []);
 }
 
-// --- FUNÇÃO MOSTRAR GANHADORES (Agrupados) ---
+// --- FUNÇÃO MOSTRAR GANHADORES (CORRIGIDA) ---
 function displayWinnersPanel(ganhadoresData) {
+    // 1. Validação se há dados
     if (!ganhadoresData || ganhadoresData.length === 0) return;
 
-    // Evita re-renderizar se os dados forem idênticos ao último e o painel já estiver aberto
+    // 2. Gera o Hash (Assinatura) dos dados atuais
     const currentHash = JSON.stringify(ganhadoresData);
-    if (currentHash === lastGanhadoresHash && !winnersPanelContainer.classList.contains('hidden')) {
+
+    // 3. VERIFICAÇÃO CRÍTICA:
+    // Se o Hash for igual ao último processado, PARA AQUI.
+    // Isso impede que a tela pisque ou recarregue se os dados não mudaram.
+    if (currentHash === lastGanhadoresHash) {
         return;
     }
+
+    // 4. Se passou, atualiza o hash global para a próxima vez
     lastGanhadoresHash = currentHash;
 
+    // --- DAQUI PARA BAIXO, SEGUE A RENDERIZAÇÃO ---
     winnersListContent.innerHTML = '';
+    
+    // Cancela timer anterior para reiniciar a contagem
     if (winnersTimer) clearTimeout(winnersTimer);
 
     // O Backend já manda os dados agrupados. Iteramos sobre os grupos.
@@ -1757,7 +1768,7 @@ function displayWinnersPanel(ganhadoresData) {
                 row.className = 'flex justify-between items-center text-sm py-1 hover:bg-gray-700 rounded px-1';
                 row.innerHTML = `
                     <div class="flex items-center gap-2">
-                        <span class="bg-gray-900 text-yellow-500 font-bold px-1 py-0.5 rounded border border-gray-600">${ganhador.cartela}</span>
+                        <span class="bg-gray-900 text-yellow-500 font-bold px-1 py-0.5 rounded border border-gray-600">#${ganhador.cartela}</span>
                         <span class="text-gray-200 truncate max-w-[150px] uppercase font-medium">${ganhador.nome}</span>
                     </div>
                     <span class="text-green-300 font-bold">${ganhador.valor_rateio}</span>
@@ -1769,24 +1780,24 @@ function displayWinnersPanel(ganhadoresData) {
         winnersListContent.appendChild(groupDiv);
     });
 
-    // Exibe o painel
-    if (winnersPanelContainer) {
+    // Exibe o painel (caso esteja oculto)
+    if (winnersPanelContainer.classList.contains('hidden')) {
         winnersPanelContainer.classList.remove('hidden');
         winnersPanelContainer.classList.add('flex');
     }
 
-    // Animação da barra de progresso
+    // Reinicia a animação da barra de progresso
     if (winnersProgressBar) {
         winnersProgressBar.style.transition = 'none';
         winnersProgressBar.style.width = '100%';
-        // Força reflow
+        // Força o navegador a recalcular o estilo (Reflow) antes de iniciar a animação
         void winnersProgressBar.offsetWidth; 
         const emSegundos = WINNERS_DISPLAY_TIME * 1000
         winnersProgressBar.style.transition = `width ${emSegundos}ms linear`;
         winnersProgressBar.style.width = '0%';
     }
 
-    // Auto-fechamento
+    // Configura o fechamento automático
     winnersTimer = setTimeout(closeWinnersPanel, WINNERS_DISPLAY_TIME  * 1000);
 }
 
