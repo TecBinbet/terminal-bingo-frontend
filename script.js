@@ -2401,7 +2401,7 @@ function startPrizeHideTimer() {
     // Inicia um novo temporizador
     let Mutiplicador = 1000;
     if (iniciandoRodada) {
-       Mutiplicador = 3000; 
+       //Mutiplicador = 3000; 
        iniciandoRodada = false;
     } 
     prizeTimeoutId = setTimeout(() => {

@@ -20,7 +20,7 @@ const secundsCardsoutId = 8;
 const secundsPrizeTimeoutId = 8;
 const secundsPromocoesTimeout = 90;
 const secundsGifPremiadoTimeout = 6;
-const WINNERS_DISPLAY_TIME = 25;    // tempo de apresentação dos Ganhadores
+const WINNERS_DISPLAY_TIME = 20;    // tempo de apresentação dos Ganhadores
 
 // Som
 const quadraSound = new Audio('/audio/bingo.mp3');

@@ -95,8 +95,8 @@ body[data-device="mobile"] #mobile-panels-container {
 
 /* Ajusta a largura do painel de números */
 body[data-device="mobile"] #mobile-number-panel {
-    width: 50% !important;
-    height: 80% !important; /* auto A altura será ajustada automaticamente */
+    width: 36% !important;
+    height: 90% !important; /* auto A altura será ajustada automaticamente */
 }
 
 /* Bolas Sorteadas (sem título e sem espaçamento) */
@@ -116,7 +116,7 @@ body[data-device="mobile"] #mobile-number-grid > div {
 
 /* Ajusta a largura do painel das últimas bolas */
 body[data-device="mobile"] #mobile-last-balls-panel {
-    width: 48%;
+    width: 40%;
     /* remove o padding para evitar o espaçamento extra */
     padding-top: 0;
     padding-bottom: 0;
