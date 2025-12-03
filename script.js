@@ -12,6 +12,11 @@ const estatisticasPanel = document.getElementById('estatisticas-panel');
 
 const loadingStats = document.getElementById('loading-stats');
 
+const myCardsPanel = document.getElementById('my-cards-panel-container');
+const myCardsTotal = document.getElementById('my-cards-total');
+const myCardsList = document.getElementById('my-cards-list');
+const btnCloseMyCards = document.getElementById('btn-close-my-cards');
+
 const prizeInfoContainer = document.getElementById('prize-info');
 const prizeValuesContainer = document.getElementById('prize-values');
 const mobilePrizeInfoContainer = document.getElementById('mobile-prize-info');
@@ -55,9 +60,20 @@ const menuIconSom = document.getElementById('menu-icon-som');
 const menuStatusSom = document.getElementById('menu-status-som');
 const menuBtnTema = document.getElementById('menu-btn-tema');
 const menuStatusTema = document.getElementById('menu-status-tema');
+
+// --- VARIÁVEIS PARA MODAL PRÓXIMOS EVENTOS ---
+const eventsPanelContainer = document.getElementById('events-panel-container');
+const eventsListContent = document.getElementById('events-list-content');
+const btnCloseEvents = document.getElementById('btn-close-events');
+const btnEventsMenu = document.getElementById('menu-btn-eventos');
+const btnEventsMobile = document.getElementById('btn-proximos-eventos');
 //
 let cartelasEmJogo = 0;
 // Timer promocionais
+
+let premioInfo = null;
+
+
 let seePromocoes = true; // Controla se o sistema deve verificar e exibir promoções
 let promocionalTimer = null; // Armazena a referência do temporizador
 
@@ -126,6 +142,7 @@ const cardRangesDisplay = document.getElementById('card-ranges-display');
 
 // --- Variável Global para a Rodada (vinda da URL) ---
 let idRodada = 0; 
+let tipoEntradaCartelas = 2; // Variável Global para controle de entrada
 
 let lastRodadaState = null;
 
@@ -225,6 +242,209 @@ function agruparNumerosEmRanges(numeros) {
     
     return ranges;
 }
+
+/**
+ * Abre o painel de Próximos Eventos e carrega os dados do servidor.
+ */
+async function openEventsPanel() {
+    if (!eventsPanelContainer || !eventsListContent) return;
+    
+    // 1. Mostra o painel imediatamente com animação de Loading
+    eventsPanelContainer.classList.remove('hidden');
+    eventsPanelContainer.classList.add('flex');
+    eventsListContent.innerHTML = `
+        <div class="flex flex-col items-center justify-center h-32 space-y-4">
+            <div class="animate-spin rounded-full h-10 w-10 border-t-4 border-b-4 border-blue-500"></div>
+            <span class="text-gray-400 text-sm animate-pulse">Carregando agenda de jogos...</span>
+        </div>
+    `;
+
+    try {
+        // 2. Busca dados atualizados da API
+        // (Certifique-se que API_BASE_URL está definida no topo do seu script ou config.js)
+        const response = await fetch(`${API_BASE_URL}/api/proximos_eventos`);
+        
+        if (!response.ok) {
+            throw new Error(`Erro na API: ${response.status}`);
+        }
+        
+        const eventos = await response.json();
+        
+        // 3. Renderiza os cartões
+        renderEventsList(eventos);
+
+    } catch (error) {
+        console.error("Erro ao carregar eventos:", error);
+        eventsListContent.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-full text-red-500 p-4 text-center">
+                <span class="text-2xl mb-2">⚠️</span>
+                <p class="font-bold">Não foi possível carregar a agenda.</p>
+                <p class="text-xs text-gray-500 mt-1">${error.message}</p>
+                <button onclick="openEventsPanel()" class="mt-4 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm">
+                    Tentar Novamente
+                </button>
+            </div>
+        `;
+    }
+}
+
+/**
+ * Processa a lista de eventos e cria o HTML dos cartões.
+ */
+function renderEventsList(eventos) {
+    eventsListContent.innerHTML = '';
+
+    if (!eventos || eventos.length === 0) {
+        eventsListContent.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-40 text-gray-500">
+                <span class="text-4xl mb-2">📭</span>
+                <p>Nenhum evento programado no momento.</p>
+            </div>
+        `;
+        return;
+    }
+
+    const now = new Date();
+
+    eventos.forEach(evt => {
+        // --- Tratamento de Data ---
+        // Tenta usar a data ISO (padrão seguro) ou faz parse manual
+        let eventDate;
+        if (evt.data && evt.data.includes('/')) {
+            const dateParts = evt.data.split('/'); // [04, 12, 2025]
+            const timeParts = evt.hora ? evt.hora.split(':') : ['00', '00'];
+            
+            // new Date(ano, mês (0-11), dia, hora, min)
+            eventDate = new Date(
+                parseInt(dateParts[2]),       // 2025
+                parseInt(dateParts[1]) - 1,   // 12 - 1 = 11 (Dezembro)
+                parseInt(dateParts[0]),       // 04
+                parseInt(timeParts[0] || 0),
+                parseInt(timeParts[1] || 0)
+            );
+        } else if (evt.data_iso) {
+            // Só usa ISO se não tivermos conseguido parsear manualmente
+            eventDate = new Date(evt.data_iso);
+        } else {
+            eventDate = new Date(); // Fallback
+        }
+
+        // 2. CORREÇÃO DA LÓGICA DE COMPARAÇÃO
+        // Adicionamos uma tolerância de 4 horas para eventos que acabaram de começar não sumirem
+        // Clona a data do evento e subtrai horas para manter ele visível um pouco depois de começar
+        const toleranceDate = new Date(eventDate.getTime() + (1 * 60 * 60 * 1000)); 
+
+        // Lógica: É futuro (data maior que agora) OU o status é explicitamente ativo (mesmo se a hora já passou)
+        const isFuture = eventDate >= now;
+        const isActive = evt.status === 'ativo';
+        
+        // AQUI ESTAVA O ERRO DO &&. O correto é || (OU) se você quer ver a agenda futura
+        // Mas se o status for 'finalizado', forçamos false.
+        const isFinalizado = evt.status === 'finalizado';
+        
+        // Mostra se for Futuro OU Ativo, desde que não esteja finalizado.
+        const isFutureOrActive = (isFuture && isActive) && !isFinalizado;
+        // --- Definição de Estilos do Cartão ---
+        let cardClass = 'rounded-xl p-3 border shadow-lg flex flex-col gap-2 relative overflow-hidden transition-all duration-300';
+        let statusBadge = '';
+        let btnComprarHtml = '';
+
+        if (isFinalizado) {
+            // ESTILO: FINALIZADO (Cinza, Opaco)
+            cardClass += ' bg-gray-800 border-gray-600 opacity-60 grayscale';
+            statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-gray-600 text-gray-300 px-3 py-1 rounded-bl-lg">ENCERRADO</span>';
+        } 
+        else if (isFutureOrActive) {
+            // ESTILO: ATIVO / EM BREVE (Destaque Azul/Verde)
+            cardClass += ' bg-gradient-to-br from-gray-900 to-gray-800 border-blue-500 hover:border-blue-400 transform hover:scale-[1.02]';
+            
+            if (evt.status === 'ativo') {
+                statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-green-600 text-white px-3 py-1 rounded-bl-lg animate-pulse">🔴 AO VIVO / ATIVO</span>';
+            } else {
+                statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-blue-600 text-white px-3 py-1 rounded-bl-lg">EM BREVE</span>';
+            }
+            
+            // Botão de Compra (Só aparece para eventos ativos/futuros)
+            btnComprarHtml = `
+                <div class="mt-2 border-t border-gray-700 pt-2">
+                    <button onclick="iniciarCompraCartelas('${evt.id_evento}')" 
+                            class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg shadow-md flex items-center justify-center gap-2 transition-colors active:scale-95">
+                        <span>🛒</span> COMPRAR CARTELAS
+                    </button>
+                </div>
+            `;
+        } 
+        else {
+            // ESTILO: PASSADO (Mas não finalizado - Raro)
+            cardClass += ' bg-gray-800 border-red-900 opacity-80';
+            statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-red-900 text-red-200 px-3 py-1 rounded-bl-lg">DATA PASSADA</span>';
+        }
+
+        // Formatação de Moeda
+        const preco = parseFloat(evt.valor_cartela).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+        // Renderiza a lista de prêmios
+        const premiosHtml = evt.premios_desc.map(p => 
+            `<li class="flex items-start gap-1"><span class="text-yellow-500">★</span> ${p}</li>`
+        ).join('');
+
+        // Montagem do HTML do Cartão
+        const card = document.createElement('div');
+        card.className = cardClass;
+        card.innerHTML = `
+            ${statusBadge}
+            
+            <div class="pr-2">
+                <h3 class="text-lg font-bold text-white leading-tight drop-shadow-sm">${evt.descricao}</h3>
+                <p class="text-xl text-blue-300 font-mono mt-1 flex items-center gap-1">
+                     ${evt.data} <span class="mx-1">|</span> <span>⏰</span> ${evt.hora}
+                </p>
+            </div>
+
+            <!-- Área de Prêmios -->
+            <div class="bg-black/40 rounded-lg p-2 border border-gray-700/50">
+                <p class="text-[10px] text-gray-400 font-bold uppercase mb-1 tracking-wider">Premiação Prevista:</p>
+                <ul class="text-lg text-yellow-300 space-y-1 font-medium">
+                    ${premiosHtml}
+                </ul>
+            </div>
+
+            <!-- Rodapé do Cartão (Preço e Info) -->
+            <div class="flex justify-between items-end -mt-1">
+                <div class="text-gray-400 text-[10px]">
+                    <span class="block">ID: ${evt.id_evento}</span>
+                    <span class="text-xs text-gray-300">Kit c/ <strong>${evt.unidade_venda}</strong> cartelas</span>
+                </div>
+                <div class="text-right">
+                    <span class="block text-[9px] text-gray-500 uppercase">Valor do Kit</span>
+                    <span class="text-xl font-black text-green-400 tracking-tighter">${preco}</span>
+                </div>
+            </div>
+
+            ${btnComprarHtml}
+        `;
+
+        eventsListContent.appendChild(card);
+    });
+}
+
+function closeEventsPanel() {
+    if (eventsPanelContainer) {
+        eventsPanelContainer.classList.remove('flex');
+        eventsPanelContainer.classList.add('hidden');
+    }
+}
+
+// Função Placeholder para o clique no botão de compra
+// (Será substituída pela lógica real de compra depois)
+function iniciarCompraCartelas(idEvento) {
+    closeEventsPanel();
+    // Exemplo de ação futura:
+    // window.location.href = `/comprar_cartelas?id_evento=${idEvento}`;
+    alert(`Redirecionando para compra do evento ID: ${idEvento}... \n(Em desenvolvimento)`);
+}
+
+
 
 // Funções de busca de cartelas compradas
 async function carregarCartelasAutomaticas(idEvento) {
@@ -483,7 +703,7 @@ async function updatePromocionalPanelPosition() {
         // Arquivo existe. Aplica o background.
         content.style.backgroundImage = `url('${gifUrl}?t=${new Date().getTime()}')`;
         // OBS: O texto já foi carregado pela função 'displayPromocionalText',
-        // então não precisamos redefinir o innerHTML aqui.
+        // então não precisamos redefinir o innerHTML.
         
     } else {
         // 🛑 Arquivo NÃO existe. Esconde o painel, limpa o fundo e SAI.
@@ -675,6 +895,88 @@ function handleFullscreenChange() {
            seePromocoes = true;
            startPromocionalTimer();
         }      
+    }
+}
+
+// --- NOVA FUNÇÃO: Abrir Modal Minhas Cartelas ---
+function openMyCardsPanel() {
+    // Verifica se os elementos do modal existem no HTML
+    if (!myCardsPanel || !myCardsList || !myCardsTotal) {
+        console.error("Elementos do modal 'Minhas Cartelas' não encontrados.");
+        return;
+    }
+   
+    // Limpa a lista anterior
+    myCardsList.innerHTML = '';
+    let totalCartelasGeral = 0;
+
+    console.error("passo1  ");
+    // 1. Verifica se há faixas de cartelas carregadas
+    if (!cartelaRanges || cartelaRanges.length === 0) {
+        myCardsList.innerHTML = '<div class="p-2 text-center text-gray-500 text-lg">Nenhuma cartela adquirida.</div>';
+        myCardsTotal.textContent = 'R$ 0,00';
+        
+        // Mostra o modal mesmo vazio
+        myCardsPanel.classList.remove('hidden');
+        myCardsPanel.classList.add('flex');
+        return;
+    }
+
+    // 2. Itera sobre as faixas para criar a lista visual
+    cartelaRanges.forEach(range => {
+        if (range.inicial > 0 && range.final > 0) {
+            // Cálculo da quantidade: (Final - Inicial) + 1
+            const qtd = (range.final - range.inicial) + 1;
+            totalCartelasGeral += qtd;
+
+            // Cria a linha da tabela
+            const row = document.createElement('div');
+            // Grid de 3 colunas para alinhar com o cabeçalho
+            row.className = 'grid grid-cols-3 p-1 text-lg text-center font-bold  border-b border-gray-700 hover:bg-gray-800 text-gray-300 transition-colors';
+            
+            row.innerHTML = `
+                <span>${range.inicial}</span>
+                <span>${range.final}</span>
+                <span class="text-yellow-500 font-bold">${qtd}</span>
+            `;
+            myCardsList.appendChild(row);
+        }
+    });
+
+    // 3. Cálculo Financeiro Total
+    // Fórmula: (TotalCartelas / Multiplo) * Preco
+    
+    // Tenta pegar os valores do objeto global de prêmio (definido no renderMainContent)
+    // Se não existir, usa valores padrão de segurança (Multiplo 6, Preço 0)
+    const multiplo = (premioInfo && premioInfo.multiplo > 0) ? premioInfo.multiplo : 6;
+    const preco = (premioInfo && premioInfo.preco) ? premioInfo.preco : 0;
+    
+    let valorTotal = 0;
+    if (multiplo > 0) {
+         // Calcula quantas "séries" ou "unidades" o cliente tem
+         // Ex: 12 cartelas / 6 = 2 séries -> 2 * R$ 10,00 = R$ 20,00
+         const unidades = totalCartelasGeral / multiplo;
+         valorTotal = unidades * preco;
+    }
+
+    // 4. Formatação Monetária (R$ 0,00)
+    const totalFormatado = new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL'
+    }).format(valorTotal);
+
+    // Atualiza o totalizador na tela
+    myCardsTotal.textContent = totalFormatado;
+
+    // 5. Exibe o modal (remove hidden, adiciona flex)
+    myCardsPanel.classList.remove('hidden');
+    myCardsPanel.classList.add('flex');
+}
+
+function closeMyCardsPanel() {
+    if (myCardsPanel) {
+        myCardsPanel.classList.remove('flex');
+        myCardsPanel.classList.add('hidden');
     }
 }
 
@@ -1056,7 +1358,7 @@ function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
                 geral: emOrdem,
                 linha: [] 
             },
-            layoutGrid: layoutGrid, // <--- AQUI: Adicionamos o campo novo
+            layoutGrid: layoutGrid, // <---: Adicionamos o campo novo
             missingNumbers: []
         };
 
@@ -1273,7 +1575,7 @@ function displayLoadedCards(bolasCantadas) {
     
     const isLinePrize = buscando_o_premio.includes('QUADRA') || buscando_o_premio.includes('LINHA');
     const isMultiLinePrize = isLinePrize && !!buscando_a_linha;
-// aquix
+
     const headerDiv = document.createElement('div');
     headerDiv.className = 'flex justify-between w-full p-0 bg-gray-800 rounded-t-lg text-sm text-gray-400 font-bold mb-0';
     
@@ -1327,7 +1629,7 @@ function displayLoadedCards(bolasCantadas) {
 
                 const premioTexto = card.premioEncontrado === 'DUPLO BINGO' ? 'DUPLO BINGO' : card.premioEncontrado;
                 const premioSpan = document.createElement('span');
-                premioSpan.className = 'text-xl bg-red-500 text-white font-bold w-full text-center p-2 rounded-lg animate-blink-red-white';
+                premioSpan.className = 'text-sm bg-red-500 text-white font-bold w-full text-center p-1 rounded-lg animate-blink-red-white';
                 premioSpan.textContent = premioTexto;
                 numbersContainer.appendChild(premioSpan);
                 numbersContainer.classList.add('items-center', 'justify-center');
@@ -1457,7 +1759,7 @@ function updateNumericPanel(bolasCantadas) {
         bolasCantadas.forEach(bola => {
             const numberDiv = gridToUse.querySelector(`#ball-${bola}`);
             if (numberDiv) {
-                numberDiv.classList.remove('text-gray-900');
+                numberDiv.classList.remove('text-gray-700');
                 numberDiv.classList.add('text-green-700');
             }
         });
@@ -1611,7 +1913,7 @@ function displayPrizeValues(premioData, topeData = null) {
                          startPrizeHideTimer();
                          mobilePrizesContent.classList.remove('hidden'); 
                          togglePrizesButton.textContent = 'Ocultar Prêmios';
-                         togglePrizesButton.classList.remove('bg-green-800');
+                         togglePrizesButton.classList.remove('bg-gray-700');
                          togglePrizesButton.classList.add('bg-red-800'); 
                       }
                    }
@@ -1724,7 +2026,7 @@ function ocultarConferencia() {
 // --- FUNÇÃO MOSTRAR GANHADORES (CORRIGIDA) ---
 function displayWinnersPanel(ganhadoresData) {
     // 1. Validação se há dados
-    if (!ganhadoresData || ganhadoresData.length === 0) return;
+    if (!ganhadoresData || ganhadoresData.length === 0 || ultimaBolaCantada !== null) return;
 
     // 2. Gera o Hash (Assinatura) dos dados atuais
     const currentHash = JSON.stringify(ganhadoresData);
@@ -2006,7 +2308,7 @@ function renderOscartoes(bolasCantadas) {
 
             // Header
             const faltam = cardData.missingNumbers ? cardData.missingNumbers.length : 15;
-            const faltamClass = faltam <= 1 ? 'text-red-500 animate-pulse' : 'text-blue-400';
+            const faltamClass = faltam <= 1 ? 'text-green-400 animate-pulse' : 'text-blue-400';
 
             const header = document.createElement('div');
             header.className = 'flex justify-between items-center border-b border-gray-700 pb-0.5 mb-0.5';
@@ -2097,6 +2399,8 @@ async function renderMainContent(data) {
         parametrosInfo = {} 
     } = data;
 
+    tipoEntradaCartelas = parametrosInfo.tipo_entrada_de_cartelas || 1;
+    controlarPainelMobileEntrada();
     // =========================================================================
     // >>> LÓGICA DE CARREGAMENTO AUTOMÁTICO DE CARTELAS (PRIORIDADE ALTA) <<<
     // =========================================================================
@@ -2247,8 +2551,8 @@ async function renderMainContent(data) {
     displayConferencePanel(confereData, bolasCantadas);
 
     // 10. Preço da Série
-    if (premioInfo && typeof premioInfo.preco_da_serie === 'number') {
-        const preco = premioInfo.preco_da_serie;
+    if (premioInfo && typeof premioInfo.preco === 'number') {
+        const preco = premioInfo.preco  / premioInfo.multiplo;
         ValorSerie = preco;
         const formattedPreco = new Intl.NumberFormat('pt-BR', {
             style: 'decimal',
@@ -2318,13 +2622,15 @@ async function init() {
         frontendVersionElement.textContent = "1.0.0";
         backendVersionElement.textContent = versionData.version;
 
-        const premioInfo = initialData.premioInfo;
+        //const premioInfo = initialData.premioInfo;
+        premioInfo = initialData.premioInfo;
+       
         minCartelas = premioInfo?.minimo_de_cartelas || 0;
         maxCartelas = premioInfo?.maximo_de_cartelas || 0;
 
         // NOVO CÓDIGO: Busca o valor de preco_da_serie e o exibe
-        if (premioInfo && typeof premioInfo.preco_da_serie === 'number') {
-            const preco = premioInfo.preco_da_serie;
+        if (premioInfo && typeof premioInfo.preco === 'number') {             
+            const preco = premioInfo.preco  / premioInfo.multiplo;
             ValorSerie = preco;
             const formattedPreco = new Intl.NumberFormat('pt-BR', {
                  style: 'decimal',
@@ -2414,7 +2720,7 @@ function startPrizeHideTimer() {
             if (toggleButton) {
                 toggleButton.textContent = 'Apresentar Prêmios';
                 toggleButton.classList.remove('bg-red-800'); // Ou a classe que define a cor padrão
-                toggleButton.classList.add('bg-green-800'); // Classe para a cor verde
+                toggleButton.classList.add('bg-gray-700'); // Classe para a cor verde
                 if (cartelas_Em_Jogo === 0 && rodadaState === 'intervalo') {
                    seePromocoes = true;
                    startPromocionalTimer();
@@ -2434,12 +2740,12 @@ togglePrizesButton.addEventListener('click', () => {
         }
         togglePrizesButton.textContent = 'Apresentar Prêmios';
         togglePrizesButton.classList.remove('bg-red-800'); // Ou a classe que define a cor padrão
-        togglePrizesButton.classList.add('bg-green-800');
+        togglePrizesButton.classList.add('bg-gray-700');
     } else {
         // Se o painel for exibido, inicia o temporizador
         startPrizeHideTimer();
         togglePrizesButton.textContent = 'Ocultar Prêmios';
-        togglePrizesButton.classList.remove('bg-green-800');
+        togglePrizesButton.classList.remove('bg-gray-700');
         togglePrizesButton.classList.add('bg-red-800'); // Ou a classe que define a cor padrã//o
     }
 });
@@ -2595,6 +2901,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }   
 
+    // Listeners do Painel de Próximos Eventos
+    if (btnEventsMenu) {
+        btnEventsMenu.addEventListener('click', () => {
+            closeSideMenu(); // Fecha o menu lateral se estiver aberto
+            openEventsPanel();
+        });
+    }
+    
+    if (btnEventsMobile) {
+        btnEventsMobile.addEventListener('click', openEventsPanel);
+    }
+    
+    if (btnCloseEvents) {
+        btnCloseEvents.addEventListener('click', closeEventsPanel);
+    }
+    
+    // Fecha ao clicar fora (Opcional, mas boa UX)
+    if (eventsPanelContainer) {
+        eventsPanelContainer.addEventListener('click', (e) => {
+            if (e.target === eventsPanelContainer) {
+                closeEventsPanel();
+            }
+        });
+    }
+
+// Listeners para "Minhas Cartelas" (Menu Lateral e Botão Mobile)
+    const btnMyCardsMenu = document.getElementById('menu-btn-cartelas');
+    const btnMyCardsMobile = document.getElementById('btn-minhas-cartelas-mobile-view'); // Botão do painel novo
+
+    if (btnMyCardsMenu) btnMyCardsMenu.addEventListener('click', () => {
+        closeSideMenu(); // Fecha o menu lateral
+        openMyCardsPanel(); // <--- CHAMADA 1 (Menu)
+    });
+
+    if (btnMyCardsMobile) btnMyCardsMobile.addEventListener('click', openMyCardsPanel); // <--- CHAMADA 2 (Painel de Compra)
+// --- BOTÃO FECHAR TELA GANHADORES ---
+    if (btnCloseMyCards) {
+        btnCloseMyCards.addEventListener('click', closeMyCardsPanel);
+    }
     const btnIrTop10 = document.getElementById('btn-ir-para-top10');
     const btnIrLista = document.getElementById('btn-ir-para-lista');
     const viewLista = document.getElementById('view-lista-numerica');
@@ -2882,4 +3227,29 @@ async function processarParametrosURL() {
     console.log("Todos os períodos da URL foram processados.");
 }
 
+// --- FUNÇÃO DE CONTROLE DE PAINÉIS (Modo 1 vs Modo 2) ---
+function controlarPainelMobileEntrada() {
+    const painelManual = document.getElementById('mobile-gerenciar-cartelas-panel');
+    const painelBotoes = document.getElementById('mobile-compra-botoes');
+    
+    // Se não for mobile ou os elementos não existirem, não faz nada
+    if (!isMobileDevice() || !painelManual || !painelBotoes) {
+        // Garante que no PC o painel de botões mobile fique oculto
+        if (painelBotoes) painelBotoes.classList.add('hidden');
+        return;
+    }
+
+    // Converte para inteiro para garantir comparação correta
+    const tipo = parseInt(tipoEntradaCartelas);
+
+    if (tipo === 2) {
+        // MODO COMPRA (Valor = 2): Oculta o manual, mostra os botões
+        painelManual.classList.add('hidden');
+        painelBotoes.classList.remove('hidden');
+    } else {
+        // MODO MANUAL (Valor = 1 ou outro): Mostra o manual, oculta os botões
+        painelManual.classList.remove('hidden');
+        painelBotoes.classList.add('hidden');
+    }
+}
 // --- FIM DAS NOVAS FUNÇÕES ---

@@ -25,7 +25,7 @@ import sys
 
 
 # Versão da aplicação
-VERSION = "1.2.60"
+VERSION = "1.2.61" # Incrementado
 
 # --- VARIÁVEIS PARA MODO HÍBRIDO ---
 # O caminho para a pasta "json" é fixo e externo ao executável
@@ -84,9 +84,9 @@ def parse_numeric_fields(data):
     numeric_fields = [
         'inicial1', 'final1', 'inicial2','final2','inicial3','final3','inicial4','final4',
         'série_em_jogo', 'minimo_de_cartelas', 'máximo_de_cartelas',
-        'total_cartelas_em_jogo', 'preco_da_serie', 'premio_quadra',
+        'total_cartelas_em_jogo', 'preco', 'multiplo', 'premio_quadra',
         'premio_linha', 'premio_bingo', 'valor', 'cartao', 'rodada', 'ordem',
-        'numero_da_bola'
+        'numero_da_bola', 'tipo_entrada_de_cartelas',
     ]
     parsed_data = {}
     for key, value in data.items():
@@ -143,18 +143,15 @@ def get_parametros_data(db):
             return {}
 
 
-# --- LÊ DADOS DO MONGODB (COM LOGS DETALHADOS) ---
+# --- LÊ DADOS DO MONGODB (VERSÃO ATUALIZADA COM TIPO_ENTRADA) ---
 def fetch_data_from_collections():
     global db
     if db is None:
-        print("❌ ERRO: Conexão com o banco de dados é None.")
+        print("Erro: A conexão com o banco de dados não foi estabelecida.")
         return {'error': 'Conexão com o banco de dados não estabelecida.'}
 
-    try:
-        # --- DEBUG INICIAL ---
-        print("\n🔍 [MONGO] Iniciando busca de dados...")
-        
-        # Buscas padrão
+    try:            
+        # Buscas padrão nas coleções
         bolas_data = list(db.bolas.find({}))
         buscando_data = list(db.buscando.find({}))
         premio_raw_data = list(db.premio.find({}))
@@ -162,17 +159,12 @@ def fetch_data_from_collections():
         confere_data = list(db.confere.find({}))
         parametros_data = list(db.parametros.find({}))
         
+        # Busca o maior número de cartela (para validação de input)
         max_card_result = list(db.cartelas.find({}, {'cartao': 1, '_id': 0}).sort('cartao', -1).limit(1))
         
-        # --- DEBUG GANHADORES ---
-        print("🔍 [MONGO] Buscando coleção 'ganhadores'...")
+        # --- BUSCA E PROCESSA GANHADORES ---
         ganhadores_raw = list(db.ganhadores.find({}))
-        print(f"   Found: {len(ganhadores_raw)} documentos.")
         
-        if len(ganhadores_raw) > 0:
-            print(f"   Exemplo Raw: {ganhadores_raw[0]}")
-        
-        # Processamento Ganhadores
         ganhadores_dict = {}
         for g in ganhadores_raw:
             tipo_premio = g.get('premio', 'N/A')
@@ -194,15 +186,14 @@ def fetch_data_from_collections():
             })
         
         ganhadores_data_processed = list(ganhadores_dict.values())
-        print(f"✅ [MONGO] Ganhadores Processados: {len(ganhadores_data_processed)} grupos gerados.")
-        # -----------------------
+        # -----------------------------------
 
-        # Busca Melhores
+        # Busca Melhores (Top cartelas)
         melhores_collection = db.get_collection(MELHORES_COLLECTION)
         melhores_cursor = melhores_collection.find({}, {'_id': 0}).sort('id_posicao', 1).limit(25)
         melhores_data_raw = [doc for doc in melhores_cursor]
 
-        # CONVERSÕES ID
+        # CONVERTE ObjectId para string (Evita erro de JSON serializable)
         for doc in bolas_data: doc['_id'] = str(doc['_id'])
         for doc in buscando_data: doc['_id'] = str(doc['_id'])
         for doc in premio_raw_data: doc['_id'] = str(doc['_id'])
@@ -210,7 +201,12 @@ def fetch_data_from_collections():
         for doc in confere_data: doc['_id'] = str(doc['_id'])
         for doc in parametros_data: doc['_id'] = str(doc['_id'])
         
-        # Processa Melhores
+        # Processa Parametros e adiciona default para tipo_entrada
+        parametros_doc = parametros_data[0] if parametros_data else {}
+        if 'tipo_entrada_de_cartelas' not in parametros_doc:
+             parametros_doc['tipo_entrada_de_cartelas'] = 1
+
+        # Processa dados dos Melhores para formato do frontend
         melhores_data_processed = []
         if melhores_data_raw:
             for doc in melhores_data_raw:
@@ -223,12 +219,11 @@ def fetch_data_from_collections():
                     'numeros_faltantes': numeros_faltantes_str
                 })
 
-        # Processamento de Prêmios (Mantido igual)
+        # Processamento de Prêmios em Jogo (Ranges, Topes, etc)
         premio_data = []
         premio_info = {}
         tope_data = []
         card_ranges = []
-        parametros_doc = parametros_data[0] if parametros_data else {}
         
         promocional_collection = db.get_collection('promocional')
         promocional_cursor = promocional_collection.find({}, {'_id': 0}).limit(1) 
@@ -236,35 +231,51 @@ def fetch_data_from_collections():
 
         if premio_raw_data:
             premio_doc = premio_raw_data[0]
-            premio_info = premio_doc            
-            if premio_doc.get('inicial1') is not None: card_ranges.append({'inicial': premio_doc['inicial1'], 'final': premio_doc['final1']})
-            if premio_doc.get('inicial2') is not None: card_ranges.append({'inicial': premio_doc['inicial2'], 'final': premio_doc['final2']})
-            if premio_doc.get('inicial3') is not None: card_ranges.append({'inicial': premio_doc['inicial3'], 'final': premio_doc['final3']})
-            if premio_doc.get('inicial4') is not None: card_ranges.append({'inicial': premio_doc['inicial4'], 'final': premio_doc['final4']})
+            premio_info = premio_doc
+            
+            # Ranges de Cartelas
+            if premio_doc.get('inicial1') is not None and premio_doc.get('final1') is not None:
+                card_ranges.append({'inicial': premio_doc['inicial1'], 'final': premio_doc['final1']})
+            if premio_doc.get('inicial2') is not None and premio_doc.get('final2') is not None:
+                card_ranges.append({'inicial': premio_doc['inicial2'], 'final': premio_doc['final2']})
+            if premio_doc.get('inicial3') is not None and premio_doc.get('final3') is not None:
+                card_ranges.append({'inicial': premio_doc['inicial3'], 'final': premio_doc['final3']})
+            if premio_doc.get('inicial4') is not None and premio_doc.get('final4') is not None:
+                card_ranges.append({'inicial': premio_doc['inicial4'], 'final': premio_doc['final4']})
 
-            if isinstance(premio_doc.get('bola_tope_sb'), (int, float)):
-                tope_data.append({'bola_tope_sb': premio_doc.get('bola_tope_sb'), 'bola_tope_ac': premio_doc.get('bola_tope_ac')})
+            # Tope
+            if isinstance(premio_doc.get('bola_tope_sb'), (int, float)) or isinstance(premio_doc.get('bola_tope_ac'), (int, float)):
+                tope_data.append({
+                    'bola_tope_sb': premio_doc.get('bola_tope_sb'),
+                    'bola_tope_ac': premio_doc.get('bola_tope_ac')
+                })
 
-            # Lista Prêmios Simplificada para teste
-            if isinstance(premio_doc.get('premio_quadra'), (int, float)):
-                premio_data.append({'tipo_premio': 'QUADRA', 'valor': f"R$ {premio_doc['premio_quadra']:.2f}"})
+            # Lista de Prêmios
             if isinstance(premio_doc.get('premio_linha'), (int, float)):
-                premio_data.append({'tipo_premio': 'LINHA', 'valor': f"R$ {premio_doc['premio_linha']:.2f}"})
-            if isinstance(premio_doc.get('premio_falta_um'), (int, float)):
-                premio_data.append({'tipo_premio': 'FALTA 1', 'valor': f"R$ {premio_doc['premio_falta_um']:.2f}"})
+                tipo_premio_linha = 'LINHA'
+                if premio_doc.get('qtde_linha', 1) > 1:
+                    tipo_premio_linha = f"{premio_doc['qtde_linha']} LINHAS"
+                premio_data.append({'tipo_premio': tipo_premio_linha, 'valor': f"R$ {premio_doc['premio_linha']:.2f}".replace('.', ',')})
+
             if isinstance(premio_doc.get('premio_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'BINGO', 'valor': f"R$ {premio_doc['premio_bingo']:.2f}"})
+                premio_data.append({'tipo_premio': 'BINGO', 'valor': f"R$ {premio_doc['premio_bingo']:.2f}".replace('.', ',')})
+            if isinstance(premio_doc.get('premio_quadra'), (int, float)):
+                premio_data.append({'tipo_premio': 'QUADRA', 'valor': f"R$ {premio_doc['premio_quadra']:.2f}".replace('.', ',')})
+            if isinstance(premio_doc.get('premio_falta_Um'), (int, float)):
+                premio_data.append({'tipo_premio': 'FALTA 1', 'valor': f"R$ {premio_doc['premio_falta_Um']:.2f}".replace('.', ',')})
             if isinstance(premio_doc.get('premio_duplo_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'DUPLO BINGO', 'valor': f"R$ {premio_doc['premio_duplo_bingo']:.2f}"})
+                premio_data.append({'tipo_premio': 'DUPLO BINGO', 'valor': f"R$ {premio_doc['premio_duplo_bingo']:.2f}".replace('.', ',')})
+            if isinstance(premio_doc.get('premio_triplo_bingo'), (int, float)):
+                premio_data.append({'tipo_premio': 'TRIPLO BINGO', 'valor': f"R$ {premio_doc['premio_triplo_bingo']:.2f}".replace('.', ',')})
             if isinstance(premio_doc.get('premio_super_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'SUPER BINGO', 'valor': f"R$ {premio_doc['premio_super_bingo']:.2f}"})
+                premio_data.append({'tipo_premio': 'SUPER BINGO', 'valor': f"R$ {premio_doc['premio_super_bingo']:.2f}".replace('.', ',')})
             if isinstance(premio_doc.get('premio_acumulado'), (int, float)):
-                premio_data.append({'tipo_premio': 'ACUMULADO', 'valor': f"R$ {premio_doc['premio_acumulado']:.2f}"})
+                premio_data.append({'tipo_premio': 'ACUMULADO', 'valor': f"R$ {premio_doc['premio_acumulado']:.2f}".replace('.', ',')})
 
         max_card_number = max_card_result[0]['cartao'] if max_card_result else 0
 
-        # Retorno
-        final_payload = {
+        # --- RETORNO FINAL ---
+        return {
             'bolasData': bolas_data,
             'buscandoData': buscando_data,
             'premioData': premio_data,
@@ -277,20 +288,15 @@ def fetch_data_from_collections():
             'promocionalData': promocional_data,
             'parametrosInfo': parametros_doc,
             'melhoresData': melhores_data_processed,
-            'ganhadoresData': ganhadores_data_processed # <--- ESTE É O IMPORTANTE
+            'ganhadoresData': ganhadores_data_processed  # Dados processados e agrupados
         }
-        
-        print("✅ [MONGO] Dados prontos para envio.")
-        return final_payload
 
     except Exception as e:
-        print(f"❌ ERRO CRÍTICO no fetch_mongo: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Erro ao buscar dados do MongoDB: {e}")
         return {'error': 'Erro ao buscar dados do MongoDB.'}
 
 
-# --- LÊ DADOS DOS ARQUIVOS JSON LOCAIS (COM LOGS CORRIGIDOS) ---
+# --- LÊ DADOS DOS ARQUIVOS JSON LOCAIS (VERSÃO ATUALIZADA COM TIPO_ENTRADA) ---
 def fetch_data_from_local_files():
     global UltAlt_Cartelas, cartelas_data
 
@@ -365,7 +371,11 @@ def fetch_data_from_local_files():
         premio_info = {}
         tope_data = []
         card_ranges = []
+        
+        # Garante que parametros é um dict e tem o tipo_entrada
         parametros = parametros_data_raw[0] if isinstance(parametros_data_raw, list) and parametros_data_raw else {}
+        if 'tipo_entrada_de_cartelas' not in parametros:
+             parametros['tipo_entrada_de_cartelas'] = 1
 
         if premio_raw_data:
             premio_doc = premio_raw_data[0]
@@ -656,12 +666,12 @@ def api_consultar_cartelas_evento():
     try:
         colecoes_existentes = sales_db_conn.list_collection_names()
         
-        print("\n=== 🕵️ DEBUG DO BANCO DE VENDAS ===")
-        print(f"Nome do Banco Conectado: '{sales_db_conn.name}'")
-        print(f"O sistema está procurando por: '{nome_colecao}'")
-        print(f"LISTA REAL DE COLEÇÕES NO BANCO:")
-        print(colecoes_existentes)
-        print("====================================\n")
+        #print("\n=== 🕵️ DEBUG DO BANCO DE VENDAS ===")
+        #print(f"Nome do Banco Conectado: '{sales_db_conn.name}'")
+        #print(f"O sistema está procurando por: '{nome_colecao}'")
+        #print(f"LISTA REAL DE COLEÇÕES NO BANCO:")
+        #print(colecoes_existentes)
+        #print("====================================\n")
         
         cartelas_formatadas = []
 
@@ -767,7 +777,7 @@ def get_sales_db_connection():
             return None
 
     # ==============================================================================
-    # >>>>>>>>>> LOGS DE DEBUG (ADICIONE ISTO AQUI) <<<<<<<<<<
+    # >>>>>>>>>> LOGS DE DEBUG (ADICIONE ISTO AQUI) <<<<<<<<<<  aquix
     # ==============================================================================
     print("\n--- DEBUG PARAMETROS ---")
     print(f"Modo Local Ativo? {is_local_mode}")
@@ -817,6 +827,101 @@ def get_sales_db_connection():
         print(f"Erro crítico ao conectar no banco de vendas: {e}")
         return None
 
+# -------------------------------------------------------------------------
+# ROTA: PRÓXIMOS EVENTOS (CORREÇÃO DECIMAL)
+# -------------------------------------------------------------------------
+@app.route('/api/proximos_eventos', methods=['GET'])
+def proximos_eventos():
+    try:
+        sales_db = get_sales_db_connection()
+        if sales_db is None: 
+            return jsonify({'error': 'DB Vendas Offline'}), 500
+
+        if 'eventos' not in sales_db.list_collection_names():
+             return jsonify([]), 200
+
+        eventos_cursor = sales_db['eventos'].find({}).sort('data_hora_evento', 1)
+        lista_eventos = []
+
+        # --- FUNÇÃO DE CONVERSÃO CORRIGIDA ---
+        def safe_float_inner(val):
+            if val is None: return 0.0
+            try:
+                # 1. Tenta converter direto (Pega int, float e Decimal nativo)
+                return float(val)
+            except (ValueError, TypeError):
+                # 2. Se falhar, converte para texto, troca vírgula e tenta de novo
+                try:
+                    val_str = str(val)
+                    val_str = val_str.replace(',', '.')
+                    return float(val_str)
+                except:
+                    # 3. Último recurso: Se for objeto Decimal128 específico do Mongo
+                    try:
+                        return float(val.to_decimal())
+                    except:
+                        return 0.0
+        # -------------------------------------
+
+        for evento in eventos_cursor:
+            try:
+                def get_val(key):
+                    return safe_float_inner(evento.get(key))
+
+                def fmt_moeda(val):
+                    return f"{val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+
+                premios = []
+                
+                v_quadra = get_val('premio_quadra')
+                if v_quadra > 0: premios.append(f"Quadra: R$ {fmt_moeda(v_quadra)}")
+
+                v_linha = get_val('premio_linha')
+                try:
+                    qtde = int(evento.get('quantidade_de_linhas', 1))
+                except: qtde = 1
+                lbl_linha = "Linha" if qtde == 1 else f"{qtde} Linhas"
+                
+                if v_linha > 0: premios.append(f"{lbl_linha}: R$ {fmt_moeda(v_linha)}")
+
+                v_faltaum = get_val('premio_faltaum')
+                if v_faltaum > 0: premios.append(f"Falta Um: R$ {fmt_moeda(v_faltaum)}")
+
+                v_bingo = get_val('premio_bingo')
+                if v_bingo > 0: premios.append(f"Bingo: R$ {fmt_moeda(v_bingo)}")
+
+                v_segundobingo = get_val('premio_segundobingo')
+                if v_segundobingo > 0: premios.append(f"2Bingo: R$ {fmt_moeda(v_segundobingo)}")
+
+                data_iso = None
+                raw_date = evento.get('data_hora_evento')
+                if raw_date:
+                    if isinstance(raw_date, datetime):
+                        data_iso = raw_date.isoformat()
+                    else:
+                        data_iso = str(raw_date)
+
+                lista_eventos.append({
+                    'id_evento': str(evento.get('id_evento')),
+                    'descricao': evento.get('descricao', 'Sem Descrição'),
+                    'status': evento.get('status', 'paralizado'),
+                    'data': evento.get('data_evento', 'N/A'),
+                    'hora': evento.get('hora_evento', 'N/A'),
+                    'data_iso': data_iso,
+                    'valor_cartela': get_val('valor_de_venda'),
+                    'premios_desc': premios,
+                    'unidade_venda': evento.get('unidade_de_venda', 1)
+                })
+            except:
+                continue 
+
+        return jsonify(lista_eventos)
+
+    except Exception as e:
+        print(f"Erro em proximos_eventos: {e}")
+        return jsonify({'error': 'Erro interno ao processar eventos'}), 500
+
+
 
 # Inicialização
 def main():
@@ -852,6 +957,7 @@ def main():
         http_server.serve_forever()
     except KeyboardInterrupt:
         pass
-    
+
+
 if __name__ == '__main__':
     main()

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comprar Cartelas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#059669', // Emerald Green
+                        'secondary': '#10B981', // Green
+                        'danger': '#EF4444',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #F7F7F7; }
+        .container { max-width: 600px; margin: 20px auto; padding: 20px; background-color: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .alert-danger { background-color: #FEE2E2; color: #991B1B; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #FCA5A5; }
+        .alert-success { background-color: #D1FAE5; color: #065F46; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #6EE7B7; }
+        .form-control { width: 100%; padding: 10px; border: 1px solid #D1D5DB; border-radius: 6px; box-sizing: border-box; margin-bottom: 10px; }
+        .btn { padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background-color 0.3s; }
+        
+        .btn-primary { background-color: #059669; color: white; border: none; }
+        .btn-primary:hover { background-color: #047857; }
+        
+        .event-card {
+            background-color: #F9FAFB; border: 2px solid transparent; 
+            border-radius: 8px; padding: 15px; cursor: pointer;
+            transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+        }
+        .event-card:hover { border-color: #A7F3D0; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); }
+        .event-card.selected {
+            border-color: #059669; /* Borda verde primária para seleção */
+            background-color: #ECFDF5; /* Fundo mais claro */
+            box-shadow: 0 0 8px rgba(5, 150, 105, 0.5);
+        }
+        #total-custo { font-size: 1.5rem; font-weight: 700; color: #059669; margin-top: 15px; padding: 10px; border: 2px solid #A7F3D0; border-radius: 8px; text-align: center; }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2 class="text-2xl font-bold mb-4 text-primary text-center">🛒 Comprar Cartelas</h2>
+
+        {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+        {% endif %}
+        
+        <!-- O cliente logado não precisa de ID de busca, ele já está autenticado -->
+        <div class="alert alert-success">
+            Olá, **{{ nick_cliente | default('Cliente') }}**! Selecione o evento e a quantidade.
+        </div>
+        
+        <form method="POST" action="{{ url_for('processar_compra_cliente') }}" class="space-y-4" id="form-compra">
+            
+            <input type="hidden" name="id_cliente" value="{{ id_cliente_logado }}">
+            <input type="hidden" name="id_evento" id="input_id_evento">
+            
+            <!-- 1. Seleção do Evento -->
+            <div class="form-group">
+                <label class="block text-lg font-bold mb-2 text-gray-700">1. Escolha o Evento:</label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto" id="eventos-list">
+                    {% for evento in eventos %}
+                        <div class="event-card"
+                             data-id="{{ evento._id }}"
+                             data-valor="{{ evento.valor_de_venda_float }}"
+                             data-unidade="{{ evento.unidade_de_venda }}"
+                             data-descricao="{{ evento.descricao }}"
+                             onclick="selectEvent(this)">
+                            <p class="text-md font-bold text-gray-800">{{ evento.descricao }} (EVE{{ evento.id_evento }})</p>
+                            <p class="text-sm text-gray-600 mt-1">Kit: R$ {{ "%.2f" | format(evento.valor_de_venda_float) }} ({{ evento.unidade_de_venda }} cartelas)</p>
+                            <p class="text-xs text-gray-500 mt-1">Data: {{ evento.data_evento }} | Num. Atual: {{ evento.numeracao_atual_display }}</p>
+                        </div>
+                    {% else %}
+                        <p class="text-center text-red-500 md:col-span-2">Nenhum evento ativo para compra.</p>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <!-- 2. Quantidade e Custo -->
+            <div class="form-group">
+                <label for="quantidade" class="block text-lg font-bold mb-2 text-gray-700">2. Quantidade de Kits:</label>
+                <input type="number" id="quantidade" name="quantidade" 
+                       value="1" min="1" required 
+                       class="form-control text-2xl" 
+                       oninput="updateTotalCost()">
+                <small class="form-text text-muted font-bold mt-1">
+                    Total de Cartelas: <span id="cartelas-display" class="text-primary">0</span>.
+                </small>
+            </div>
+            
+            <!-- Custo Total -->
+            <div id="total-custo">
+                Custo Total: <span id="custo-total-display">R$ 0,00</span>
+            </div>
+            
+            <!-- 3. Botão de Confirmação -->
+            <button type="button" id="btn-confirmar-compra" class="btn btn-primary w-full text-xl shadow-lg mt-4" disabled onclick="confirmPurchase()">
+                🔒 Confirmar Compra
+            </button>
+            
+        </form>
+
+        <div class="flex justify-center font-bold mt-4">
+            <a href="{{ url_for('dashboard_cliente') }}" class="text-gray-500 hover:text-gray-700 font-medium">← Voltar</a>
+        </div>
+    </div>
+
+    <script>
+        // Variáveis globais para o cálculo
+        let Venda_ValorUnitario = 0.00;
+        let Venda_UnidadeCartelas = 0;
+        let selectedEventId = '';
+        let selectedEventElement = null; // Para gerenciar a classe 'selected'
+
+        function selectEvent(cardElement) {
+            // Limpa a seleção anterior
+            if (selectedEventElement) {
+                selectedEventElement.classList.remove('selected');
+            }
+
+            // Seleciona o novo
+            cardElement.classList.add('selected');
+            selectedEventElement = cardElement;
+
+            // Carrega os dados para o cálculo
+            selectedEventId = cardElement.dataset.id;
+            Venda_ValorUnitario = parseFloat(cardElement.dataset.valor);
+            Venda_UnidadeCartelas = parseInt(cardElement.dataset.unidade);
+
+            document.getElementById('input_id_evento').value = selectedEventId;
+            document.getElementById('btn-confirmar-compra').disabled = false;
+            
+            updateTotalCost();
+        }
+        
+        function updateTotalCost() {
+            const campoQuantidade = document.getElementById('quantidade');
+            const elementoCustoDisplay = document.getElementById('custo-total-display');
+            const displayCartelas = document.getElementById('cartelas-display');
+            const btnConfirmar = document.getElementById('btn-confirmar-compra');
+
+            const quantidade = parseInt(campoQuantidade.value) || 0;
+            
+            // Valida se um evento foi selecionado e a quantidade é válida
+            if (!selectedEventId || Venda_ValorUnitario === 0 || quantidade <= 0) {
+                 elementoCustoDisplay.textContent = 'R$ 0,00';
+                 displayCartelas.textContent = '0';
+                 btnConfirmar.disabled = true;
+                 return;
+            }
+            
+            const total = quantidade * Venda_ValorUnitario;
+            const totalCartelas = quantidade * Venda_UnidadeCartelas;
+            
+            const totalFormatado = total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            
+            elementoCustoDisplay.textContent = totalFormatado;
+            displayCartelas.textContent = totalCartelas;
+
+            btnConfirmar.disabled = false;
+        }
+        
+        function confirmPurchase() {
+            const confirmou = window.confirm(`Confirmar a compra de ${document.getElementById('cartelas-display').textContent} cartelas pelo valor de ${document.getElementById('custo-total-display').textContent}?`);
+            
+            if (confirmou) {
+                // Prepara o formulário para submissão POST no backend
+                document.getElementById('btn-confirmar-compra').disabled = true;
+                document.getElementById('form-compra').submit();
+            }
+        }
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', () => {
+            // Adiciona listener ao input de quantidade
+            document.getElementById('quantidade').addEventListener('input', updateTotalCost);
+            
+            // Inicializa o custo ao carregar
+            updateTotalCost();
+        });
+    </script>
+</body>
+</html>
+```
+
+### Próximos Passos (Ações Pendentes)
+
+1.  **Conexão do Botão:** No seu `index.html` (Menu Lateral), você precisará fazer o botão "Comprar Cartelas" apontar para esta nova rota:
+    ```javascript
+    // No script.js, adicione o listener para o botão de compra no menu:
+    const menuBtnComprar = document.getElementById('menu-btn-comprar');
+    if (menuBtnComprar) {
+        menuBtnComprar.addEventListener('click', () => {
+             window.location.href = "{{ url_for('comprar_cartelas') }}";
+        });
+    }
