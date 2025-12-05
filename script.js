@@ -32,6 +32,7 @@ const lastBall3 = document.getElementById('last-ball-3');
 const digitalBolaPanel = document.getElementById('digital-bola-panel'); 
 const bolaDigitalElement = document.getElementById('bola-digital');
 let tipoDoSorteio = "";
+let Carregando = true;
 
 let encontradoGanhadores = false;
 const youtubePanel = document.getElementById('youtube-panel'); 
@@ -55,6 +56,7 @@ const btnOpenMenu = document.getElementById('btn-open-menu');
 const btnCloseMenu = document.getElementById('btn-close-menu');
 
 // Elementos internos do menu
+const BtnSom = document.getElementById('btn-som');
 const menuBtnSom = document.getElementById('menu-btn-som');
 const menuIconSom = document.getElementById('menu-icon-som');
 const menuStatusSom = document.getElementById('menu-status-som');
@@ -67,6 +69,7 @@ const eventsListContent = document.getElementById('events-list-content');
 const btnCloseEvents = document.getElementById('btn-close-events');
 const btnEventsMenu = document.getElementById('menu-btn-eventos');
 const btnEventsMobile = document.getElementById('btn-proximos-eventos');
+
 //
 let cartelasEmJogo = 0;
 // Timer promocionais
@@ -345,7 +348,7 @@ function renderEventsList(eventos) {
         // Mostra se for Futuro OU Ativo, desde que não esteja finalizado.
         const isFutureOrActive = (isFuture && isActive) && !isFinalizado;
         // --- Definição de Estilos do Cartão ---
-        let cardClass = 'rounded-xl p-3 border shadow-lg flex flex-col gap-2 relative overflow-hidden transition-all duration-300';
+        let cardClass = 'rounded-xl p-3 border shadow-lg flex flex-col gap-1 relative overflow-hidden transition-all duration-300';
         let statusBadge = '';
         let btnComprarHtml = '';
 
@@ -385,7 +388,7 @@ function renderEventsList(eventos) {
 
         // Renderiza a lista de prêmios
         const premiosHtml = evt.premios_desc.map(p => 
-            `<li class="flex items-start gap-1"><span class="text-yellow-500">★</span> ${p}</li>`
+            `<li class="flex items-start gap-0"><span class="text-yellow-500">★</span> ${p}</li>`
         ).join('');
 
         // Montagem do HTML do Cartão
@@ -395,28 +398,28 @@ function renderEventsList(eventos) {
             ${statusBadge}
             
             <div class="pr-2">
-                <h3 class="text-lg font-bold text-white leading-tight drop-shadow-sm">${evt.descricao}</h3>
-                <p class="text-xl text-blue-300 font-mono mt-1 flex items-center gap-1">
+                <h3 class="text-[15px] font-bold text-white leading-tight drop-shadow-sm">${evt.descricao}</h3>
+                <p class="text-[15px] font-semibold text-blue-300 font-mono mt-1 flex items-center gap-1">
                      ${evt.data} <span class="mx-1">|</span> <span>⏰</span> ${evt.hora}
                 </p>
             </div>
 
             <!-- Área de Prêmios -->
-            <div class="bg-black/40 rounded-lg p-2 border border-gray-700/50">
-                <p class="text-[10px] text-gray-400 font-bold uppercase mb-1 tracking-wider">Premiação Prevista:</p>
-                <ul class="text-lg text-yellow-300 space-y-1 font-medium">
+            <div class="bg-black/40 rounded-lg p-1 border border-gray-700/50">
+                <p class="text-[10px] text-green-300 font-bold uppercase mb-0 tracking-wider">Premiação Prevista:</p>
+                <ul class="text-[15px] text-yellow-300 space-y-0 font-medium">
                     ${premiosHtml}
                 </ul>
             </div>
 
             <!-- Rodapé do Cartão (Preço e Info) -->
             <div class="flex justify-between items-end -mt-1">
-                <div class="text-gray-400 text-[10px]">
+                <div class="text-gray-250 text-[14px]">
                     <span class="block">ID: ${evt.id_evento}</span>
                     <span class="text-xs text-gray-300">Kit c/ <strong>${evt.unidade_venda}</strong> cartelas</span>
                 </div>
                 <div class="text-right">
-                    <span class="block text-[9px] text-gray-500 uppercase">Valor do Kit</span>
+                    <span class="block text-[9px] font-bold  text-gray-500 uppercase">Valor do Kit</span>
                     <span class="text-xl font-black text-green-400 tracking-tighter">${preco}</span>
                 </div>
             </div>
@@ -548,12 +551,16 @@ function agruparNumerosEmRanges(numeros) {
 }
 
 function isMobileDevice() {
-    return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    return true; ////Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
 // MENU
 function openSideMenu() {
     if (!menuOverlay) return;
+    if (!telaFull) { 
+       goFullscreen(); 
+    } 
+
     menuOverlay.classList.remove('hidden');
     
     // Pequeno delay para permitir a transição CSS
@@ -599,13 +606,13 @@ function updateMenuSoundVisuals() {
         if (vozAtiva) {
             iconVozOnMobile.classList.remove('hidden');
             iconVozOffMobile.classList.add('hidden');
-            btnToggleVozMobile.classList.add('bg-gray-700');
-            btnToggleVozMobile.classList.remove('bg-red-900');
+            //btnToggleVozMobile.classList.add('bg-gray-700');
+            //btnToggleVozMobile.classList.remove('bg-red-900');
         } else {
             iconVozOnMobile.classList.add('hidden');
             iconVozOffMobile.classList.remove('hidden');
-            btnToggleVozMobile.classList.remove('bg-gray-700');
-            btnToggleVozMobile.classList.add('bg-red-900');
+            //btnToggleVozMobile.classList.remove('bg-gray-700');
+            //btnToggleVozMobile.classList.add('bg-red-900');
         }
     }
 }
@@ -905,12 +912,14 @@ function openMyCardsPanel() {
         console.error("Elementos do modal 'Minhas Cartelas' não encontrados.");
         return;
     }
-   
+    if (!telaFull) { 
+       goFullscreen(); 
+    } 
+ 
     // Limpa a lista anterior
     myCardsList.innerHTML = '';
     let totalCartelasGeral = 0;
 
-    console.error("passo1  ");
     // 1. Verifica se há faixas de cartelas carregadas
     if (!cartelaRanges || cartelaRanges.length === 0) {
         myCardsList.innerHTML = '<div class="p-2 text-center text-gray-500 text-lg">Nenhuma cartela adquirida.</div>';
@@ -2040,6 +2049,11 @@ function displayWinnersPanel(ganhadoresData) {
 
     // 4. Se passou, atualiza o hash global para a próxima vez
     lastGanhadoresHash = currentHash;
+    
+    if (Carregando) {
+        Carregando = false;   
+        return;
+    }   
 
     // --- DAQUI PARA BAIXO, SEGUE A RENDERIZAÇÃO ---
     winnersListContent.innerHTML = '';
@@ -2624,10 +2638,15 @@ async function init() {
 
         //const premioInfo = initialData.premioInfo;
         premioInfo = initialData.premioInfo;
-       
-        minCartelas = premioInfo?.minimo_de_cartelas || 0;
-        maxCartelas = premioInfo?.maximo_de_cartelas || 0;
-
+        // aquix
+        const oTipo = parseInt(tipoEntradaCartelas);
+        if (oTipo === 1) {  
+            minCartelas = premioInfo?.minimo_de_cartelas || 0;
+            maxCartelas = premioInfo?.maximo_de_cartelas || 0;
+        } else {
+            minCartelas = 1;
+            maxCartelas =  premioInfo?.serie_em_jogo || 0;
+        }
         // NOVO CÓDIGO: Busca o valor de preco_da_serie e o exibe
         if (premioInfo && typeof premioInfo.preco === 'number') {             
             const preco = premioInfo.preco  / premioInfo.multiplo;
@@ -2982,13 +3001,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (vozAtiva) {
                 iconVozOn.classList.remove('hidden');
                 iconVozOff.classList.add('hidden');
-                btnToggleVoz.classList.add('bg-gray-700');     // Estilo Ativo
-                btnToggleVoz.classList.remove('bg-red-900');
+                //btnToggleVoz.classList.add('bg-gray-700');     // Estilo Ativo
+                //btnToggleVoz.classList.remove('bg-red-900');
             } else {
                 iconVozOn.classList.add('hidden');
                 iconVozOff.classList.remove('hidden');
-                btnToggleVoz.classList.remove('bg-gray-700');
-                btnToggleVoz.classList.add('bg-red-900');      // Estilo Mudo (Vermelho escuro)
+                //btnToggleVoz.classList.remove('bg-gray-700');
+                //btnToggleVoz.classList.add('bg-red-900');      // Estilo Mudo (Vermelho escuro)
             }
         };
 
