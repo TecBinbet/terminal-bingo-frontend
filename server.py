@@ -1,963 +1,1400 @@
-#mongodb+srv://rivaldosp_db_user:TecBin24@vendas.ifpeimn.mongodb.net/?appName=vendas
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import os
 import json
+import traceback
 import threading
 import time
+from bson.decimal128 import Decimal128
 from datetime import datetime
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
-try:
-    import certifi  # For trusted CA bundle (fixes SSL on macOS/Windows)
-    _TLS_CA_FILE = certifi.where()
-except Exception:
-    certifi = None
-    _TLS_CA_FILE = None
 from gevent.pywsgi import WSGIServer
 from geventwebsocket.handler import WebSocketHandler
 from geventwebsocket.exceptions import WebSocketError
-import signal
 import sys
 
+def converter_decimal(valor):
+    """Converte Decimal128 ou String para Float"""
+    if isinstance(valor, Decimal128):
+        return float(valor.to_decimal())
+    if isinstance(valor, str):
+        try:
+            return float(valor.replace(',', '.'))
+        except:
+            return 0.0
+    return float(valor) if valor else 0.0
 
-# Versão da aplicação
-VERSION = "1.2.61" # Incrementado
+# --- FUNÇÕES AUXILIARES DE MOEDA (RATEIO) ---
+def parse_brl(valor_str):
+    """Converte 'R$ 1.200,50' ou '1200,50' para float 1200.50"""
+    if not valor_str: return 0.0
+    if isinstance(valor_str, (int, float)): return float(valor_str)
+    try:
+        limpo = str(valor_str).replace('R$', '').replace(' ', '').replace('.', '').replace(',', '.')
+        return float(limpo)
+    except:
+        return 0.0
 
-# --- VARIÁVEIS PARA MODO HÍBRIDO ---
-# O caminho para a pasta "json" é fixo e externo ao executável
-# Allow overriding LOCAL_PATH via env; default keeps Windows dev path
-LOCAL_PATH = os.environ.get("LOCAL_PATH", "c:/chefemesa/json")
-is_local_mode = os.path.exists(LOCAL_PATH)
-# Prefer env vars in production; fall back to current defaults
+def format_brl(valor_float):
+    """Converte float 1200.50 para '1.200,50' (sem R$)"""
+    try:
+        return f"{valor_float:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+    except:
+        return "0,00"
+
+
+# Tenta importar certifi para evitar erros de SSL
+try:
+    import certifi
+    _TLS_CA_FILE = certifi.where()
+except Exception:
+    _TLS_CA_FILE = None
+
+VERSION = "2.1.0-SingleTenant"
+
+# --- CONFIGURAÇÕES DE AMBIENTE ---
+# No DigitalOcean/Heroku, essas variáveis virão das "Environment Variables" do painel.
+# No seu PC, ele usa os valores padrão (segundo argumento do get).
+
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://rivaldosp:TecBin24@tecbinon.3zsz7md.mongodb.net/")
 DB_NAME = os.environ.get("DB_NAME", "dados_do_sorteio")
-MELHORES_COLLECTION = "melhores"
 
-# Configurações do servidor
+LOCAL_PATH = os.environ.get("LOCAL_PATH", "c:/chefemesa/json")
+#is_local_mode = os.path.exists(LOCAL_PATH)
+is_local_mode = False  # <--- FORÇA O MODO ONLINE (COM BANCO DE DADOS)
+
 app = Flask(__name__)
 CORS(app)
-# Bind to platform-provided PORT when available (e.g., DigitalOcean/Heroku)
 port = int(os.environ.get('PORT') or os.environ.get('sPORT', 3001))
 
+# --- VARIÁVEIS GLOBAIS ---
 db = None
-
-# --- CACHE CONEXÃO VENDAS ---
-sales_client = None
+sales_client = None  # Cache para conexão de vendas
 current_sales_uri = None
-SALES_DB_NAME = "bingo_vendas_db" # Nome padrão do banco de vendas (ou pegue da URI)
-
-
-# Evitar recarregar cartelas continuamente
-UltAlt_Cartelas = ""
-melhores_data = []
-cartelas_data = {}  # <-- AQUI: Inicialize a variável
-try:
-    if is_local_mode: 
-       if os.path.exists(os.path.join(LOCAL_PATH, 'cartelas.json')):
-           UltAlt_Cartelas = os.path.getmtime(os.path.join(LOCAL_PATH, 'cartelas.json'))
-           with open(os.path.join(LOCAL_PATH, 'cartelas.json'), 'r', encoding='utf-8') as f:
-               cartelas_data = json.load(f)
-           print("Cartelas carregadas com sucesso no início do sistema.")
-       else:
-           print("Aviso: Arquivo 'cartelas.json' não encontrado na inicialização.")
-    else:
-           print("Aviso: Buscando arquivo no Servidor.")
- 
-except Exception as e:
-    print(f"Erro ao carregar 'cartelas.json' na inicialização: {e}")
-
-clients = set()
+clients = set() # WebSocket clients
 local_data = {}
 mongo_data = {}
-intervalo_busca_local = 0.4 # segundos
 stop_flag = threading.Event()
 
+# --- CACHE EM MEMÓRIA (VELOCIDADE MÁXIMA) ---
+CACHE_JOGO = {
+    'ativo': False,
+    'cartelas': [] # Lista de objetos: {'id': 100, 'nome': 'José', 'layout': {sup: set, cen: set...}}
+}
 
-# Função para converter strings numéricas em inteiros
-def parse_numeric_fields(data):
-    if not data:
-        return {}
-    numeric_fields = [
-        'inicial1', 'final1', 'inicial2','final2','inicial3','final3','inicial4','final4',
-        'série_em_jogo', 'minimo_de_cartelas', 'máximo_de_cartelas',
-        'total_cartelas_em_jogo', 'preco', 'multiplo', 'premio_quadra',
-        'premio_linha', 'premio_bingo', 'valor', 'cartao', 'rodada', 'ordem',
-        'numero_da_bola', 'tipo_entrada_de_cartelas',
-    ]
-    parsed_data = {}
-    for key, value in data.items():
-        if key in numeric_fields and isinstance(value, str) and value.isdigit():
-            parsed_data[key] = int(value)
-        else:
-            parsed_data[key] = value
-    return parsed_data
-
-# NOVO: Função para buscar os dados da tabela 'parametros'
-def get_parametros_data(db):
-    # Modo Local
-    if is_local_mode:
-        local_file_path = os.path.join(LOCAL_PATH, 'parametros.json')
-        if os.path.exists(local_file_path):
-            try:
-                with open(local_file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    if isinstance(data, list) and data:
-                        return data[0]
-                    elif isinstance(data, dict):
-                         return data
-                    return {}
-            except Exception as e:
-                print(f"ERRO ao ler parametros.json: {e}")
-                return {}
-        else:
-            return {}
-            
-    # Modo MongoDB (se 'is_local_mode' for False)
-    else: 
-        try:
-            # Tenta buscar o documento
-            parametros_doc = db['parametros'].find_one()
-            
-            if parametros_doc:
-                # Debug: Mostra no terminal que achou (ajuda a confirmar a conexão)
-                # print(f"[DEBUG] Parâmetros carregados do Mongo: Sala {parametros_doc.get('nome_sala')}")
-                
-                # Remove o _id para não quebrar o JSON
-                parametros_doc.pop('_id', None)
-                
-                # Verifica se a URL de vendas existe
-                if 'url_mongo_vendas' not in parametros_doc:
-                    print("[AVISO] Campo 'url_mongo_vendas' NÃO encontrado na tabela parametros.")
-                
-                return parametros_doc
-            
-            print("[AVISO] Tabela 'parametros' está vazia no MongoDB.")
-            return {}
-            
-        except Exception as e:
-            print(f"ERRO CRÍTICO ao buscar parâmetros no MongoDB: {e}")
-            return {}
-
-
-# --- LÊ DADOS DO MONGODB (VERSÃO ATUALIZADA COM TIPO_ENTRADA) ---
-def fetch_data_from_collections():
-    global db
-    if db is None:
-        print("Erro: A conexão com o banco de dados não foi estabelecida.")
-        return {'error': 'Conexão com o banco de dados não estabelecida.'}
-
-    try:            
-        # Buscas padrão nas coleções
-        bolas_data = list(db.bolas.find({}))
-        buscando_data = list(db.buscando.find({}))
-        premio_raw_data = list(db.premio.find({}))
-        rodada_data = list(db.rodada.find({}))
-        confere_data = list(db.confere.find({}))
-        parametros_data = list(db.parametros.find({}))
-        
-        # Busca o maior número de cartela (para validação de input)
-        max_card_result = list(db.cartelas.find({}, {'cartao': 1, '_id': 0}).sort('cartao', -1).limit(1))
-        
-        # --- BUSCA E PROCESSA GANHADORES ---
-        ganhadores_raw = list(db.ganhadores.find({}))
-        
-        ganhadores_dict = {}
-        for g in ganhadores_raw:
-            tipo_premio = g.get('premio', 'N/A')
-            valor_total_premio = g.get('valor_total_premio', 'R$ 0,00')
-            
-            chave = f"{tipo_premio}|{valor_total_premio}"
-            
-            if chave not in ganhadores_dict:
-                ganhadores_dict[chave] = {
-                    "premio": tipo_premio,
-                    "valor": valor_total_premio,
-                    "ganhadores": []
-                }
-            
-            ganhadores_dict[chave]["ganhadores"].append({
-                "cartela": g.get('cartela'),
-                "nome": g.get('nome'),
-                "valor_rateio": g.get('valor_rateio')
-            })
-        
-        ganhadores_data_processed = list(ganhadores_dict.values())
-        # -----------------------------------
-
-        # Busca Melhores (Top cartelas)
-        melhores_collection = db.get_collection(MELHORES_COLLECTION)
-        melhores_cursor = melhores_collection.find({}, {'_id': 0}).sort('id_posicao', 1).limit(25)
-        melhores_data_raw = [doc for doc in melhores_cursor]
-
-        # CONVERTE ObjectId para string (Evita erro de JSON serializable)
-        for doc in bolas_data: doc['_id'] = str(doc['_id'])
-        for doc in buscando_data: doc['_id'] = str(doc['_id'])
-        for doc in premio_raw_data: doc['_id'] = str(doc['_id'])
-        for doc in rodada_data: doc['_id'] = str(doc['_id'])
-        for doc in confere_data: doc['_id'] = str(doc['_id'])
-        for doc in parametros_data: doc['_id'] = str(doc['_id'])
-        
-        # Processa Parametros e adiciona default para tipo_entrada
-        parametros_doc = parametros_data[0] if parametros_data else {}
-        if 'tipo_entrada_de_cartelas' not in parametros_doc:
-             parametros_doc['tipo_entrada_de_cartelas'] = 1
-
-        # Processa dados dos Melhores para formato do frontend
-        melhores_data_processed = []
-        if melhores_data_raw:
-            for doc in melhores_data_raw:
-                numeros_faltantes_str = ', '.join(map(str, doc.get('numeros', [])))
-                melhores_data_processed.append({
-                    'cartela': doc.get('cartela', 0),
-                    'posicao': doc.get('posicao', 'N/A'),
-                    'nome': doc.get('nome', 'Anônimo'),
-                    'premio': doc.get('premio', 'N/A'),
-                    'numeros_faltantes': numeros_faltantes_str
-                })
-
-        # Processamento de Prêmios em Jogo (Ranges, Topes, etc)
-        premio_data = []
-        premio_info = {}
-        tope_data = []
-        card_ranges = []
-        
-        promocional_collection = db.get_collection('promocional')
-        promocional_cursor = promocional_collection.find({}, {'_id': 0}).limit(1) 
-        promocional_data = [doc for doc in promocional_cursor]
-
-        if premio_raw_data:
-            premio_doc = premio_raw_data[0]
-            premio_info = premio_doc
-            
-            # Ranges de Cartelas
-            if premio_doc.get('inicial1') is not None and premio_doc.get('final1') is not None:
-                card_ranges.append({'inicial': premio_doc['inicial1'], 'final': premio_doc['final1']})
-            if premio_doc.get('inicial2') is not None and premio_doc.get('final2') is not None:
-                card_ranges.append({'inicial': premio_doc['inicial2'], 'final': premio_doc['final2']})
-            if premio_doc.get('inicial3') is not None and premio_doc.get('final3') is not None:
-                card_ranges.append({'inicial': premio_doc['inicial3'], 'final': premio_doc['final3']})
-            if premio_doc.get('inicial4') is not None and premio_doc.get('final4') is not None:
-                card_ranges.append({'inicial': premio_doc['inicial4'], 'final': premio_doc['final4']})
-
-            # Tope
-            if isinstance(premio_doc.get('bola_tope_sb'), (int, float)) or isinstance(premio_doc.get('bola_tope_ac'), (int, float)):
-                tope_data.append({
-                    'bola_tope_sb': premio_doc.get('bola_tope_sb'),
-                    'bola_tope_ac': premio_doc.get('bola_tope_ac')
-                })
-
-            # Lista de Prêmios
-            if isinstance(premio_doc.get('premio_linha'), (int, float)):
-                tipo_premio_linha = 'LINHA'
-                if premio_doc.get('qtde_linha', 1) > 1:
-                    tipo_premio_linha = f"{premio_doc['qtde_linha']} LINHAS"
-                premio_data.append({'tipo_premio': tipo_premio_linha, 'valor': f"R$ {premio_doc['premio_linha']:.2f}".replace('.', ',')})
-
-            if isinstance(premio_doc.get('premio_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'BINGO', 'valor': f"R$ {premio_doc['premio_bingo']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_quadra'), (int, float)):
-                premio_data.append({'tipo_premio': 'QUADRA', 'valor': f"R$ {premio_doc['premio_quadra']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_falta_Um'), (int, float)):
-                premio_data.append({'tipo_premio': 'FALTA 1', 'valor': f"R$ {premio_doc['premio_falta_Um']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_duplo_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'DUPLO BINGO', 'valor': f"R$ {premio_doc['premio_duplo_bingo']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_triplo_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'TRIPLO BINGO', 'valor': f"R$ {premio_doc['premio_triplo_bingo']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_super_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'SUPER BINGO', 'valor': f"R$ {premio_doc['premio_super_bingo']:.2f}".replace('.', ',')})
-            if isinstance(premio_doc.get('premio_acumulado'), (int, float)):
-                premio_data.append({'tipo_premio': 'ACUMULADO', 'valor': f"R$ {premio_doc['premio_acumulado']:.2f}".replace('.', ',')})
-
-        max_card_number = max_card_result[0]['cartao'] if max_card_result else 0
-
-        # --- RETORNO FINAL ---
-        return {
-            'bolasData': bolas_data,
-            'buscandoData': buscando_data,
-            'premioData': premio_data,
-            'premioInfo': premio_info,
-            'rodadaData': rodada_data,
-            'confereData': confere_data,
-            'maxCardNumber': max_card_number,
-            'topeData': tope_data,
-            'cardRanges': card_ranges,
-            'promocionalData': promocional_data,
-            'parametrosInfo': parametros_doc,
-            'melhoresData': melhores_data_processed,
-            'ganhadoresData': ganhadores_data_processed  # Dados processados e agrupados
-        }
-
-    except Exception as e:
-        print(f"Erro ao buscar dados do MongoDB: {e}")
-        return {'error': 'Erro ao buscar dados do MongoDB.'}
-
-
-# --- LÊ DADOS DOS ARQUIVOS JSON LOCAIS (VERSÃO ATUALIZADA COM TIPO_ENTRADA) ---
-def fetch_data_from_local_files():
-    global UltAlt_Cartelas, cartelas_data
+def carregar_cache_evento(id_evento, sales_db):
+    """
+    Carrega TODAS as cartelas vendidas e seus layouts para a Memória RAM do Servidor.
+    Executado apenas UMA VEZ ao selecionar o evento.
+    """
+    global CACHE_JOGO, db
+    print(f"🚀 Iniciando carregamento em memória do Evento {id_evento}...")
+    
+    CACHE_JOGO['ativo'] = False
+    CACHE_JOGO['cartelas'] = []
 
     try:
+        # 1. Busca Vendas
+        col_vendas = sales_db[f"vendas{id_evento}"]
+        # Projeção otimizada
+        cursor_vendas = col_vendas.find({}, {
+            'numero_inicial':1, 'numero_final':1, 
+            'numero_inicial2':1, 'numero_final2':1, 
+            'nome_cliente':1
+        })
+
+        mapa_vendas = {} # cartela_id -> nome
+        count_vendas = 0
+
+        for v in cursor_vendas:
+            nome = v.get('nome_cliente', '---')
+            # Faixa 1
+            if v.get('numero_inicial') is not None and v.get('numero_final') is not None:
+                for c in range(v['numero_inicial'], v['numero_final'] + 1):
+                    mapa_vendas[c] = nome
+            # Faixa 2
+            if v.get('numero_inicial2') is not None and v.get('numero_final2') is not None:
+                for c in range(v['numero_inicial2'], v['numero_final2'] + 1):
+                    mapa_vendas[c] = nome
         
-        # Carregamento Básico
-        with open(os.path.join(LOCAL_PATH, 'bolas.json'), 'r', encoding='utf-8') as f: bolas_data = json.load(f)
-        with open(os.path.join(LOCAL_PATH, 'buscando.json'), 'r', encoding='utf-8') as f: buscando_data = json.load(f)
-        with open(os.path.join(LOCAL_PATH, 'premio.json'), 'r', encoding='utf-8') as f: premio_raw_data = json.load(f)
-        with open(os.path.join(LOCAL_PATH, 'rodada.json'), 'r', encoding='utf-8') as f: rodada_data = json.load(f)
-        with open(os.path.join(LOCAL_PATH, 'confere.json'), 'r', encoding='utf-8') as f: confere_data = json.load(f)
-        with open(os.path.join(LOCAL_PATH, 'parametros.json'), 'r', encoding='utf-8') as f: parametros_data_raw = json.load(f)
-        with open(os.path.join(LOCAL_PATH, 'promocional.json'), 'r', encoding='utf-8') as f: promocional_data = json.load(f)
+        count_vendas = len(mapa_vendas)
+        if count_vendas == 0:
+            print("⚠️ Nenhuma cartela vendida encontrada.")
+            return
 
-        ganhadores_raw = []
-        g_path = os.path.join(LOCAL_PATH, 'ganhadores.json')
-        if os.path.exists(g_path):
-            with open(g_path, 'r', encoding='utf-8') as f:
-                ganhadores_raw = json.load(f)
+        # 2. Busca Layouts no Banco Principal (Em lotes para não estourar memória se for gigante)
+        ids = list(mapa_vendas.keys())
+        # Busca layouts onde 'cartao' está na lista de IDs vendidos
+        cursor_cartelas = db.cartelas.find({'cartao': {'$in': ids}})
 
-        # Processamento Ganhadores
-        ganhadores_dict = {}
-        for g in ganhadores_raw:
-            tipo_premio = g.get('premio', 'N/A')
-            valor_total_premio = g.get('valor_total_premio', 'R$ 0,00')
-            chave = f"{tipo_premio}|{valor_total_premio}"
+        lista_cache = []
+
+        for doc in cursor_cartelas:
+            c_id = doc.get('cartao')
             
-            if chave not in ganhadores_dict:
-                ganhadores_dict[chave] = {
-                    "premio": tipo_premio,
-                    "valor": valor_total_premio,
-                    "ganhadores": []
+            # Helper para converter string "1, 2, 3" em Set Python {1, 2, 3} (Muito rápido para calcular)
+            def to_set(val):
+                if isinstance(val, str) and val:
+                    return set(map(int, val.replace(' ', '').split(',')))
+                if isinstance(val, list): return set(val)
+                return set()
+
+            sup = to_set(doc.get('superior'))
+            cen = to_set(doc.get('central'))
+            inf = to_set(doc.get('inferior'))
+            
+            # Monta o objeto leve na memória
+            lista_cache.append({
+                'id': c_id,
+                'nome': mapa_vendas.get(c_id, '---'),
+                'layout': {
+                    'sup': sup,
+                    'cen': cen,
+                    'inf': inf,
+                    'geral': sup | cen | inf # União de todos
                 }
-            
-            ganhadores_dict[chave]["ganhadores"].append({
-                "cartela": g.get('cartela'),
-                "nome": g.get('nome'),
-                "valor_rateio": g.get('valor_rateio')
             })
-        
-        ganhadores_data_processed = list(ganhadores_dict.values())
- 
-        # --- MELHORES ---
-        melhores_data_raw = []
-        try:
-            with open(os.path.join(LOCAL_PATH, 'melhores.json'), 'r', encoding='utf-8') as f:
-                melhores_data_raw = json.load(f)
-        except: pass
 
-        # Verifica cartelas.json (Cache)
-        current_cartelas_mtime = os.path.getmtime(os.path.join(LOCAL_PATH, 'cartelas.json'))
-        if UltAlt_Cartelas != current_cartelas_mtime:
-            UltAlt_Cartelas = current_cartelas_mtime
-            with open(os.path.join(LOCAL_PATH, 'cartelas.json'), 'r', encoding='utf-8') as f:
-                cartelas_data = json.load(f)
-
-        # Processar dados de Melhores
-        melhores_data_processed = []
-        if melhores_data_raw:
-            for doc in melhores_data_raw:
-                numeros_faltantes_str = ', '.join(map(str, doc.get('numeros', [])))
-                melhores_data_processed.append({
-                    'cartela': doc.get('cartela', 0),
-                    'posicao': doc.get('posicao', 'N/A'),
-                    'nome': doc.get('nome', 'Anônimo'),
-                    'premio': doc.get('premio', 'N/A'),
-                    'numeros_faltantes': numeros_faltantes_str 
-                })
-
-        # Processamento de Prêmios (simplificado para o exemplo, mantenha sua lógica de ranges)
-        premio_data = []
-        premio_info = {}
-        tope_data = []
-        card_ranges = []
-        
-        # Garante que parametros é um dict e tem o tipo_entrada
-        parametros = parametros_data_raw[0] if isinstance(parametros_data_raw, list) and parametros_data_raw else {}
-        if 'tipo_entrada_de_cartelas' not in parametros:
-             parametros['tipo_entrada_de_cartelas'] = 1
-
-        if premio_raw_data:
-            premio_doc = premio_raw_data[0]
-            premio_info = premio_doc
-            
-            # Ranges
-            if premio_doc.get('inicial1') is not None: card_ranges.append({'inicial': premio_doc['inicial1'], 'final': premio_doc['final1']})
-            if premio_doc.get('inicial2') is not None: card_ranges.append({'inicial': premio_doc['inicial2'], 'final': premio_doc['final2']})
-            if premio_doc.get('inicial3') is not None: card_ranges.append({'inicial': premio_doc['inicial3'], 'final': premio_doc['final3']})
-            if premio_doc.get('inicial4') is not None: card_ranges.append({'inicial': premio_doc['inicial4'], 'final': premio_doc['final4']})
-
-            # Tope
-            if isinstance(premio_doc.get('bola_tope_sb'), (int, float)):
-                tope_data.append({'bola_tope_sb': premio_doc.get('bola_tope_sb'), 'bola_tope_ac': premio_doc.get('bola_tope_ac')})
-
-            # Lista Prêmios
-            if isinstance(premio_doc.get('premio_quadra'), (int, float)):
-                premio_data.append({'tipo_premio': 'QUADRA', 'valor': f"R$ {premio_doc['premio_quadra']:.2f}"})
-            if isinstance(premio_doc.get('premio_linha'), (int, float)):
-                premio_data.append({'tipo_premio': 'LINHA', 'valor': f"R$ {premio_doc['premio_linha']:.2f}"})
-            if isinstance(premio_doc.get('premio_falta_um'), (int, float)):
-                premio_data.append({'tipo_premio': 'FALTA 1', 'valor': f"R$ {premio_doc['premio_falta_um']:.2f}"})
-            if isinstance(premio_doc.get('premio_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'BINGO', 'valor': f"R$ {premio_doc['premio_bingo']:.2f}"})
-            if isinstance(premio_doc.get('premio_duplo_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'DUPLO BINGO', 'valor': f"R$ {premio_doc['premio_duplo_bingo']:.2f}"})
-            if isinstance(premio_doc.get('premio_super_bingo'), (int, float)):
-                premio_data.append({'tipo_premio': 'SUPER BINGO', 'valor': f"R$ {premio_doc['premio_super_bingo']:.2f}"})
-            if isinstance(premio_doc.get('premio_acumulado'), (int, float)):
-                premio_data.append({'tipo_premio': 'ACUMULADO', 'valor': f"R$ {premio_doc['premio_acumulado']:.2f}"})
-
-        max_card_number = max(c.get('cartao', 0) for c in cartelas_data) if cartelas_data else 0
-        # Retorno
-        return {
-            'bolasData': bolas_data,
-            'buscandoData': buscando_data,
-            'premioData': premio_data,
-            'premioInfo': premio_info,
-            'rodadaData': rodada_data,
-            'ganhadoresData': ganhadores_data_processed,  # <--- IMPORTANTE
-            'confereData': confere_data,
-            'maxCardNumber': max_card_number,
-            'topeData': tope_data,
-            'cardRanges': card_ranges,
-            'promocionalData': promocional_data,
-            'parametrosInfo': parametros,
-            'melhoresData': melhores_data_processed
-        }
+        CACHE_JOGO['cartelas'] = lista_cache
+        CACHE_JOGO['ativo'] = True
+        print(f"✅ CACHE CARREGADO: {len(lista_cache)} cartelas prontas para cálculo em memória.")
 
     except Exception as e:
-        print(f"❌ ERRO no fetch_local: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
-            'bolasData': [], 'buscandoData': [], 'premioData': [], 'premioInfo': {},
-            'rodadaData': [], 'confereData': [], 'maxCardNumber': 0, 'topeData': [],
-            'cardRanges': [], 'promocionalData': [], 'parametrosInfo': {}, 
-            'melhoresData': [], 'ganhadoresData': []
-        }
+        print(f"❌ Erro ao carregar cache: {e}")
+        CACHE_JOGO['ativo'] = False
 
-def update_prizes_func(busca, premio_info):
-    if is_local_mode:
-        with open(os.path.join(LOCAL_PATH, 'buscando.json'), 'w', encoding='utf-8') as f:
-            json.dump([busca], f, indent=2, ensure_ascii=False)
-        with open(os.path.join(LOCAL_PATH, 'premio.json'), 'w', encoding='utf-8') as f:
-            json.dump([premio_info], f, indent=2, ensure_ascii=False)
-    else:
-        db.buscando.delete_many({})
-        if busca:
-            db.buscando.insert_one(busca)
-        db.premio.delete_many({})
-        if premio_info:
-            db.premio.insert_one(premio_info)
 
-# Função para transmitir dados a todos os clientes WebSocket
-def broadcast(data):
-    message = json.dumps({
-        'type': 'UPDATE',
-        **data
-    }, default=str)
-    for client in clients:
+# --- CONEXÃO BANCO PRINCIPAL ---
+def connect_main_db():
+    global db
+    if not is_local_mode:
         try:
-            client.send(message)
-        except WebSocketError:
-            clients.discard(client)
+            print(f"🔌 Conectando ao MongoDB Principal...")
+            mongo_kwargs = { 'server_api': ServerApi('1') }
+            if _TLS_CA_FILE: mongo_kwargs['tlsCAFile'] = _TLS_CA_FILE
+            
+            client = MongoClient(MONGO_URI, **mongo_kwargs)
+            db = client.get_database(DB_NAME)
+            client.admin.command('ping') 
+            print("✅ Sucesso: Conectado ao MongoDB Principal!")
+        except Exception as e:
+            print(f"❌ Erro fatal ao conectar ao MongoDB: {e}")
+            sys.exit(1)
 
-# Monitora as alterações e transmite atualizações
-mongo_data = {}
+# --- FUNÇÃO GENÉRICA DE BUSCA DE DADOS ---
+def fetch_data():
+    """Busca dados ou do JSON Local ou do MongoDB, dependendo do modo."""
+    if is_local_mode:
+        return fetch_data_from_local_files()
+    else:
+        return fetch_data_from_mongodb()
 
+def fetch_data_from_local_files():
+    try:
+        # Carrega arquivos
+        def load_json(name):
+            path = os.path.join(LOCAL_PATH, f'{name}.json')
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f: return json.load(f)
+            return []
+
+        bolas = load_json('bolas')
+        buscando = load_json('buscando')
+        premio_raw = load_json('premio')
+        rodada = load_json('rodada')
+        confere = load_json('confere')
+        parametros = load_json('parametros')
+        melhores = load_json('melhores')
+        
+        # Ganhadores (Processamento)
+        ganhadores_raw = load_json('osganhadores')
+        ganhadores_dict = {}
+        for g in ganhadores_raw:
+            k = f"{g.get('premio')}|{g.get('valor_total_premio')}"
+            if k not in ganhadores_dict:
+                ganhadores_dict[k] = {"premio": g.get('premio'), "valor": g.get('valor_total_premio'), "ganhadores": []}
+            ganhadores_dict[k]["ganhadores"].append({"cartela": g.get('cartela'), "nome": g.get('nome'), "valor_rateio": g.get('valor_rateio')})
+        ganhadores_proc = list(ganhadores_dict.values())
+
+        # Processa Prêmios para exibir no frontend
+        premio_data, tope_data, card_ranges, premio_info = process_prizes(premio_raw)
+        
+        param_doc = parametros[0] if parametros else {}
+        if 'tipo_entrada_de_cartelas' not in param_doc: param_doc['tipo_entrada_de_cartelas'] = 1
+
+        return {
+            'bolasData': bolas, 'buscandoData': buscando, 'premioData': premio_data,
+            'premioInfo': premio_info, 'rodadaData': rodada, 'confereData': confere,
+            'topeData': tope_data, 'cardRanges': card_ranges, 'promocionalData': [],
+            'parametrosInfo': param_doc, 'melhoresData': melhores, 'ganhadoresData': ganhadores_proc
+        }
+    except Exception as e:
+        print(f"Erro local: {e}")
+        return {}
+
+def fetch_data_from_mongodb():
+    global db
+    if db is None: return {}
+    try:
+        # Helper para converter ObjectId
+        def clean(cursor):
+            l = list(cursor)
+            for i in l: i['_id'] = str(i['_id'])
+            return l
+
+        bolas = clean(db.bolas.find({}))
+        buscando = clean(db.buscando.find({}))
+        premios_raw = clean(db.premio.find({}))
+        rodada = clean(db.rodada.find({}))
+        confere = clean(db.confere.find({}))
+        parametros = clean(db.parametros.find({}))
+        melhores = list(db['melhores'].find({}, {'_id':0}).sort('id_posicao', 1).limit(25))
+
+        # Ganhadores
+        ganhadores_raw = list(db.osganhadores.find({}))
+        ganhadores_dict = {}
+        for g in ganhadores_raw:
+            k = f"{g.get('premio')}|{g.get('valor_total_premio')}"
+            if k not in ganhadores_dict:
+                ganhadores_dict[k] = {"premio": g.get('premio'), "valor": g.get('valor_total_premio'), "ganhadores": []}
+            ganhadores_dict[k]["ganhadores"].append({"cartela": g.get('cartela'), "nome": g.get('nome'), "valor_rateio": g.get('valor_rateio')})
+        ganhadores_proc = list(ganhadores_dict.values())
+
+        premio_data, tope_data, card_ranges, premio_info = process_prizes(premios_raw)
+
+        param_doc = parametros[0] if parametros else {}
+        if 'tipo_entrada_de_cartelas' not in param_doc: param_doc['tipo_entrada_de_cartelas'] = 1
+
+        return {
+            'bolasData': bolas, 'buscandoData': buscando, 'premioData': premio_data,
+            'premioInfo': premio_info, 'rodadaData': rodada, 'confereData': confere,
+            'topeData': tope_data, 'cardRanges': card_ranges, 'promocionalData': [],
+            'parametrosInfo': param_doc, 'melhoresData': melhores, 'ganhadoresData': ganhadores_proc
+        }
+    except Exception as e:
+        print(f"Erro Mongo: {e}")
+        return {}
+
+def process_prizes(premios_raw):
+    premio_data = []
+    premio_info = {}
+    tope_data = []
+    card_ranges = []
+
+    if premios_raw:
+        p = premios_raw[0]
+        premio_info = p
+        
+        # Ranges
+        for k in ['1','2','3','4']:
+            if p.get(f'inicial{k}') is not None: 
+                card_ranges.append({'inicial': p[f'inicial{k}'], 'final': p[f'final{k}']})
+
+        # Lista Visual
+        campos = [
+            ('premio_quadra', 'QUADRA'), ('premio_linha', 'LINHA'), ('premio_bingo', 'BINGO'),
+            ('premio_acumulado', 'ACUMULADO'), ('premio_falta_Um', 'FALTA 1'), 
+            ('premio_duplo_bingo', 'DUPLO BINGO'), ('premio_triplo_bingo', 'TRIPLO BINGO'),
+            ('premio_super_bingo', 'SUPER BINGO')
+        ]
+        for campo, label in campos:
+            val = p.get(campo)
+            if isinstance(val, (int, float)):
+                lbl = label
+                if campo == 'premio_linha' and p.get('qtde_linha', 1) > 1: lbl = f"{p['qtde_linha']} LINHAS"
+                premio_data.append({'tipo_premio': lbl, 'valor': f"R$ {val:.2f}".replace('.', ',')})
+
+        # Tope
+        if p.get('bola_tope_sb') or p.get('bola_tope_ac'):
+            tope_data.append({'bola_tope_sb': p.get('bola_tope_sb'), 'bola_tope_ac': p.get('bola_tope_ac')})
+            
+    return premio_data, tope_data, card_ranges, premio_info
+
+# --- WATCHER LOOP (Único e Simples) ---
 def watch_collections():
     global local_data, mongo_data
-    first_run = True
+    print("👀 Watcher iniciado...")
     
-    if is_local_mode:
-        while not stop_flag.is_set():
+    last_data_json = ""
+    
+    while not stop_flag.is_set():
+        try:
+            current_data = fetch_data()
+            current_json = json.dumps(current_data, default=str)
             
-            new_data = fetch_data_from_local_files()
-
-            main_data_changed = json.dumps(new_data) != json.dumps(local_data)
+            if current_json != last_data_json:
+                last_data_json = current_json
+                
+                # Salva na variável correta para o WebSocket usar na conexão inicial
+                if is_local_mode: local_data = current_data
+                else: mongo_data = current_data
+                
+                print(f"🔔 Dados atualizados! Enviando broadcast...")
+                broadcast(current_data)
+                
+        except Exception as e:
+            print(f"Erro no Watcher: {e}")
             
-            if main_data_changed or first_run:
-                if main_data_changed:
-                    local_data = new_data
-                
-                payload_para_broadcast = local_data.copy()
-                
-                hora_formatada = datetime.now().strftime("%H:%M:%S")
-                print(f"Atualização detectada em arquivos locais... ({hora_formatada})")
+        time.sleep(1)
 
-                broadcast( payload_para_broadcast)
-                first_run = False
+def broadcast(data):
+    msg = json.dumps({'type': 'UPDATE', **data}, default=str)
+    # Copia o set para evitar erro de mudança de tamanho durante iteração
+    for client in list(clients):
+        try:
+            client.send(msg)
+        except:
+            clients.discard(client)
 
-            time.sleep(intervalo_busca_local)
+
+def recalcular_ranking_top10():
+    """
+    Versão Final v3:
+    1. BLACKLIST DE LINHAS: Se 'Sup' já saiu, o sistema IGNORA o cálculo da superior para todos.
+    2. BLACKLIST DE GANHADORES: Quem já ganhou sai do ranking.
+    3. CORREÇÃO VISUAL: Bingo retorna posição vazia "".
+    """
+    global db, CACHE_JOGO
+    
+    if not CACHE_JOGO['ativo'] or not CACHE_JOGO['cartelas']:
+        return
+
+    try:
+        # 1. Dados do Jogo
+        dados_bolas = db.bolas.find_one({})
+        if not dados_bolas: return
+
+        rodada_atual = dados_bolas.get('rodada', 0)
+        bolas_cantadas = set(dados_bolas.get('bolas_cantadas', []))
+        
+        dados_premio = db.buscando.find_one({}) or {}
+        premio_buscado = dados_premio.get('buscando_o_premio', 'BINGO').upper()
+        
+        estamos_buscando_quadra   = 'QUADRA' in premio_buscado
+        estamos_buscando_linha    = 'LINHA' in premio_buscado
+        estamos_buscando_falta_um = 'FALTA' in premio_buscado
+        estamos_buscando_duplo    = 'DUPLO' in premio_buscado or 'SEGUNDO' in premio_buscado
+
+        # --- 2. MAPA DE GANHADORES E LINHAS MORTAS ---
+        todos_ganhadores = list(db.ganhadores.find({}, {'cartela': 1, 'premio': 1, 'linha_ganha_tag': 1}))
+        
+        ids_ja_ganharam_bingo = set()
+        ids_ja_ganharam_linha = set()
+        
+        # Identifica quais linhas (posições) JÁ FORAM CONFIRMADAS
+        # Ex: Se alguém ganhou 'Sup', adicionamos 'Sup' aqui.
+        linhas_mortas = set() 
+
+        for g in todos_ganhadores:
+            try: c_id = int(g.get('cartela'))
+            except: continue
             
-    else:
-        # Modo de produção: Monitora o MongoDB
-        while not stop_flag.is_set():
-            # 2. REMOVE: parametros_data = get_parametros_data(db)
-            try:
-                # new_data AGORA CONTÉM OS PARÂMETROS E OS DADOS PRINCIPAIS
-                new_data = fetch_data_from_collections()
-                
-                # 3. main_data_changed AGORA CHECA TUDO (Dados + Parâmetros)
-                main_data_changed = json.dumps(new_data) != json.dumps(mongo_data)
-                # 4. REMOVE: parameters_changed
-                
-                if main_data_changed or first_run:
-                    
-                    if main_data_changed:
-                        mongo_data = new_data
-                    
-                    # 5. REMOVE: Lógica de 'if parameters_changed' e a atualização de 'last_sent_parametros_data'
-                        
-                    # O payload_para_broadcast JÁ ESTÁ COMPLETO
-                    payload_para_broadcast = mongo_data.copy()
-                    # 6. REMOVE: O bloco 'if parametros_data:' e a adição de "parametrosData"
-                        
-                    hora_formatada = datetime.now().strftime("%H:%M:%S")
-                    print(f"Atualização detectada no MongoDB... ({hora_formatada})")
-                    broadcast( payload_para_broadcast)
-                    first_run = False
-                        
-            except Exception as e:
-                print(f"Erro ao monitorar o MongoDB: {e}")
-                
-            time.sleep(1)
+            p_nome = g.get('premio', '').upper()
+            tag_linha = g.get('linha_ganha_tag', '') # Vem do backend como 'Sup', 'Cen', etc
 
-# Rotas da API e WebSocket
+            if 'BINGO' in p_nome and 'DUPLO' not in p_nome:
+                ids_ja_ganharam_bingo.add(c_id)
+            
+            if 'LINHA' in p_nome:
+                ids_ja_ganharam_linha.add(c_id)
+                if tag_linha:
+                    linhas_mortas.add(tag_linha) # Ex: Adiciona 'Sup' nas mortas
+
+        resultados = []
+
+        # 3. LOOP NA MEMÓRIA
+        for item in CACHE_JOGO['cartelas']:
+            c_id = int(item['id'])
+
+            # Filtros de exclusão de cartela
+            if estamos_buscando_duplo and c_id in ids_ja_ganharam_bingo: continue
+            if estamos_buscando_linha and c_id in ids_ja_ganharam_linha: continue
+
+            layout = item['layout']
+            
+            # --- CÁLCULO INTELIGENTE (IGNORA LINHAS MORTAS) ---
+            # Se a linha 'Sup' está morta, definimos missing como um set gigante para nunca ganhar no min()
+            # ou simplesmente ignoramos na lógica abaixo.
+            
+            # Conjuntos reais
+            real_sup = layout['sup'] - bolas_cantadas
+            real_cen = layout['cen'] - bolas_cantadas
+            real_inf = layout['inf'] - bolas_cantadas
+            
+            # Conjuntos para cálculo de ranking (Filtra Mortas)
+            # Se 'Sup' está na lista de mortas, fingimos que falta muito (99) ou ignoramos
+            missing_sup = real_sup if 'Sup' not in linhas_mortas else set(range(1000, 1099))
+            missing_cen = real_cen if 'Cen' not in linhas_mortas else set(range(2000, 2099))
+            missing_inf = real_inf if 'Inf' not in linhas_mortas else set(range(3000, 3099))
+
+            missing_geral = real_sup | real_cen | real_inf # Para Bingo, usa os reais
+            
+            # Contagens Reais (para saber se bateu agora)
+            c_sup_real = len(real_sup)
+            c_cen_real = len(real_cen)
+            c_inf_real = len(real_inf)
+            c_geral = len(missing_geral)
+
+            melhor_faltam_lista = sorted(list(missing_geral))
+            linha_destaque = ""
+            msg_destaque = "" 
+
+            # --- LÓGICA DE DECISÃO ---
+            
+            # 1. BINGO / DUPLO
+            if c_geral == 0:
+                msg_destaque = "DUPLO BINGO" if estamos_buscando_duplo else "BINGO"
+                linha_destaque = "" 
+
+            # 2. FALTA UM
+            elif c_geral == 1 and estamos_buscando_falta_um:
+                msg_destaque = "FALTA UM"
+                # Lógica visual apenas
+                if c_sup_real == 1 and c_cen_real > 1 and c_inf_real > 1: linha_destaque = "Sup"
+                elif c_cen_real == 1 and c_sup_real > 1 and c_inf_real > 1: linha_destaque = "Cen"
+                elif c_inf_real == 1 and c_sup_real > 1 and c_cen_real > 1: linha_destaque = "Inf"
+
+            # 3. LINHA (Aqui usamos a checagem com linhas mortas implícita)
+            # Só avisa LINHA se a linha específica AINDA NÃO MORREU ('Sup' not in linhas_mortas)
+            elif estamos_buscando_linha:
+                bateu_linha = False
+                if c_sup_real == 0 and 'Sup' not in linhas_mortas:
+                    msg_destaque = "LINHA"; linha_destaque = "Sup"; bateu_linha = True
+                elif c_cen_real == 0 and 'Cen' not in linhas_mortas:
+                    msg_destaque = "LINHA"; linha_destaque = "Cen"; bateu_linha = True
+                elif c_inf_real == 0 and 'Inf' not in linhas_mortas:
+                    msg_destaque = "LINHA"; linha_destaque = "Inf"; bateu_linha = True
+                
+                if bateu_linha:
+                    melhor_faltam_lista = []
+
+            # 4. QUADRA
+            elif estamos_buscando_quadra:
+                if c_sup_real == 1:
+                    msg_destaque = "QUADRA"; linha_destaque = "Sup"; melhor_faltam_lista = sorted(list(real_sup))
+                elif c_cen_real == 1:
+                    msg_destaque = "QUADRA"; linha_destaque = "Cen"; melhor_faltam_lista = sorted(list(real_cen))
+                elif c_inf_real == 1:
+                    msg_destaque = "QUADRA"; linha_destaque = "Inf"; melhor_faltam_lista = sorted(list(real_inf))
+            
+            # 5. CASO PADRÃO (Ordenação)
+            if not msg_destaque:
+                 opts = []
+                 if estamos_buscando_linha or estamos_buscando_quadra:
+                     # Aqui usamos os sets 'missing_' que já estão filtrados/penalizados se a linha morreu
+                     # Se 'Sup' morreu, o len(missing_sup) será gigante (100), então o min() nunca escolherá ele.
+                     opts = [
+                        {'tag': 'Sup', 'missing': missing_sup, 'real': real_sup},
+                        {'tag': 'Cen', 'missing': missing_cen, 'real': real_cen},
+                        {'tag': 'Inf', 'missing': missing_inf, 'real': real_inf}
+                     ]
+                     # Escolhe o melhor baseado no missing (que contem a penalidade)
+                     melhor = min(opts, key=lambda x: len(x['missing']))
+                     # Mas na hora de mostrar, mostra os números reais
+                     melhor_faltam_lista = sorted(list(melhor['real']))
+                     linha_destaque = melhor['tag']
+                     
+                     # Se a melhor opção ainda for gigante (todas as linhas mortas), limpa
+                     if len(melhor['missing']) > 90:
+                         melhor_faltam_lista = sorted(list(missing_geral)) # Fallback
+                         linha_destaque = ""
+                 else:
+                     opts = [{'tag': '', 'missing': missing_geral}]
+                     melhor = min(opts, key=lambda x: len(x['missing']))
+                     melhor_faltam_lista = sorted(list(melhor['missing']))
+                     linha_destaque = melhor['tag']
+
+            resultados.append({
+                'cartela': c_id,
+                'nome': item['nome'],
+                'faltam_lista': melhor_faltam_lista, 
+                'qtde': 0 if msg_destaque else len(melhor_faltam_lista), 
+                'posicao_temp': linha_destaque,
+                'msg_destaque': msg_destaque
+            })
+
+        # 3. Ordena e Corta
+        resultados.sort(key=lambda x: (x['qtde'], x['cartela']))
+        top_ranking = resultados[:10]
+
+        # 4. Montagem Final
+        novos_registros = []
+        for i, r in enumerate(top_ranking):
+            pos_temp = str(r['posicao_temp'])
+            pos_final = pos_temp[:1] if pos_temp else ""
+
+            registro_final = {
+                "rodada": int(rodada_atual),           
+                "id_posicao": int(i + 1),              
+                "cartela": str(r['cartela']),          
+                "posicao": pos_final, 
+                "numeros": list(r['faltam_lista']),    
+                "premio": str(r['msg_destaque']),
+                "nome": str(r['nome'])                 
+            }
+            if not registro_final["nome"]: registro_final["nome"] = "null"
+            if not registro_final["premio"]: registro_final["premio"] = "null"
+            novos_registros.append(registro_final)
+
+        if novos_registros:
+            db.melhores.delete_many({"rodada": int(rodada_atual)}) 
+            db.melhores.insert_many(novos_registros)
+        
+    except Exception as e:
+        print(f"Erro no cálculo em memória: {e}")
+
+
+# --- ROTAS HTTP ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @app.route('/')
-def serve_index():
-    return send_from_directory(BASE_DIR, 'index.html')
+def serve_index(): return send_from_directory(BASE_DIR, 'index.html')
 
-# Static assets (scripts, css, images, audio)
 @app.route('/<path:path>')
-def serve_static(path):
-    return send_from_directory(BASE_DIR, path)
+def serve_static(path): return send_from_directory(BASE_DIR, path)
 
 @app.route('/api/initial-data')
 def initial_data():
-    try:
-        data = fetch_data_from_local_files() if is_local_mode else fetch_data_from_collections()
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({'error': "Erro interno do servidor"}), 500
+    return jsonify(fetch_data())
+
+@app.route('/api/melhores')
+def get_melhores():
+    d = fetch_data()
+    return jsonify(d.get('melhoresData', []))
 
 @app.route('/api/version')
-def get_version():
-    return jsonify({'version': VERSION})
+def get_version(): return jsonify({'version': VERSION})
 
-# BUSCA MELHORES
-@app.route('/api/melhores', methods=['GET'])
-def get_melhores():
-    # Esta rota usará as funções de fetch existentes, que agora incluem 'melhoresData'
-    try:
-        data = fetch_data_from_local_files() if is_local_mode else fetch_data_from_collections()
-        # Retorna apenas a chave 'melhoresData'
-        return jsonify(data.get('melhoresData', []))
-    except Exception as e:
-        print(f"Erro ao buscar dados de melhores (API): {e}")
-        return jsonify([]), 500
 
-@app.route('/health')
-def health_check():
-    status = 'healthy'
-    database = 'local_files' if is_local_mode else ('connected' if db is not None else 'disconnected')
-    return jsonify({'status': status, 'version': VERSION, 'database': database})
-
-@app.route('/api/cartelas', methods=['POST'])
-def get_cartelas():
-    ranges = request.json.get('ranges', [])
-    if not ranges:
-        return jsonify({'error': "Ranges de cartelas inválidos."}), 400
-
-    try:
-        if is_local_mode:
-            with open(os.path.join(LOCAL_PATH, 'cartelas.json'), 'r', encoding='utf-8') as f:
-                cartelas_data = json.load(f)
-            cartelas = [c for c in cartelas_data if any(r['inicial'] <= c['cartao'] <= r['final'] for r in ranges)]
-            return jsonify(cartelas)
-        else:
-            query = {'$or': [{'cartao': {'$gte': r['inicial'], '$lte': r['final']}} for r in ranges]}
-            cartelas = list(db.cartelas.find(query))
-            # Converta ObjectId para string para evitar o erro 500
-            for c in cartelas:
-                c['_id'] = str(c['_id'])
-            return jsonify(cartelas)
-    except Exception as e:
-        print(f"Erro ao buscar cartelas: {e}")
-        return jsonify({'error': "Erro ao buscar cartelas no banco de dados."}), 500
-
-@app.route('/api/add-default-prizes', methods=['GET', 'POST'])
-def add_default_prizes():
-    default_busca = {'buscando_o_premio': 'BINGO', 'qtde_linha': None, 'buscando_a_linha': None}
-    default_premio_info = {
-        'premio_quadra': 0,
-        'premio_linha': 0,
-        'premio_bingo': 0,
-        'premio_falta_Um': 0,
-        'premio_duplo_bingo': 0,
-        'premio_triplo_bingo': 0,
-        'premio_super_bingo': 0,
-        'premio_acumulado': 0,
-        'bola_tope_sb': 0,
-        'bola_tope_ac': 0,
-        'minimo_de_cartelas': 0,
-        'maximo_de_cartelas': 12000
-    }
-    try:
-        update_prizes_func(default_busca, default_premio_info)
-        return jsonify({'message': 'Dados de prêmios padrão adicionados com sucesso!'})
-    except Exception as e:
-        return jsonify({'error': "Erro ao adicionar dados de prêmios padrão."}), 500
-
-@app.route('/api/set-current-prize')
-def set_current_prize():
-    premio = request.args.get('premio')
-    qtde_linha = request.args.get('qtdeLinha')
-    linhas = request.args.get('linhas')
-
-    if not premio:
-        return jsonify({'error': "Parâmetro 'premio' é obrigatório."}), 400
-
-    busca = {
-        'buscando_o_premio': premio,
-        'qtde_linha': int(qtde_linha) if qtde_linha else None,
-        'buscando_a_linha': linhas
-    }
-
-    try:
-        if is_local_mode:
-            with open(os.path.join(LOCAL_PATH, 'buscando.json'), 'w', encoding='utf-8') as f:
-                json.dump([busca], f, indent=2, ensure_ascii=False)
-        else:
-            db.buscando.delete_many({})
-            db.buscando.insert_one(busca)
-        return jsonify({'message': f"Prêmio em jogo atualizado para: {premio}"})
-    except Exception as e:
-        return jsonify({'error': "Erro ao atualizar o prêmio em jogo."}), 500
-
-# consulta cartelas por evento
-@app.route('/api/consultar_cartelas_evento')
-def api_consultar_cartelas_evento():
-    # 1. Valida parâmetros da URL
-    try:
-        id_evento = request.args.get('id_evento') # String (ex: "105")
-        id_cliente_str = request.args.get('id_cliente')
-        
-        if not id_evento or not id_cliente_str:
-             return jsonify({'error': 'Parâmetros faltando'}), 400
-             
-        id_cliente = int(id_cliente_str)
-    except (TypeError, ValueError):
-        return jsonify({'error': 'Parâmetros inválidos'}), 400
-
-    # 2. Obtém a conexão com o banco de VENDAS
-    sales_db_conn = get_sales_db_connection()
-    if sales_db_conn is None:
-        return jsonify({'error': 'DB Vendas Offline'}), 500
-
-    # 3. Define o nome da coleção (Ajuste que você fez: SEM PONTO)
-    nome_colecao = f"vendas{id_evento}" 
+# --- SUBSTITUA A FUNÇÃO get_sales_db_connection POR ESTA ---
+def get_sales_db_connection():
+    global sales_client, current_sales_uri, db
     
-    # =====================================================================
-    # >>> DEBUG: MOSTRAR O QUE EXISTE NO BANCO <<<
-    # =====================================================================
+    # 1. Busca a URL (Lógica mantida da versão anterior)
+    new_uri = None
     try:
-        colecoes_existentes = sales_db_conn.list_collection_names()
-        
-        #print("\n=== 🕵️ DEBUG DO BANCO DE VENDAS ===")
-        #print(f"Nome do Banco Conectado: '{sales_db_conn.name}'")
-        #print(f"O sistema está procurando por: '{nome_colecao}'")
-        #print(f"LISTA REAL DE COLEÇÕES NO BANCO:")
-        #print(colecoes_existentes)
-        #print("====================================\n")
-        
-        cartelas_formatadas = []
+        if os.path.exists(os.path.join(LOCAL_PATH, 'parametros.json')):
+            with open(os.path.join(LOCAL_PATH, 'parametros.json'), 'r') as f:
+                p = json.load(f)
+                if p: new_uri = p[0].get('url_mongo_vendas')
+    except: pass
 
-        # 4. Verifica se a coleção existe e busca
-        if nome_colecao in colecoes_existentes:
-            print(f"✅ SUCESSO: Coleção '{nome_colecao}' encontrada! Buscando cartelas...")
+    if not new_uri and db is not None:
+        try:
+            param_doc = db.parametros.find_one({})
+            if param_doc: new_uri = param_doc.get('url_mongo_vendas')
+        except: pass
+
+    if not new_uri:
+        print("❌ ERRO CRÍTICO: 'url_mongo_vendas' não encontrada.")
+        return None
+
+    try:
+        # Conecta ou Reutiliza conexão
+        if sales_client is None or new_uri != current_sales_uri:
+            if sales_client: sales_client.close()
+            print(f"🔌 Conectando ao Banco de Vendas...")
+            mongo_kwargs = {'server_api': ServerApi('1')}
+            if _TLS_CA_FILE: mongo_kwargs['tlsCAFile'] = _TLS_CA_FILE
             
-            vendas_cursor = sales_db_conn[nome_colecao].find(
-                {'id_cliente': id_cliente},
-                {'_id': 0, 'numero_inicial': 1, 'numero_final': 1, 'numero_inicial2': 1, 'numero_final2': 1}
-            )
+            sales_client = MongoClient(new_uri, **mongo_kwargs)
+            current_sales_uri = new_uri
+            sales_client.admin.command('ping')
+            print("✅ Conexão estabelecida com o Cluster de Vendas!")
             
-            # 5. Processa os intervalos
-            count = 0
-            for venda in vendas_cursor:
-                # Intervalo 1
-                if venda.get('numero_inicial') is not None and venda.get('numero_final') is not None:
-                    for num in range(venda['numero_inicial'], venda['numero_final'] + 1):
-                        cartelas_formatadas.append(num)
-                        count += 1
+        # --- AQUI ESTÁ A CORREÇÃO DO ERRO ---
+        try:
+            # Tenta pegar o banco padrão definido no link
+            return sales_client.get_default_database()
+        except Exception as e_db:
+            print(f"⚠️ Aviso: O link não especificou o nome do banco (Erro: {e_db})")
+            
+            # Lista os bancos disponíveis para ajudar você
+            try:
+                bancos_disponiveis = sales_client.list_database_names()
+                print(f"📋 BANCOS DISPONÍVEIS NO CLUSTER: {bancos_disponiveis}")
                 
-                # Intervalo 2 (se houver)
-                if venda.get('numero_inicial2') and venda.get('numero_final2') and venda.get('numero_inicial2') > 0:
-                    for num in range(venda['numero_inicial2'], venda['numero_final2'] + 1):
-                        cartelas_formatadas.append(num)
-                        count += 1
-            
-            print(f"Total de cartelas encontradas para o cliente {id_cliente}: {count}")
+                # SE TIVER APENAS 1 BANCO (além de admin/local), TENTA USAR ELE AUTOMATICAMENTE
+                filtro = [b for b in bancos_disponiveis if b not in ['admin', 'local', 'config']]
+                if len(filtro) > 0:
+                    banco_escolhido = filtro[0]
+                    print(f"🔄 Tentando usar automaticamente o banco: '{banco_escolhido}'")
+                    return sales_client.get_database(banco_escolhido)
+            except:
+                print("❌ Não foi possível listar os bancos automaticamente.")
 
-        else:
-            print(f"❌ AVISO: A coleção '{nome_colecao}' NÃO existe na lista acima.")
-
-        return jsonify({
-            'id_evento': id_evento,
-            'id_cliente': id_cliente,
-            'quantidade': len(cartelas_formatadas),
-            'cartelas': cartelas_formatadas
-        })
+            # SE A AUTOMATIZAÇÃO FALHAR, USE ESTE NOME HARDCODED:
+            # Troque 'dados_do_sorteio' pelo nome que aparecer na lista acima se der erro
+            NOME_MANUAL = "dados_do_sorteio" 
+            print(f"⚠️ Forçando conexão no banco: '{NOME_MANUAL}'")
+            return sales_client.get_database(NOME_MANUAL)
 
     except Exception as e:
-        print(f"Erro ao buscar cartelas na coleção de vendas: {e}")
+        print(f"❌ Erro fatal na conexão de vendas: {e}")
+        return None
+
+
+# --- SUBSTITUA A ROTA proximos_eventos POR ESTA (COM MAIS LOGS) ---
+@app.route('/api/proximos_eventos', methods=['GET'])
+def proximos_eventos():
+    print("🔍 Recebida requisição para /api/proximos_eventos")
+    
+    try:
+        sales_db = get_sales_db_connection()
+        if sales_db is None: 
+            return jsonify({'error': 'Configuração do DB de Vendas não encontrada'}), 500
+        
+        if 'eventos' not in sales_db.list_collection_names():
+            return jsonify([]), 200
+
+        lista = []
+        cursor = sales_db.eventos.find({}).sort('data_hora_evento', 1)
+        
+        for evt in cursor:
+            try:
+                # APLICA A CONVERSÃO AQUI
+                valor_safe = converter_decimal(evt.get('valor_de_venda'))
+                
+                lista.append({
+                    'id_evento': str(evt.get('id_evento')),
+                    'descricao': evt.get('descricao', 'Sem Descrição'),
+                    'status': evt.get('status', 'paralizado'),
+                    'data': evt.get('data_evento'),
+                    'hora': evt.get('hora_evento'),
+                    'valor_cartela': valor_safe, # <--- Valor limpo
+                    'premios_desc': [],
+                    'unidade_venda': evt.get('unidade_de_venda', 1)
+                })
+            except Exception as e_inner:
+                print(f"⚠️ Erro ao processar evento: {e_inner}")
+                continue
+
+        return jsonify(lista)
+
+    except Exception as e:
+        print(f"❌ ERRO 500 EM PROXIMOS EVENTOS: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-# Defs
+
+# Rota Consultar Cartelas
+@app.route('/api/consultar_cartelas_evento')
+def api_consultar_cartelas():
+    id_evt = request.args.get('id_evento')
+    id_cli = request.args.get('id_cliente')
+    if not id_evt or not id_cli: return jsonify({'error': 'Faltam parâmetros'}), 400
+    
+    s_db = get_sales_db_connection()
+    if not s_db: return jsonify({'error': 'DB Vendas Offline'}), 500
+    
+    col = f"vendas{id_evt}"
+    cartelas = []
+    if col in s_db.list_collection_names():
+        cursor = s_db[col].find({'id_cliente': int(id_cli)})
+        for v in cursor:
+            if v.get('numero_inicial') and v.get('numero_final'):
+                cartelas.extend(range(v['numero_inicial'], v['numero_final']+1))
+            if v.get('numero_inicial2') and v.get('numero_final2'):
+                cartelas.extend(range(v['numero_inicial2'], v['numero_final2']+1))
+                
+    return jsonify({'id_evento': id_evt, 'cartelas': cartelas, 'quantidade': len(cartelas)})
+    
+@app.route('/api/cartelas', methods=['POST'])
+def get_cartelas_game():
+    ranges = request.json.get('ranges', [])
+    if not ranges: return jsonify([]), 400
+    
+    if is_local_mode:
+        # Lógica local simplificada
+        all_cards = fetch_data_from_local_files().get('cartelasData', []) # Teria que carregar cartelas.json
+        # (Implementar leitura de cartelas.json aqui se necessário para local)
+        return jsonify([]) 
+    else:
+        if db is None: return jsonify([]), 500
+        query = {'$or': [{'cartao': {'$gte': r['inicial'], '$lte': r['final']}} for r in ranges]}
+        c = list(db.cartelas.find(query))
+        for i in c: i['_id'] = str(i['_id'])
+        return jsonify(c)
+
+# --- WEBSOCKET ---
 def websocket_app(environ, start_response):
     if 'wsgi.websocket' in environ:
         ws = environ['wsgi.websocket']
         clients.add(ws)
-        current_payload = local_data.copy()
-        current_payload["parametrosData"] = get_parametros_data(db) # Lê os parâmetros novamente
         try:
-            initial_data = fetch_data_from_local_files() if is_local_mode else fetch_data_from_collections()
-            ws.send(json.dumps({'type': 'UPDATE', **initial_data}, default=str))
-            # Keep the WebSocket connection open
+            # Envia estado inicial
+            data = fetch_data()
+            ws.send(json.dumps({'type': 'UPDATE', **data}, default=str))
             while not ws.closed:
-                try:
-                    ws.receive()
-                except WebSocketError:
-                    break
-        finally:
-            clients.discard(ws)
-        return []  # ADICIONE ESTA LINHA PARA RETORNAR UM OBJETO ITERÁVEL
-    else:
-        # Standard HTTP requests
-        return app(environ, start_response)
+                ws.receive()
+        except: pass
+        finally: clients.discard(ws)
+        return []
+    return app(environ, start_response)
 
-#Conexão Vendas
-def get_sales_db_connection():
-    global sales_client, current_sales_uri, db
+
+# --- ROTA PARA SALVAR CONFIGURAÇÕES GLOBAIS (ATUALIZADA) ---
+@app.route('/api/admin/salvar_config', methods=['POST'])
+def admin_salvar_config():
+    if db is None: return jsonify({'error': 'Sem conexão DB'}), 500
     
-    param_doc = None
-
-    # 1. Lógica Híbrida: Define de onde ler os parâmetros
-    if is_local_mode:
-        # --- MODO LOCAL: Lê do arquivo JSON ---
-        try:
-            path_params = os.path.join(LOCAL_PATH, 'parametros.json')
-            if os.path.exists(path_params):
-                with open(path_params, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    # O arquivo costuma ser uma lista [{...}], pegamos o primeiro item
-                    if isinstance(data, list) and len(data) > 0:
-                        param_doc = data[0]
-                    elif isinstance(data, dict):
-                        param_doc = data
-            else:
-                print(f"ERRO: Arquivo 'parametros.json' não encontrado em {LOCAL_PATH}")
-                return None
-        except Exception as e:
-            print(f"ERRO ao ler parametros.json local: {e}")
-            return None
-            
-    else:
-        # --- MODO NUVEM: Lê do MongoDB Principal ---
-        if db is None: 
-            print("ERRO FATAL: DB Principal desconectado em modo nuvem.")
-            return None
-        try:
-            param_doc = db.parametros.find_one({})
-        except Exception as e:
-            print(f"ERRO de leitura no DB Principal: {e}")
-            return None
-
-    # ==============================================================================
-    # >>>>>>>>>> LOGS DE DEBUG (ADICIONE ISTO AQUI) <<<<<<<<<<  aquix
-    # ==============================================================================
-    print("\n--- DEBUG PARAMETROS ---")
-    print(f"Modo Local Ativo? {is_local_mode}")
-    if param_doc:
-        # Remove dados sensíveis ou grandes se necessário, mas queremos ver as chaves
-        print(f"Chaves encontradas: {list(param_doc.keys())}")
-        url_vendas = param_doc.get('url_mongo_vendas', 'NÃO ENCONTRADA')
-        print(f"Valor de 'url_mongo_vendas': {url_vendas}")
-    else:
-        print("param_doc está VAZIO ou NULO.")
-    print("------------------------\n")
-    # ==============================================================================
-
-    # 2. Validação dos Dados Encontrados
-    if not param_doc:
-        print("ERRO: Documento de parâmetros vazio ou não encontrado.")
-        return None
-
-    if 'url_mongo_vendas' not in param_doc:
-        print("ERRO: O campo 'url_mongo_vendas' NÃO EXISTE no parametros.json (ou no Mongo).")
-        return None
+    data = request.json
+    
+    # Prepara o objeto de atualização
+    update_fields = {}
+    
+    # 1. Tempo Ganhador
+    if 'tempo_ganhador' in data:
+        try: update_fields['tempo_ganhador'] = int(data['tempo_ganhador'])
+        except: pass
         
-    new_uri = param_doc['url_mongo_vendas']
-    
-    # 3. Gerencia a Conexão com o Banco de Vendas
-    try:
-        if sales_client is None or new_uri != current_sales_uri:
-            if sales_client:
-                sales_client.close()
-            
-            print(f"Conectando ao Banco de Vendas (Origem: {'Local' if is_local_mode else 'Mongo'})...")
-            
-            mongo_kwargs = { 'server_api': ServerApi('1') }
-            if _TLS_CA_FILE: mongo_kwargs['tlsCAFile'] = _TLS_CA_FILE
-                
-            sales_client = MongoClient(new_uri, **mongo_kwargs)
-            current_sales_uri = new_uri
-            sales_client.admin.command('ping')
-            print("Sucesso: Conectado ao Banco de Vendas!")
+    # 2. Modo de Sorteio ('auto' ou 'manual')
+    if 'modo_sorteio' in data:
+        update_fields['modo_sorteio'] = str(data['modo_sorteio'])
+        
+    # 3. Voz Ativa (Boolean)
+    if 'voz_ativa' in data:
+        update_fields['voz_ativa'] = bool(data['voz_ativa'])
+        
+    # 4. Câmera Ativa (Boolean)
+    if 'camera_ativa' in data:
+        update_fields['camera_ativa'] = bool(data['camera_ativa'])
 
+    if update_fields:
         try:
-            return sales_client.get_default_database()
-        except:
-            return sales_client[SALES_DB_NAME]
-
-    except Exception as e:
-        print(f"Erro crítico ao conectar no banco de vendas: {e}")
-        return None
-
-# -------------------------------------------------------------------------
-# ROTA: PRÓXIMOS EVENTOS (CORREÇÃO DECIMAL)
-# -------------------------------------------------------------------------
-@app.route('/api/proximos_eventos', methods=['GET'])
-def proximos_eventos():
-    try:
-        sales_db = get_sales_db_connection()
-        if sales_db is None: 
-            return jsonify({'error': 'DB Vendas Offline'}), 500
-
-        if 'eventos' not in sales_db.list_collection_names():
-             return jsonify([]), 200
-
-        eventos_cursor = sales_db['eventos'].find({}).sort('data_hora_evento', 1)
-        lista_eventos = []
-
-        # --- FUNÇÃO DE CONVERSÃO CORRIGIDA ---
-        def safe_float_inner(val):
-            if val is None: return 0.0
-            try:
-                # 1. Tenta converter direto (Pega int, float e Decimal nativo)
-                return float(val)
-            except (ValueError, TypeError):
-                # 2. Se falhar, converte para texto, troca vírgula e tenta de novo
-                try:
-                    val_str = str(val)
-                    val_str = val_str.replace(',', '.')
-                    return float(val_str)
-                except:
-                    # 3. Último recurso: Se for objeto Decimal128 específico do Mongo
-                    try:
-                        return float(val.to_decimal())
-                    except:
-                        return 0.0
-        # -------------------------------------
-
-        for evento in eventos_cursor:
-            try:
-                def get_val(key):
-                    return safe_float_inner(evento.get(key))
-
-                def fmt_moeda(val):
-                    return f"{val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-
-                premios = []
-                
-                v_quadra = get_val('premio_quadra')
-                if v_quadra > 0: premios.append(f"Quadra: R$ {fmt_moeda(v_quadra)}")
-
-                v_linha = get_val('premio_linha')
-                try:
-                    qtde = int(evento.get('quantidade_de_linhas', 1))
-                except: qtde = 1
-                lbl_linha = "Linha" if qtde == 1 else f"{qtde} Linhas"
-                
-                if v_linha > 0: premios.append(f"{lbl_linha}: R$ {fmt_moeda(v_linha)}")
-
-                v_faltaum = get_val('premio_faltaum')
-                if v_faltaum > 0: premios.append(f"Falta Um: R$ {fmt_moeda(v_faltaum)}")
-
-                v_bingo = get_val('premio_bingo')
-                if v_bingo > 0: premios.append(f"Bingo: R$ {fmt_moeda(v_bingo)}")
-
-                v_segundobingo = get_val('premio_segundobingo')
-                if v_segundobingo > 0: premios.append(f"2Bingo: R$ {fmt_moeda(v_segundobingo)}")
-
-                data_iso = None
-                raw_date = evento.get('data_hora_evento')
-                if raw_date:
-                    if isinstance(raw_date, datetime):
-                        data_iso = raw_date.isoformat()
-                    else:
-                        data_iso = str(raw_date)
-
-                lista_eventos.append({
-                    'id_evento': str(evento.get('id_evento')),
-                    'descricao': evento.get('descricao', 'Sem Descrição'),
-                    'status': evento.get('status', 'paralizado'),
-                    'data': evento.get('data_evento', 'N/A'),
-                    'hora': evento.get('hora_evento', 'N/A'),
-                    'data_iso': data_iso,
-                    'valor_cartela': get_val('valor_de_venda'),
-                    'premios_desc': premios,
-                    'unidade_venda': evento.get('unidade_de_venda', 1)
-                })
-            except:
-                continue 
-
-        return jsonify(lista_eventos)
-
-    except Exception as e:
-        print(f"Erro em proximos_eventos: {e}")
-        return jsonify({'error': 'Erro interno ao processar eventos'}), 500
-
-
-
-# Inicialização
-def main():
-    global db
-    if not is_local_mode:
-        try:
-            mongo_kwargs = { 'server_api': ServerApi('1') }
-            # Use certifi CA bundle when available to avoid SSL CERTIFICATE_VERIFY_FAILED on Atlas
-            if _TLS_CA_FILE:
-                mongo_kwargs['tlsCAFile'] = _TLS_CA_FILE
-            else:
-                print("Aviso: pacote 'certifi' não encontrado. Se ocorrer erro SSL, instale com 'pip install certifi'.")
-            client = MongoClient(MONGO_URI, **mongo_kwargs)
-            db = client.get_database(DB_NAME)
-            client.admin.command('ping') 
-            print("Conexão com MongoDB bem-sucedida!")
+            # Atualiza no Banco (Coleção parametros)
+            db.parametros.update_one({}, {'$set': update_fields}, upsert=True)
+            return jsonify({'status': 'Configurações salvas', 'campos': update_fields})
         except Exception as e:
-            print(f"Erro fatal ao conectar ao MongoDB: {e}")
-            # Em caso de erro, o programa deve sair.
-            sys.exit(1)
+            return jsonify({'error': str(e)}), 500
             
-    # Iniciar a monitoração em uma thread daemon
-    watch_thread = threading.Thread(target=watch_collections, daemon=True)
-    watch_thread.start()
-    
-    # Iniciar o servidor com Gevent para lidar com HTTP e WebSocket na mesma porta
-    http_server = WSGIServer(('0.0.0.0', port), websocket_app, handler_class=WebSocketHandler)
+    return jsonify({'error': 'Nenhum dado válido enviado'}), 400
 
-    print(f"Servidor rodando na porta {port}")
-    print("Pressione CTRL+C para sair.")
+
+# Endpoint para Sortear Bola
+@app.route('/api/admin/sortear', methods=['POST'])
+def admin_sortear():
+    if db is None: return jsonify({'error': 'Sem conexão com DB'}), 500
     
     try:
-        http_server.serve_forever()
-    except KeyboardInterrupt:
-        pass
+        # Pega dados enviados (se houver)
+        data = request.json or {}
+        bola_manual = data.get('bola_manual') # Pode ser None
 
+        # 1. Busca bolas já sorteadas
+        dados_bolas = db.bolas.find_one({})
+        bolas_cantadas = dados_bolas.get('bolas_cantadas', []) if dados_bolas else []
+        
+        # 2. Verifica fim de jogo
+        if len(bolas_cantadas) >= 90:
+            return jsonify({'error': 'Todas as bolas já foram sorteadas'}), 400
+
+        nova_bola = 0
+
+        if bola_manual:
+            # --- MODO MANUAL ---
+            nova_bola = int(bola_manual)
+            if nova_bola < 1 or nova_bola > 90:
+                return jsonify({'error': 'Bola deve ser entre 1 e 90'}), 400
+            if nova_bola in bolas_cantadas:
+                return jsonify({'error': f'Bola {nova_bola} já foi sorteada!'}), 400
+        else:
+            # --- MODO AUTOMÁTICO (RANDOM) ---
+            import random
+            todas_bolas = list(range(1, 91))
+            disponiveis = [b for b in todas_bolas if b not in bolas_cantadas]
+            if not disponiveis: return jsonify({'error': 'Todas as bolas sorteadas'}), 400
+            nova_bola = random.choice(disponiveis)
+        
+        # 3. Atualiza lista
+        bolas_cantadas.append(nova_bola)
+        
+        db.bolas.update_one({}, {
+            '$set': {
+                'bolas_cantadas': bolas_cantadas,
+                'proxima_bola': nova_bola,
+                'ordem' : len(bolas_cantadas),
+                'ultimas_bolas': bolas_cantadas[-3:]
+            }
+        }, upsert=True)
+        
+        threading.Thread(target=recalcular_ranking_top10).start()
+
+        return jsonify({'bola': nova_bola, 'total_sorteadas': len(bolas_cantadas)})
+        
+    except Exception as e:
+        print(f"Erro ao sortear: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# --- ROTA ATUALIZADA: MUDAR PRÊMIO (INICIALIZA LINHAS) ---
+@app.route('/api/admin/definir_premio', methods=['POST'])
+def admin_definir_premio():
+    data = request.json
+    nome_premio = data.get('premio')
+    if not nome_premio: return jsonify({'error': 'Nome necessário'}), 400
+    
+    try:
+        update_data = {'buscando_o_premio': nome_premio}
+        
+        # Se mudou para LINHA, verifica se é jogo de 3 linhas (configuração do evento)
+        if 'LINHA' in nome_premio:
+            tabela_premios = db.premio.find_one({}) or {}
+            qtde = tabela_premios.get('qtde_linha', 1) # Padrão 1
+            
+            if qtde == 3:
+                # Se for 3 linhas, ativa a busca por todas
+                update_data['buscando_a_linha'] = "Sup,Cen,Inf"
+            else:
+                # Se for 1 linha, limpa (qualquer uma serve)
+                update_data['buscando_a_linha'] = ""
+        else:
+            # Outros prêmios não usam linhas específicas
+            update_data['buscando_a_linha'] = ""
+
+        db.buscando.update_one({}, {'$set': update_data}, upsert=True)
+
+        threading.Thread(target=recalcular_ranking_top10).start()
+
+        return jsonify({'status': 'OK'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# --- FUNÇÃO CORRIGIDA PARA RESPEITAR A ORDEM DAS LINHAS ---
+@app.route('/api/admin/validar_cartela', methods=['POST'])
+def admin_validar_cartela():
+    if db is None: return jsonify({'status_code': 'ERROR', 'msg': 'Sem conexão DB'})
+    
+    data = request.json or {}
+    raw_cartela = data.get('cartela')
+    
+    try: cartela_id = int(raw_cartela)
+    except: return jsonify({'status_code': 'ERROR', 'msg': 'Cartela inválida'})
+    
+    try:
+        # 1. VERIFICA RODADA E EVENTO
+        rodada_info = db.rodada.find_one({})
+        id_evento_ativo = rodada_info.get('id_evento') if rodada_info else 0
+        
+        # 2. VERIFICA VENDA
+        nome_ganhador = "Cliente Balcão"
+        sales_db = get_sales_db_connection()
+        col_vendas_name = f"vendas{id_evento_ativo}"
+        
+        if sales_db is not None and col_vendas_name in sales_db.list_collection_names():
+             venda = sales_db[col_vendas_name].find_one({
+                '$or': [
+                    { 'numero_inicial': {'$lte': cartela_id}, 'numero_final': {'$gte': cartela_id} },
+                    { 'numero_inicial2': {'$lte': cartela_id}, 'numero_final2': {'$gte': cartela_id} }
+                ]
+             })
+             if venda: nome_ganhador = venda.get('nome_cliente', 'Cliente Balcão')
+
+        # 3. BUSCA LAYOUT DA CARTELA
+        cartela_doc = db.cartelas.find_one({'cartao': cartela_id})
+        if not cartela_doc: return jsonify({'status_code': 'MISSING_MATRIX', 'msg': 'Erro de cadastro.'})
+
+        def parse(val):
+            if isinstance(val, list): return set(val)
+            if isinstance(val, str): return set(map(int, val.replace(' ','').split(',')))
+            return set()
+
+        # Parseia os conjuntos matemáticos para validação do prêmio
+        sup_set = parse(cartela_doc.get('superior'))
+        cen_set = parse(cartela_doc.get('central'))
+        inf_set = parse(cartela_doc.get('inferior'))
+        todos_set = sup_set | cen_set | inf_set
+
+        # 4. PREPARA FORMATAÇÃO VISUAL (RESPEITANDO AS LINHAS)
+        dados_bolas = db.bolas.find_one({})
+        bolas_lista = dados_bolas.get('bolas_cantadas', []) if dados_bolas else []
+        bolas_set = set(bolas_lista)
+        ultima_bola = bolas_lista[-1] if bolas_lista else -1
+        
+        # AQUI ESTÁ A CORREÇÃO:
+        # Transformamos cada linha em lista e ordenamos INDIVIDUALMENTE
+        lista_sup = sorted(list(sup_set))
+        lista_cen = sorted(list(cen_set))
+        lista_inf = sorted(list(inf_set))
+
+        # Concatenamos na ordem visual correta: Cima -> Meio -> Baixo
+        # Isso garante que os números da linha superior apareçam primeiro na string
+        numeros_visual_ordem = lista_sup + lista_cen + lista_inf
+        
+        str_numeros_formatada = ""
+        
+        for i, num in enumerate(numeros_visual_ordem):
+            # Formata com 2 dígitos
+            num_str = f"{num:02d}"
+            
+            # Define o separador
+            separador = " " 
+            if i > 0: # Não põe separador no primeiro item
+                if num == ultima_bola:
+                    separador = "*" 
+                elif num in bolas_set:
+                    separador = "+"
+                
+                str_numeros_formatada += separador
+            
+            str_numeros_formatada += num_str
+        
+        # 5. ATUALIZA TABELA CONFERE
+        db.confere.delete_many({})
+        db.confere.insert_one({
+            "rodada": int(id_evento_ativo) if id_evento_ativo else 0,
+            "cartao": cartela_id,
+            "numeros": str_numeros_formatada,
+            "ganhador": nome_ganhador,
+            "status": "conferindo"
+        })
+        
+        # 6. VALIDAÇÃO DO PRÊMIO (Mantida igual)
+        premio_doc = db.buscando.find_one({})
+        premio_nome = premio_doc.get('buscando_o_premio', '').replace(" ", "").upper()
+        linhas_faltantes = premio_doc.get('buscando_a_linha', '').upper()
+
+        bateu = False
+        detalhes = ""
+        linha_ganha = "" 
+
+        if 'DUPLOBINGO' in premio_nome or 'SEGUNDO BINGO' in premio_nome:
+            ja_ganhou_bingo = db.ganhadores.find_one({'cartela': cartela_id, 'premio': 'BINGO'})
+            if ja_ganhou_bingo:
+                return jsonify({'status_code': 'LOSS', 'msg': f'❌ Cartela {cartela_id} já fez o 1º Bingo.', 'layout': {'superior': lista_sup, 'central': lista_cen, 'inferior': lista_inf}, 'bolas': list(bolas_set)})
+
+        if 'BINGO' in premio_nome or 'ACUMULADO' in premio_nome or 'DUPLOBINGO' in premio_nome:
+            faltam = todos_set - bolas_set
+            bateu = (len(faltam) == 0)
+            detalhes = "BINGO!" if bateu else f"Faltam: {len(faltam)}"
+            
+        elif 'LINHA' in premio_nome:
+            check_sup = len(sup_set - bolas_set) == 0
+            check_cen = len(cen_set - bolas_set) == 0
+            check_inf = len(inf_set - bolas_set) == 0
+            
+            if check_sup and ('SUP' in linhas_faltantes or not linhas_faltantes):
+                bateu = True; detalhes = "Linha SUPERIOR!"; linha_ganha = "Sup"
+            elif check_cen and ('CEN' in linhas_faltantes or not linhas_faltantes):
+                bateu = True; detalhes = "Linha CENTRAL!"; linha_ganha = "Cen"
+            elif check_inf and ('INF' in linhas_faltantes or not linhas_faltantes):
+                bateu = True; detalhes = "Linha INFERIOR!"; linha_ganha = "Inf"
+            else:
+                bateu = False
+                detalhes = "Nenhuma linha ativa completa."
+
+        elif 'QUADRA' in premio_nome:
+            s, c, i = len(sup_set & bolas_set), len(cen_set & bolas_set), len(inf_set & bolas_set)
+            if s>=4 or c>=4 or i>=4: bateu=True; detalhes="QUADRA!"
+            else: bateu=False; detalhes="Sem quadra."
+            
+        elif 'FALTA' in premio_nome:
+             faltam = todos_set - bolas_set
+             bateu = (len(faltam) == 1)
+             detalhes = "Falta 1!" if bateu else f"Faltam {len(faltam)}."
+             
+        else:
+             bateu = True; detalhes = "Validação Visual."
+
+        status_code = 'WIN' if bateu else 'LOSS'
+
+        # 7. REGISTRO DE GANHADOR
+        if bateu:
+            valor_monetario = "R$ --"
+            try:
+                tabela_premios = db.premio.find_one({}) or {}
+                campo_valor = ''
+                if 'QUADRA' in premio_nome: campo_valor = 'premio_quadra'
+                elif 'LINHA' in premio_nome: campo_valor = 'premio_linha'
+                elif 'BINGO' in premio_nome: campo_valor = 'premio_bingo'
+                elif 'DUPLO' in premio_nome: campo_valor = 'premio_duplo_bingo'
+                elif 'ACUMULADO' in premio_nome: campo_valor = 'premio_acumulado'
+                elif 'FALTA' in premio_nome: campo_valor = 'premio_falta_Um'
+                
+                if campo_valor:
+                    def cvt(v): 
+                        if hasattr(v, 'to_decimal'): return float(v.to_decimal())
+                        return float(v) if v else 0.0
+                    raw_val = cvt(tabela_premios.get(campo_valor))
+                    valor_monetario = f"R$ {raw_val:,.2f}".replace('.', ',')
+            except: pass
+
+            premio_registro = f"{premio_nome} ({linha_ganha})" if linha_ganha else premio_nome
+
+            duplicado = db.ganhadores.find_one({'cartela': cartela_id, 'premio': premio_registro})
+            if not duplicado:
+                db.ganhadores.insert_one({
+                    'premio': premio_registro,
+                    'valor_total_premio': valor_monetario,
+                    'cartela': cartela_id,
+                    'nome': nome_ganhador,
+                    'valor_rateio': valor_monetario,
+                    'linha_ganha_tag': linha_ganha
+                })
+
+        return jsonify({
+            'status_code': status_code,
+            'valid': bateu,
+            'msg': detalhes,
+            'ganhador': nome_ganhador,
+            'cartela_id': cartela_id,
+            'layout': {
+                'superior': lista_sup, # Já enviamos ordenado corretamente
+                'central': lista_cen,
+                'inferior': lista_inf
+            },
+            'bolas': list(bolas_set)
+        })
+
+    except Exception as e:
+        print(f"Erro Validação: {e}")
+        return jsonify({'status_code': 'ERROR', 'msg': str(e)}), 500
+
+
+
+# --- ADICIONE ESTA NOVA ROTA PARA LIMPAR A TELA ---
+@app.route('/api/admin/limpar_conferencia', methods=['POST'])
+def admin_limpar_conferencia():
+    if db is None: return jsonify({'error': 'DB Offline'}), 500
+    
+    try:
+        # Pega o ID do evento atual para manter a consistência
+        rodada_info = db.rodada.find_one({})
+        id_evento = rodada_info.get('id_evento', 0) if rodada_info else 0
+        
+        db.confere.delete_many({})
+        db.confere.insert_one({
+            "rodada": int(id_evento),
+            "cartao": 0,
+            "numeros": "null",
+            "ganhador": "null"
+        })
+        return jsonify({'status': 'Conferencia limpa'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# --- SUBSTITUA A FUNÇÃO 
+@app.route('/api/admin/resetar', methods=['POST'])
+def admin_resetar():
+    if db is None: return jsonify({'error': 'Sem conexão com DB'}), 500
+    try:
+        # --- 0. PREPARAÇÃO DE DADOS GERAIS ---
+        rodada_info = db.rodada.find_one({}) or {}
+        
+        # Proteção contra ID Nulo: (Pega valor ou 0)
+        raw_id = rodada_info.get('id_evento')
+        id_evento = int(raw_id) if raw_id else 0
+        
+        # Dados das Bolas
+        dados_bolas = db.bolas.find_one({}) or {}
+        bolas_lista = dados_bolas.get('bolas_cantadas', [])
+        total_bolas = len(bolas_lista)
+        
+        # Dados de Tempo
+        now = datetime.now()
+        data_hoje = now.strftime("%d/%m/%Y")
+        hora_atual = now.strftime("%H:%M")
+        
+        # Fallback para hora inicial
+        hora_inicial = hora_atual 
+
+        # --- 1. PROCESSAMENTO DOS GANHADORES ---
+        ganhadores_ativos = list(db.ganhadores.find({}))
+        
+        lista_osganhadores = []      
+        lista_resultados_ganhadores = [] 
+        
+        if ganhadores_ativos:
+            grupos_rateio = {}
+            for g in ganhadores_ativos:
+                raw_premio = g.get('premio', '').upper()
+                chave_base = raw_premio
+                
+                # Agrupamento Inteligente
+                if 'LINHA' in raw_premio: chave_base = "LINHA"
+                elif 'DUPLO' in raw_premio or 'SEGUNDO' in raw_premio: chave_base = "DUPLO BINGO"
+                elif 'BINGO' in raw_premio: chave_base = "BINGO"
+                elif 'QUADRA' in raw_premio: chave_base = "QUADRA"
+                elif 'FALTA' in raw_premio: chave_base = "FALTA UM"
+                
+                if chave_base not in grupos_rateio: grupos_rateio[chave_base] = []
+                grupos_rateio[chave_base].append(g)
+
+            # Calcula Rateios
+            for chave, lista_vencedores in grupos_rateio.items():
+                qtde_ganhadores = len(lista_vencedores)
+                
+                # Proteção ao pegar valor
+                val_total_str = "0"
+                if len(lista_vencedores) > 0:
+                     val_total_str = lista_vencedores[0].get('valor_total_premio', '0')
+                
+                val_total_float = parse_brl(val_total_str)
+                val_rateio_float = val_total_float / qtde_ganhadores if qtde_ganhadores > 0 else 0
+                
+                str_total = format_brl(val_total_float)
+                str_rateio = format_brl(val_rateio_float)
+                
+                for w in lista_vencedores:
+                    obj_ganhador = {
+                        "premio": chave,
+                        "valor_total_premio": str_total,
+                        "cartela": str(w.get('cartela', '0')),
+                        "nome": str(w.get('nome', '---')),
+                        "valor_rateio": str_rateio
+                    }
+                    
+                    # 1.1 Tabela Local (com rodada)
+                    item_local = obj_ganhador.copy()
+                    item_local['rodada'] = id_evento
+                    lista_osganhadores.append(item_local)
+                    
+                    # 1.2 Tabela Remota (sem rodada duplicada)
+                    lista_resultados_ganhadores.append(obj_ganhador)
+
+        # --- 2. GRAVAÇÃO LOCAL 'osganhadores' ---
+        db.osganhadores.delete_many({})
+        if lista_osganhadores:
+            db.osganhadores.insert_many(lista_osganhadores)
+
+        # --- 3. GRAVAÇÃO REMOTA 'resultados' ---
+        try:
+            sales_db = get_sales_db_connection()
+            
+            # --- CORREÇÃO AQUI ---
+            if sales_db is not None:  # <--- MUDOU DE "if sales_db:" PARA "if sales_db is not None:"
+                doc_resultado = {
+                    "id_evento": id_evento,
+                    "data_evento": data_hoje,
+                    "hora_inicial": hora_inicial,
+                    "hora_final": hora_atual,
+                    "total_de_bolas": total_bolas,
+                    "bolas_sorteadas": str(bolas_lista), 
+                    "ganhadores": lista_resultados_ganhadores
+                }
+                sales_db.resultados.insert_one(doc_resultado)
+                print(f"✅ Histórico salvo no Sales DB.")
+            else:
+                print("⚠️ Conexão Sales DB retornou None.")
+                
+        except Exception as e_sales:
+            print(f"⚠️ Erro não-fatal ao salvar Sales DB: {e_sales}")
+        # --- 4. LIMPEZA (RESET) ---
+        db.bolas.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': []}}, upsert=True)
+        db.ganhadores.delete_many({})
+        db.melhores.delete_many({})
+        
+        db.confere.delete_many({})
+        db.confere.insert_one({
+            "rodada": int(id_evento),
+            "cartao": 0,
+            "numeros": "null",
+            "ganhador": "null"
+        })
+        
+        db.rodada.update_one({}, {'$set': {'estado': 'intervalo', 'ordem': 0}}, upsert=True)
+        
+        return jsonify({'status': 'Reset concluído com sucesso'})
+        
+    except Exception as e:
+        # ISSO VAI MOSTRAR O ERRO REAL NO TERMINAL
+        traceback.print_exc() 
+        return jsonify({'error': str(e)}), 500
+
+
+# --- ROTA PARA REMOVER LINHA GANHA (CHAMADA AO FECHAR CONFERÊNCIA) ---
+@app.route('/api/admin/atualizar_linhas_restantes', methods=['POST'])
+def atualizar_linhas():
+    # Esta função verifica os ganhadores da rodada e remove as linhas ganhas da lista de busca
+    try:
+        rodada_info = db.rodada.find_one({})
+        id_evento = rodada_info.get('id_evento')
+        
+        # Pega configuração atual
+        premio_doc = db.buscando.find_one({})
+        premio_nome = premio_doc.get('buscando_o_premio', '')
+        linhas_atuais = premio_doc.get('buscando_a_linha', '')
+        
+        if 'LINHA' not in premio_nome or not linhas_atuais:
+            return jsonify({'status': 'Ignored'})
+
+        # Busca ganhadores recentes de LINHA
+        ganhadores = list(db.ganhadores.find({'premio': {'$regex': 'LINHA'}}))
+        
+        linhas_ganhas = set()
+        for g in ganhadores:
+            tag = g.get('linha_ganha_tag')
+            if tag: linhas_ganhas.add(tag.upper())
+            
+        # Filtra o que sobrou
+        lista_busca = linhas_atuais.upper().split(',')
+        nova_lista = [l for l in lista_busca if l not in linhas_ganhas]
+        
+        novo_texto = ",".join(nova_lista)
+        
+        db.buscando.update_one({}, {'$set': {'buscando_a_linha': novo_texto}})
+        
+        return jsonify({'status': 'Updated', 'restantes': novo_texto})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# --- ROTA DE DETALHES COM CAMPOS EXTRAS ADICIONADOS ---
+@app.route('/api/admin/detalhes_evento', methods=['GET'])
+def get_event_details():
+    id_evt = request.args.get('id_evento')
+    if not id_evt: return jsonify({'error': 'ID necessário'}), 400
+
+    sales_db = get_sales_db_connection()
+    if sales_db is None: return jsonify({'error': 'DB Vendas Offline'}), 500
+
+    try:
+        # Busca evento
+        evento = None
+        try: evento = sales_db.eventos.find_one({'id_evento': int(id_evt)})
+        except: pass
+        if not evento: evento = sales_db.eventos.find_one({'id_evento': str(id_evt)})
+        
+        if not evento: return jsonify({'error': 'Evento não encontrado'}), 404
+
+        col_vendas_name = f"vendas{id_evt}"
+        qtde_vendida = 0
+        ultimo_cartao = 0
+        soma_vendas_reais = 0
+        vendas_detalhadas = [] 
+
+        if col_vendas_name in sales_db.list_collection_names():
+            col_vendas = sales_db[col_vendas_name]
+            
+            # 1. Agregação
+            pipeline = [
+                {
+                    '$group': {
+                        '_id': None,
+                        'total_qtd': { '$sum': { '$add': [{ '$subtract': ['$numero_final', '$numero_inicial'] }, 1] } },
+                        'max_cartao': { '$max': '$numero_final' },
+                        'soma_valor': { '$sum': '$valor_total' }
+                    }
+                }
+            ]
+            resultado = list(col_vendas.aggregate(pipeline))
+            if resultado:
+                qtde_vendida = resultado[0].get('total_qtd', 0)
+                ultimo_cartao = resultado[0].get('max_cartao', 0)
+                soma_vendas_reais = resultado[0].get('soma_valor', 0)
+
+            # 2. Busca Detalhada
+            cursor_detalhes = col_vendas.find({}, {
+                'numero_inicial': 1, 'numero_final': 1, 
+                'numero_inicial2': 1, 'numero_final2': 1,
+                'id_cliente': 1, 'nome_cliente': 1, 'telefone_cliente': 1,
+                'id_colaborador': 1
+            })
+            
+            for v in cursor_detalhes:
+                qtd = (v.get('numero_final', 0) - v.get('numero_inicial', 0)) + 1
+                if v.get('numero_inicial2'):
+                     qtd += (v.get('numero_final2', 0) - v.get('numero_inicial2', 0)) + 1
+
+                vendas_detalhadas.append({
+                    'inicio': v.get('numero_inicial'),
+                    'fim': v.get('numero_final'),
+                    'inicio2': v.get('numero_inicial2'),
+                    'fim2': v.get('numero_final2'),
+                    'qtd': qtd,
+                    'id_cliente': v.get('id_cliente'),
+                    'nome': v.get('nome_cliente'),
+                    'tel': v.get('telefone_cliente'),
+                    'colab': v.get('id_colaborador')
+                })
+
+        # Monta Resposta Frontend
+        response_data = {
+            'descricao': evento.get('descricao'),
+            'data_evento': evento.get('data_evento'),
+            'hora_evento': evento.get('hora_evento'),
+            'unidade_venda': evento.get('unidade_de_venda'),
+            'valor_venda': converter_decimal(evento.get('valor_de_venda')),
+            'tipo_cartela': evento.get('tipo_de_cartela'),
+            'numero_inicial': evento.get('numero_inicial', 0),
+            'qtde_vendida': qtde_vendida,
+            'ultimo_cartao': ultimo_cartao,
+            'total_vendas_reais': converter_decimal(soma_vendas_reais),
+            'vendas_detalhadas': vendas_detalhadas,
+            'premios': {
+                'quadra': converter_decimal(evento.get('premio_quadra')),
+                'linha': converter_decimal(evento.get('premio_linha')),
+                'qtde_linhas': evento.get('quantidade_de_linhas', 0),
+                'falta_um': converter_decimal(evento.get('premio_faltaum')),
+                'bingo': converter_decimal(evento.get('premio_bingo')),
+                'segundo_bingo': converter_decimal(evento.get('premio_segundobingo')),
+                'acumulado': converter_decimal(evento.get('premio_acumulado')),
+                'bola_tope': evento.get('bola_tope_acumulado', 0),
+                'total': converter_decimal(evento.get('premio_total'))
+            }
+        }
+        
+        # Atualiza Banco Principal
+        if db is not None:
+             db.parametros.update_one({}, {'$set': {
+                'nome_sala': response_data['descricao'],
+                'tipo_sorteio': response_data['tipo_cartela']
+            }}, upsert=True)
+             db.rodada.update_one({}, {'$set': {'id_evento': id_evt}}, upsert=True)
+             
+             # --- INSERÇÃO COM NOVOS CAMPOS ---
+             db.premio.delete_many({})
+             
+             # Pega o numero maximo do evento (serie) ou usa padrão se não tiver
+             serie_max = evento.get('numero_maximo', 72000) 
+             
+             db.premio.insert_one({
+                 'premio_quadra': response_data['premios']['quadra'],
+                 'premio_linha': response_data['premios']['linha'],
+                 'qtde_linha': response_data['premios']['qtde_linhas'],
+                 'premio_falta_Um': response_data['premios']['falta_um'],
+                 'premio_bingo': response_data['premios']['bingo'],
+                 'premio_duplo_bingo': response_data['premios']['segundo_bingo'],
+                 'premio_acumulado': response_data['premios']['acumulado'],
+                 'bola_tope_ac': response_data['premios']['bola_tope'],
+                 'preco': response_data['valor_venda'],
+                 'multiplo': response_data['unidade_venda'],
+                 'rodada': id_evt,
+                 
+                 # === NOVOS CAMPOS SOLICITADOS ===
+                 'serie_em_jogo': serie_max,          # Carregado do evento
+                 'minimo_de_cartelas': 1,             # Fixo
+                 'maximo_de_cartelas': 6000,          # Fixo
+                 'inicial1': 1,                       # Fixo
+                 'final1': serie_max,                 # Igual serie
+                 'total_cartelas_em_jogo': qtde_vendida # Soma das vendidas
+             })
+
+             threading.Thread(target=carregar_cache_evento, args=(id_evt, sales_db)).start()
+
+        return jsonify(response_data)
+
+    except Exception as e:
+        print(f"Erro Detalhes: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# --- MAIN ---
+def main():
+    connect_main_db()
+    
+    t = threading.Thread(target=watch_collections, daemon=True)
+    t.start()
+    
+    print(f"🚀 Servidor Single-Tenant rodando na porta {port}")
+    server = WSGIServer(('0.0.0.0', port), websocket_app, handler_class=WebSocketHandler)
+    try: server.serve_forever()
+    except KeyboardInterrupt: pass
 
 if __name__ == '__main__':
     main()

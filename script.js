@@ -1,4 +1,7 @@
 //Criar menu
+
+const urlParamsGlobal = new URLSearchParams(window.location.search);
+const currentSalaId = urlParamsGlobal.get('idsala') || 'padrao';
 //
 const backendVersionElement = document.getElementById('backend-version');
 const frontendVersionElement = document.getElementById('frontend-version');
@@ -76,6 +79,7 @@ let cartelasEmJogo = 0;
 
 let premioInfo = null;
 
+let tempoExibicaoGanhador = 20;
 
 let seePromocoes = true; // Controla se o sistema deve verificar e exibir promoções
 let promocionalTimer = null; // Armazena a referência do temporizador
@@ -457,7 +461,7 @@ async function carregarCartelasAutomaticas(idEvento) {
     }
 
     // Obtém ID do cliente da URL (modo quiosque/link único)
-    const urlParamsGlobal = new URLSearchParams(window.location.search);
+    //*const urlParamsGlobal = new URLSearchParams(window.location.search);
     // Tenta pegar da URL, se não tiver, tenta de alguma variável de sessão ou define fixo para teste
     //const clienteLogadoId = urlParamsGlobal.get('id_cliente'); 
 
@@ -2515,6 +2519,8 @@ async function renderMainContent(data) {
             salaTitleElement.textContent = nome_da_sala;
         }
         
+        tempoExibicaoGanhador = parseInt(parametrosInfo.tempo_ganhador);
+        
         const tipoSorteio = parametrosInfo.tipo_sorteio;
         const rawVideoID = parametrosInfo.url_live || parametrosInfo.url_padrao || '';
         video_local = parametrosInfo.video_local;
@@ -2851,7 +2857,13 @@ function connectWebSocket() {
     if (ws && ws.readyState === WebSocket.OPEN) {
         return;
     }
-    ws = new WebSocket(WS_URL);
+    //*ws = new WebSocket(WS_URL);
+
+    const separator = WS_URL.includes('?') ? '&' : '?';
+    const wsUrlWithRoom = `${WS_URL}${separator}idsala=${currentSalaId}`;
+    
+    ws = new WebSocket(wsUrlWithRoom);
+
     ws.onopen = () => {
         if (reconnectInterval) {
             clearInterval(reconnectInterval);

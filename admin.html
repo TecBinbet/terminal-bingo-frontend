@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MESA CONTROLADORA - BINGO</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@700;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Roboto', sans-serif; }
+        .bola-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+        
+        /* Scrollbar personalizada */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1f2937; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+        /* OCULTAR SETAS DO INPUT NUMBER (NOVO) */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+
+        /* Animação do Modal Customizado */
+        .modal-show {
+            display: flex !important;
+            opacity: 1 !important;
+        }
+        .modal-box-show {
+            transform: scale(100%) !important;
+        }
+
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col">
+
+<div id="overlay-conexao" class="hidden fixed inset-0 bg-red-900/95 z-[9999] flex flex-col items-center justify-center text-white transition-opacity duration-300">
+    <div class="animate-bounce text-6xl mb-4">📡</div>
+    <h2 class="text-4xl font-black uppercase tracking-widest mb-2">Conexão Perdida!</h2>
+    <p class="text-xl text-red-200">Tentando reconectar ao servidor...</p>
+    <div id="timer-reconnect" class="mt-4 font-mono text-lg bg-red-800 px-4 py-2 rounded">
+        Próxima tentativa em: <span id="countdown-connection">5</span>s
+    </div>
+    <button onclick="location.reload()" class="mt-8 bg-white text-red-900 font-bold py-2 px-6 rounded hover:bg-gray-200 transition">
+        Forçar Recarregamento (F5)
+    </button>
+</div>
+
+    <header class="bg-gray-800 p-2 border-b border-gray-700 flex justify-between items-center relative z-20">
+        <div class="flex items-center gap-3">
+            <button onclick="toggleAdminMenu()" class="text-gray-300 hover:text-white focus:outline-none p-1 rounded hover:bg-gray-700 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+            </button>
+            <h1 class="text-xl font-black text-yellow-500 tracking-wide">🎛️ CENTRAL DE SORTEIO</h1>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="resetarJogo()" class="bg-red-900 hover:bg-red-700 text-white px-2 py-1 rounded font-bold border border-red-500 text-sm flex items-center gap-1">
+                ⚠️ RESETAR
+            </button>
+        </div>
+    </header>
+
+    <div id="admin-menu-overlay" class="fixed inset-0 bg-black/50 hidden z-40" onclick="toggleAdminMenu()"></div>
+    <div id="admin-side-menu" class="fixed left-0 top-0 bottom-0 w-72 bg-gray-900 border-r border-gray-700 transform -translate-x-full transition-transform duration-300 z-50 flex flex-col shadow-2xl">
+        <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+            <h2 class="font-bold text-lg text-blue-400">MENU ADMIN</h2>
+            <button onclick="toggleAdminMenu()" class="text-gray-400 hover:text-white">✕</button>
+        </div>
+        <nav class="flex-1 p-2 space-y-2">
+            <button onclick="abrirModalEventos()" class="w-full text-left p-3 rounded hover:bg-gray-800 flex items-center gap-3 text-gray-200 transition-colors border-l-4 border-transparent hover:border-green-500">
+                <span class="text-xl">📅</span>
+                <div><span class="font-bold block">Carregar Novo Evento</span><span class="text-xs text-gray-500">Selecionar jogo da agenda</span></div>
+            </button>
+            <button onclick="abrirModalConfig()" class="w-full text-left p-3 rounded hover:bg-gray-800 flex items-center gap-3 text-gray-200 transition-colors border-l-4 border-transparent hover:border-blue-500">
+                <span class="text-xl">⚙️</span><span class="font-bold">Configurações do Sistema</span>
+            </button>
+            <hr class="border-gray-700 my-2">
+            <button onclick="alternarTelaCheia()" class="w-full text-left p-3 rounded hover:bg-gray-800 flex items-center gap-3 text-gray-200 transition-colors">
+                <span class="text-xl">🖥️</span><span class="font-bold" id="btn-fullscreen-text">Entrar em Tela Cheia</span>
+            </button>
+        </nav>
+        <div class="p-2 text-center text-gray-600 text-xs border-t border-gray-700">v2.1 Admin Panel</div>
+    </div>
+
+    <div id="modal-eventos" class="fixed inset-0 bg-black/80 hidden z-[60] flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 w-full max-w-lg rounded-xl border border-gray-600 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div class="p-4 bg-gray-900 border-b border-gray-700 flex justify-between items-center">
+                <h3 class="text-lg font-bold text-yellow-500">📅 Selecionar Próximo Evento</h3>
+                <button onclick="fecharModal('modal-eventos')" class="text-gray-400 hover:text-white">✕</button>
+            </div>
+            <div id="lista-eventos-container" class="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-2"><p class="text-center text-gray-500">Carregando...</p></div>
+            <div class="p-3 bg-gray-900 border-t border-gray-700 text-right"><button onclick="fecharModal('modal-eventos')" class="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600 text-sm">Cancelar</button></div>
+        </div>
+    </div>
+
+    <div id="modal-config" class="fixed inset-0 bg-black/80 hidden z-[60] flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 w-full max-w-md rounded-xl border border-gray-600 shadow-2xl p-0">
+            <div class="p-4 bg-gray-900 border-b border-gray-700 flex justify-between items-center rounded-t-xl">
+                <h3 class="text-lg font-bold text-blue-400">⚙️ Configurações do Sistema</h3>
+                <button onclick="fecharModal('modal-config')" class="text-gray-400 hover:text-white">✕</button>
+            </div>            
+            <div class="p-6 space-y-6">                
+                <div>
+                    <label class="block text-sm font-bold text-gray-300 mb-1">Tempo de Exibição do Ganhador (TV)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="config-winner-time" class="bg-gray-900 border border-gray-600 rounded p-2 text-white w-20 text-center font-bold" value="20">
+                        <span class="text-gray-400 text-sm">segundos</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-gray-700/50 p-3 rounded border border-gray-600 flex flex-col gap-2">
+                        <label class="text-sm font-bold text-yellow-500">🔊 Locução (Voz)</label>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="config-voz-ativa" class="sr-only peer" checked>
+                            <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                            <span class="ml-2 text-sm font-medium text-gray-300">Ativar</span>
+                        </label>
+                    </div>
+
+                    <div class="bg-gray-700/50 p-3 rounded border border-gray-600 flex flex-col gap-2">
+                        <label class="text-sm font-bold text-blue-400">📷 Câmera (Vídeo)</label>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="config-camera-ativa" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            <span class="ml-2 text-sm font-medium text-gray-300">Ativar</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="bg-gray-700/50 p-3 rounded border border-gray-600">
+                    <label class="block text-sm font-bold text-white mb-2">Modo de Entrada de Bolas</label>
+                    <div class="flex flex-col gap-2">
+                        <label class="flex items-center gap-2 cursor-pointer hover:bg-gray-600 p-1 rounded transition">
+                            <input type="radio" name="modo_sorteio" value="auto" class="w-4 h-4 text-green-600 bg-gray-700 border-gray-500 focus:ring-green-500" checked>
+                            <span class="text-gray-200 text-sm">🎲 Sorteio Digital (Automático/Random)</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer hover:bg-gray-600 p-1 rounded transition">
+                            <input type="radio" name="modo_sorteio" value="manual" class="w-4 h-4 text-blue-600 bg-gray-700 border-gray-500 focus:ring-blue-500">
+                            <span class="text-gray-200 text-sm">⌨️ Entrada Manual (Digitação)</span>
+                        </label>
+                    </div>
+                    <p class="text-[10px] text-gray-400 mt-2 ml-1">No modo manual, você digita o número cantado pelo globo físico.</p>
+                </div>
+
+            </div>
+
+            <div class="p-4 bg-gray-900 border-t border-gray-700 rounded-b-xl text-right">
+                <button onclick="salvarConfiguracoes()" class="px-4 py-2 bg-green-700 text-white font-bold rounded hover:bg-green-600 shadow-lg transform active:scale-95 transition-all">
+                    💾 Salvar Configurações
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex flex-1 p-2 gap-4">
+        <section class="w-1/4 flex flex-col gap-2">
+           <div class="bg-gray-800 p-1 rounded-xl border border-gray-700 shadow-xl text-center">
+                <h2 class="text-gray-400 text-sm font-bold uppercase mb-1">Bola da Vez</h2> 
+                <div class="flex items-center gap-4">
+                     <div id="bola-destaque" class="text-5xl font-black text-white mb-2 bg-gray-900 rounded-lg py-2 px-6 border-4 border-blue-500">--</div>
+
+                    <button id="btn-f1-buscar" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-2 rounded border border-blue-400 shadow-lg flex items-center gap-2" title="Atalho: F1">
+                        <span>🔍</span>
+                       <span>F1 - BUSCAR</span>
+                   </button>
+                </div>
+                
+                <div id="container-sorteio-digital">
+                    <button id="btn-sortear" onclick="sortearBola()" class="w-full bg-green-700 hover:bg-green-500 text-white text-2xl py-2 rounded-lg shadow-lg transform active:scale-95 transition-all mb-2">SORTEAR BOLA 🎲</button>
+                    <div class="bg-gray-900 rounded-lg p-1 border border-gray-700">
+                        <div class="flex items-center justify-between gap-1 mb-1">
+                            <label class="text-gray-400 text-xs font-bold uppercase">Intervalo (seg):</label>
+                            <input type="number" id="input-tempo-auto" value="4" min="3" max="60" class="w-10 bg-gray-800 text-white font-bold text-center border border-gray-600 rounded p-1">
+                        </div>
+                        <button id="btn-auto-toggle" onclick="toggleAutoSorteio()" class="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-2 rounded border border-gray-600 transition-colors flex items-center justify-center gap-2"><span>▶️</span> INICIAR AUTOMÁTICO</button>
+                        <div class="w-full bg-gray-800 h-1 mt-2 rounded-full overflow-hidden"><div id="progress-auto" class="bg-yellow-500 h-full w-0 transition-all duration-100 ease-linear"></div></div>
+                    </div>
+                </div>
+
+                <div id="container-entrada-manual" class="hidden">
+                    <div class="bg-gray-900 rounded-lg p-1 border border-blue-900">
+                        <label class="block text-gray-400 text-xs font-bold uppercase mb-1">Digite o Número:</label>
+                        <div class="flex gap-2">
+                            <input type="number" id="input-bola-manual" min="1" max="90" class="w-full bg-gray-800 border border-blue-500 rounded p-0 text-white font-black text-2xl text-center focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="00">
+                            <button onclick="inserirBolaManual()" class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 rounded shadow">OK</button>
+                        </div>
+                        <p id="erro-manual" class="text-red-500 text-[12px] mt-1 font-bold h-4"></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-900 p-2 rounded-xl border border-gray-700 flex flex-col items-center justify-center">
+                <label class="block text-gray-500 text-[10px] font-bold uppercase mb-0">PRÊMIO DA VEZ</label>
+                <p id="status-premio" class="text-center text-xl text-yellow-400 font-black animate-pulse mt-0">Buscando: ...</p>
+            </div>
+
+            <div id="camera-preview-container" class="bg-gray-900 p-2 rounded-xl border border-gray-700 shadow-lg mb-2 hidden">
+                <div class="flex justify-between items-center mb-1">
+                    <label class="text-gray-500 text-[10px] font-bold uppercase tracking-widest">MONITORAMENTO</label>
+                    <button onclick="toggleLocalCamera()" id="btn-local-cam" class="text-[9px] bg-gray-800 hover:bg-gray-700 text-green-400 px-2 py-0.5 rounded border border-gray-600 transition-colors">
+                        LIGAR
+                    </button>
+                </div>
+
+                <div id="video-wrapper" class="relative bg-black rounded overflow-hidden border border-gray-800 mx-auto transition-all duration-300 ease-out" style="width: 100%; height: 150px;">
+                    <video id="video-feed" autoplay playsinline muted class="w-full h-full object-cover hidden"></video>
+                    
+                    <div id="video-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-gray-700">
+                        <span class="text-2xl">📷</span>
+                        <span class="text-[9px] mt-1">Preview Desligado</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 mt-2 px-1">
+                    <div>
+                        <div class="flex justify-between text-[9px] text-gray-400 mb-0.5">
+                            <span>Largura</span>
+                            <span id="label-width">100%</span>
+                        </div>
+                        <input type="range" id="cam-width" min="50" max="100" value="100" oninput="ajustarCamera()" 
+                               class="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-[9px] text-gray-400 mb-0.5">
+                            <span>Altura</span>
+                            <span id="label-height">150px</span>
+                        </div>
+                        <input type="range" id="cam-height" min="100" max="400" value="150" oninput="ajustarCamera()" 
+                               class="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                    </div>
+                </div>
+            </div>
+    
+            <div class="bg-gray-900 p-1 rounded-xl border border-gray-700 flex flex-col items-center justify-center shadow-lg">
+                <div id="relogio-digital" class="text-green-400 text-xl font-bold tracking-widest text-center" style="font-family: 'Orbitron', monospace; text-shadow: 0 0 5px rgba(74, 222, 128, 0.5);">--/--/---- - --:--</div>
+            </div>
+        </section>
+
+        <section class="w-3/5 flex flex-col gap-2">   
+            <div id="painel-evento-ativo" class="hidden flex flex-col gap-2">
+                <div class="bg-gray-800 p-2 rounded-xl border border-gray-600 shadow-sm">
+                    <h2 class="text-blue-400 font-bold text-xs uppercase mb-2 border-b border-gray-700 pb-1 flex justify-between "><span>ℹ️ Detalhes do Evento</span><span class="text-center"><span class="font-bold text-xs text-yellow-400" id="info-descricao">Descrição do Evento</span></h2>
+                   
+                    <div class="grid grid-cols-6 gap-2 text-center">
+                        <div class="bg-gray-900 rounded p-1">
+                            <span class="block text-[9px] text-gray-400 uppercase">Data</span>
+                            <span class="block text-[12px] font-bold text-white truncate" id="info-data-hora">--/--</span>
+                        </div>
+                        <div class="bg-gray-900 rounded p-1">
+                            <span class="block text-[9px] text-gray-400 uppercase">Inicial</span>
+                            <span class="block text-sm font-bold text-white" id="info-inicial">0</span>
+                        </div>
+                        <div class="bg-gray-900 rounded p-1">
+                            <span class="block text-[9px] text-gray-400 uppercase">Qtde</span>
+                            <span class="block text-sm font-bold text-yellow-500" id="info-qtde">0</span>
+                        </div>
+                        <div class="bg-gray-900 rounded p-1">
+                            <span class="block text-[9px] text-gray-400 uppercase">Final</span>
+                            <span class="block text-sm font-bold text-white" id="info-ultimo">0</span>
+                        </div>
+                        <div class="bg-gray-900 rounded p-1">
+                            <span class="block text-[9px] text-gray-400 uppercase">Preço</span>
+                            <span class="block text-sm font-bold text-blue-300" id="info-preco-un">R$ 0</span>
+                        </div>
+                         <div class="bg-gray-900 rounded p-1 border border-green-900">
+                            <span class="block text-[9px] text-gray-400 uppercase">Total</span>
+                            <span class="block text-sm font-bold text-green-400 truncate" id="info-vendas">R$ 0,00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gray-800 p-2 rounded-xl border border-gray-600 shadow-sm">
+                    <h2 class="text-yellow-500 font-bold text-xs uppercase mb-2 border-b border-gray-700 pb-1 flex justify-between"><span>🏆 Premiações</span><span class="font-bold text-[14px] text-green-500" id="info-total-premios">Total: R$ 0,00</span></h2>
+                    <div id="container-premios-lista" class="grid grid-cols-4 gap-2"></div>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-2 mt-4 shadow-lg">
+                <h3 class="text-yellow-500 font-bold uppercase text-sm border-b border-gray-600 pb-0 mb-0 flex justify-between items-center">
+                   <span>🏆 Ranking (Top 10)</span>
+                   <span id="label-premio-ranking" class="text-[12px] text-green-400">BINGO</span>
+               </h3>
+    
+               <div class="grid grid-cols-6 gap-0 text-[10px] text-gray-400 font-bold uppercase mb-0 px-0">
+               <div class="col-span-1">Cartela</div>
+               <div class="col-span-3">Faltam</div>
+               <div class="col-span-2 text-right">Cliente</div>
+           </div>
+
+           <div id="ranking-lista" class="flex flex-col gap-1 overflow-y-auto max-h-84">
+                <div class="text-gray-500 text-center text-xs py-2 italic">Aguardando dados...</div>
+               </div>
+           </div>
+        </section>
+
+        <section class="w-1/5 flex flex-col gap-2">
+            <div class="bg-gray-900 p-0 rounded-xl border border-gray-700 shadow-sm">
+                <div class="flex justify-between items-center mb-0 px-2">
+                    <h2 class="text-gray-400 font-bold text-xs uppercase">Painel Numérico</h2>
+                    <span id="contador-bolas" class="text-yellow-500 font-mono font-bold text-sm">0 / 90</span>
+                </div>
+                <div id="grid-bolas" class="grid grid-cols-10 gap-1"></div>
+            </div>
+            <div class="bg-gray-900 p-0 rounded-xl border border-gray-700 flex-1 overflow-hidden flex flex-col">
+                <h2 class="text-gray-500 font-bold text-xs uppercase mb-0 border-b border-gray-700 pb-0 text-center">Últimas Cantadas</h2>
+                <div id="historico-bolas" class="flex flex-wrap content-start justify-center gap-1 overflow-y-auto custom-scrollbar h-full p-1"><span class="text-gray-600 text-xs italic">...</span></div>
+            </div>
+
+            <div class="bg-gray-800 p-0 rounded-xl border border-gray-700 flex-1 overflow-hidden flex flex-col mt-0">
+                <h2 class="text-yellow-500 font-bold text-xs uppercase mb-1 border-b border-gray-700 pb-0 text-center flex justify-between items-center px-1">
+                    <span>🏆 Ganhadores</span>
+                    <span id="count-ganhadores" class="text-[9px] bg-yellow-900 text-yellow-200 px-1 rounded">0</span>
+                </h2>
+                
+                <div id="lista-ganhadores" class="flex flex-col gap-1 overflow-y-auto custom-scrollbar h-full p-1 text-[10px]">
+                    <span class="text-gray-600 text-center italic mt-1">Nenhum ganhador ainda.</span>
+                </div>
+            </div>
+
+            <div class="bg-gray-900 p-2 rounded-xl border border-gray-700 flex-col mt-auto">
+                <h2 class="text-blue-400 font-bold text-lg uppercase mb-1 border-b border-gray-700 pb-1 text-center">LIVE THE BET</h2>
+            </div>
+        </section>       
+    </div>
+   
+     <div id="custom-modal-overlay" class="fixed inset-0 bg-black/50 hidden z-[200] flex items-center justify-center backdrop-blur-sm transition-opacity opacity-0">
+        <div class="bg-gray-800 border-2 border-gray-600 rounded-2xl shadow-2xl p-6 w-11/12 max-w-sm text-center transform scale-95 transition-transform duration-200" id="custom-modal-box">
+            
+            <h3 id="custom-modal-title" class="text-xl font-black text-yellow-500 mb-2 uppercase tracking-wide">
+                ⚠️ Atenção
+            </h3>
+            
+            <p id="custom-modal-message" class="text-gray-200 text-lg mb-6 font-medium leading-relaxed">
+                ...
+            </p>
+            
+            <div id="custom-modal-actions" class="flex justify-center gap-3">
+                </div>
+        </div>
+    </div>    
+
+    <div id="modal-conferencia" class="fixed inset-0 bg-black/0 hidden z-[70] flex flex-col items-center justify-center backdrop-blur-md">
+        
+        <div class="w-full max-w-md bg-gray-800 p-2 rounded-t-2xl border-x-4 border-t-4 border-blue-600 flex justify-between items-center">
+            <h3 class="text-xl font-black text-yellow-400 uppercase tracking-widest pl-2">🕵️ AUDITORIA</h3>
+            <button onclick="encerrarSessaoConferencia()" class="bg-red-600 hover:bg-red-500 text-white font-bold py-1 px-4 rounded text-xs uppercase">
+                ENCERRAR E AVANÇAR ⮕
+            </button>
+        </div>
+
+        <div class="bg-gray-800 border-x-4 border-b-4 border-blue-600 rounded-b-2xl shadow-2xl p-2 w-full max-w-md flex flex-col items-center gap-4">
+            
+            <div class="w-full bg-gray-900 p-1 rounded-xl border border-gray-600 flex flex-col gap-2 -mt-3">
+                <label class="text-xs text-gray-400 font-bold uppercase">Digite a Cartela para Conferir:</label>
+                <div class="flex gap-2">
+                    <input type="number" id="input-auditoria" class="w-full bg-black border-2 border-blue-500 rounded p-0 -mt-2 text-white font-black text-xl text-center focus:outline-none focus:border-yellow-400" placeholder="000">
+                    <button onclick="validarCartelaAuditoria()" class="bg-blue-700 hover:bg-blue-500 text-white font-bold px-4  rounded text-xl shadow-lg">OK</button>
+                </div>
+            </div>
+
+            <div id="auditoria-resultado" class="w-full hidden flex-col gap-2">
+                
+                <div class="text-center border-b border-gray-700 -mt-3 pb-2">
+                    <p id="conf-msg" class="text-lg font-bold text-white animate-pulse">...</p>
+                    <span id="conf-info" class="text-sm font-bold text-blue-300 block">#000 - Nome</span>
+                </div>
+
+                <div id="conf-grid" class="flex flex-col gap-2 bg-black p-2 -mt-2  rounded-lg border border-gray-600"></div>
+
+                <button id="btn-confirmar-ganhador" onclick="confirmarGanhadorAtual()" class="hidden w-full bg-green-700 hover:bg-green-500 text-white font-bold py-3 rounded-lg shadow-lg uppercase tracking-wide flex items-center justify-center gap-2 -mt-1">
+                    <span>🏆</span> CONFIRMAR GANHADOR
+                </button>
+            </div>
+
+            <div class="w-full bg-gray-900 rounded p-2 -mt-3 border border-gray-700">
+                <p class="text-[10px] text-gray-500 uppercase mb-1">Confirmados nesta rodada:</p>
+                <div id="lista-auditoria-session" class="flex flex-wrap gap-2 text-xs font-mono text-yellow-500 h-10 overflow-y-auto">
+                    </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="config.js"></script> 
+    <script src="admin.js"></script>
+
+</body>
+</html>
