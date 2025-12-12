@@ -1,13 +1,13 @@
-//const API_BASE_URL = 'https://orca-app-dp256.ondigitalocean.app';
-//const WS_URL = 'https://orca-app-dp256.ondigitalocean.app';
+const API_BASE_URL = 'https://orca-app-dp256.ondigitalocean.app';
+const WS_URL = 'https://orca-app-dp256.ondigitalocean.app';
 
 // acre
 //const API_BASE_URL = 'http://38.43.105.229:3001';
 //const WS_URL = 'ws://38.43.105.229:3001';
 
 // note p2
-const API_BASE_URL = 'http://192.168.1.147:3001';
-const WS_URL = 'ws://192.168.1.147:3001';
+//const API_BASE_URL = 'http://192.168.1.147:3001';
+//const WS_URL = 'ws://192.168.1.147:3001';
 //const API_BASE_URL = 'http://192.168.0.14:3001';
 //const WS_URL = 'ws://192.168.0.14:3001';
 
