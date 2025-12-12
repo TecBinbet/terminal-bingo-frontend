@@ -201,6 +201,7 @@ def connect_main_db():
             print(f"❌ Erro fatal ao conectar ao MongoDB: {e}")
             sys.exit(1)
 
+
 # --- FUNÇÃO GENÉRICA DE BUSCA DE DADOS ---
 def fetch_data():
     """Busca dados ou do JSON Local ou do MongoDB, dependendo do modo."""
@@ -208,6 +209,7 @@ def fetch_data():
         return fetch_data_from_local_files()
     else:
         return fetch_data_from_mongodb()
+
 
 def fetch_data_from_local_files():
     try:
@@ -226,33 +228,58 @@ def fetch_data_from_local_files():
         parametros = load_json('parametros')
         melhores = load_json('melhores')
         
-        # Ganhadores (Processamento)
-        ganhadores_raw = load_json('osganhadores')
-        ganhadores_dict = {}
-        for g in ganhadores_raw:
-            k = f"{g.get('premio')}|{g.get('valor_total_premio')}"
-            if k not in ganhadores_dict:
-                ganhadores_dict[k] = {"premio": g.get('premio'), "valor": g.get('valor_total_premio'), "ganhadores": []}
-            ganhadores_dict[k]["ganhadores"].append({"cartela": g.get('cartela'), "nome": g.get('nome'), "valor_rateio": g.get('valor_rateio')})
-        ganhadores_proc = list(ganhadores_dict.values())
+        # --- PROCESSAMENTO DE GANHADORES (Auxiliar para evitar repetição) ---
+        def processar_lista(raw_list):
+            g_dict = {}
+            for g in raw_list:
+                # Agrupa por Prêmio + Valor
+                k = f"{g.get('premio')}|{g.get('valor_total_premio')}"
+                if k not in g_dict:
+                    g_dict[k] = {
+                        "premio": g.get('premio'), 
+                        "valor": g.get('valor_total_premio'), 
+                        "ganhadores": []
+                    }
+                g_dict[k]["ganhadores"].append({
+                    "cartela": g.get('cartela'), 
+                    "nome": g.get('nome'), 
+                    "valor_rateio": g.get('valor_rateio')
+                })
+            return list(g_dict.values())
+
+        # 1. LISTA PARA O TERMINAL (PÓS-JOGO)
+        # Lê do arquivo 'osganhadores.json' (histórico fechado)
+        ganhadores_terminal_raw = load_json('osganhadores')
+        lista_terminal = processar_lista(ganhadores_terminal_raw)
+
+        # 2. LISTA PARA A MESA ADMIN (TEMPO REAL)
+        # Lê do arquivo 'ganhadores.json' (lista dinâmica do jogo atual)
+        ganhadores_live_raw = load_json('ganhadores')
+        lista_live = processar_lista(ganhadores_live_raw)
         
-        print(f"ganhadores_proc    :   {ganhadores_proc}")
+        # Debug opcional
+        # print(f"Live: {len(lista_live)} | Terminal: {len(lista_terminal)}")
+
         # Processa Prêmios para exibir no frontend
         premio_data, tope_data, card_ranges, premio_info = process_prizes(premio_raw)
         
         param_doc = parametros[0] if parametros else {}
         if 'tipo_entrada_de_cartelas' not in param_doc: param_doc['tipo_entrada_de_cartelas'] = 1
-
         return {
             'bolasData': bolas, 'buscandoData': buscando, 'premioData': premio_data,
             'premioInfo': premio_info, 'rodadaData': rodada, 'confereData': confere,
             'topeData': tope_data, 'cardRanges': card_ranges, 'promocionalData': [],
-            'parametrosInfo': param_doc, 'melhoresData': melhores, 'ganhadoresData': ganhadores_proc
+            'parametrosInfo': param_doc, 'melhoresData': melhores,
+            
+            # --- RETORNA AS DUAS LISTAS SEPARADAS ---
+            'ganhadoresData': lista_terminal,  # Terminal (osganhadores)
+            'ganhadoresLive': lista_live       # Admin (ganhadores)
         }
     except Exception as e:
         print(f"Erro local: {e}")
         return {}
 
+# aqui
 def fetch_data_from_mongodb():
     global db
     if db is None: return {}
@@ -270,14 +297,28 @@ def fetch_data_from_mongodb():
         confere = clean(db.confere.find({}))
         parametros = clean(db.parametros.find({}))
         melhores = list(db['melhores'].find({}, {'_id':0}).sort('id_posicao', 1).limit(25))
-        ganhadores_raw = list(db.osganhadores.find({}))        
-        ganhadores_dict = {}
-        for g in ganhadores_raw:
+        
+        # --- 1. LISTA PARA O TERMINAL (PÓS-JOGO) ---
+        ganhadores_terminal_raw = list(db.osganhadores.find({}))        
+        ganhadores_terminal_dict = {}
+        for g in ganhadores_terminal_raw:
             k = f"{g.get('premio')}|{g.get('valor_total_premio')}"
-            if k not in ganhadores_dict:
-                ganhadores_dict[k] = {"premio": g.get('premio'), "valor": g.get('valor_total_premio'), "ganhadores": []}
-            ganhadores_dict[k]["ganhadores"].append({"cartela": g.get('cartela'), "nome": g.get('nome'), "valor_rateio": g.get('valor_rateio')})
-        ganhadores_proc = list(ganhadores_dict.values())
+            if k not in ganhadores_terminal_dict:
+                ganhadores_terminal_dict[k] = {"premio": g.get('premio'), "valor": g.get('valor_total_premio'), "ganhadores": []}
+            ganhadores_terminal_dict[k]["ganhadores"].append({"cartela": g.get('cartela'), "nome": g.get('nome'), "valor_rateio": g.get('valor_rateio')})
+        
+        lista_terminal = list(ganhadores_terminal_dict.values())
+
+        # --- 2. LISTA PARA A MESA ADMIN (TEMPO REAL) ---
+        ganhadores_live_raw = list(db.ganhadores.find({}))
+        ganhadores_live_dict = {}
+        for g in ganhadores_live_raw:
+            k = f"{g.get('premio')}|{g.get('valor_total_premio')}"
+            if k not in ganhadores_live_dict:
+                ganhadores_live_dict[k] = {"premio": g.get('premio'), "valor": g.get('valor_total_premio'), "ganhadores": []}
+            ganhadores_live_dict[k]["ganhadores"].append({"cartela": g.get('cartela'), "nome": g.get('nome'), "valor_rateio": g.get('valor_rateio')})
+            
+        lista_live = list(ganhadores_live_dict.values())
         
         premio_data, tope_data, card_ranges, premio_info = process_prizes(premios_raw)
 
@@ -288,11 +329,19 @@ def fetch_data_from_mongodb():
             'bolasData': bolas, 'buscandoData': buscando, 'premioData': premio_data,
             'premioInfo': premio_info, 'rodadaData': rodada, 'confereData': confere,
             'topeData': tope_data, 'cardRanges': card_ranges, 'promocionalData': [],
-            'parametrosInfo': param_doc, 'melhoresData': melhores, 'ganhadoresData': ganhadores_proc
+            'parametrosInfo': param_doc, 'melhoresData': melhores, 
+            
+            # ENVIA AS DUAS LISTAS
+            'ganhadoresData': lista_terminal, 
+            'ganhadoresLive': lista_live       
         }
     except Exception as e:
-        print(f"Erro Mongo: {e}")
+        # AQUI VAMOS PEGAR SE HOUVE ERRO SILENCIOSO
+        print(f"❌ ERRO FATAL EM FETCH_DATA: {e}")
+        import traceback
+        traceback.print_exc()
         return {}
+
 
 
 def process_prizes(premios_raw):
@@ -931,7 +980,6 @@ def admin_definir_premio():
         return jsonify({'error': str(e)}), 500
 
 
-# --- FUNÇÃO CORRIGIDA PARA RESPEITAR A ORDEM DAS LINHAS ---
 # --- FUNÇÃO CORRIGIDA E BLINDADA: VALIDAR CARTELA ---
 @app.route('/api/admin/validar_cartela', methods=['POST'])
 def admin_validar_cartela():

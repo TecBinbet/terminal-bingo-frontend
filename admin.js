@@ -278,7 +278,17 @@ function processarMensagemWS(event) {
             if (modal && modal.classList.contains('hidden')) preencherModalConfig(configuracaoServer);
         }
 
-        if (payload.ganhadoresData) renderListaGanhadores(payload.ganhadoresData);
+
+        if (payload.ganhadoresLive && payload.ganhadoresLive.length > 0) {
+           // Se vier lista ao vivo, usa ela (Prioridade da Mesa)
+            console.error("passo 1");
+            renderListaGanhadores(payload.ganhadoresLive);
+        } else if (payload.ganhadoresData && payload.ganhadoresLive === undefined) {
+           // Só usa a lista histórica se NÃO vier a live (ex: no reset)
+           // Isso evita que a lista vazia do 'ganhadoresData' limpe a tela durante o jogo
+           console.error("passo 2"); 
+           renderListaGanhadores(payload.ganhadoresData);
+        }
 
         if (payload.melhoresData) {
             let tipoPremioBuscado = "BINGO";
@@ -666,30 +676,36 @@ function aplicarVisualModoSorteio(modo) {
     else { cd.classList.remove('hidden'); cm.classList.add('hidden'); }
 }
 
+// --- FUNÇÃO CORRIGIDA: CARREGAR EVENTO (FECHA MENU E MODAL) ---
 async function carregarEvento(idEvento) {
     const confirmou = await customConfirm(`Deseja carregar os dados do Evento ID: ${idEvento}?`);
     if(!confirmou) return;
+    
+    // 1. LIMPEZA DE INTERFACE (Ajuste Solicitado)
     fecharModal('modal-eventos');
+    
+    // Força o fechamento do menu lateral (sem usar toggle para não correr risco de abrir)
+    const menu = document.getElementById('admin-side-menu');
+    const menuOverlay = document.getElementById('admin-menu-overlay');
+    if (menu) menu.classList.add('-translate-x-full'); // Esconde o menu
+    if (menuOverlay) menuOverlay.classList.add('hidden'); // Esconde o fundo escuro
+
+    // 2. INICIA LOADING
+    showLoading("Carregando evento e configurações...");
+
     try {
         await fetch(`${API_BASE_URL}/api/admin/resetar`, { method: 'POST' });
         const response = await fetch(`${API_BASE_URL}/api/admin/detalhes_evento?id_evento=${idEvento}`);
         const dados = await response.json();
 
-        // --- VERIFICAÇÃO BLINDADA ---
-        // Verifica se deu erro HTTP (ex: 400) OU se o JSON tem a chave 'error'
         if (!response.ok || dados.error) { 
             const msgErro = dados.error || "Erro desconhecido ao carregar evento.";
             customAlert("⛔ " + msgErro); 
-            
-            // Garante que o modal de eventos não feche ou reabra se tiver fechado
+            // Se der erro, reabre o modal de eventos para tentar outro
             const modalEventos = document.getElementById('modal-eventos');
             if(modalEventos) modalEventos.classList.remove('hidden');
-            
-            return; // PARA TUDO AQUI
+            return; 
         }
-
-        // SE DEU TUDO CERTO, AGORA SIM FECHA E CARREGA
-        fecharModal('modal-eventos');
        
         dadosEventoAtual = dados; 
         document.getElementById('painel-evento-ativo').classList.remove('hidden');
@@ -732,8 +748,15 @@ async function carregarEvento(idEvento) {
             const iniciarRobo = await customConfirm("⚙️ Configuração de Sorteio Automatizado detectada!\n\nDeseja iniciar o modo ROBÔ agora?");
             if (iniciarRobo) iniciarModoRobo();
         }
-    } catch (e) { console.error(e); customAlert("Erro ao carregar detalhes."); }
+    } catch (e) { 
+        console.error(e); 
+        customAlert("Erro ao carregar detalhes."); 
+    } finally {
+        // 3. REMOVE LOADING (SEMPRE)
+        hideLoading();
+    }
 }
+
 
 async function definirProximoPremioAutomatico() {
     if (!dadosEventoAtual || !dadosEventoAtual.premios) return;
@@ -833,6 +856,7 @@ function renderRanking(lista, tipo) {
 function renderListaGanhadores(data) {
     const c = document.getElementById('lista-ganhadores'); if(!c) return; c.innerHTML = '';
     const count = document.getElementById('count-ganhadores');
+
     if (!data || data.length === 0) { c.innerHTML = '<span class="text-gray-600 text-center italic mt-2">Nenhum.</span>'; if(count) count.textContent="0"; return; }
     let total = 0;
     data.forEach(g => {
@@ -876,14 +900,17 @@ function abrirSessaoAuditoria(modoSilencioso = false) {
     }
 }
 
-// --- FUNÇÃO CORRIGIDA: VALIDAR CARTELA (ESCONDE BOTÃO SE NÃO FOR WIN) ---
+// --- FUNÇÃO CORRIGIDA: VALIDAR CARTELA (COM LOADING) ---
 async function validarCartelaAuditoria() {
     const input = document.getElementById('input-auditoria');
     const cartela = input.value;
-    const btnConfirmar = document.getElementById('btn-confirmar-ganhador'); // Referência ao botão
+    const btnConfirmar = document.getElementById('btn-confirmar-ganhador');
 
     if(!cartela) return;
     
+    // 1. INICIA LOADING
+    showLoading("Conferindo cartela...");
+
     try {
         const response = await fetch(`${API_BASE_URL}/api/admin/validar_cartela`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cartela: cartela })
@@ -896,11 +923,9 @@ async function validarCartelaAuditoria() {
         const msgLabel = document.getElementById('conf-msg');
         
         if (data.status_code === 'WIN') {
-            // --- CENÁRIO DE VITÓRIA ---
             msgLabel.textContent = `✅ ${data.msg}`;
             msgLabel.className = "text-xl font-black text-green-400 animate-pulse";
             
-            // Só mostra o botão se NÃO estiver no modo robô
             if (!modoRoboAtivo) {
                 btnConfirmar.classList.remove('hidden'); 
                 btnConfirmar.onclick = () => confirmarGanhadorAtual(); 
@@ -909,18 +934,12 @@ async function validarCartelaAuditoria() {
                 btnConfirmar.classList.add('hidden');
             }
         } else {
-            // --- CENÁRIO DE DERROTA OU ERRO (CORREÇÃO AQUI) ---
             msgLabel.textContent = `❌ ${data.msg}`;
-            
-            // Define cor baseada no tipo de erro
-            if (data.status_code === 'NOT_SOLD') msgLabel.className = "text-xl font-black text-yellow-500"; // Não vendida
-            else msgLabel.className = "text-xl font-black text-red-400"; // Perdeu ou Erro
-            
-            // GARANTE QUE O BOTÃO FIQUE OCULTO
+            if (data.status_code === 'NOT_SOLD') msgLabel.className = "text-xl font-black text-yellow-500";
+            else msgLabel.className = "text-xl font-black text-red-400";
             btnConfirmar.classList.add('hidden');
         }
 
-        // Desenha o Grid (se houver layout)
         const grid = document.getElementById('conf-grid');
         grid.innerHTML = '';
         if (data.layout) {
@@ -940,8 +959,12 @@ async function validarCartelaAuditoria() {
     } catch (e) { 
         console.error(e);
         customAlert("Erro de conexão ao validar."); 
+    } finally {
+        // 2. REMOVE LOADING (SEMPRE)
+        hideLoading();
     }
 }
+
 
 // --- FUNÇÃO CORRIGIDA: CONFIRMAR GANHADOR (LISTA VISUAL) ---
 async function confirmarGanhadorAtual() {
