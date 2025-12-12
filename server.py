@@ -93,12 +93,22 @@ def carregar_cache_evento(id_evento, sales_db):
     global CACHE_JOGO, db
     print(f"🚀 Iniciando carregamento em memória do Evento {id_evento}...")
     
+    # Reseta estado inicial
     CACHE_JOGO['ativo'] = False
     CACHE_JOGO['cartelas'] = []
 
     try:
         # 1. Busca Vendas
-        col_vendas = sales_db[f"vendas{id_evento}"]
+        nome_col = f"vendas{id_evento}"
+        if nome_col not in sales_db.list_collection_names():
+             print(f"⚠️ Coleção '{nome_col}' não existe no banco de vendas.")
+             # Mesmo sem coleção, marcamos como ativo (vazio) para não travar o ranking
+             CACHE_JOGO['ativo'] = True
+             db.melhores.delete_many({}) # Limpa ranking antigo
+             return
+
+        col_vendas = sales_db[nome_col]
+        
         # Projeção otimizada
         cursor_vendas = col_vendas.find({}, {
             'numero_inicial':1, 'numero_final':1, 
@@ -107,8 +117,7 @@ def carregar_cache_evento(id_evento, sales_db):
         })
 
         mapa_vendas = {} # cartela_id -> nome
-        count_vendas = 0
-
+        
         for v in cursor_vendas:
             nome = v.get('nome_cliente', '---')
             # Faixa 1
@@ -121,13 +130,16 @@ def carregar_cache_evento(id_evento, sales_db):
                     mapa_vendas[c] = nome
         
         count_vendas = len(mapa_vendas)
+        print(f"📋 Vendas encontradas no banco: {count_vendas} cartelas.")
+
         if count_vendas == 0:
-            print("⚠️ Nenhuma cartela vendida encontrada.")
+            print("⚠️ Evento sem cartelas vendidas (ou erro de leitura).")
+            CACHE_JOGO['ativo'] = True # <--- CORREÇÃO: Marca como ativo mesmo vazio
+            db.melhores.delete_many({})
             return
 
-        # 2. Busca Layouts no Banco Principal (Em lotes para não estourar memória se for gigante)
+        # 2. Busca Layouts no Banco Principal
         ids = list(mapa_vendas.keys())
-        # Busca layouts onde 'cartao' está na lista de IDs vendidos
         cursor_cartelas = db.cartelas.find({'cartao': {'$in': ids}})
 
         lista_cache = []
@@ -135,7 +147,6 @@ def carregar_cache_evento(id_evento, sales_db):
         for doc in cursor_cartelas:
             c_id = doc.get('cartao')
             
-            # Helper para converter string "1, 2, 3" em Set Python {1, 2, 3} (Muito rápido para calcular)
             def to_set(val):
                 if isinstance(val, str) and val:
                     return set(map(int, val.replace(' ', '').split(',')))
@@ -146,7 +157,6 @@ def carregar_cache_evento(id_evento, sales_db):
             cen = to_set(doc.get('central'))
             inf = to_set(doc.get('inferior'))
             
-            # Monta o objeto leve na memória
             lista_cache.append({
                 'id': c_id,
                 'nome': mapa_vendas.get(c_id, '---'),
@@ -154,17 +164,24 @@ def carregar_cache_evento(id_evento, sales_db):
                     'sup': sup,
                     'cen': cen,
                     'inf': inf,
-                    'geral': sup | cen | inf # União de todos
+                    'geral': sup | cen | inf 
                 }
             })
 
         CACHE_JOGO['cartelas'] = lista_cache
         CACHE_JOGO['ativo'] = True
-        print(f"✅ CACHE CARREGADO: {len(lista_cache)} cartelas prontas para cálculo em memória.")
+        print(f"✅ CACHE CARREGADO: {len(lista_cache)} cartelas na memória.")
+        
+        # Força cálculo inicial
+        #print("🔄 Executando cálculo inicial do Ranking...")
+        recalcular_ranking_top10()
 
     except Exception as e:
         print(f"❌ Erro ao carregar cache: {e}")
-        CACHE_JOGO['ativo'] = False
+        import traceback
+        traceback.print_exc()
+        CACHE_JOGO['ativo'] = False # Só marca false se der erro grave de código
+
 
 
 # --- CONEXÃO BANCO PRINCIPAL ---
@@ -218,7 +235,8 @@ def fetch_data_from_local_files():
                 ganhadores_dict[k] = {"premio": g.get('premio'), "valor": g.get('valor_total_premio'), "ganhadores": []}
             ganhadores_dict[k]["ganhadores"].append({"cartela": g.get('cartela'), "nome": g.get('nome'), "valor_rateio": g.get('valor_rateio')})
         ganhadores_proc = list(ganhadores_dict.values())
-
+        
+        print(f"ganhadores_proc    :   {ganhadores_proc}")
         # Processa Prêmios para exibir no frontend
         premio_data, tope_data, card_ranges, premio_info = process_prizes(premio_raw)
         
@@ -252,9 +270,7 @@ def fetch_data_from_mongodb():
         confere = clean(db.confere.find({}))
         parametros = clean(db.parametros.find({}))
         melhores = list(db['melhores'].find({}, {'_id':0}).sort('id_posicao', 1).limit(25))
-
-        # Ganhadores
-        ganhadores_raw = list(db.osganhadores.find({}))
+        ganhadores_raw = list(db.osganhadores.find({}))        
         ganhadores_dict = {}
         for g in ganhadores_raw:
             k = f"{g.get('premio')}|{g.get('valor_total_premio')}"
@@ -262,7 +278,7 @@ def fetch_data_from_mongodb():
                 ganhadores_dict[k] = {"premio": g.get('premio'), "valor": g.get('valor_total_premio'), "ganhadores": []}
             ganhadores_dict[k]["ganhadores"].append({"cartela": g.get('cartela'), "nome": g.get('nome'), "valor_rateio": g.get('valor_rateio')})
         ganhadores_proc = list(ganhadores_dict.values())
-
+        
         premio_data, tope_data, card_ranges, premio_info = process_prizes(premios_raw)
 
         param_doc = parametros[0] if parametros else {}
@@ -277,6 +293,7 @@ def fetch_data_from_mongodb():
     except Exception as e:
         print(f"Erro Mongo: {e}")
         return {}
+
 
 def process_prizes(premios_raw):
     premio_data = []
@@ -352,199 +369,172 @@ def broadcast(data):
 
 def recalcular_ranking_top10():
     """
-    Versão Final v3:
-    1. BLACKLIST DE LINHAS: Se 'Sup' já saiu, o sistema IGNORA o cálculo da superior para todos.
-    2. BLACKLIST DE GANHADORES: Quem já ganhou sai do ranking.
-    3. CORREÇÃO VISUAL: Bingo retorna posição vazia "".
+    Versão Inteligente: 
+    1. Ignora linhas (Sup/Cen/Inf) que JÁ foram ganhas na rodada.
+    2. Se todas as linhas saírem, mostra distância para Bingo.
+    3. Mantém formatação de string e correção da Quadra.
     """
     global db, CACHE_JOGO
     
-    if not CACHE_JOGO['ativo'] or not CACHE_JOGO['cartelas']:
+    # print("🔄 [RANKING] Iniciando cálculo...")
+
+    if not CACHE_JOGO['ativo']: return
+    if not CACHE_JOGO['cartelas']:
+        db.melhores.delete_many({})
         return
 
     try:
-        # 1. Dados do Jogo
-        dados_bolas = db.bolas.find_one({})
-        if not dados_bolas: return
-
-        rodada_atual = dados_bolas.get('rodada', 0)
+        dados_bolas = db.bolas.find_one({}) or {}
         bolas_cantadas = set(dados_bolas.get('bolas_cantadas', []))
         
         dados_premio = db.buscando.find_one({}) or {}
         premio_buscado = dados_premio.get('buscando_o_premio', 'BINGO').upper()
-        
-        estamos_buscando_quadra   = 'QUADRA' in premio_buscado
-        estamos_buscando_linha    = 'LINHA' in premio_buscado
-        estamos_buscando_falta_um = 'FALTA' in premio_buscado
-        estamos_buscando_duplo    = 'DUPLO' in premio_buscado or 'SEGUNDO' in premio_buscado
+        linhas_config = dados_premio.get('buscando_a_linha', '') 
 
-        # --- 2. MAPA DE GANHADORES E LINHAS MORTAS ---
-        todos_ganhadores = list(db.ganhadores.find({}, {'cartela': 1, 'premio': 1, 'linha_ganha_tag': 1}))
+        busca_quadra   = 'QUADRA' in premio_buscado
+        busca_linha    = 'LINHA' in premio_buscado
+        busca_falta_um = 'FALTA' in premio_buscado
+        busca_duplo    = 'DUPLO' in premio_buscado or 'SEGUNDO' in premio_buscado
         
-        ids_ja_ganharam_bingo = set()
-        ids_ja_ganharam_linha = set()
-        
-        # Identifica quais linhas (posições) JÁ FORAM CONFIRMADAS
-        # Ex: Se alguém ganhou 'Sup', adicionamos 'Sup' aqui.
-        linhas_mortas = set() 
-
-        for g in todos_ganhadores:
-            try: c_id = int(g.get('cartela'))
-            except: continue
+        # --- NOVO: IDENTIFICA LINHAS JÁ GANHAS ---
+        linhas_ja_ganhas = set()
+        if busca_linha:
+            # Busca ganhadores desta rodada que ganharam LINHA
+            rodada_atual = db.rodada.find_one({})
+            id_rodada = rodada_atual.get('id_evento') if rodada_atual else 0
             
-            p_nome = g.get('premio', '').upper()
-            tag_linha = g.get('linha_ganha_tag', '') # Vem do backend como 'Sup', 'Cen', etc
-
-            if 'BINGO' in p_nome and 'DUPLO' not in p_nome:
-                ids_ja_ganharam_bingo.add(c_id)
+            # ATENÇÃO: É importante que o 'admin_validar_cartela' esteja salvando 'linha_ganha_tag'
+            # Se não tiver ID de rodada na tabela ganhadores, assume todos (cuidado se não limpar tabela)
+            ganhadores_linha = db.ganhadores.find({'premio': {'$regex': 'LINHA'}})
             
-            if 'LINHA' in p_nome:
-                ids_ja_ganharam_linha.add(c_id)
-                if tag_linha:
-                    linhas_mortas.add(tag_linha) # Ex: Adiciona 'Sup' nas mortas
+            for g in ganhadores_linha:
+                tag = g.get('linha_ganha_tag') # Esperado: 'Sup', 'Cen', 'Inf'
+                if tag: linhas_ja_ganhas.add(tag)
+        # -----------------------------------------
+
+        # Mapa de Ganhadores Gerais (Bingo)
+        ids_vencedores_bingo = set()
+        if busca_duplo:
+            vencedores = db.ganhadores.find({'premio': {'$regex': 'BINGO', '$options': 'i'}})
+            for v in vencedores:
+                if 'DUPLO' not in (v.get('premio') or '').upper():
+                    try: ids_vencedores_bingo.add(int(v['cartela']))
+                    except: pass
 
         resultados = []
 
-        # 3. LOOP NA MEMÓRIA
         for item in CACHE_JOGO['cartelas']:
-            c_id = int(item['id'])
-
-            # Filtros de exclusão de cartela
-            if estamos_buscando_duplo and c_id in ids_ja_ganharam_bingo: continue
-            if estamos_buscando_linha and c_id in ids_ja_ganharam_linha: continue
+            c_id = item['id']
+            if c_id in ids_vencedores_bingo: continue
 
             layout = item['layout']
             
-            # --- CÁLCULO INTELIGENTE (IGNORA LINHAS MORTAS) ---
-            # Se a linha 'Sup' está morta, definimos missing como um set gigante para nunca ganhar no min()
-            # ou simplesmente ignoramos na lógica abaixo.
-            
-            # Conjuntos reais
-            real_sup = layout['sup'] - bolas_cantadas
-            real_cen = layout['cen'] - bolas_cantadas
-            real_inf = layout['inf'] - bolas_cantadas
-            
-            # Conjuntos para cálculo de ranking (Filtra Mortas)
-            # Se 'Sup' está na lista de mortas, fingimos que falta muito (99) ou ignoramos
-            missing_sup = real_sup if 'Sup' not in linhas_mortas else set(range(1000, 1099))
-            missing_cen = real_cen if 'Cen' not in linhas_mortas else set(range(2000, 2099))
-            missing_inf = real_inf if 'Inf' not in linhas_mortas else set(range(3000, 3099))
-
-            missing_geral = real_sup | real_cen | real_inf # Para Bingo, usa os reais
-            
-            # Contagens Reais (para saber se bateu agora)
-            c_sup_real = len(real_sup)
-            c_cen_real = len(real_cen)
-            c_inf_real = len(real_inf)
-            c_geral = len(missing_geral)
-
-            melhor_faltam_lista = sorted(list(missing_geral))
-            linha_destaque = ""
-            msg_destaque = "" 
-
-            # --- LÓGICA DE DECISÃO ---
-            
-            # 1. BINGO / DUPLO
-            if c_geral == 0:
-                msg_destaque = "DUPLO BINGO" if estamos_buscando_duplo else "BINGO"
-                linha_destaque = "" 
-
-            # 2. FALTA UM
-            elif c_geral == 1 and estamos_buscando_falta_um:
-                msg_destaque = "FALTA UM"
-                # Lógica visual apenas
-                if c_sup_real == 1 and c_cen_real > 1 and c_inf_real > 1: linha_destaque = "Sup"
-                elif c_cen_real == 1 and c_sup_real > 1 and c_inf_real > 1: linha_destaque = "Cen"
-                elif c_inf_real == 1 and c_sup_real > 1 and c_cen_real > 1: linha_destaque = "Inf"
-
-            # 3. LINHA (Aqui usamos a checagem com linhas mortas implícita)
-            # Só avisa LINHA se a linha específica AINDA NÃO MORREU ('Sup' not in linhas_mortas)
-            elif estamos_buscando_linha:
-                bateu_linha = False
-                if c_sup_real == 0 and 'Sup' not in linhas_mortas:
-                    msg_destaque = "LINHA"; linha_destaque = "Sup"; bateu_linha = True
-                elif c_cen_real == 0 and 'Cen' not in linhas_mortas:
-                    msg_destaque = "LINHA"; linha_destaque = "Cen"; bateu_linha = True
-                elif c_inf_real == 0 and 'Inf' not in linhas_mortas:
-                    msg_destaque = "LINHA"; linha_destaque = "Inf"; bateu_linha = True
+            # Lógica Condicional de Linhas
+            if busca_linha or busca_quadra:
+                f_sup = layout['sup'] - bolas_cantadas
+                f_cen = layout['cen'] - bolas_cantadas
+                f_inf = layout['inf'] - bolas_cantadas
                 
-                if bateu_linha:
-                    melhor_faltam_lista = []
+                opcoes = []
+                
+                # SÓ ADICIONA A OPÇÃO SE A LINHA AINDA NÃO FOI GANHA
+                # (Ou se for Quadra, que não trava linha)
+                
+                # Linha Superior
+                if (not linhas_config or 'SUP' in linhas_config.upper()):
+                    if busca_quadra or 'Sup' not in linhas_ja_ganhas:
+                        opcoes.append({'tag': 'Sup', 'set': f_sup})
 
-            # 4. QUADRA
-            elif estamos_buscando_quadra:
-                if c_sup_real == 1:
-                    msg_destaque = "QUADRA"; linha_destaque = "Sup"; melhor_faltam_lista = sorted(list(real_sup))
-                elif c_cen_real == 1:
-                    msg_destaque = "QUADRA"; linha_destaque = "Cen"; melhor_faltam_lista = sorted(list(real_cen))
-                elif c_inf_real == 1:
-                    msg_destaque = "QUADRA"; linha_destaque = "Inf"; melhor_faltam_lista = sorted(list(real_inf))
+                # Linha Central
+                if (not linhas_config or 'CEN' in linhas_config.upper()):
+                    if busca_quadra or 'Cen' not in linhas_ja_ganhas:
+                        opcoes.append({'tag': 'Cen', 'set': f_cen})
+
+                # Linha Inferior
+                if (not linhas_config or 'INF' in linhas_config.upper()):
+                    if busca_quadra or 'Inf' not in linhas_ja_ganhas:
+                        opcoes.append({'tag': 'Inf', 'set': f_inf})
+                
+                # --- FALLBACK IMPORTANTE ---
+                # Se 'opcoes' estiver vazio, significa que TODAS as linhas buscadas já foram ganhas.
+                # Nesse caso, o sistema deve mostrar a distância para o BINGO (Cartela Cheia)
+                # para não travar o ranking nem ficar dando alerta falso.
+                if not opcoes and busca_linha:
+                    faltam = layout['geral'] - bolas_cantadas
+                    tag_posicao = "" # Sem posição, pois é geral
+                    # Força modo Bingo visualmente no ranking
+                    busca_linha_temporaria = False 
+                else:
+                    # Segue normal
+                    if not opcoes: # Fallback de erro (se config vier errada)
+                         opcoes = [{'tag': 'Geral', 'set': layout['geral'] - bolas_cantadas}]
+                    
+                    melhor = min(opcoes, key=lambda x: len(x['set']))
+                    faltam = melhor['set']
+                    tag_posicao = melhor['tag']
+                    busca_linha_temporaria = True
+
+            else:
+                # Bingo/Duplo/FaltaUm
+                faltam = layout['geral'] - bolas_cantadas
+                tag_posicao = "" 
+                busca_linha_temporaria = False
+
+            qtde_falta = len(faltam)
+            msg_premio = ""
             
-            # 5. CASO PADRÃO (Ordenação)
-            if not msg_destaque:
-                 opts = []
-                 if estamos_buscando_linha or estamos_buscando_quadra:
-                     # Aqui usamos os sets 'missing_' que já estão filtrados/penalizados se a linha morreu
-                     # Se 'Sup' morreu, o len(missing_sup) será gigante (100), então o min() nunca escolherá ele.
-                     opts = [
-                        {'tag': 'Sup', 'missing': missing_sup, 'real': real_sup},
-                        {'tag': 'Cen', 'missing': missing_cen, 'real': real_cen},
-                        {'tag': 'Inf', 'missing': missing_inf, 'real': real_inf}
-                     ]
-                     # Escolhe o melhor baseado no missing (que contem a penalidade)
-                     melhor = min(opts, key=lambda x: len(x['missing']))
-                     # Mas na hora de mostrar, mostra os números reais
-                     melhor_faltam_lista = sorted(list(melhor['real']))
-                     linha_destaque = melhor['tag']
-                     
-                     # Se a melhor opção ainda for gigante (todas as linhas mortas), limpa
-                     if len(melhor['missing']) > 90:
-                         melhor_faltam_lista = sorted(list(missing_geral)) # Fallback
-                         linha_destaque = ""
-                 else:
-                     opts = [{'tag': '', 'missing': missing_geral}]
-                     melhor = min(opts, key=lambda x: len(x['missing']))
-                     melhor_faltam_lista = sorted(list(melhor['missing']))
-                     linha_destaque = melhor['tag']
+            # Lógica de Status
+            if qtde_falta == 0:
+                if busca_quadra: msg_premio = "QUADRA"
+                elif busca_linha and busca_linha_temporaria: msg_premio = "LINHA"
+                elif busca_duplo: msg_premio = "DUPLO BINGO"
+                else: msg_premio = "BINGO" # Cai aqui se as linhas acabaram
+            
+            elif qtde_falta == 1:
+                if busca_quadra: msg_premio = "QUADRA"
+                elif busca_falta_um: msg_premio = "FALTA UM"
 
             resultados.append({
                 'cartela': c_id,
                 'nome': item['nome'],
-                'faltam_lista': melhor_faltam_lista, 
-                'qtde': 0 if msg_destaque else len(melhor_faltam_lista), 
-                'posicao_temp': linha_destaque,
-                'msg_destaque': msg_destaque
+                'numeros_faltantes': sorted(list(faltam)),
+                'qtde': qtde_falta,
+                'posicao': tag_posicao,
+                'premio': msg_premio
             })
 
-        # 3. Ordena e Corta
         resultados.sort(key=lambda x: (x['qtde'], x['cartela']))
-        top_ranking = resultados[:10]
+        top_10 = resultados[:10]
 
-        # 4. Montagem Final
-        novos_registros = []
-        for i, r in enumerate(top_ranking):
-            pos_temp = str(r['posicao_temp'])
-            pos_final = pos_temp[:1] if pos_temp else ""
+        rodada_info = db.rodada.find_one({})
+        id_evento_ativo = rodada_info.get('id_evento', 0) if rodada_info else 0
 
-            registro_final = {
-                "rodada": int(rodada_atual),           
-                "id_posicao": int(i + 1),              
-                "cartela": str(r['cartela']),          
-                "posicao": pos_final, 
-                "numeros": list(r['faltam_lista']),    
-                "premio": str(r['msg_destaque']),
-                "nome": str(r['nome'])                 
-            }
-            if not registro_final["nome"]: registro_final["nome"] = "null"
-            if not registro_final["premio"]: registro_final["premio"] = "null"
-            novos_registros.append(registro_final)
+        novos_docs = []
+        for i, r in enumerate(top_10):
+            lista_original = r['numeros_faltantes']
+            string_numeros = ",".join(f"{n:02d}" for n in lista_original)
+            
+            pos_letra = r['posicao'][0] if r['posicao'] else ""
 
-        if novos_registros:
-            db.melhores.delete_many({"rodada": int(rodada_atual)}) 
-            db.melhores.insert_many(novos_registros)
-        
+            novos_docs.append({
+                "id_posicao": i + 1,
+                "cartela": str(r['cartela']),
+                "posicao": pos_letra,
+                "numeros": string_numeros, 
+                "numeros_faltantes": lista_original,
+                "premio": r['premio'],
+                "nome": r['nome'],
+                "rodada": int(id_evento_ativo)
+            })
+
+        db.melhores.delete_many({})
+        if novos_docs:
+            db.melhores.insert_many(novos_docs)
+
     except Exception as e:
-        print(f"Erro no cálculo em memória: {e}")
+        print(f"❌ [ERRO RANKING] {e}")
+        import traceback
+        traceback.print_exc()
 
 
 # --- ROTAS HTTP ---
@@ -562,8 +552,18 @@ def initial_data():
 
 @app.route('/api/melhores')
 def get_melhores():
-    d = fetch_data()
-    return jsonify(d.get('melhoresData', []))
+    # Verifica conexão
+    if db is None: return jsonify([])
+    
+    try:
+        # Busca OTIMIZADA: Vai direto na coleção 'melhores', sem carregar o resto do banco
+        # Sort 1 = Crescente (1º, 2º, 3º...)
+        melhores = list(db.melhores.find({}, {'_id': 0}).sort('id_posicao', 1).limit(25))
+        return jsonify(melhores)
+    except Exception as e:
+        print(f"Erro ao buscar melhores: {e}")
+        return jsonify([])
+
 
 @app.route('/api/version')
 def get_version(): return jsonify({'version': VERSION})
@@ -745,12 +745,61 @@ def admin_salvar_config():
     
     # Prepara o objeto de atualização
     update_fields = {}
+
+# --- 1. Nome da Sala de Sorteios ---
+    # Se vier vazio ou não existir, aplica o padrão "LIVE THE BET"
+    nome_sala_input = data.get('nome_sala')
+    if nome_sala_input and str(nome_sala_input).strip():
+        update_fields['nome_sala'] = str(nome_sala_input).strip()
+    else:
+        update_fields['nome_sala'] = "LIVE THE BET"
+
+
+    # --- 2. Controle de Vídeos YouTube ---
+    if 'url_padrao' in data:
+        update_fields['url_padrao'] = str(data['url_padrao']).strip()
+    
+    if 'url_live' in data:
+        update_fields['url_live'] = str(data['url_live']).strip()
+
+
+    # --- 3. Link do Banco de Dados de Vendas ---
+    # Se vier vazio, aplica a URL padrão do cluster tecbin_db_vendas
+    url_vendas_padrao = "mongodb+srv://tecbin_db_vendas:TecBin24@cluster0.blwq4du.mongodb.net/?appName=Cluster0"
+    url_vendas_input = data.get('url_mongo_vendas')
+    
+    if url_vendas_input and str(url_vendas_input).strip():
+        update_fields['url_mongo_vendas'] = str(url_vendas_input).strip()
+    else:
+        update_fields['url_mongo_vendas'] = url_vendas_padrao
+
+
+    # --- 4. Tipificação do Jogo Terminal Cliente ---
+    
+    # Tipo Sorteio (int32) - Padrão = 15
+    # Nota: A lógica de ler da tabela "eventos" deve ser feita no carregamento (GET). 
+    # Aqui no (POST/Gravação), salvamos o que vier ou o padrão 15.
+    try:
+        t_sorteio = int(data.get('tipo_sorteio', 15))
+        update_fields['tipo_sorteio'] = t_sorteio
+    except (ValueError, TypeError):
+        update_fields['tipo_sorteio'] = 15
+
+    # Tipo Entrada de Cartelas (int32) - Valores: 1 ou 2 (Padrão = 1)
+    try:
+        t_entrada = int(data.get('tipo_entrada_de_cartelas', 1))
+        # Validação extra: Só aceita 1 ou 2. Se for outro número, força 1.
+        if t_entrada not in [1, 2]:
+            t_entrada = 1
+        update_fields['tipo_entrada_de_cartelas'] = t_entrada
+    except (ValueError, TypeError):
+        update_fields['tipo_entrada_de_cartelas'] = 1
     
     # 1. Tempo Ganhador
     if 'tempo_ganhador' in data:
         try: update_fields['tempo_ganhador'] = int(data['tempo_ganhador'])
         except: pass
-        
+
     # 2. Modo de Sorteio ('auto' ou 'manual')
     if 'modo_sorteio' in data:
         update_fields['modo_sorteio'] = str(data['modo_sorteio'])
@@ -762,6 +811,10 @@ def admin_salvar_config():
     # 4. Câmera Ativa (Boolean)
     if 'camera_ativa' in data:
         update_fields['camera_ativa'] = bool(data['camera_ativa'])
+
+    # 5. Sorteio Automatizado (Boolean)
+    if 'sorteio_automatizado' in data:
+        update_fields['sorteio_automatizado'] = bool(data['sorteio_automatizado'])
 
     if update_fields:
         try:
@@ -838,33 +891,48 @@ def admin_definir_premio():
     if not nome_premio: return jsonify({'error': 'Nome necessário'}), 400
     
     try:
-        update_data = {'buscando_o_premio': nome_premio}
+        # 1. Inicializa o dicionário
+        update_data = {} 
+
+        # Define o prêmio base
+        update_data['buscando_o_premio'] = nome_premio
+
+        # 2. Busca configurações de linhas na tabela 'premio'
+        # Isso é necessário para saber se é um jogo de 3 linhas
+        tabela_premios = db.premio.find_one({}) or {}
+        qtde = tabela_premios.get('qtde_linha', 1) 
         
-        # Se mudou para LINHA, verifica se é jogo de 3 linhas (configuração do evento)
+        # --- CORREÇÃO: GRAVA A QUANTIDADE DE LINHAS NA TABELA 'BUSCANDO' ---
+        update_data['qtde_linha'] = qtde 
+        # -------------------------------------------------------------------
+
+        # Lógica de Linhas
         if 'LINHA' in nome_premio:
-            tabela_premios = db.premio.find_one({}) or {}
-            qtde = tabela_premios.get('qtde_linha', 1) # Padrão 1
-            
             if qtde == 3:
-                # Se for 3 linhas, ativa a busca por todas
-                update_data['buscando_a_linha'] = "Sup,Cen,Inf"
+                # Se for 3 linhas, ativa a busca por todas e define nome visual
+                update_data['buscando_tal_premio'] = "3 LINHAS" 
+                update_data['buscando_a_linha'] = "Sup,Cen,Inf" 
             else:
-                # Se for 1 linha, limpa (qualquer uma serve)
-                update_data['buscando_a_linha'] = ""
+                # Se for 1 linha
+                update_data['buscando_tal_premio'] = nome_premio 
+                update_data['buscando_a_linha'] = "" 
         else:
-            # Outros prêmios não usam linhas específicas
+            # Outros prêmios (Bingo, Quadra, etc)
+            update_data['buscando_tal_premio'] = nome_premio
             update_data['buscando_a_linha'] = ""
 
+        # Atualiza o banco
         db.buscando.update_one({}, {'$set': update_data}, upsert=True)
 
         threading.Thread(target=recalcular_ranking_top10).start()
 
-        return jsonify({'status': 'OK'})
+        return jsonify({'status': 'OK', 'dados_gravados': update_data})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
 # --- FUNÇÃO CORRIGIDA PARA RESPEITAR A ORDEM DAS LINHAS ---
+# --- FUNÇÃO CORRIGIDA E BLINDADA: VALIDAR CARTELA ---
 @app.route('/api/admin/validar_cartela', methods=['POST'])
 def admin_validar_cartela():
     if db is None: return jsonify({'status_code': 'ERROR', 'msg': 'Sem conexão DB'})
@@ -873,87 +941,91 @@ def admin_validar_cartela():
     raw_cartela = data.get('cartela')
     
     try: cartela_id = int(raw_cartela)
-    except: return jsonify({'status_code': 'ERROR', 'msg': 'Cartela inválida'})
+    except: return jsonify({'status_code': 'ERROR', 'msg': 'Número de cartela inválido'})
     
     try:
-        # 1. VERIFICA RODADA E EVENTO
+        # 1. IDENTIFICA O EVENTO ATIVO
         rodada_info = db.rodada.find_one({})
         id_evento_ativo = rodada_info.get('id_evento') if rodada_info else 0
         
-        # 2. VERIFICA VENDA
-        nome_ganhador = "Cliente Balcão"
+        if not id_evento_ativo:
+             return jsonify({'status_code': 'ERROR', 'msg': 'Nenhum evento ativo no momento.'})
+
+        # 2. VERIFICA SE A CARTELA FOI VENDIDA NESTE EVENTO (CRÍTICO)
         sales_db = get_sales_db_connection()
         col_vendas_name = f"vendas{id_evento_ativo}"
         
+        venda_encontrada = None
+        nome_ganhador = "Desconhecido"
+
         if sales_db is not None and col_vendas_name in sales_db.list_collection_names():
-             venda = sales_db[col_vendas_name].find_one({
+             # Busca se o ID está dentro de algum intervalo de venda (Range 1 ou Range 2)
+             venda_encontrada = sales_db[col_vendas_name].find_one({
                 '$or': [
                     { 'numero_inicial': {'$lte': cartela_id}, 'numero_final': {'$gte': cartela_id} },
                     { 'numero_inicial2': {'$lte': cartela_id}, 'numero_final2': {'$gte': cartela_id} }
                 ]
              })
-             if venda: nome_ganhador = venda.get('nome_cliente', 'Cliente Balcão')
+        
+        # --- AQUI ESTÁ A CORREÇÃO PRINCIPAL ---
+        if not venda_encontrada:
+            return jsonify({
+                'status_code': 'NOT_SOLD', 
+                'msg': f'⛔ Cartela {cartela_id} NÃO VENDIDA neste evento!',
+                'layout': None # Não retorna layout para não confundir
+            })
+        # --------------------------------------
 
-        # 3. BUSCA LAYOUT DA CARTELA
+        nome_ganhador = venda_encontrada.get('nome_cliente', 'Cliente Balcão')
+
+        # 3. BUSCA LAYOUT DA CARTELA (Se passou pela venda, busca o desenho)
         cartela_doc = db.cartelas.find_one({'cartao': cartela_id})
-        if not cartela_doc: return jsonify({'status_code': 'MISSING_MATRIX', 'msg': 'Erro de cadastro.'})
+        if not cartela_doc: 
+            return jsonify({'status_code': 'MISSING_MATRIX', 'msg': 'Erro: Layout da cartela não cadastrado.'})
 
         def parse(val):
             if isinstance(val, list): return set(val)
             if isinstance(val, str): return set(map(int, val.replace(' ','').split(',')))
             return set()
 
-        # Parseia os conjuntos matemáticos para validação do prêmio
         sup_set = parse(cartela_doc.get('superior'))
         cen_set = parse(cartela_doc.get('central'))
         inf_set = parse(cartela_doc.get('inferior'))
         todos_set = sup_set | cen_set | inf_set
 
-        # 4. PREPARA FORMATAÇÃO VISUAL (RESPEITANDO AS LINHAS)
+        # 4. PREPARA FORMATAÇÃO VISUAL
         dados_bolas = db.bolas.find_one({})
         bolas_lista = dados_bolas.get('bolas_cantadas', []) if dados_bolas else []
         bolas_set = set(bolas_lista)
         ultima_bola = bolas_lista[-1] if bolas_lista else -1
         
-        # AQUI ESTÁ A CORREÇÃO:
-        # Transformamos cada linha em lista e ordenamos INDIVIDUALMENTE
         lista_sup = sorted(list(sup_set))
         lista_cen = sorted(list(cen_set))
         lista_inf = sorted(list(inf_set))
 
-        # Concatenamos na ordem visual correta: Cima -> Meio -> Baixo
-        # Isso garante que os números da linha superior apareçam primeiro na string
+        # Monta string visual para o telão
         numeros_visual_ordem = lista_sup + lista_cen + lista_inf
-        
         str_numeros_formatada = ""
-        
         for i, num in enumerate(numeros_visual_ordem):
-            # Formata com 2 dígitos
             num_str = f"{num:02d}"
-            
-            # Define o separador
             separador = " " 
-            if i > 0: # Não põe separador no primeiro item
-                if num == ultima_bola:
-                    separador = "*" 
-                elif num in bolas_set:
-                    separador = "+"
-                
+            if i > 0:
+                if num == ultima_bola: separador = "*" 
+                elif num in bolas_set: separador = "+"
                 str_numeros_formatada += separador
-            
             str_numeros_formatada += num_str
         
-        # 5. ATUALIZA TABELA CONFERE
+        # 5. ATUALIZA TABELA CONFERE (Para aparecer na TV)
         db.confere.delete_many({})
         db.confere.insert_one({
-            "rodada": int(id_evento_ativo) if id_evento_ativo else 0,
+            "rodada": int(id_evento_ativo),
             "cartao": cartela_id,
             "numeros": str_numeros_formatada,
             "ganhador": nome_ganhador,
             "status": "conferindo"
         })
         
-        # 6. VALIDAÇÃO DO PRÊMIO (Mantida igual)
+        # 6. VALIDAÇÃO DO PRÊMIO
         premio_doc = db.buscando.find_one({})
         premio_nome = premio_doc.get('buscando_o_premio', '').replace(" ", "").upper()
         linhas_faltantes = premio_doc.get('buscando_a_linha', '').upper()
@@ -962,10 +1034,16 @@ def admin_validar_cartela():
         detalhes = ""
         linha_ganha = "" 
 
+        # Regra Duplo Bingo
         if 'DUPLOBINGO' in premio_nome or 'SEGUNDO BINGO' in premio_nome:
             ja_ganhou_bingo = db.ganhadores.find_one({'cartela': cartela_id, 'premio': 'BINGO'})
             if ja_ganhou_bingo:
-                return jsonify({'status_code': 'LOSS', 'msg': f'❌ Cartela {cartela_id} já fez o 1º Bingo.', 'layout': {'superior': lista_sup, 'central': lista_cen, 'inferior': lista_inf}, 'bolas': list(bolas_set)})
+                return jsonify({
+                    'status_code': 'LOSS', 
+                    'msg': f'❌ Cartela {cartela_id} já fez o 1º Bingo (Não vale p/ Duplo).', 
+                    'layout': {'superior': lista_sup, 'central': lista_cen, 'inferior': lista_inf}, 
+                    'bolas': list(bolas_set)
+                })
 
         if 'BINGO' in premio_nome or 'ACUMULADO' in premio_nome or 'DUPLOBINGO' in premio_nome:
             faltam = todos_set - bolas_set
@@ -985,7 +1063,7 @@ def admin_validar_cartela():
                 bateu = True; detalhes = "Linha INFERIOR!"; linha_ganha = "Inf"
             else:
                 bateu = False
-                detalhes = "Nenhuma linha ativa completa."
+                detalhes = "Linha incompleta ou já batida."
 
         elif 'QUADRA' in premio_nome:
             s, c, i = len(sup_set & bolas_set), len(cen_set & bolas_set), len(inf_set & bolas_set)
@@ -1002,8 +1080,9 @@ def admin_validar_cartela():
 
         status_code = 'WIN' if bateu else 'LOSS'
 
-        # 7. REGISTRO DE GANHADOR
+        # 7. REGISTRO AUTOMÁTICO SE FOR VENCEDOR (Pré-registro)
         if bateu:
+            # (Código de cálculo monetário mantido igual...)
             valor_monetario = "R$ --"
             try:
                 tabela_premios = db.premio.find_one({}) or {}
@@ -1025,6 +1104,7 @@ def admin_validar_cartela():
 
             premio_registro = f"{premio_nome} ({linha_ganha})" if linha_ganha else premio_nome
 
+            # Verifica duplicidade para não gravar 2x o mesmo prêmio pra mesma cartela
             duplicado = db.ganhadores.find_one({'cartela': cartela_id, 'premio': premio_registro})
             if not duplicado:
                 db.ganhadores.insert_one({
@@ -1043,7 +1123,7 @@ def admin_validar_cartela():
             'ganhador': nome_ganhador,
             'cartela_id': cartela_id,
             'layout': {
-                'superior': lista_sup, # Já enviamos ordenado corretamente
+                'superior': lista_sup,
                 'central': lista_cen,
                 'inferior': lista_inf
             },
@@ -1053,7 +1133,6 @@ def admin_validar_cartela():
     except Exception as e:
         print(f"Erro Validação: {e}")
         return jsonify({'status_code': 'ERROR', 'msg': str(e)}), 500
-
 
 
 # --- ADICIONE ESTA NOVA ROTA PARA LIMPAR A TELA ---
@@ -1244,7 +1323,8 @@ def atualizar_linhas():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# --- ROTA DE DETALHES COM CAMPOS EXTRAS ADICIONADOS ---
+
+# --- ROTA DE DETALHES COM CAMPOS EXTRAS ADICIONADOS E TRAVA DE SEGURANÇA ---
 @app.route('/api/admin/detalhes_evento', methods=['GET'])
 def get_event_details():
     id_evt = request.args.get('id_evento')
@@ -1268,10 +1348,11 @@ def get_event_details():
         soma_vendas_reais = 0
         vendas_detalhadas = [] 
 
+        # 1. Tenta buscar estatísticas se a coleção existir
         if col_vendas_name in sales_db.list_collection_names():
             col_vendas = sales_db[col_vendas_name]
             
-            # 1. Agregação
+            # Agregação para totais
             pipeline = [
                 {
                     '$group': {
@@ -1288,7 +1369,18 @@ def get_event_details():
                 ultimo_cartao = resultado[0].get('max_cartao', 0)
                 soma_vendas_reais = resultado[0].get('soma_valor', 0)
 
-            # 2. Busca Detalhada
+        # === NOVA TRAVA DE SEGURANÇA (POSICIONADA CORRETAMENTE) ===
+        # Verifica se não há vendas (seja porque a tabela não existe ou porque o total é 0)
+        if qtde_vendida == 0:
+            print(f"⛔ Evento {id_evt} bloqueado: 0 vendas.")
+            return jsonify({
+                'error': 'EVENTO VAZIO: Nenhuma cartela vendida encontrada para este evento. O sorteio não pode ser iniciado.'
+            }), 400
+        # ==========================================================
+
+        # 2. Se passou pela trava, busca os detalhes das vendas
+        if col_vendas_name in sales_db.list_collection_names():
+            col_vendas = sales_db[col_vendas_name]
             cursor_detalhes = col_vendas.find({}, {
                 'numero_inicial': 1, 'numero_final': 1, 
                 'numero_inicial2': 1, 'numero_final2': 1,
@@ -1382,7 +1474,6 @@ def get_event_details():
     except Exception as e:
         print(f"Erro Detalhes: {e}")
         return jsonify({'error': str(e)}), 500
-
 
 # --- MAIN ---
 def main():

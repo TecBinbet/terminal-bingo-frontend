@@ -73,8 +73,6 @@ const btnCloseEvents = document.getElementById('btn-close-events');
 const btnEventsMenu = document.getElementById('menu-btn-eventos');
 const btnEventsMobile = document.getElementById('btn-proximos-eventos');
 
-//
-let cartelasEmJogo = 0;
 // Timer promocionais
 
 let premioInfo = null;
@@ -183,7 +181,8 @@ let cardRanges = [];
 let buscando_o_premio = '';
 let bolaBuscandoPremio = 0;
 let buscando_a_linha = '';
-let cartelaEmJogo = 0;
+let cartelasEmJogo = 0;
+
 let ultimaBolaCantada = null;
 
 let wakeLock = null;
@@ -894,7 +893,7 @@ function handleFullscreenChange() {
         lockSizeScreen() 
         telaFull = true;
         fullscreenButton.classList.add('hidden');
-        if (cartelas_Em_Jogo === 0 && rodadaState === 'intervalo') {
+        if (cartelasEmJogo === 0 && rodadaState === 'intervalo') {
            seePromocoes = true;
            startPromocionalTimer();
         }
@@ -902,7 +901,7 @@ function handleFullscreenChange() {
         // Se o sistema saiu da tela cheia, mostra o botão novamente
         telaFull = false;
         fullscreenButton.classList.remove('hidden');
-        if (cartelas_Em_Jogo === 0 && rodadaState === 'intervalo') {
+        if (cartelasEmJogo === 0 && rodadaState === 'intervalo') {
            seePromocoes = true;
            startPromocionalTimer();
         }      
@@ -1175,7 +1174,7 @@ function displayCartelaRanges() {
     cartelasEmJogo = total
     checkTotalCards();
     if (total > 0 ) { 
-       cartelaEmJogo = total;
+       cartelasEmJogo = total;
        seePromocoes = false; 
        hidePromocionalPanel();
     }
@@ -1193,7 +1192,7 @@ function displayCartelaRanges() {
                 }
            }
             if (novoTotal === 0) {
-                cartelaEmJogo = 0;
+                cartelasEmJogo = 0;
                 seePromocoes = true; 
                 startPromocionalTimer();                               
             }
@@ -1232,7 +1231,7 @@ function checkTotalCards(total) {
         validationMessageCurrent.classList.remove('hidden');
         return; // Para a execução da função aki
     }
-    cartelaEmJogo = total;
+    cartelasEmJogo = total;
 }
 
 async function fetchAndProcessCards() {
@@ -1714,7 +1713,7 @@ function clearPanels() {
     const cartelaFinal = isMobile ? mobileCartelaFinalInput : cartelaFinalInput;
     const resultadoSoma = isMobile ? mobileResultadoSomaSpan : resultadoSomaSpan;
     const headerElement = isMobile ? mobileLoadedCardsHeader : loadedCardsHeader; 
-    cartelaEmJogo = 0;
+    cartelasEmJogo = 0;
     loadedCardsListCurrent.innerHTML = `<p class="text-white text-center">Nenhuma cartela carregada.</p>`;
     prizeValues.innerHTML = '';
     headerElement.textContent = `Nenhuma Cartela Carregada`;
@@ -1835,10 +1834,10 @@ function displayPrizeInfo(buscandoData, premioData = null) {
     let buscandoValue = buscandoData && buscandoData.length > 0 ? buscandoData[0].buscando_o_premio : null;
     const linhasTaisLinhas = buscandoData[0]?.buscando_a_linha || '';
     const qtdeLinhas = buscandoData[0]?.qtde_linha || '';
-
+ 
     let prizeToFind = cleanTextForComparison(buscandoValue);
 
-    if (qtdeLinhas === 3 && buscandoValue === "L I N H A")  {
+    if (qtdeLinhas === 3 && (buscandoValue === "LINHA" || buscandoValue === "L I N H A"))  {
         const linhasEmJogo = `L I N H A S: ( ${linhasTaisLinhas.toUpperCase()} )`  
         buscandoValue = linhasEmJogo;
         prizeToFind = '3LINHAS'
@@ -2053,11 +2052,6 @@ function displayWinnersPanel(ganhadoresData) {
 
     // 4. Se passou, atualiza o hash global para a próxima vez
     lastGanhadoresHash = currentHash;
-    
-    if (Carregando) {
-        Carregando = false;   
-        return;
-    }   
 
     // --- DAQUI PARA BAIXO, SEGUE A RENDERIZAÇÃO ---
     winnersListContent.innerHTML = '';
@@ -2088,7 +2082,7 @@ function displayWinnersPanel(ganhadoresData) {
                 row.className = 'flex justify-between items-center text-sm py-1 hover:bg-gray-700 rounded px-1';
                 row.innerHTML = `
                     <div class="flex items-center gap-2">
-                        <span class="bg-gray-900 text-yellow-500 font-bold px-1 py-0.5 rounded border border-gray-600">#${ganhador.cartela}</span>
+                        <span class="bg-gray-900 text-yellow-500 font-bold px-1 py-0.5 rounded border border-gray-600">${ganhador.cartela}</span>
                         <span class="text-gray-200 truncate max-w-[150px] uppercase font-medium">${ganhador.nome}</span>
                     </div>
                     <span class="text-green-300 font-bold">${ganhador.valor_rateio}</span>
@@ -2118,7 +2112,12 @@ function displayWinnersPanel(ganhadoresData) {
     }
 
     // Configura o fechamento automático
-    winnersTimer = setTimeout(closeWinnersPanel, WINNERS_DISPLAY_TIME  * 1000);
+    let Mille = 1000;
+    if (Carregando) {
+        Carregando = false;   
+        Mille = 150        
+    }   
+    winnersTimer = setTimeout(closeWinnersPanel, WINNERS_DISPLAY_TIME  * Mille);
 }
 
 function closeWinnersPanel() {
@@ -2153,7 +2152,6 @@ function renderMelhores(melhoresData) {
         estatisticasBody.innerHTML = '<p class="text-center text-gray-500 mt-6 text-xs">Nenhuma cartela no topo.</p>';
         return;
     }
-	
     melhoresData.forEach(item => {
         let posicaoWidth = '13px'; // Largura padrão se 'posicao' não for vazio
         let haGanhador = false;
@@ -2161,19 +2159,15 @@ function renderMelhores(melhoresData) {
         if (!item.posicao || item.posicao === "") {
             posicaoWidth = '4px'; 
         }
-
         // 2. Constrói a string da classe
         // Usa template literals (crase `) para injetar a variável
         const gridClasses = `grid-cols-[23px_${posicaoWidth}_1fr_55px]`;
-
         const row = document.createElement('div');
         row.className = `grid ${gridClasses} text-[8px] leading-none text-white p-0.5 rounded hover:bg-gray-800`;
-        
         // 1. Cartela
         const cartela = document.createElement('span');
         cartela.className = 'text-center font-bold text-yellow-600';
         cartela.textContent = item.cartela;
-
         // 2. Posição
         const posicao = document.createElement('span');
         posicao.className = 'text-center';
@@ -2181,24 +2175,29 @@ function renderMelhores(melhoresData) {
         if (posicaoWidth === '0px') {
             posicao.classList.add('hidden');
         }
-
         // 3. Números Faltantes (A chave é 'numeros_faltantes')
         let winnerPremio = ''; 
         if (item.premio && item.premio !== null  && item.premio !== "null") {
            winnerPremio = item.premio;
            haGanhador = true; 
         }
-      
-        const numerosFaltantes = document.createElement('span');
-        const numerosFaltantesOriginal = item.numeros_faltantes; // Ex: "04,25,65"
-        const numerosComEspaco = numerosFaltantesOriginal.replaceAll(',', ' . ');
+
+       const numerosFaltantes = document.createElement('span');    
+       // 1. Tenta pegar o valor (aceita tanto a chave antiga 'numeros_faltantes' quanto a nova 'numeros')
+        const rawNums = item.numeros_faltantes || item.numeros || ""; 
         
-        if  (haGanhador) {
-            numerosFaltantes.className = 'truncate text-[10px] text-yellow-300 font-bold';
-        } else {
-            numerosFaltantes.className = 'truncate text-[8px] text-green-500 font-medium';
-        } 
-        numerosFaltantes.textContent = `${numerosComEspaco} ${winnerPremio}`; 
+        let numerosComEspaco = "";
+
+        // 2. Verifica se é Array (Lista) ou String (Texto) para formatar corretamente
+        if (Array.isArray(rawNums)) {
+            // Se for Array [5, 10, 15] -> Transforma em "05 . 10 . 15"
+            numerosComEspaco = rawNums.map(n => n.toString().padStart(2, '0')).join(' . ');
+        } else if (typeof rawNums === 'string') {
+            // Se for String "5,10,15" -> Transforma em "5 . 10 . 15"
+            numerosComEspaco = rawNums.replaceAll(',', ' . ');
+        }
+        numerosFaltantes.textContent = `${numerosComEspaco} ${winnerPremio}`;
+        numerosFaltantes.className = 'text-green-300'
 
         // 4. Nome (Player)
         const nome = document.createElement('span');
@@ -2598,6 +2597,7 @@ async function renderMainContent(data) {
     displayPrizeValues(premioData, topeData);
    
    // 13. Exibe Ganhadores da Rodada 
+   
    if (ganhadoresData && ganhadoresData.length > 0) {
         displayWinnersPanel(ganhadoresData);
     } 
@@ -2715,7 +2715,7 @@ function startHideTimer() {
                 toggleButton.textContent = 'INCLUIR Cartelas';
                 toggleButton.classList.remove('bg-red-800');
                 toggleButton.classList.add('bg-green-light');
-                if (cartelas_Em_Jogo === 0 && rodadaState === 'intervalo') {
+                if (cartelasEmJogo === 0 && rodadaState === 'intervalo') {
                    seePromocoes = true;
                    startPromocionalTimer();
                 }
@@ -2746,7 +2746,7 @@ function startPrizeHideTimer() {
                 toggleButton.textContent = 'Apresentar Prêmios';
                 toggleButton.classList.remove('bg-red-800'); // Ou a classe que define a cor padrão
                 toggleButton.classList.add('bg-gray-700'); // Classe para a cor verde
-                if (cartelas_Em_Jogo === 0 && rodadaState === 'intervalo') {
+                if (cartelasEmJogo === 0 && rodadaState === 'intervalo') {
                    seePromocoes = true;
                    startPromocionalTimer();
                 }
