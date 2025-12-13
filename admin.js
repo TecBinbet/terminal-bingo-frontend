@@ -26,6 +26,7 @@ let ultimoTotalBolasProcessadas = -1;
 let jaAlertouNestaBola = false;
 let dadosEventoAtual = null;
 let localStream = null;
+let vendasTimerInterval = null;
 
 // --- VARIÁVEIS DO MODO ROBÔ ---
 let modoRoboAtivo = false;       
@@ -247,6 +248,8 @@ function processarMensagemWS(event) {
     const payload = JSON.parse(event.data);
     
     if (payload.type === 'UPDATE') {
+        
+        // 1. Bolas
         if (payload.bolasData) {
             const bolas = payload.bolasData[0]?.bolas_cantadas || [];
             bolasSorteadasCache = bolas;
@@ -258,6 +261,7 @@ function processarMensagemWS(event) {
             if (bolas.length > 0) bolaDestaque.textContent = bolas[bolas.length - 1];
         }
 
+        // 2. Status
         if(payload.buscandoData) {
             const dados = payload.buscandoData[0];
             const premio = dados?.buscando_o_premio || '...';
@@ -267,6 +271,7 @@ function processarMensagemWS(event) {
             document.getElementById('status-premio').textContent = `Buscando: ${texto}`;
         }
 
+        // 3. Configurações
         if (payload.parametrosInfo) {
             configuracaoServer = payload.parametrosInfo;
             if (configuracaoServer.sorteio_automatizado !== undefined) sorteioAutomatizadoConfig = configuracaoServer.sorteio_automatizado;
@@ -278,18 +283,16 @@ function processarMensagemWS(event) {
             if (modal && modal.classList.contains('hidden')) preencherModalConfig(configuracaoServer);
         }
 
-
+        // 4. Lista Ganhadores (Prioridade Live)
         if (payload.ganhadoresLive && payload.ganhadoresLive.length > 0) {
-           // Se vier lista ao vivo, usa ela (Prioridade da Mesa)
-            console.error("passo 1");
+            // console.error("passo 1"); // Debug opcional
             renderListaGanhadores(payload.ganhadoresLive);
         } else if (payload.ganhadoresData && payload.ganhadoresLive === undefined) {
-           // Só usa a lista histórica se NÃO vier a live (ex: no reset)
-           // Isso evita que a lista vazia do 'ganhadoresData' limpe a tela durante o jogo
-           console.error("passo 2"); 
-           renderListaGanhadores(payload.ganhadoresData);
+            // console.error("passo 2"); // Debug opcional
+            renderListaGanhadores(payload.ganhadoresData);
         }
 
+        // 5. Ranking e Lógica de Vitória
         if (payload.melhoresData) {
             let tipoPremioBuscado = "BINGO";
             if (payload.buscandoData && payload.buscandoData[0]) tipoPremioBuscado = payload.buscandoData[0].buscando_o_premio;
@@ -304,8 +307,18 @@ function processarMensagemWS(event) {
 
             if (ganhadoresAtuais.length > 0) {
                 if (modoRoboAtivo) {
-                    if (!processandoVitoria) gerenciarVitoriaRobo(ganhadoresAtuais);
-                } else {
+                    // --- MODO ROBÔ COM TEMPORIZADOR ---
+                    if (!processandoVitoria) {
+                        processandoVitoria = true; // Trava imediata
+                        console.log("⏳ Aguardando sincronização visual dos terminais (3s)...");
+                        
+                        setTimeout(() => {
+                            processandoVitoria = false; // Destrava para executar
+                            gerenciarVitoriaRobo(ganhadoresAtuais);
+                        }, 3000); 
+                    }
+                } else { 
+                    // --- MODO MANUAL/AUTO PADRÃO ---
                     if (autoSorteioAtivo) {
                         pararAutoSorteio();
                         customAlert("Alerta de Premiação! Sorteio pausado.");
@@ -319,6 +332,8 @@ function processarMensagemWS(event) {
         }
     }
 }
+
+
 
 // =========================================================
 // === 3. FUNÇÕES UI E MODAIS ===
@@ -370,13 +385,29 @@ function fecharCustomModal() {
 }
 
 
+// =========================================================
+// === FUNÇÃO DE MENU LATERAL (ADICIONE NO ADMIN.JS) ===
+// =========================================================
+
 function toggleAdminMenu() {
     const menu = document.getElementById('admin-side-menu');
     const overlay = document.getElementById('admin-menu-overlay');
+    
+    if (!menu || !overlay) return;
+
     const isClosed = menu.classList.contains('-translate-x-full');
-    if (isClosed) { menu.classList.remove('-translate-x-full'); overlay.classList.remove('hidden'); }
-    else { menu.classList.add('-translate-x-full'); overlay.classList.add('hidden'); }
+    
+    if (isClosed) { 
+        // Abrir Menu
+        menu.classList.remove('-translate-x-full'); 
+        overlay.classList.remove('hidden'); 
+    } else { 
+        // Fechar Menu
+        menu.classList.add('-translate-x-full'); 
+        overlay.classList.add('hidden'); 
+    }
 }
+
 
 function alternarTelaCheia() {
     const btnText = document.getElementById('btn-fullscreen-text');
@@ -392,6 +423,7 @@ function fecharModal(modalId) {
     document.getElementById(modalId).classList.add('hidden');
 }
 
+// --- FUNÇÃO CORRIGIDA: ABRIR MODAL EVENTOS (COM NO-CACHE) ---
 async function abrirModalEventos() {
     const contadorTexto = document.getElementById('contador-bolas').textContent;
     const numeroBolas = parseInt(contadorTexto.split('/')[0]); 
@@ -400,20 +432,30 @@ async function abrirModalEventos() {
         toggleAdminMenu(); return;
     }
 
-    toggleAdminMenu();
+    // Se o menu estiver aberto, fecha visualmente, mas mantém lógica
+    // (Opcional: toggleAdminMenu() se quiser fechar o menu lateral ao abrir o modal)
+    // toggleAdminMenu(); 
+
     const modal = document.getElementById('modal-eventos');
     const container = document.getElementById('lista-eventos-container');
-    modal.classList.remove('hidden');
-    container.innerHTML = '<div class="flex flex-col items-center py-4"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-500 mb-2"></div><span class="text-gray-400">Buscando agenda...</span></div>';
+    
+    if (modal.classList.contains('hidden')) {
+        modal.classList.remove('hidden');
+    }
+    
+    container.innerHTML = '<div class="flex flex-col items-center py-4"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-500 mb-2"></div><span class="text-gray-400">Buscando agenda atualizada...</span></div>';
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/proximos_eventos`);
+        // --- CORREÇÃO AQUI: ADICIONADO TIMESTAMP PARA EVITAR CACHE ---
+        const response = await fetch(`${API_BASE_URL}/api/proximos_eventos?_t=${Date.now()}`);
         const eventos = await response.json();
         renderizarListaEventos(eventos);
     } catch (error) {
+        console.error(error);
         container.innerHTML = `<div class="text-center text-red-400 p-4"><p>Erro ao carregar eventos</p><button onclick="abrirModalEventos()" class="mt-2 bg-gray-700 px-3 py-1 rounded text-xs">Tentar Novamente</button></div>`;
     }
 }
+
 
 function renderizarListaEventos(eventos) {
     const container = document.getElementById('lista-eventos-container');
@@ -464,6 +506,9 @@ function preencherModalConfig(params) {
     const selectEntrada = document.getElementById('config-entrada-cartelas');
     if (params.tipo_entrada_de_cartelas && selectEntrada) selectEntrada.value = params.tipo_entrada_de_cartelas;
     if (params.sorteio_automatizado !== undefined) document.getElementById('config-sorteio-automatizado').checked = params.sorteio_automatizado;
+    if (params.aviso_fim_das_vendas) {
+        document.getElementById('config-aviso-fim-vendas').value = params.aviso_fim_das_vendas;
+    }
     toggleOpcaoAutomatizado();
 }
 
@@ -478,6 +523,7 @@ async function salvarConfiguracoes() {
     const winnerTime = document.getElementById('config-winner-time').value;
     const isVoz = document.getElementById('config-voz-ativa').checked;
     const isCam = document.getElementById('config-camera-ativa').checked;
+    const tempoVendas = document.getElementById('config-aviso-fim-vendas').value; 
     let modoSelecionado = 'auto';
     const radios = document.getElementsByName('modo_sorteio');
     for (const radio of radios) { if (radio.checked) { modoSelecionado = radio.value; break; } }
@@ -493,13 +539,14 @@ async function salvarConfiguracoes() {
         tempo_ganhador: winnerTime, modo_sorteio: modoSelecionado, voz_ativa: isVoz, camera_ativa: isCam,
         nome_sala: nomeSala, url_padrao: urlPadrao, url_live: urlLive, url_mongo_vendas: urlMongo,
         tipo_sorteio: parseInt(tipoSorteio) || 15, tipo_entrada_de_cartelas: parseInt(tipoEntrada) || 1,
-        sorteio_automatizado: isSorteioAuto
+        sorteio_automatizado: isSorteioAuto,aviso_fim_das_vendas: parseInt(tempoVendas) || 120
     };
 
     try {
         await fetch(`${API_BASE_URL}/api/admin/salvar_config`, {
             method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
         });
+        
         vozAtiva = isVoz; cameraAtiva = isCam; modoSorteio = modoSelecionado;
         aplicarVisualModoSorteio(modoSorteio); aplicarVisibilidadeCamera(cameraAtiva);
         fecharModal('modal-config');
@@ -676,32 +723,111 @@ function aplicarVisualModoSorteio(modo) {
     else { cd.classList.remove('hidden'); cm.classList.add('hidden'); }
 }
 
-// --- FUNÇÃO CORRIGIDA: CARREGAR EVENTO (FECHA MENU E MODAL) ---
+
+// --- FUNÇÃO 1: INÍCIO DO PROCESSO (CLIQUE NO BOTÃO CARREGAR) ---
 async function carregarEvento(idEvento) {
-    const confirmou = await customConfirm(`Deseja carregar os dados do Evento ID: ${idEvento}?`);
+    const confirmou = await customConfirm(`Deseja INICIAR este evento?\n\nIsso irá BLOQUEAR novas vendas e iniciar o temporizador de segurança.`);
     if(!confirmou) return;
     
-    // 1. LIMPEZA DE INTERFACE (Ajuste Solicitado)
     fecharModal('modal-eventos');
     
-    // Força o fechamento do menu lateral (sem usar toggle para não correr risco de abrir)
+    // 1. Muda status para FINALIZADO no banco (Trava Vendas)
+    showLoading("Encerrando vendas no sistema...");
+    try {
+        await fetch(`${API_BASE_URL}/api/admin/fechar_vendas_evento`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ id_evento: idEvento })
+        });
+    } catch(e) {
+        console.error("Erro ao fechar vendas", e);
+        // Continua mesmo com erro, mas avisa? Ou para? Vamos continuar por segurança operacional.
+    } finally {
+        hideLoading();
+    }
+
+    // 2. Inicia o Cronômetro de Espera
+    iniciarTimerEspera(idEvento);
+}
+
+// --- FUNÇÃO 2: GERENCIA O TIMER VISUAL ---
+function iniciarTimerEspera(idEvento) {
+    const modal = document.getElementById('modal-timer-vendas');
+    const display = document.getElementById('timer-display');
+    const progress = document.getElementById('timer-progress');
+    
+    // Pega o tempo configurado (ou usa 120s padrão)
+    let tempoTotal = 120; 
+    if (configuracaoServer && configuracaoServer.aviso_fim_das_vendas) {
+        tempoTotal = parseInt(configuracaoServer.aviso_fim_das_vendas);
+    }
+    
+    let tempoRestante = tempoTotal;
+    
+    modal.classList.remove('hidden');
+    modal.classList.add('flex'); // Garante flexbox
+
+    // Função de atualização
+    const atualizarDisplay = () => {
+        const min = Math.floor(tempoRestante / 60);
+        const sec = tempoRestante % 60;
+        display.textContent = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+        
+        const pct = (tempoRestante / tempoTotal) * 100;
+        progress.style.width = `${pct}%`;
+    };
+
+    atualizarDisplay();
+
+    // Loop do Timer
+    vendasTimerInterval = setInterval(() => {
+        tempoRestante--;
+        atualizarDisplay();
+
+        if (tempoRestante < 0) {
+            clearInterval(vendasTimerInterval);
+            // FIM DO TEMPO: CARREGA O EVENTO REALMENTE
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            executarCarregamentoReal(idEvento);
+        }
+    }, 1000);
+
+    // Salva ID no botão de pular para caso o admin queira forçar
+    window.eventoPendenteID = idEvento;
+}
+
+// Função para o botão "Pular Espera"
+function pularEsperaVendas() {
+    if (confirm("Tem certeza? Clientes comprando agora podem ficar sem cartela.")) {
+        clearInterval(vendasTimerInterval);
+        document.getElementById('modal-timer-vendas').classList.add('hidden');
+        document.getElementById('modal-timer-vendas').classList.remove('flex');
+        if (window.eventoPendenteID) executarCarregamentoReal(window.eventoPendenteID);
+    }
+}
+
+// --- FUNÇÃO 3: O CARREGAMENTO REAL (ANTIGA carregarEvento) ---
+async function executarCarregamentoReal(idEvento) {
+    // Força o fechamento do menu lateral
     const menu = document.getElementById('admin-side-menu');
     const menuOverlay = document.getElementById('admin-menu-overlay');
-    if (menu) menu.classList.add('-translate-x-full'); // Esconde o menu
-    if (menuOverlay) menuOverlay.classList.add('hidden'); // Esconde o fundo escuro
+    if (menu) menu.classList.add('-translate-x-full'); 
+    if (menuOverlay) menuOverlay.classList.add('hidden'); 
 
-    // 2. INICIA LOADING
-    showLoading("Carregando evento e configurações...");
+    // INICIA LOADING (Aqui o sistema busca os dados REAIS, incluindo as últimas vendas)
+    showLoading("Sincronizando últimas vendas e carregando jogo...");
 
     try {
         await fetch(`${API_BASE_URL}/api/admin/resetar`, { method: 'POST' });
+        
+        // Agora busca os detalhes (que já devem incluir as vendas feitas durante o timer)
         const response = await fetch(`${API_BASE_URL}/api/admin/detalhes_evento?id_evento=${idEvento}`);
         const dados = await response.json();
 
         if (!response.ok || dados.error) { 
             const msgErro = dados.error || "Erro desconhecido ao carregar evento.";
             customAlert("⛔ " + msgErro); 
-            // Se der erro, reabre o modal de eventos para tentar outro
             const modalEventos = document.getElementById('modal-eventos');
             if(modalEventos) modalEventos.classList.remove('hidden');
             return; 
@@ -709,6 +835,7 @@ async function carregarEvento(idEvento) {
        
         dadosEventoAtual = dados; 
         document.getElementById('painel-evento-ativo').classList.remove('hidden');
+        // ... (Preenche campos da tela igual antes) ...
         document.getElementById('info-descricao').textContent = dados.descricao;
         document.getElementById('info-data-hora').textContent = `${dados.data_evento} ${dados.hora_evento}`;
         document.getElementById('info-inicial').textContent = dados.numero_inicial;
@@ -717,6 +844,7 @@ async function carregarEvento(idEvento) {
         document.getElementById('info-preco-un').textContent = parseFloat(dados.valor_venda||0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
         document.getElementById('info-vendas').textContent = parseFloat(dados.total_vendas_reais||0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
 
+        // Renderiza Prêmios
         const containerPremios = document.getElementById('container-premios-lista');
         containerPremios.innerHTML = '';
         const premios = dados.premios;
@@ -745,14 +873,14 @@ async function carregarEvento(idEvento) {
         initGrid();
 
         if (sorteioAutomatizadoConfig && modoSorteio === 'auto') {
-            const iniciarRobo = await customConfirm("⚙️ Configuração de Sorteio Automatizado detectada!\n\nDeseja iniciar o modo ROBÔ agora?");
+            const iniciarRobo = await customConfirm("⚙️ Deseja iniciar o modo ROBÔ agora?");
             if (iniciarRobo) iniciarModoRobo();
         }
+
     } catch (e) { 
         console.error(e); 
         customAlert("Erro ao carregar detalhes."); 
     } finally {
-        // 3. REMOVE LOADING (SEMPRE)
         hideLoading();
     }
 }

@@ -186,6 +186,18 @@ let cartelasEmJogo = 0;
 let ultimaBolaCantada = null;
 
 let wakeLock = null;
+
+// --- VARIÁVEIS DO PAINEL DE AVISOS ---
+const avisoPanel = document.getElementById('aviso-panel-container');
+const avisoTitulo = document.getElementById('aviso-titulo');
+const avisoMensagem = document.getElementById('aviso-mensagem');
+const avisoTimerContainer = document.getElementById('aviso-timer-container');
+const avisoTimerDisplay = document.getElementById('aviso-timer');
+const btnCloseAviso = document.getElementById('btn-close-aviso');
+
+let avisoInterval = null;       // Controle do setInterval
+let lastAvisoTimestamp = 0;     // Controle para não reabrir o mesmo aviso fechado
+
 const requestWakeLock = async () => {
     try {
         wakeLock = await navigator.wakeLock.request('screen');
@@ -249,26 +261,19 @@ function agruparNumerosEmRanges(numeros) {
     return ranges;
 }
 
+
 /**
  * Abre o painel de Próximos Eventos e carrega os dados do servidor.
  */
 async function openEventsPanel() {
     if (!eventsPanelContainer || !eventsListContent) return;
     
-    // 1. Mostra o painel imediatamente com animação de Loading
-    eventsPanelContainer.classList.remove('hidden');
-    eventsPanelContainer.classList.add('flex');
-    eventsListContent.innerHTML = `
-        <div class="flex flex-col items-center justify-center h-32 space-y-4">
-            <div class="animate-spin rounded-full h-10 w-10 border-t-4 border-b-4 border-blue-500"></div>
-            <span class="text-gray-400 text-sm animate-pulse">Carregando agenda de jogos...</span>
-        </div>
-    `;
+    // 1. Exibe o Loader Global
+    if (loader) loader.style.display = 'flex';
 
     try {
-        // 2. Busca dados atualizados da API
-        // (Certifique-se que API_BASE_URL está definida no topo do seu script ou config.js)
-        const response = await fetch(`${API_BASE_URL}/api/proximos_eventos`);
+        // 2. Busca dados atualizados da API (Com Timestamp para evitar Cache)
+        const response = await fetch(`${API_BASE_URL}/api/proximos_eventos?_t=${Date.now()}`);
         
         if (!response.ok) {
             throw new Error(`Erro na API: ${response.status}`);
@@ -278,9 +283,18 @@ async function openEventsPanel() {
         
         // 3. Renderiza os cartões
         renderEventsList(eventos);
+        
+        // 4. Mostra o painel apenas com os dados prontos
+        eventsPanelContainer.classList.remove('hidden');
+        eventsPanelContainer.classList.add('flex');
 
     } catch (error) {
         console.error("Erro ao carregar eventos:", error);
+        
+        // Se der erro, mostra o painel com mensagem de erro
+        eventsPanelContainer.classList.remove('hidden');
+        eventsPanelContainer.classList.add('flex');
+        
         eventsListContent.innerHTML = `
             <div class="flex flex-col items-center justify-center h-full text-red-500 p-4 text-center">
                 <span class="text-2xl mb-2">⚠️</span>
@@ -291,8 +305,151 @@ async function openEventsPanel() {
                 </button>
             </div>
         `;
+    } finally {
+        // 5. Esconde o Loader (Sempre)
+        if (loader) loader.style.display = 'none';
     }
 }
+
+
+// --- FUNÇÃO: EXIBIR AVISO DO SISTEMA ---
+// --- FUNÇÃO: EXIBIR AVISO DO SISTEMA (COM VALIDAÇÃO DE TEMPO) ---
+function renderAvisoPanel(avisosData) {
+    // 1. Validação básica
+    if (!avisosData || avisosData.length === 0) {
+        return;
+    }
+
+    const aviso = avisosData[0]; // Pega o último aviso
+    
+    // 2. Verifica se é um aviso novo (pelo timestamp)
+    if (aviso.timestamp && aviso.timestamp === lastAvisoTimestamp) {
+        if (!avisoPanel.classList.contains('hidden')) {
+            updateAvisoTimerLogic(aviso.tempo);
+        }
+        return; 
+    }
+
+    // --- NOVA LÓGICA: PRÉ-CÁLCULO DO TEMPO ---
+    // Antes de mostrar qualquer coisa, verifica se ainda há tempo.
+    let segundosIniciais = 0;
+
+    if (aviso.tempo) {
+        // Se for formato HH:MM:SS
+        if (typeof aviso.tempo === 'string' && aviso.tempo.includes(':')) {
+            const agora = new Date();
+            const partes = aviso.tempo.split(':');
+            const alvo = new Date();
+            alvo.setHours(parseInt(partes[0]), parseInt(partes[1]), parseInt(partes[2] || 0));
+            
+            // Diferença em segundos
+            const diffMs = alvo - agora;
+            segundosIniciais = Math.floor(diffMs / 1000);
+        } else {
+            // Se for número direto
+            segundosIniciais = parseInt(aviso.tempo);
+        }
+    }
+
+    // SE O TEMPO JÁ ACABOU (Menor ou igual a zero), NÃO MOSTRA NADA.
+    if (segundosIniciais <= 0) {
+        // Atualiza o ID para saber que já processamos esse aviso (mesmo que ignorado)
+        lastAvisoTimestamp = aviso.timestamp;
+        
+        // Garante que esteja fechado se por acaso estiver aberto
+        if (!avisoPanel.classList.contains('hidden')) {
+            closeAvisoPanel();
+        }
+        return; // <--- ABORTA AQUI
+    }
+    // ------------------------------------------
+
+    // Se chegou aqui, o aviso é válido e tem tempo positivo. Pode mostrar.
+    lastAvisoTimestamp = aviso.timestamp;
+
+    // 3. Preenche Conteúdo
+    avisoTitulo.textContent = aviso.titulo || 'Aviso';
+    avisoMensagem.textContent = aviso.mensagem || '';
+    
+    // 4. Lógica do Timer Visual
+    if (aviso.tempo) {
+        avisoTimerContainer.classList.remove('hidden');
+        avisoTimerContainer.classList.add('flex');
+        startAvisoCountdown(aviso.tempo);
+    } else {
+        avisoTimerContainer.classList.add('hidden');
+        avisoTimerContainer.classList.remove('flex');
+    }
+
+    // 5. Abre o Modal (Agora com certeza que não vai piscar)
+    avisoPanel.classList.remove('hidden');
+    avisoPanel.classList.add('flex');
+}
+
+
+function startAvisoCountdown(tempoStr) {
+    if (avisoInterval) clearInterval(avisoInterval);
+
+    // Função de atualização imediata e repetitiva
+    const tick = () => updateAvisoTimerLogic(tempoStr);
+
+    tick(); // Executa agora
+    avisoInterval = setInterval(tick, 1000); // Repete a cada segundo
+}
+
+function updateAvisoTimerLogic(tempoStr) {
+    let segundosRestantes = 0;
+
+    // Verifica se é formato HH:MM:SS
+    if (typeof tempoStr === 'string' && tempoStr.includes(':')) {
+        const agora = new Date();
+        const partes = tempoStr.split(':');
+        
+        // Cria data alvo baseada no dia de hoje
+        const alvo = new Date();
+        alvo.setHours(parseInt(partes[0]), parseInt(partes[1]), parseInt(partes[2] || 0));
+        
+        // Diferença em segundos
+        const diffMs = alvo - agora;
+        segundosRestantes = Math.floor(diffMs / 1000);
+    } else {
+        // Assume que é número direto (segundos)
+        segundosRestantes = parseInt(tempoStr);
+    }
+
+    if (segundosRestantes < 0) segundosRestantes = 0;
+
+    // Formata MM:SS
+    const m = Math.floor(segundosRestantes / 60);
+    const s = segundosRestantes % 60;
+    const formatado = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    
+    if (avisoTimerDisplay) avisoTimerDisplay.textContent = formatado;
+    
+    // --- ALTERAÇÃO: FECHA AUTOMATICAMENTE AO ZERAR ---
+    if (segundosRestantes <= 0) {
+        if (avisoInterval) clearInterval(avisoInterval);
+        
+        // Adiciona um pequeno delay visual (opcional) de 1s para o usuário ver o 00:00
+        setTimeout(() => {
+            closeAvisoPanel(); 
+        }, 1000);
+    }
+}
+
+function closeAvisoPanel() {
+    if (avisoPanel) {
+        avisoPanel.classList.remove('flex');
+        avisoPanel.classList.add('hidden');
+    }
+    if (avisoInterval) clearInterval(avisoInterval);
+}
+
+// Listener do Botão Fechar
+if (btnCloseAviso) {
+    btnCloseAviso.addEventListener('click', closeAvisoPanel);
+}
+
 
 /**
  * Processa a lista de eventos e cria o HTML dos cartões.
@@ -893,7 +1050,7 @@ function handleFullscreenChange() {
         lockSizeScreen() 
         telaFull = true;
         fullscreenButton.classList.add('hidden');
-        if (cartelasEmJogo === 0 && rodadaState === 'intervalo') {
+        if (cartelasEmJogo === 0 && lastRodadaState === 'intervalo') {
            seePromocoes = true;
            startPromocionalTimer();
         }
@@ -901,89 +1058,96 @@ function handleFullscreenChange() {
         // Se o sistema saiu da tela cheia, mostra o botão novamente
         telaFull = false;
         fullscreenButton.classList.remove('hidden');
-        if (cartelasEmJogo === 0 && rodadaState === 'intervalo') {
+        if (cartelasEmJogo === 0 && lastRodadaState === 'intervalo') {
            seePromocoes = true;
            startPromocionalTimer();
         }      
     }
 }
 
-// --- NOVA FUNÇÃO: Abrir Modal Minhas Cartelas ---
+// --- NOVA FUNÇÃO: Abrir Modal Minhas Cartelas (Com Loading) ---
 function openMyCardsPanel() {
     // Verifica se os elementos do modal existem no HTML
     if (!myCardsPanel || !myCardsList || !myCardsTotal) {
         console.error("Elementos do modal 'Minhas Cartelas' não encontrados.");
         return;
     }
-    if (!telaFull) { 
-       goFullscreen(); 
-    } 
- 
-    // Limpa a lista anterior
-    myCardsList.innerHTML = '';
-    let totalCartelasGeral = 0;
 
-    // 1. Verifica se há faixas de cartelas carregadas
-    if (!cartelaRanges || cartelaRanges.length === 0) {
-        myCardsList.innerHTML = '<div class="p-2 text-center text-gray-500 text-lg">Nenhuma cartela adquirida.</div>';
-        myCardsTotal.textContent = 'R$ 0,00';
-        
-        // Mostra o modal mesmo vazio
-        myCardsPanel.classList.remove('hidden');
-        myCardsPanel.classList.add('flex');
-        return;
-    }
+    // 1. Exibe o Loader
+    if (loader) loader.style.display = 'flex';
 
-    // 2. Itera sobre as faixas para criar a lista visual
-    cartelaRanges.forEach(range => {
-        if (range.inicial > 0 && range.final > 0) {
-            // Cálculo da quantidade: (Final - Inicial) + 1
-            const qtd = (range.final - range.inicial) + 1;
-            totalCartelasGeral += qtd;
+    // 2. Usa setTimeout para dar tempo do loader renderizar e simular processamento
+    setTimeout(() => {
+        if (!telaFull) { 
+           goFullscreen(); 
+        } 
+     
+        // Limpa a lista anterior
+        myCardsList.innerHTML = '';
+        let totalCartelasGeral = 0;
 
-            // Cria a linha da tabela
-            const row = document.createElement('div');
-            // Grid de 3 colunas para alinhar com o cabeçalho
-            row.className = 'grid grid-cols-3 p-1 text-lg text-center font-bold  border-b border-gray-700 hover:bg-gray-800 text-gray-300 transition-colors';
+        // Verifica se há faixas de cartelas carregadas
+        if (!cartelaRanges || cartelaRanges.length === 0) {
+            myCardsList.innerHTML = '<div class="p-2 text-center text-gray-500 text-lg">Nenhuma cartela adquirida.</div>';
+            myCardsTotal.textContent = 'R$ 0,00';
             
-            row.innerHTML = `
-                <span>${range.inicial}</span>
-                <span>${range.final}</span>
-                <span class="text-yellow-500 font-bold">${qtd}</span>
-            `;
-            myCardsList.appendChild(row);
+            // Finaliza exibição
+            mostrarPainelMinhasCartelas();
+            return;
         }
-    });
 
-    // 3. Cálculo Financeiro Total
-    // Fórmula: (TotalCartelas / Multiplo) * Preco
-    
-    // Tenta pegar os valores do objeto global de prêmio (definido no renderMainContent)
-    // Se não existir, usa valores padrão de segurança (Multiplo 6, Preço 0)
-    const multiplo = (premioInfo && premioInfo.multiplo > 0) ? premioInfo.multiplo : 6;
-    const preco = (premioInfo && premioInfo.preco) ? premioInfo.preco : 0;
-    
-    let valorTotal = 0;
-    if (multiplo > 0) {
-         // Calcula quantas "séries" ou "unidades" o cliente tem
-         // Ex: 12 cartelas / 6 = 2 séries -> 2 * R$ 10,00 = R$ 20,00
-         const unidades = totalCartelasGeral / multiplo;
-         valorTotal = unidades * preco;
-    }
+        // Itera sobre as faixas para criar a lista visual
+        cartelaRanges.forEach(range => {
+            if (range.inicial > 0 && range.final > 0) {
+                // Cálculo da quantidade: (Final - Inicial) + 1
+                const qtd = (range.final - range.inicial) + 1;
+                totalCartelasGeral += qtd;
 
-    // 4. Formatação Monetária (R$ 0,00)
-    const totalFormatado = new Intl.NumberFormat('pt-BR', {
-        style: 'currency',
-        currency: 'BRL'
-    }).format(valorTotal);
+                // Cria a linha da tabela
+                const row = document.createElement('div');
+                row.className = 'grid grid-cols-3 p-1 text-lg text-center font-bold  border-b border-gray-700 hover:bg-gray-800 text-gray-300 transition-colors';
+                
+                row.innerHTML = `
+                    <span>${range.inicial}</span>
+                    <span>${range.final}</span>
+                    <span class="text-yellow-500 font-bold">${qtd}</span>
+                `;
+                myCardsList.appendChild(row);
+            }
+        });
 
-    // Atualiza o totalizador na tela
-    myCardsTotal.textContent = totalFormatado;
+        // Cálculo Financeiro Total
+        const multiplo = (premioInfo && premioInfo.multiplo > 0) ? premioInfo.multiplo : 6;
+        const preco = (premioInfo && premioInfo.preco) ? premioInfo.preco : 0;
+        
+        let valorTotal = 0;
+        if (multiplo > 0) {
+             const unidades = totalCartelasGeral / multiplo;
+             valorTotal = unidades * preco;
+        }
 
-    // 5. Exibe o modal (remove hidden, adiciona flex)
+        // Formatação Monetária
+        const totalFormatado = new Intl.NumberFormat('pt-BR', {
+            style: 'currency',
+            currency: 'BRL'
+        }).format(valorTotal);
+
+        // Atualiza o totalizador na tela
+        myCardsTotal.textContent = totalFormatado;
+
+        // Finaliza exibição
+        mostrarPainelMinhasCartelas();
+
+    }, 500); // Delay de 0.5s para visualização do loading
+}
+
+// Função auxiliar para exibir o painel e esconder o loader
+function mostrarPainelMinhasCartelas() {
     myCardsPanel.classList.remove('hidden');
     myCardsPanel.classList.add('flex');
+    if (loader) loader.style.display = 'none';
 }
+
 
 function closeMyCardsPanel() {
     if (myCardsPanel) {
@@ -1726,7 +1890,10 @@ function clearPanels() {
     ball1.textContent = '';
     ball2.textContent = '';
     ball3.textContent = '';
-    
+
+    closeAvisoPanel(); // <--- Adicione aqui
+    lastAvisoTimestamp = 0; // Reseta para permitir novos avisos iguais
+
     updateDigitalBola("--");
 
     precoSerie.textContent = '';    
@@ -2115,7 +2282,7 @@ function displayWinnersPanel(ganhadoresData) {
     let Mille = 1000;
     if (Carregando) {
         Carregando = false;   
-        Mille = 150        
+        Mille = 500        
     }   
     winnersTimer = setTimeout(closeWinnersPanel, WINNERS_DISPLAY_TIME  * Mille);
 }
@@ -2413,7 +2580,8 @@ async function renderMainContent(data) {
         confereData, 
         topeData, 
         premioInfo, 
-        parametrosInfo = {} 
+        parametrosInfo = {},
+        avisosData = []
     } = data;
 
     tipoEntradaCartelas = parametrosInfo.tipo_entrada_de_cartelas || 1;
@@ -2555,6 +2723,8 @@ async function renderMainContent(data) {
             }
         }
     }
+
+    renderAvisoPanel(avisosData);
 
     // 8. Listeners de Promoção
     if (promocionalContainer) {
@@ -2708,10 +2878,11 @@ function startHideTimer() {
         const isMobile = isMobileDevice();
         const cartelasContent = isMobile ? mobileCartelasContent : document.getElementById('cartelas-content');
         const toggleButton = isMobile ? toggleCartelasButton : document.getElementById('toggle-cartelas-button-desktop');
-
+        
         if (cartelasContent) {
             cartelasContent.classList.add('hidden');
             if (toggleButton) {
+                const rodadaState = rodadaData && rodadaData.length > 0 ? rodadaData[0].estado.trim() : null;
                 toggleButton.textContent = 'INCLUIR Cartelas';
                 toggleButton.classList.remove('bg-red-800');
                 toggleButton.classList.add('bg-green-light');

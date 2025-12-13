@@ -217,3 +217,40 @@ html, body {
 .animate-prize-blink {
     animation: flash-premio-verde 1s infinite; /* Pisca a cada 1 segundo */
 }
+
+/* --- CSS DA BORDA ANIMADA (AVISOS) --- */
+        @property --angle {
+            syntax: '<angle>';
+            initial-value: 0deg;
+            inherits: false;
+        }
+
+        .animated-border-box {
+            position: relative;
+        }
+
+        .animated-border-box::after, .animated-border-box::before {
+            content: '';
+            position: absolute;
+            height: 100%;
+            width: 100%;
+            background-image: conic-gradient(from var(--angle), #ff0000, #ff8800, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
+            top: 50%;
+            left: 50%;
+            translate: -50% -50%;
+            z-index: -1;
+            padding: 4px; /* Espessura da borda */
+            border-radius: 1rem; /* Igual ao rounded-2xl */
+            animation: spin-border 3s linear infinite;
+        }
+        
+        .animated-border-box::before {
+            filter: blur(1.5rem);
+            opacity: 0.5;
+        }
+
+        @keyframes spin-border {
+            from { --angle: 0deg; }
+            to { --angle: 360deg; }
+        }
+B. Adicione o

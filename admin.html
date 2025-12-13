@@ -158,8 +158,14 @@
 
     <div id="modal-eventos" class="fixed inset-0 bg-black/60 hidden z-[60] flex items-center justify-center backdrop-blur-sm">
         <div class="bg-gray-800 w-full max-w-lg rounded-xl border border-gray-600 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+            
             <div class="p-4 bg-gray-900 border-b border-gray-700 flex justify-between items-center">
-                <h3 class="text-lg font-bold text-yellow-500">📅 Selecionar Próximo Evento</h3>
+                <div class="flex items-center gap-3">
+                    <h3 class="text-lg font-bold text-yellow-500">📅 Selecionar Próximo Evento</h3>
+                    <button onclick="abrirModalEventos()" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded flex items-center gap-1 border border-blue-400 shadow transition-transform active:scale-95" title="Recarregar Lista do Servidor">
+                        <span>🔄</span> Atualizar
+                    </button>
+                </div>
                 <button onclick="fecharModal('modal-eventos')" class="text-gray-400 hover:text-white">✕</button>
             </div>
             <div id="lista-eventos-container" class="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-2"><p class="text-center text-gray-500">Carregando...</p></div>
@@ -258,7 +264,15 @@
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-3 pt-2 border-t border-gray-700">
+                    <div class="flex justify-between items-center bg-gray-700/30 p-1 rounded border border-gray-700 mt-1">
+                        <label class="block text-sm font-bold text-gray-300">Espera Vendas (s)</label>
+                        <div class="flex items-center gap-2">
+                            <input type="number" id="config-aviso-fim-vendas" class="bg-gray-900 border border-gray-600 rounded p-1 text-white w-20 text-center font-bold" value="120">
+                            <span class="text-gray-500 text-xs">segundos</span>
+                        </div>
+                   </div>
+                    
+                   <div class="grid grid-cols-2 gap-3 pt-2 border-t border-gray-700">
                         <div>
                             <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Tipo Sorteio (Cartela)</label>
                             <input type="number" id="config-tipo-sorteio" class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-center text-white font-bold" value="15">
@@ -510,6 +524,24 @@
             </div>
 
         </div>
+    </div>
+ 
+    <div id="modal-timer-vendas" class="fixed inset-0 bg-black/50 hidden z-[80] flex flex-col items-center justify-center backdrop-blur-md">
+        <div class="animate-pulse text-6xl mb-6">⏳</div>
+        <h2 class="text-3xl font-black text-yellow-500 uppercase tracking-widest mb-2">Encerrando Vendas</h2>
+        <p class="text-gray-300 text-lg mb-8 max-w-md text-center">Aguardando finalização de compras pendentes no site...</p>
+        
+        <div class="text-8xl font-mono font-black text-white bg-gray-800 px-12 py-6 rounded-2xl border-4 border-yellow-600 shadow-2xl" id="timer-display">
+            00:00
+        </div>
+        
+        <div class="mt-8 w-64 bg-gray-700 h-2 rounded-full overflow-hidden">
+            <div id="timer-progress" class="bg-yellow-500 h-full w-full transition-all duration-1000 ease-linear"></div>
+        </div>
+        
+        <button onclick="pularEsperaVendas()" class="mt-10 text-gray-500 text-xl hover:text-white underline cursor-pointer">
+            (Administrador) Pular espera e iniciar agora
+        </button>
     </div>
 
     <script src="config.js"></script> 
