@@ -5,8 +5,8 @@ const urlParamsGlobal = new URLSearchParams(window.location.search);
 const currentSalaId = urlParamsGlobal.get('idsala') || 'padrao';
 
 //
-const backendVersionElement = document.getElementById('backend-version');
-const frontendVersionElement = document.getElementById('frontend-version');
+//const backendVersionElement = document.getElementById('backend-version');
+//const frontendVersionElement = document.getElementById('frontend-version');
 const loader = document.getElementById('loader');
 
 const numberGrid = document.getElementById('number-grid');
@@ -2828,8 +2828,8 @@ async function init() {
 
         const versionResponse = await fetch(`${API_BASE_URL}/api/version`);
         const versionData = await versionResponse.json();
-        frontendVersionElement.textContent = "1.0.0";
-        backendVersionElement.textContent = versionData.version;
+        //frontendVersionElement.textContent = "1.0.0";
+        //backendVersionElement.textContent = versionData.version;
 
         //const premioInfo = initialData.premioInfo;
         premioInfo = initialData.premioInfo;
