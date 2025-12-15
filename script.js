@@ -1,7 +1,9 @@
 //Criar menu
 
 const urlParamsGlobal = new URLSearchParams(window.location.search);
+
 const currentSalaId = urlParamsGlobal.get('idsala') || 'padrao';
+
 //
 const backendVersionElement = document.getElementById('backend-version');
 const frontendVersionElement = document.getElementById('frontend-version');
@@ -84,7 +86,7 @@ let promocionalTimer = null; // Armazena a referência do temporizador
 
 let globalPromocionalData = [];
 
-let clienteLogadoId = null;
+let clienteLogadoId = urlParamsGlobal.get('id_cliente') || urlParamsGlobal.get('idcliente') || null;
 
 let vozAtiva = true; 
 
@@ -195,6 +197,7 @@ const avisoTimerContainer = document.getElementById('aviso-timer-container');
 const avisoTimerDisplay = document.getElementById('aviso-timer');
 const btnCloseAviso = document.getElementById('btn-close-aviso');
 
+let avisoTargetDate = null;
 let avisoInterval = null;       // Controle do setInterval
 let lastAvisoTimestamp = 0;     // Controle para não reabrir o mesmo aviso fechado
 
@@ -314,128 +317,146 @@ async function openEventsPanel() {
 
 // --- FUNÇÃO: EXIBIR AVISO DO SISTEMA ---
 // --- FUNÇÃO: EXIBIR AVISO DO SISTEMA (COM VALIDAÇÃO DE TEMPO) ---
+// --- FUNÇÃO CORRIGIDA: EXIBIR AVISO DO SISTEMA ---
 function renderAvisoPanel(avisosData) {
     // 1. Validação básica
     if (!avisosData || avisosData.length === 0) {
         return;
     }
 
-    const aviso = avisosData[0]; // Pega o último aviso
+    const aviso = avisosData[0]; 
     
-    // 2. Verifica se é um aviso novo (pelo timestamp)
+    // 2. Verifica se é o mesmo aviso já processado
     if (aviso.timestamp && aviso.timestamp === lastAvisoTimestamp) {
+        // Se o painel já está aberto, só atualiza o timer
         if (!avisoPanel.classList.contains('hidden')) {
-            updateAvisoTimerLogic(aviso.tempo);
+             // Passamos o timestamp original para garantir o sincronismo
+            updateAvisoTimerLogic(aviso.tempo, aviso.timestamp);
         }
         return; 
     }
 
-    // --- NOVA LÓGICA: PRÉ-CÁLCULO DO TEMPO ---
-    // Antes de mostrar qualquer coisa, verifica se ainda há tempo.
-    let segundosIniciais = 0;
+    // --- NOVA LÓGICA DE CÁLCULO REAL ---
+    let segundosRestantes = 0;
+    
+    // Se o backend mandou o timestamp de criação (Unix Seconds), usamos ele para precisão absoluta
+    const criacao = aviso.timestamp || (Date.now() / 1000); 
 
     if (aviso.tempo) {
-        // Se for formato HH:MM:SS
         if (typeof aviso.tempo === 'string' && aviso.tempo.includes(':')) {
+            // Lógica legada para HH:MM:SS (mantida por segurança)
             const agora = new Date();
             const partes = aviso.tempo.split(':');
             const alvo = new Date();
             alvo.setHours(parseInt(partes[0]), parseInt(partes[1]), parseInt(partes[2] || 0));
-            
-            // Diferença em segundos
-            const diffMs = alvo - agora;
-            segundosIniciais = Math.floor(diffMs / 1000);
+            // Correção de virada de dia
+            if (alvo < agora && (agora - alvo) > 1000 * 60 * 60 * 12) alvo.setDate(alvo.getDate() + 1);
+            segundosRestantes = Math.floor((alvo - agora) / 1000);
         } else {
-            // Se for número direto
-            segundosIniciais = parseInt(aviso.tempo);
+            // Lógica BLINDADA (Segundos):
+            // Tempo Restante = (Hora Criação + Duração) - Hora Atual
+            const duracao = parseInt(aviso.tempo);
+            const agoraUnix = Date.now() / 1000;
+            const expiracao = criacao + duracao;
+            
+            segundosRestantes = Math.floor(expiracao - agoraUnix);
         }
     }
 
-    // SE O TEMPO JÁ ACABOU (Menor ou igual a zero), NÃO MOSTRA NADA.
-    if (segundosIniciais <= 0) {
-        // Atualiza o ID para saber que já processamos esse aviso (mesmo que ignorado)
-        lastAvisoTimestamp = aviso.timestamp;
-        
-        // Garante que esteja fechado se por acaso estiver aberto
+    // SE O TEMPO JÁ ACABOU (Menor ou igual a zero), IGNORA O AVISO.
+    if (segundosRestantes <= 0) {
+        lastAvisoTimestamp = aviso.timestamp; // Marca como lido
         if (!avisoPanel.classList.contains('hidden')) {
             closeAvisoPanel();
         }
-        return; // <--- ABORTA AQUI
+        return; // <--- NÃO ABRE O PAINEL
     }
-    // ------------------------------------------
 
-    // Se chegou aqui, o aviso é válido e tem tempo positivo. Pode mostrar.
+    // Se chegou aqui, o aviso ainda é válido
     lastAvisoTimestamp = aviso.timestamp;
 
     // 3. Preenche Conteúdo
     avisoTitulo.textContent = aviso.titulo || 'Aviso';
     avisoMensagem.textContent = aviso.mensagem || '';
     
-    // 4. Lógica do Timer Visual
+    // 4. Inicia Timer
     if (aviso.tempo) {
         avisoTimerContainer.classList.remove('hidden');
         avisoTimerContainer.classList.add('flex');
-        startAvisoCountdown(aviso.tempo);
+        // Passamos o timestamp de criação para o timer saber quando começou
+        startAvisoCountdown(aviso.tempo, aviso.timestamp);
     } else {
         avisoTimerContainer.classList.add('hidden');
         avisoTimerContainer.classList.remove('flex');
     }
 
-    // 5. Abre o Modal (Agora com certeza que não vai piscar)
     avisoPanel.classList.remove('hidden');
     avisoPanel.classList.add('flex');
 }
 
 
-function startAvisoCountdown(tempoStr) {
+function startAvisoCountdown(tempoStr, timestampCriacao) {
     if (avisoInterval) clearInterval(avisoInterval);
 
-    // Função de atualização imediata e repetitiva
-    const tick = () => updateAvisoTimerLogic(tempoStr);
+    avisoTargetDate = null;
 
-    tick(); // Executa agora
-    avisoInterval = setInterval(tick, 1000); // Repete a cada segundo
+    if (!tempoStr.includes(':')) {
+        const segundos = parseInt(tempoStr);
+        // Usa o timestamp do servidor (se houver) ou agora como fallback
+        // Python manda segundos (float), JS usa milissegundos, por isso * 1000
+        const baseTime = timestampCriacao ? (timestampCriacao * 1000) : Date.now();
+        
+        // Define o alvo absoluto: "A hora que foi criado + 120 segundos"
+        avisoTargetDate = new Date(baseTime + (segundos * 1000));
+    }
+
+    const tick = () => updateAvisoTimerLogic(tempoStr);
+    tick(); 
+    avisoInterval = setInterval(tick, 1000); 
 }
+
 
 function updateAvisoTimerLogic(tempoStr) {
     let segundosRestantes = 0;
+    const agora = new Date();
 
-    // Verifica se é formato HH:MM:SS
-    if (typeof tempoStr === 'string' && tempoStr.includes(':')) {
-        const agora = new Date();
+    // CENÁRIO 1: Cálculo Absoluto (Segundos + Timestamp)
+    if (avisoTargetDate) {
+        const diffMs = avisoTargetDate - agora;
+        segundosRestantes = Math.floor(diffMs / 1000);
+    } 
+    // CENÁRIO 2: Horário Fixo (HH:MM:SS)
+    else if (typeof tempoStr === 'string' && tempoStr.includes(':')) {
         const partes = tempoStr.split(':');
-        
-        // Cria data alvo baseada no dia de hoje
         const alvo = new Date();
         alvo.setHours(parseInt(partes[0]), parseInt(partes[1]), parseInt(partes[2] || 0));
         
-        // Diferença em segundos
+        if (alvo < agora && (agora - alvo) > 1000 * 60 * 60 * 12) { 
+             alvo.setDate(alvo.getDate() + 1);
+        }
+        
         const diffMs = alvo - agora;
         segundosRestantes = Math.floor(diffMs / 1000);
-    } else {
-        // Assume que é número direto (segundos)
+    } 
+    else {
+        // Fallback (apenas visual, não deve cair aqui com a lógica nova)
         segundosRestantes = parseInt(tempoStr);
     }
 
     if (segundosRestantes < 0) segundosRestantes = 0;
 
-    // Formata MM:SS
     const m = Math.floor(segundosRestantes / 60);
     const s = segundosRestantes % 60;
     const formatado = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     
     if (avisoTimerDisplay) avisoTimerDisplay.textContent = formatado;
     
-    // --- ALTERAÇÃO: FECHA AUTOMATICAMENTE AO ZERAR ---
     if (segundosRestantes <= 0) {
         if (avisoInterval) clearInterval(avisoInterval);
-        
-        // Adiciona um pequeno delay visual (opcional) de 1s para o usuário ver o 00:00
-        setTimeout(() => {
-            closeAvisoPanel(); 
-        }, 1000);
+        setTimeout(() => { closeAvisoPanel(); }, 1000);
     }
 }
+
 
 function closeAvisoPanel() {
     if (avisoPanel) {
@@ -616,18 +637,17 @@ async function carregarCartelasAutomaticas(idEvento) {
         return; 
     }
 
-    // Obtém ID do cliente da URL (modo quiosque/link único)
-    //*const urlParamsGlobal = new URLSearchParams(window.location.search);
-    // Tenta pegar da URL, se não tiver, tenta de alguma variável de sessão ou define fixo para teste
-    //const clienteLogadoId = urlParamsGlobal.get('id_cliente'); 
-
+    // Se a variável global estiver vazia, tenta ler da URL novamente (checando os dois nomes)
     if (!clienteLogadoId) {
-        console.log("Modo Espectador: Nenhum ID de cliente na URL.");
-        return;
+        clienteLogadoId = urlParamsGlobal.get('id_cliente') || urlParamsGlobal.get('idcliente');
     }
+    
+    // Debug para conferência
+    console.log("clienteLogadoId (Final):", clienteLogadoId);
 
     // Feedback visual (opcional)
-    const headerElement = isMobileDevice() ? document.getElementById('mobile-loaded-cards-header') : document.getElementById('loaded-cards-header');
+    const headerElement = isMobileDevice() ? document.getElementById('mobile-loaded-cards-header') : 
+document.getElementById('loaded-cards-header');
     if(headerElement) headerElement.textContent = "Buscando suas cartelas...";
 
     try {
@@ -1891,7 +1911,7 @@ function clearPanels() {
     ball2.textContent = '';
     ball3.textContent = '';
 
-    closeAvisoPanel(); // <--- Adicione aqui
+    closeAvisoPanel(); // <--- Adicione 
     lastAvisoTimestamp = 0; // Reseta para permitir novos avisos iguais
 
     updateDigitalBola("--");
@@ -2591,12 +2611,11 @@ async function renderMainContent(data) {
     // =========================================================================
     // Movemos isso para o topo para garantir que cartelas sejam carregadas 
     // assim que soubermos qual é o evento, independente de bolas ou prêmios.
-    
+   
     if (typeof clienteLogadoId !== 'undefined' && clienteLogadoId) {
         // Verifica se temos a informação da rodada (evento) atual
         // Pode vir em premioInfo.rodada OU rodadaData[0].id_evento (depende do seu backend)
         const eventoAtual = premioInfo?.rodada || rodadaData?.[0]?.id_evento;
-
         if (eventoAtual) {
             // Inicializa a variável de controle se não existir
             if (typeof window.ultimoEventoProcessado === 'undefined') {
@@ -2814,7 +2833,7 @@ async function init() {
 
         //const premioInfo = initialData.premioInfo;
         premioInfo = initialData.premioInfo;
-        // aquix
+      
         const oTipo = parseInt(tipoEntradaCartelas);
         if (oTipo === 1) {  
             minCartelas = premioInfo?.minimo_de_cartelas || 0;
@@ -2823,6 +2842,8 @@ async function init() {
             minCartelas = 1;
             maxCartelas =  premioInfo?.serie_em_jogo || 0;
         }
+       
+
         // NOVO CÓDIGO: Busca o valor de preco_da_serie e o exibe
         if (premioInfo && typeof premioInfo.preco === 'number') {             
             const preco = premioInfo.preco  / premioInfo.multiplo;
@@ -2917,9 +2938,9 @@ function startPrizeHideTimer() {
                 toggleButton.textContent = 'Apresentar Prêmios';
                 toggleButton.classList.remove('bg-red-800'); // Ou a classe que define a cor padrão
                 toggleButton.classList.add('bg-gray-700'); // Classe para a cor verde
-                if (cartelasEmJogo === 0 && rodadaState === 'intervalo') {
+                if (cartelasEmJogo === 0 && lastRodadaState === 'intervalo') {
                    seePromocoes = true;
-                   startPromocionalTimer();
+                   startPromocionalTimer();  
                 }
             }
         }

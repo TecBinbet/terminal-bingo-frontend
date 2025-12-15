@@ -97,6 +97,7 @@ clients = set() # WebSocket clients
 local_data = {}
 mongo_data = {}
 stop_flag = threading.Event()
+timeStart = None
 
 # --- CACHE EM MEMÓRIA (VELOCIDADE MÁXIMA) ---
 CACHE_JOGO = {
@@ -565,7 +566,7 @@ def recalcular_ranking_top10():
             elif qtde_falta == 1:
                 if busca_quadra: msg_premio = "QUADRA"
                 elif busca_falta_um: msg_premio = "FALTA UM"
-
+            # aquix
             resultados.append({
                 'cartela': c_id,
                 'nome': item['nome'],
@@ -749,7 +750,7 @@ def proximos_eventos():
         return jsonify({'error': str(e)}), 500
 
 
-# --- ROTA ATUALIZADA: FECHAR VENDAS E ENVIAR AVISO ---
+# --- ROTA ATUALIZADA: FECHAR VENDAS (CORREÇÃO DE FUSO E MEIA-NOITE) ---
 @app.route('/api/admin/fechar_vendas_evento', methods=['POST'])
 def admin_fechar_vendas():
     data = request.json
@@ -769,14 +770,21 @@ def admin_fechar_vendas():
                 tempo_espera_seg = int(param['aviso_fim_das_vendas'])
         except: pass
 
-        # 2. Calcula Hora Final (Hora Atual + Tempo Espera)
-        agora = datetime.now()
-        hora_final_obj = agora + timedelta(seconds=tempo_espera_seg)
+        # 2. Calcula Hora Final (Ajustado para Fuso Brasil -3h)
+        # Usamos UTC agora e subtraímos 3 horas para garantir horário de Brasília no Log
+        agora_br = datetime.utcnow() - timedelta(hours=3)
+        hora_final_obj = agora_br + timedelta(seconds=tempo_espera_seg)
         hora_final_str = hora_final_obj.strftime("%H:%M:%S")
 
         # 3. Envia o Aviso para a tabela (Para o Terminal ler)
         msg_aviso = "Atenção, em instantes o sorteio irá iniciar, Boa Sorte!"
-        threading.Thread(target=enviar_aviso_sistema, args=("Vendas Encerradas", msg_aviso, hora_final_str)).start()
+        
+        # --- CORREÇÃO AQUI ---
+        # Enviamos os SEGUNDOS (str) em vez da hora. 
+        # Isso evita que o frontend se perca na virada do dia (ex: 23:59 -> 00:01).
+        tempo_para_envio = str(tempo_espera_seg) 
+        
+        threading.Thread(target=enviar_aviso_sistema, args=("Vendas Encerradas", msg_aviso, tempo_para_envio)).start()
 
         # 4. Atualiza status no banco de vendas
         filtro = {'id_evento': int(id_evt)}
@@ -786,10 +794,9 @@ def admin_fechar_vendas():
         result = sales_db.eventos.update_one(filtro, {'$set': {'status': 'finalizado'}})
         
         if result.modified_count > 0:
-            print(f"🔒 Evento {id_evt} FINALIZADO. Aviso enviado até {hora_final_str}")
+            print(f"🔒 Evento {id_evt} FINALIZADO. Aviso enviado. Vendas até aprox: {hora_final_str} (BRT)")
             return jsonify({'status': 'ok', 'msg': 'Vendas encerradas e aviso enviado.'})
         else:
-            # Mesmo se já estiver finalizado, reenviamos o aviso para garantir que apareça na tela
             return jsonify({'status': 'warning', 'msg': 'Evento já finalizado (Aviso atualizado).'})
 
     except Exception as e:
@@ -800,41 +807,62 @@ def admin_fechar_vendas():
 # Rota Consultar Cartelas
 @app.route('/api/consultar_cartelas_evento')
 def api_consultar_cartelas():
-    id_evt = request.args.get('id_evento')
-    id_cli = request.args.get('id_cliente')
-    if not id_evt or not id_cli: return jsonify({'error': 'Faltam parâmetros'}), 400
-    
-    s_db = get_sales_db_connection()
-    if not s_db: return jsonify({'error': 'DB Vendas Offline'}), 500
-    
-    col = f"vendas{id_evt}"
-    cartelas = []
-    if col in s_db.list_collection_names():
-        cursor = s_db[col].find({'id_cliente': int(id_cli)})
-        for v in cursor:
-            if v.get('numero_inicial') and v.get('numero_final'):
-                cartelas.extend(range(v['numero_inicial'], v['numero_final']+1))
-            if v.get('numero_inicial2') and v.get('numero_final2'):
-                cartelas.extend(range(v['numero_inicial2'], v['numero_final2']+1))
+    try:
+        id_evt = request.args.get('id_evento')
+        id_cli = request.args.get('id_cliente')
+        
+        if not id_evt or not id_cli: 
+            return jsonify({'error': 'Faltam parâmetros'}), 400
+        
+        s_db = get_sales_db_connection()
+        
+        # --- CORREÇÃO DO ERRO FATAL AQUI ---
+        if s_db is None: 
+            return jsonify({'error': 'DB Vendas Offline'}), 500
+        # -----------------------------------
+        
+        col = f"vendas{id_evt}"
+        cartelas = []
+        
+        # Verifica se a tabela de vendas existe
+        if col in s_db.list_collection_names():
+            # Converte ID cliente para int com segurança
+            try:
+                id_cli_int = int(id_cli)
+            except:
+                id_cli_int = id_cli # Tenta buscar como string se falhar
                 
-    return jsonify({'id_evento': id_evt, 'cartelas': cartelas, 'quantidade': len(cartelas)})
-    
-@app.route('/api/cartelas', methods=['POST'])
-def get_cartelas_game():
-    ranges = request.json.get('ranges', [])
-    if not ranges: return jsonify([]), 400
-    
-    if is_local_mode:
-        # Lógica local simplificada
-        all_cards = fetch_data_from_local_files().get('cartelasData', []) # Teria que carregar cartelas.json
-        # (Implementar leitura de cartelas.json aqui se necessário para local)
-        return jsonify([]) 
-    else:
-        if db is None: return jsonify([]), 500
-        query = {'$or': [{'cartao': {'$gte': r['inicial'], '$lte': r['final']}} for r in ranges]}
-        c = list(db.cartelas.find(query))
-        for i in c: i['_id'] = str(i['_id'])
-        return jsonify(c)
+            cursor = s_db[col].find({'id_cliente': id_cli_int})
+            
+            for v in cursor:
+                # BLINDAGEM: Garante que os valores sejam inteiros antes de usar range()
+                try:
+                    # Faixa 1
+                    n_ini = int(v.get('numero_inicial') or 0)
+                    n_fim = int(v.get('numero_final') or 0)
+                    
+                    if n_ini > 0 and n_fim >= n_ini:
+                        cartelas.extend(range(n_ini, n_fim + 1))
+                    
+                    # Faixa 2
+                    n_ini2 = int(v.get('numero_inicial2') or 0)
+                    n_fim2 = int(v.get('numero_final2') or 0)
+                    
+                    if n_ini2 > 0 and n_fim2 >= n_ini2:
+                        cartelas.extend(range(n_ini2, n_fim2 + 1))
+                        
+                except Exception as e_row:
+                    print(f"⚠️ Erro ao processar linha de venda: {e_row}")
+                    continue
+
+        return jsonify({'id_evento': id_evt, 'cartelas': cartelas, 'quantidade': len(cartelas)})
+
+    except Exception as e:
+        print(f"❌ Erro FATAL na API consultar_cartelas: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 
 # --- WEBSOCKET ---
 def websocket_app(environ, start_response):
@@ -952,6 +980,7 @@ def admin_salvar_config():
 # Endpoint para Sortear Bola
 @app.route('/api/admin/sortear', methods=['POST'])
 def admin_sortear():
+    global db, timeStart
     if db is None: return jsonify({'error': 'Sem conexão com DB'}), 500
     
     try:
@@ -986,7 +1015,11 @@ def admin_sortear():
         
         # 3. Atualiza lista
         bolas_cantadas.append(nova_bola)
-        
+
+        if len(bolas_cantadas) == 1:
+            timeStart = datetime.now()
+            print(f"⏰ Jogo Iniciado em: {timeStart.strftime('%H:%M:%S')}")
+
         db.bolas.update_one({}, {
             '$set': {
                 'bolas_cantadas': bolas_cantadas,
@@ -1281,6 +1314,7 @@ def admin_limpar_conferencia():
 # --- SUBSTITUA A FUNÇÃO admin_resetar POR ESTA VERSÃO CORRIGIDA ---
 @app.route('/api/admin/resetar', methods=['POST'])
 def admin_resetar():
+    global db, timeStart # <--- IMPORTANTE: Chamar a global timeStart
     if db is None: return jsonify({'error': 'Sem conexão com DB'}), 500
     try:
         # --- 0. PREPARAÇÃO DE DADOS GERAIS ---
@@ -1299,73 +1333,93 @@ def admin_resetar():
         now = datetime.now()
         data_hoje = now.strftime("%d/%m/%Y")
         hora_atual = now.strftime("%H:%M")
-        hora_inicial = hora_atual 
+        
+        # --- LÓGICA DA HORA INICIAL ---
+        # Se timeStart foi gravado (jogo começou), usa ele. Senão, usa hora atual.
+        if timeStart:
+            hora_inicial = timeStart.strftime("%H:%M")
+        else:
+            hora_inicial = hora_atual 
+        # ------------------------------
 
-        # --- 1. PROCESSAMENTO DOS GANHADORES ---
+        # --- 1. PROCESSAMENTO DOS GANHADORES (Igual ao anterior) ---
         ganhadores_ativos = list(db.ganhadores.find({}))
         
+        tabela_premios = db.premio.find_one({}) or {}
+
         lista_osganhadores = []      
         lista_resultados_ganhadores = [] 
-        
+       
         if ganhadores_ativos:
             grupos_rateio = {}
             for g in ganhadores_ativos:
                 raw_premio = g.get('premio', '').upper()
                 
-                # Define a chave de agrupamento APENAS para cálculo matemático (dividir o dinheiro)
+                # Agrupamento
                 chave_base = raw_premio
                 if 'LINHA' in raw_premio: chave_base = "LINHA"
                 elif 'DUPLO' in raw_premio or 'SEGUNDO' in raw_premio: chave_base = "DUPLO BINGO"
                 elif 'BINGO' in raw_premio: chave_base = "BINGO"
                 elif 'QUADRA' in raw_premio: chave_base = "QUADRA"
                 elif 'FALTA' in raw_premio: chave_base = "FALTA UM"
+                elif 'ACUMULADO' in raw_premio: chave_base = "ACUMULADO" # Adicionado caso tenha
                 
                 if chave_base not in grupos_rateio: grupos_rateio[chave_base] = []
                 grupos_rateio[chave_base].append(g)
 
-            # Calcula Rateios e Formata Nomes
+            # Calcula Rateios usando a tabela de prêmios oficial
             for chave, lista_vencedores in grupos_rateio.items():
                 qtde_ganhadores = len(lista_vencedores)
                 
-                # Pega o valor total do prêmio (do primeiro ganhador do grupo)
-                val_total_str = "0"
-                if len(lista_vencedores) > 0:
-                     val_total_str = lista_vencedores[0].get('valor_total_premio', '0')
+                # 1. Determina qual campo do banco pegar baseado na chave
+                val_total_float = 0.0
                 
-                # Cálculos Matemáticos
-                val_total_float = parse_brl(val_total_str)
+                if chave == "QUADRA":
+                    val_total_float = converter_decimal(tabela_premios.get('premio_quadra'))
+                elif chave == "LINHA":
+                    val_total_float = converter_decimal(tabela_premios.get('premio_linha'))
+                elif chave == "BINGO":
+                    val_total_float = converter_decimal(tabela_premios.get('premio_bingo'))
+                elif chave == "DUPLO BINGO":
+                    val_total_float = converter_decimal(tabela_premios.get('premio_duplo_bingo'))
+                elif chave == "FALTA UM":
+                    val_total_float = converter_decimal(tabela_premios.get('premio_falta_Um'))
+                elif chave == "ACUMULADO":
+                    val_total_float = converter_decimal(tabela_premios.get('premio_acumulado'))
+                
+                # Fallback: Se não achou na tabela, tenta pegar do registro do ganhador (último recurso)
+                if val_total_float == 0.0 and len(lista_vencedores) > 0:
+                     val_str_temp = lista_vencedores[0].get('valor_total_premio', '0')
+                     val_total_float = parse_brl(val_str_temp)
+
+                # 2. Faz a divisão matemática
                 val_rateio_float = val_total_float / qtde_ganhadores if qtde_ganhadores > 0 else 0
                 
-                # Formatação para Gravação (String R$)
-                str_total = format_brl(val_total_float)
-                str_rateio = format_brl(val_rateio_float)
+                # 3. Formata para String (R$)
+                str_total = f"R$ {format_brl(val_total_float)}"
+                str_rateio = f"R$ {format_brl(val_rateio_float)}"
                 
                 for w in lista_vencedores:
-                    # --- CORREÇÃO DO NOME DO PRÊMIO ---
-                    # Usa o nome original gravado no ganhador, não a chave de grupo
                     nome_final_premio = w.get('premio', chave)
                     
-                    # Embeleza os nomes das linhas
+                    # Formata nome da linha
                     if 'LINHA' in chave:
                         if '(SUP)' in nome_final_premio.upper(): nome_final_premio = "LINHA SUPERIOR"
                         elif '(CEN)' in nome_final_premio.upper(): nome_final_premio = "LINHA CENTRAL"
                         elif '(INF)' in nome_final_premio.upper(): nome_final_premio = "LINHA INFERIOR"
-                        else: nome_final_premio = "LINHA" # Caso genérico
+                        else: nome_final_premio = "LINHA"
 
                     obj_ganhador = {
-                        "premio": nome_final_premio, # Agora mostra LINHA CENTRAL, etc.
-                        "valor_total_premio": str_total, # Valor cheio
+                        "premio": nome_final_premio,
+                        "valor_total_premio": str_total, # Agora vem da tabela premio
                         "cartela": str(w.get('cartela', '0')),
                         "nome": str(w.get('nome', '---')),
-                        "valor_rateio": str_rateio # Valor dividido
+                        "valor_rateio": str_rateio       # Calculado agora
                     }
                     
-                    # 1.1 Tabela Local (com rodada)
                     item_local = obj_ganhador.copy()
                     item_local['rodada'] = id_evento
                     lista_osganhadores.append(item_local)
-                    
-                    # 1.2 Tabela Remota (sem rodada duplicada)
                     lista_resultados_ganhadores.append(obj_ganhador)
 
         # --- 2. GRAVAÇÃO LOCAL 'osganhadores' ---
@@ -1374,28 +1428,33 @@ def admin_resetar():
             db.osganhadores.insert_many(lista_osganhadores)
             print(f"✅ 'osganhadores' atualizada: {len(lista_osganhadores)} registros.")
 
-        # --- 3. GRAVAÇÃO REMOTA 'resultados' ---
-        try:
-            sales_db = get_sales_db_connection()
-            if sales_db is not None:
-                doc_resultado = {
-                    "id_evento": id_evento,
-                    "data_evento": data_hoje,
-                    "hora_inicial": hora_inicial,
-                    "hora_final": hora_atual,
-                    "total_de_bolas": total_bolas,
-                    "bolas_sorteadas": str(bolas_lista), 
-                    "ganhadores": lista_resultados_ganhadores
-                }
-                sales_db.resultados.insert_one(doc_resultado)
-                print(f"✅ Histórico salvo no Sales DB.")
-            else:
-                print("⚠️ Conexão Sales DB retornou None.")
-                
-        except Exception as e_sales:
-            print(f"⚠️ Erro não-fatal ao salvar Sales DB: {e_sales}")
+        # --- 3. GRAVAÇÃO REMOTA 'resultados' (COM CONDIÇÃO) ---
+        # Só grava se tiver bolas sorteadas E tiver ganhadores na lista
+        if total_bolas > 0 and len(lista_resultados_ganhadores) > 0:
+            try:
+                sales_db = get_sales_db_connection()
+                if sales_db is not None:
+                    doc_resultado = {
+                        "id_evento": id_evento,
+                        "data_evento": data_hoje,
+                        "hora_inicial": hora_inicial, # Usa a hora capturada no sortear
+                        "hora_final": hora_atual,
+                        "total_de_bolas": total_bolas,
+                        "bolas_sorteadas": str(bolas_lista), 
+                        "ganhadores": lista_resultados_ganhadores
+                    }
+                    sales_db.resultados.insert_one(doc_resultado)
+                    print(f"✅ Histórico salvo no Sales DB (Hora Início: {hora_inicial}).")
+                else:
+                    print("⚠️ Conexão Sales DB retornou None.")
+            except Exception as e_sales:
+                print(f"⚠️ Erro não-fatal ao salvar Sales DB: {e_sales}")
+        else:
+            print(f"ℹ️ Histórico NÃO salvo (Bolas: {total_bolas}, Ganhadores: {len(lista_resultados_ganhadores)}).")
 
         # --- 4. LIMPEZA (RESET) ---
+        timeStart = None # <--- RESETA A HORA INICIAL PARA O PRÓXIMO JOGO
+        
         db.bolas.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': []}}, upsert=True)
         db.ganhadores.delete_many({})
         db.melhores.delete_many({})
@@ -1415,6 +1474,7 @@ def admin_resetar():
     except Exception as e:
         traceback.print_exc() 
         return jsonify({'error': str(e)}), 500
+
 
 
 # --- ROTA PARA REMOVER LINHA GANHA (CHAMADA AO FECHAR CONFERÊNCIA) ---
@@ -1605,6 +1665,45 @@ def get_event_details():
     except Exception as e:
         print(f"Erro Detalhes: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# --- ROTA FALTANTE: BUSCAR CARTELAS POR FAIXA ---
+@app.route('/api/cartelas', methods=['POST'])
+def get_cartelas_game():
+    # Pega a lista de faixas enviada pelo frontend
+    # Ex: [{'inicial': 1, 'final': 100}, {'inicial': 500, 'final': 600}]
+    ranges = request.json.get('ranges', [])
+    
+    if not ranges: 
+        return jsonify([]), 400
+    
+    if is_local_mode:
+        # Se estiver em modo local (sem banco), retorna vazio ou lógica de arquivo
+        return jsonify([]) 
+    else:
+        if db is None: 
+            return jsonify({'error': 'Sem conexão com DB'}), 500
+            
+        try:
+            # Cria uma query do MongoDB usando o operador $or para buscar múltiplas faixas
+            # Lê-se: "Busque onde (cartao >= inicial E cartao <= final) OU (próxima faixa...)"
+            query = {'$or': [{'cartao': {'$gte': int(r['inicial']), '$lte': int(r['final'])}} for r in ranges]}
+            
+            # Busca as cartelas no banco principal (db.cartelas)
+            # AVISO: Se for muita cartela, pode demorar. O ideal é o frontend pedir faixas razoáveis.
+            cursor = db.cartelas.find(query)
+            cartelas_encontradas = list(cursor)
+            
+            # Converte o ObjectId do Mongo para string para não dar erro no JSON
+            for c in cartelas_encontradas:
+                c['_id'] = str(c['_id'])
+            
+            return jsonify(cartelas_encontradas)
+            
+        except Exception as e:
+            print(f"❌ Erro ao buscar cartelas: {e}")
+            return jsonify({'error': str(e)}), 500
+
 
 # --- MAIN ---
 def main():

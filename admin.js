@@ -56,7 +56,8 @@ async function iniciarModoRobo() {
     modoRoboAtivo = true;
     bloquearInterface(true);
     console.log("🤖 MODO ROBÔ INICIADO");
-    customAlert("🤖 O Sorteio Automatizado foi iniciado!\n\nO sistema irá gerenciar bolas, ganhadores e prêmios sozinho.", "Modo Robô Ativo");
+    // aquix temporizar
+    customAlert("🤖 O Sorteio Automatizado foi iniciado!\n\nO sistema irá gerenciar bolas, ganhadores e prêmios sozinho.", "Modo Robô Ativo",5);
     if (!autoSorteioAtivo) toggleAutoSorteio(true); 
 }
 
@@ -309,6 +310,7 @@ function processarMensagemWS(event) {
                 if (modoRoboAtivo) {
                     // --- MODO ROBÔ COM TEMPORIZADOR ---
                     if (!processandoVitoria) {
+                        if (autoSorteioAtivo) pararAutoSorteio();
                         processandoVitoria = true; // Trava imediata
                         console.log("⏳ Aguardando sincronização visual dos terminais (3s)...");
                         
@@ -339,21 +341,45 @@ function processarMensagemWS(event) {
 // === 3. FUNÇÕES UI E MODAIS ===
 // =========================================================
 
-function customAlert(mensagem, titulo = "⚠️ Atenção") {
+function customAlert(mensagem, titulo = "⚠️ Atenção", tempo = 0) {
     return new Promise((resolve) => {
         modalTitle.textContent = titulo;
         modalTitle.className = "text-xl text-yellow-500 mb-1 uppercase tracking-wide";
         modalMessage.innerText = mensagem; 
         modalActions.innerHTML = '';
+        
         const btnOk = document.createElement('button');
         btnOk.className = "bg-blue-600 hover:bg-blue-500 text-white font-bold py-1 px-6 rounded-lg shadow-lg";
-        btnOk.textContent = "OK";
-        btnOk.onclick = () => { fecharCustomModal(); resolve(); };
+        
+        // Se tiver tempo, mostra no botão (opcional, visualmente útil)
+        if (tempo > 0) {
+            btnOk.textContent = `OK (${tempo}s)`;
+        } else {
+            btnOk.textContent = "OK";
+        }
+
+        let timerId = null;
+
+        // Função unificada para fechar
+        const fechar = () => {
+            if (timerId) clearTimeout(timerId); // Cancela o timer se clicou antes
+            fecharCustomModal(); 
+            resolve(); 
+        };
+
+        btnOk.onclick = fechar;
+        
         modalActions.appendChild(btnOk);
         abrirCustomModal();
         btnOk.focus();
+
+        // Lógica do Temporizador
+        if (tempo > 0) {
+            timerId = setTimeout(fechar, tempo * 1000); // Converte segundos para ms
+        }
     });
 }
+
 
 function customConfirm(mensagem, titulo = "❓ Confirmação") {
     return new Promise((resolve) => {
@@ -541,6 +567,7 @@ async function salvarConfiguracoes() {
         tipo_sorteio: parseInt(tipoSorteio) || 15, tipo_entrada_de_cartelas: parseInt(tipoEntrada) || 1,
         sorteio_automatizado: isSorteioAuto,aviso_fim_das_vendas: parseInt(tempoVendas) || 120
     };
+    
 
     try {
         await fetch(`${API_BASE_URL}/api/admin/salvar_config`, {
@@ -798,14 +825,24 @@ function iniciarTimerEspera(idEvento) {
 }
 
 // Função para o botão "Pular Espera"
-function pularEsperaVendas() {
-    if (confirm("Tem certeza? Clientes comprando agora podem ficar sem cartela.")) {
+async function pularEsperaVendas() { // <--- ADICIONE O 'async' AQUI
+    const confirmou = await customConfirm(`Tem certeza? Clientes comprando agora podem ficar sem cartela.`);
+    
+    if(confirmou) {
         clearInterval(vendasTimerInterval);
-        document.getElementById('modal-timer-vendas').classList.add('hidden');
-        document.getElementById('modal-timer-vendas').classList.remove('flex');
-        if (window.eventoPendenteID) executarCarregamentoReal(window.eventoPendenteID);
+        
+        const modal = document.getElementById('modal-timer-vendas');
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+        
+        if (window.eventoPendenteID) {
+            executarCarregamentoReal(window.eventoPendenteID);
+        }
     }
 }
+
 
 // --- FUNÇÃO 3: O CARREGAMENTO REAL (ANTIGA carregarEvento) ---
 async function executarCarregamentoReal(idEvento) {
@@ -871,10 +908,11 @@ async function executarCarregamentoReal(idEvento) {
         definirProximoPremioAutomatico();
         bolaDestaque.textContent = "--";
         initGrid();
-
+        // aquix
         if (sorteioAutomatizadoConfig && modoSorteio === 'auto') {
-            const iniciarRobo = await customConfirm("⚙️ Deseja iniciar o modo ROBÔ agora?");
-            if (iniciarRobo) iniciarModoRobo();
+        //    const iniciarRobo = await customConfirm("⚙️ Deseja iniciar o modo ROBÔ agora?");
+            //if (iniciarRobo) iniciarModoRobo();
+           iniciarModoRobo(); 
         }
 
     } catch (e) { 
@@ -976,7 +1014,7 @@ function renderRanking(lista, tipo) {
         
         row.className = cl;
         // Ajustei o col-span dos números para 3 para caber a tag de posição
-        row.innerHTML = `<div class="col-span-1 font-mono font-bold text-yellow-500 text-[16px]">${item.cartela}</div><div class="col-span-3 text-[13px] font-mono flex items-center">${htmlNums}</div><div class="col-span-2 text-right truncate text-xs text-blue-500">${item.nome==="null"?'---':item.nome}</div>`;
+        row.innerHTML = `<div class="col-span-1 font-mono font-bold text-yellow-500 text-[16px]">${item.cartela}</div><div class="col-span-3 text-[16px] font-mono flex items-center">${htmlNums}</div><div class="col-span-2 text-right truncate text-xs text-blue-500">${item.nome==="null"?'---':item.nome}</div>`;
         c.appendChild(row);
     });
 }
@@ -1267,7 +1305,9 @@ async function resetarJogo(force = false) {
         if (!force) {
             abrirModalEventos();
         } else {
-            customAlert("Evento finalizado pelo Sorteio Automatizado.");
+            // temporizar 
+            await customAlert("Evento finalizado pelo Sorteio Automatizado.","Sorteio Automatizado",3);
+            abrirModalEventos();
         }
     } catch (e) { 
         customAlert("Erro ao resetar."); 
