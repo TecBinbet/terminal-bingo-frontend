@@ -27,6 +27,20 @@ let jaAlertouNestaBola = false;
 let dadosEventoAtual = null;
 let localStream = null;
 let vendasTimerInterval = null;
+let MAX_BOLAS = 90;
+
+let cartelasPendentesAuditoria = [];
+let idsConfirmadosNestaRodada = new Set()
+
+let bolasEmTransito = new Set();
+let aguardandoVideo = 0; // temporizaor de atraso
+
+// --- MATRIZ DE SINCRONIA (BUFFER DE SAÍDA) ---
+let matrizEnvio = []; 
+let bolasCacheLocal = new Set();
+let timerSincronia = setInterval(processarMatrizEnvio, 100);
+
+let matrizAcoes = []; 
 
 // --- VARIÁVEIS DO MODO ROBÔ ---
 let modoRoboAtivo = false;       
@@ -47,6 +61,72 @@ const RECONNECT_DELAY = 5000;
 //const API_BASE_URL = ""; 
 //const WS_URL = `ws://${window.location.host}/ws`; 
 
+
+// =========================================================
+// === 1. LÓGICA ATRASO DA GRAVAÇÃO ===
+// =========================================================
+
+async function processarMatrizEnvio() {
+    // 1. Se a fila estiver vazia, encerra o ciclo atual
+    if (matrizEnvio.length === 0) return;
+
+    // 2. Pega o primeiro item da fila (FIFO - First In, First Out)
+    // Apenas "olha" o item, não remove ainda.
+    const item = matrizEnvio[0]; 
+    
+    // 3. Define qual é o atraso a ser respeitado nesta rodada
+    // Se o modo for 'manual', usa a variável global aguardandoVideo.
+    // Se for 'automático' ou 'digital', força zero para ser instantâneo.
+    const delay = (modoSorteio === 'manual') ? (aguardandoVideo || 0) : 0;
+
+    console.log(`Delay Configurado: ${delay}ms | Tempo Passado: ${Date.now() - item.hora}ms`);
+
+    // 4. Verifica matemática do tempo: (Agora - HoraCriacao >= Delay)
+    if (Date.now() - item.hora >= delay) {
+        
+        // --- HORA DA AÇÃO! ---
+        
+        // Remove o item da fila imediatamente para evitar processamento duplo
+        matrizEnvio.shift(); 
+        
+        console.log(`📡 Sincronia Vídeo: Liberando [${item.tipo}] Valor: ${item.valor} após ${(Date.now() - item.hora)}ms`);
+
+        try {
+            // --- CASO 1: LIBERAR BOLA NA TELA DO CLIENTE ---
+            if (item.tipo === 'BOLA_CLIENTE') {
+                await fetch(`${API_BASE_URL}/api/admin/publicar_bola`, {
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify({ bola: item.valor })
+                });
+            } 
+            
+            else if (item.tipo === 'PREMIO_CLIENTE') {
+                console.log(`📡 Sincronia: Atualizando Prêmio Público para ${item.valor}`);
+                await fetch(`${API_BASE_URL}/api/admin/definir_premio_publico`, {
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ premio: item.valor })
+                });
+            }    
+        
+            // --- CASO 3: LIMPAR TELA DE GANHADORES (Se necessário) ---
+            // Usado quando o locutor confirma o ganhador e quer limpar a tela da TV após o delay
+            else if (item.tipo === 'LIMPAR_PUBLICO') {
+                await fetch(`${API_BASE_URL}/api/admin/limpar_conferencia_publica`, {
+                    method: 'POST'
+                });
+            }
+
+        } catch (e) {
+            console.error(`❌ Erro crítico ao sincronizar [${item.tipo}]:`, e);
+            // Nota: Não recolocamos na fila para não travar o fluxo do jogo.
+            // O erro fica no log e o sistema segue para o próximo item.
+        }
+    }
+}
+
+
 // =========================================================
 // === 1. LÓGICA DO ROBÔ (AUTOMATIZAÇÃO) ===
 // =========================================================
@@ -56,7 +136,7 @@ async function iniciarModoRobo() {
     modoRoboAtivo = true;
     bloquearInterface(true);
     console.log("🤖 MODO ROBÔ INICIADO");
-    // aquix temporizar
+    //  temporizar
     customAlert("🤖 O Sorteio Automatizado foi iniciado!\n\nO sistema irá gerenciar bolas, ganhadores e prêmios sozinho.", "Modo Robô Ativo",5);
     if (!autoSorteioAtivo) toggleAutoSorteio(true); 
 }
@@ -122,10 +202,12 @@ async function gerenciarVitoriaRobo(ganhadores) {
 
 async function decidirProximoPassoRobo() {
     let info = null;
+    cartelasPendentesAuditoria = [];
+    idsConfirmadosNestaRodada.clear();
     try {
         const resp = await fetch(`${API_BASE_URL}/api/initial-data`);
         const data = await resp.json();
-        info = data.buscandoData[0];
+        info = data.buscandoMesaData[0];
     } catch (e) { console.error("Erro check robo", e); }
 
     if (!info) return;
@@ -173,6 +255,133 @@ async function decidirProximoPassoRobo() {
 // =========================================================
 // === FUNÇÕES GLOBAIS DE LOADING (NOVO) ===
 // =========================================================
+let ganhadoresPendentesCache = [];
+
+function renderListaPendentes(lista) {
+    const container = document.getElementById('lista-pendentes-contemplados');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    if (!lista || lista.length === 0) {
+        container.innerHTML = '<div class="text-gray-500 text-xs py-4 text-center italic col-span-3">Nenhuma cartela aguardando conferência.</div>';
+        return;
+    }
+
+    // --- AJUSTE: MUDANÇA PARA 5 COLUNAS (Grid Layout) ---
+    container.className = "grid grid-cols-5 gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar";
+
+    lista.forEach(item => {
+        const btn = document.createElement('button');
+        // Estilo compacto para caber em 3 colunas
+        btn.className = "flex flex-col items-center justify-center p-2 rounded bg-blue-900/40 hover:bg-blue-600 text-white border border-blue-500/50 transition-all shadow-sm";
+        btn.innerHTML = `
+            <span class="font-black text-lg text-yellow-400 leading-none">${item.cartela}</span>
+            <span class="text-[9px] font-bold bg-blue-700 px-1 mt-1 rounded uppercase">${item.premio}</span>
+        `;
+        btn.onclick = () => {
+            document.getElementById('input-auditoria').value = item.cartela;
+            validarCartelaAuditoria();
+        };
+        container.appendChild(btn);
+    });
+}
+
+function preencherCartelaEValidar(cartela) {
+    const input = document.getElementById('input-auditoria');
+    input.value = cartela;
+    validarCartelaAuditoria();
+}
+
+
+// SUBSTITUA A FUNÇÃO renderGridConferencia POR ESTA VERSÃO CORRIGIDA:
+
+function renderGridConferencia(data) {
+    const grid = document.getElementById('conf-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    
+    // Converte bolas cantadas para Strings para facilitar comparação
+    const bolas = (data.bolas || bolasSorteadasCache || []).map(String);
+    
+    // --- VARIÁVEIS DE DADOS CORRIGIDAS ---
+    const tipoJogo = data.layout?.tipo || 90; // Pega o tipo do layout
+    let numerosDaCartela = [];
+
+    if (tipoJogo === 75) {
+        // CORREÇÃO: Usa o campo 'lista' dentro de 'layout' que vem do backend 75
+        numerosDaCartela = data.layout?.lista || [];
+    } else {
+        // MODO 90: Usa os campos separados
+        numerosDaCartela = (data.layout?.superior || [])
+                            .concat(data.layout?.central || [])
+                            .concat(data.layout?.inferior || []);
+    }
+    // -------------------------------------
+
+
+    // --- MODO BINGO 75 (Matriz 5x5) ---
+    // A condição agora é baseada no tipo do layout
+    if (tipoJogo === 75 && numerosDaCartela.length === 25) { 
+        
+        grid.className = "grid grid-cols-5 gap-1 bg-black p-2 rounded border border-gray-600 w-full max-w-[300px] mx-auto";
+        
+        // --- LÓGICA DE TRANSPOSIÇÃO CORRIGIDA ---
+        for (let linha = 0; linha < 5; linha++) {
+            for (let coluna = 0; coluna < 5; coluna++) {
+                
+                // Índice = (coluna * 5) + linha (Índices que você me passou)
+                const index = (coluna * 5) + linha;
+                const num = numerosDaCartela[index];
+                
+                const cell = document.createElement('div');
+
+                // O free space é o índice 12, que geralmente é 0
+                const isFree = (index === 12 && num === 0);
+                let marcado = bolas.includes(String(num)) || isFree; 
+
+                // Estilo da Célula
+                let cssClass = "h-10 w-full flex items-center justify-center font-bold text-sm rounded border ";
+                
+                if (isFree) {
+                    cssClass += "bg-green-600 text-white border-green-400"; // Estilo FREE
+                    cell.textContent = "★";
+                } else {
+                    if (marcado) {
+                        cssClass += "bg-yellow-500 text-black border-yellow-300 shadow-inner";
+                    } else {
+                        cssClass += "bg-gray-800 text-white border-gray-600";
+                    }
+                    cell.textContent = num;
+                }
+                
+                cell.className = cssClass;
+                grid.appendChild(cell);
+            }
+        }
+    } 
+    // --- MODO BINGO 90 (3 Linhas - MANTIDO NOVO) ---
+    else if (tipoJogo === 90 && data.layout) {
+        grid.className = "flex flex-col gap-2 bg-black p-2 rounded border border-gray-600";
+        
+        [data.layout.superior, data.layout.central, data.layout.inferior].forEach(linha => {
+            const row = document.createElement('div'); 
+            row.className = "flex justify-between gap-1";
+            
+            linha.forEach(num => { // Linha 240 (onde o erro ocorria)
+                const cell = document.createElement('div');
+                const marcado = bolas.includes(String(num));
+                
+                cell.className = `w-full h-9 flex items-center justify-center font-bold text-lg rounded border ${marcado ? "bg-yellow-500 text-black border-yellow-300" : "bg-gray-800 text-gray-300 border-gray-600"}`;
+                cell.textContent = num;
+                row.appendChild(cell);
+            });
+            grid.appendChild(row);
+        });
+    }
+}
+
+
 function showLoading(mensagem = "Processando...") {
     const overlay = document.getElementById('loading-overlay');
     const msgEl = document.getElementById('loading-message');
@@ -238,89 +447,227 @@ async function carregarDadosIniciaisSilencioso() {
     try {
         const response = await fetch(`${API_BASE_URL}/api/initial-data`);
         const data = await response.json();
+
+        // Se a API retornar parametrosInfo no initial-data:
+        if (data.parametrosInfo) {
+            aguardandoVideo = parseInt(data.parametrosInfo.aguardandoVideo) || 0;
+            document.getElementById('config-atraso-video').value =aguardandoVideo; 
+            vozAtiva = data.parametrosInfo.voz_ativa !== undefined ? data.parametrosInfo.voz_ativa : true;
+        }
+        
+        // --- DETECTOR DE MODO ---
+        if (data.evento && parseInt(data.evento.tipo_cartela) === 25) {
+            MAX_BOLAS = 75;
+            // console.log("🎱 Modo Bingo 75 ativado!"); // Opcional no silencioso
+        } else {
+            MAX_BOLAS = 90;
+        }
+
+        // --- CORREÇÃO VISUAL (O PULO DO GATO) ---
+        // Verifica quantas bolas tem na tela agora. Se for diferente do novo MAX_BOLAS, redesenha.
+        const totalBolasNaTela = document.querySelectorAll('[id^="admin-ball-"]').length;
+        if (totalBolasNaTela !== MAX_BOLAS) {
+            initGrid(); // Só recria o HTML se o tamanho mudou
+        }
+        // ----------------------------------------
+
         if(data.bolasData && data.bolasData[0]) {
              bolasSorteadasCache = data.bolasData[0].bolas_cantadas || [];
              updateGrid(bolasSorteadasCache);
         }
-    } catch(e) {}
+    } catch(e) {
+        // Silencioso: não faz nada no erro
+    }
 }
+
+
+// SUBSTITUA A FUNÇÃO processarMensagemWS POR ESTA:
 
 function processarMensagemWS(event) {
     const payload = JSON.parse(event.data);
     
     if (payload.type === 'UPDATE') {
         
-        // 1. Bolas
-        if (payload.bolasData) {
-            const bolas = payload.bolasData[0]?.bolas_cantadas || [];
-            bolasSorteadasCache = bolas;
-            if (bolas.length !== ultimoTotalBolasProcessadas) {
-                ultimoTotalBolasProcessadas = bolas.length;
+        // ============================================================
+        // 1. GERENCIAMENTO DAS BOLAS (MESA vs PÚBLICO)
+        // ============================================================
+        let dadosBolas = [];
+
+        // Prioridade: Se tiver dados da Mesa (Admin em Tempo Real), usa eles.
+        if (payload.bolasMesaData && payload.bolasMesaData.length > 0) {
+            dadosBolas = payload.bolasMesaData;
+            // console.log("🛠️ Painel Admin: Usando dados da MESA");
+        } else {
+            // Senão, usa os dados públicos (com delay) como fallback
+            dadosBolas = payload.bolasData || []; 
+        }
+
+        if (dadosBolas.length > 0) {
+            const ultimoSorteio = dadosBolas[0]; // Pega o objeto mais recente
+            
+            // --- CORREÇÃO IMPORTANTE AQUI ---
+            // Os números reais estão dentro de 'bolas_cantadas'
+            const listaDeNumeros = ultimoSorteio.bolas_cantadas || [];
+            
+            // Atualiza cache local
+            bolasSorteadasCache = listaDeNumeros; // Se sua variável for um Array
+            // Se bolasSorteadasCache for um Set, use: new Set(listaDeNumeros);
+
+            // Controle de Áudio/Alerta
+            if (listaDeNumeros.length > ultimoTotalBolasProcessadas || listaDeNumeros.length === 0) {
+                ultimoTotalBolasProcessadas = listaDeNumeros.length;
                 jaAlertouNestaBola = false;
             }
-            updateGrid(bolas);
-            if (bolas.length > 0) bolaDestaque.textContent = bolas[bolas.length - 1];
+
+            // Atualiza o Grid (Passando a lista de números limpa)
+            if (typeof updateGrid === 'function') {
+                updateGrid(listaDeNumeros);
+            } else if (typeof atualizarGridVisual === 'function') {
+                atualizarGridVisual(listaDeNumeros);
+            }
+
+            // Atualiza Bola Destaque (A bola grande)
+            if (bolaDestaque) {
+                // Preferência: Usar o campo explícito 'proxima_bola' se existir
+                if (ultimoSorteio.proxima_bola && ultimoSorteio.proxima_bola !== "--") {
+                    bolaDestaque.textContent = ultimoSorteio.proxima_bola;
+                } else if (listaDeNumeros.length > 0) {
+                    // Fallback: Pega a última do array
+                    bolaDestaque.textContent = listaDeNumeros[listaDeNumeros.length - 1];
+                }
+            }
         }
 
-        // 2. Status
-        if(payload.buscandoData) {
-            const dados = payload.buscandoData[0];
-            const premio = dados?.buscando_o_premio || '...';
+        // ============================================================
+        // 2. STATUS E PRÊMIO ("Buscando...")
+        // ============================================================
+        if (payload.buscandoMesaData && payload.buscandoMesaData.length > 0) {
+            const dados = payload.buscandoMesaData[0];
+            let premio = dados?.buscando_o_premio || '...';
             const linhas = dados?.buscando_a_linha || '';
-            let texto = premio;
-            if (linhas && (premio === 'LINHA' || premio === '3 LINHAS')) texto += ` (${linhas})`;
-            document.getElementById('status-premio').textContent = `Buscando: ${texto}`;
+            
+            // Máscara Visual para Bingo 75
+            if (typeof MAX_BOLAS !== 'undefined' && MAX_BOLAS === 75) {
+               if (premio === 'QUADRA') premio = '4 CANTOS';
+            }
+
+            // Monta texto com linhas (Ex: LINHA (SUP,CEN))
+            let textoCompleto = premio;
+            if (linhas && (premio === 'LINHA' || premio === '3 LINHAS')) {
+                textoCompleto += ` (${linhas})`;
+            }
+
+            // Atualiza UI
+            const elStatus = document.getElementById('status-premio');
+            if (elStatus) elStatus.textContent = `Buscando: ${textoCompleto}`;
+    
+            const elTitulo = document.getElementById('premio-atual'); 
+            if (elTitulo) elTitulo.textContent = premio;
         }
 
-        // 3. Configurações
+        // ============================================================
+        // 3. CONFIGURAÇÕES DO SERVIDOR
+        // ============================================================
         if (payload.parametrosInfo) {
             configuracaoServer = payload.parametrosInfo;
-            if (configuracaoServer.sorteio_automatizado !== undefined) sorteioAutomatizadoConfig = configuracaoServer.sorteio_automatizado;
+            
+            if (configuracaoServer.sorteio_automatizado !== undefined) {
+                sorteioAutomatizadoConfig = configuracaoServer.sorteio_automatizado;
+            }
+            
+            if (configuracaoServer.aguardandoVideo !== undefined) {
+                aguardandoVideo = parseInt(configuracaoServer.aguardandoVideo) || 0; 
+            }
+
+            if (configuracaoServer.voz_ativa !== undefined) {
+                vozAtiva = configuracaoServer.voz_ativa;
+            }
+
             if (configuracaoServer.modo_sorteio) {
                 modoSorteio = configuracaoServer.modo_sorteio;
-                aplicarVisualModoSorteio(modoSorteio);
+                if (typeof aplicarVisualModoSorteio === 'function') {
+                    aplicarVisualModoSorteio(modoSorteio);
+                }
             }
-            const modal = document.getElementById('modal-config');
-            if (modal && modal.classList.contains('hidden')) preencherModalConfig(configuracaoServer);
-        }
-
-        // 4. Lista Ganhadores (Prioridade Live)
-        if (payload.ganhadoresLive && payload.ganhadoresLive.length > 0) {
-            // console.error("passo 1"); // Debug opcional
-            renderListaGanhadores(payload.ganhadoresLive);
-        } else if (payload.ganhadoresData && payload.ganhadoresLive === undefined) {
-            // console.error("passo 2"); // Debug opcional
-            renderListaGanhadores(payload.ganhadoresData);
-        }
-
-        // 5. Ranking e Lógica de Vitória
-        if (payload.melhoresData) {
-            let tipoPremioBuscado = "BINGO";
-            if (payload.buscandoData && payload.buscandoData[0]) tipoPremioBuscado = payload.buscandoData[0].buscando_o_premio;
             
-            renderRanking(payload.melhoresData, tipoPremioBuscado);
+            const modal = document.getElementById('modal-config');
+            if (modal && modal.classList.contains('hidden') && typeof preencherModalConfig === 'function') {
+                preencherModalConfig(configuracaoServer);
+            }
+        }
 
-            const paradasObrigatorias = ['QUADRA', 'LINHA', 'FALTA UM', 'BINGO', 'DUPLO BINGO'];
-            const ganhadoresAtuais = payload.melhoresData.filter(item => {
-                const status = (item.premio && item.premio !== "null") ? item.premio : "";
-                return paradasObrigatorias.includes(status);
-            });
+        // ============================================================
+        // 4. LISTA DE GANHADORES
+        // ============================================================
+        // Prioriza a lista Live (Admin) se existir, senão usa a do Cliente
+        if (payload.ganhadoresLive && payload.ganhadoresLive.length > 0) {
+            if (typeof renderListaGanhadores === 'function') renderListaGanhadores(payload.ganhadoresLive);
+        } else if (payload.ganhadoresData) {
+            if (typeof renderListaGanhadores === 'function') renderListaGanhadores(payload.ganhadoresData);
+        }
+        // 5. Ranking e Lógica de Vitória (Mantido igual)
+
+//----
+if (payload.melhoresData) {
+    let tipoPremioBuscado = "BINGO";
+    if (payload.buscandoMesaData && payload.buscandoMesaData[0]) tipoPremioBuscado = payload.buscandoMesaData[0].buscando_o_premio;
+    
+    renderRanking(payload.melhoresData, tipoPremioBuscado);
+
+    if (MAX_BOLAS === 75) {
+        // --- BINGO 75 (PADRÕES) ---
+        // Aqui NÃO incluímos 'FALTA 1' ou 'FALTA UM' para evitar spam na auditoria
+        paradasObrigatorias = ['QUADRA', 'LINHA', 'BINGO', 'DUPLO BINGO', '4 CANTOS', '4 CANTOS E LINHA'];
+        termosVitoria = ['BINGO', 'LINHA', 'QUADRA', '4 CANTOS', '4 CANTOS E LINHA'];
+    
+    } else {
+        // --- BINGO 90 (CLÁSSICO) ---
+        // Aqui mantemos 'FALTA UM' pois ele pode ser um prêmio pago
+        paradasObrigatorias = ['QUADRA', 'LINHA', 'FALTA UM', 'BINGO', 'DUPLO BINGO'];
+        termosVitoria = ['BINGO', 'LINHA', 'QUADRA', 'FALTA 1', 'FALTA UM', 'DUPLO BINGO'];
+    }
+    
+    //const paradasObrigatorias = ['QUADRA', 'LINHA', 'FALTA UM', 'BINGO', 'DUPLO BINGO', '4 CANTOS', '4 CANTOS E LINHA'];
+    const ganhadoresAtuais = payload.melhoresData.filter(item => {
+        const status = (item.premio && item.premio !== "null") ? item.premio.toUpperCase() : "";
+        return paradasObrigatorias.some(termo => status.includes(termo)); 
+    });
+
+    //const termosVitoria = ['BINGO', 'LINHA', 'QUADRA', '4 CANTOS', 'FALTA 1', 'FALTA UM'];
+
+    const novosContemplados = payload.melhoresData.filter(item => {
+        const status = (item.premio && item.premio !== "null") ? item.premio.toUpperCase() : "";
+        return termosVitoria.some(termo => status.includes(termo));              
+    });
+
+    if (!modoRoboAtivo) {
+        novosContemplados.forEach(novo => {
+        const ID = String(novo.cartela).trim();
+        if (!idsConfirmadosNestaRodada.has(ID) && 
+            !cartelasPendentesAuditoria.some(c => String(c.cartela).trim() === ID)) {
+               cartelasPendentesAuditoria.push({
+                   cartela: ID, 
+                   nome: novo.nome === "null" ? "Balcão" : novo.nome,
+                   premio: novo.premio 
+               });
+            }
+        });
+    } else {
+         cartelasPendentesAuditoria = [];
+    }
 
             if (ganhadoresAtuais.length > 0) {
                 if (modoRoboAtivo) {
-                    // --- MODO ROBÔ COM TEMPORIZADOR ---
                     if (!processandoVitoria) {
                         if (autoSorteioAtivo) pararAutoSorteio();
-                        processandoVitoria = true; // Trava imediata
+                        processandoVitoria = true; 
                         console.log("⏳ Aguardando sincronização visual dos terminais (3s)...");
-                        
                         setTimeout(() => {
-                            processandoVitoria = false; // Destrava para executar
+                            processandoVitoria = false; 
                             gerenciarVitoriaRobo(ganhadoresAtuais);
-                        }, 3000); 
+                        }, 4000); 
                     }
                 } else { 
-                    // --- MODO MANUAL/AUTO PADRÃO ---
                     if (autoSorteioAtivo) {
                         pararAutoSorteio();
                         customAlert("Alerta de Premiação! Sorteio pausado.");
@@ -501,7 +848,7 @@ function renderizarListaEventos(eventos) {
                     <span class="uppercase font-bold text-blue-300">[${evt.status}]</span>
                 </div>
             </div>
-            <button onclick="carregarEvento('${evt.id_evento}')" class="px-3 py-1.5 rounded text-xs font-bold ${isFinalizado ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-green-700 text-white hover:bg-green-600 shadow'}">
+            <button onclick="carregarEvento('${evt.id_evento}')" class="px-4 py-3 rounded text-xs font-bold ${isFinalizado ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-green-700 text-white hover:bg-green-600 shadow'}">
                 ${isFinalizado ? 'ENCERRADO' : 'CARREGAR'}
             </button>
         `;
@@ -553,6 +900,7 @@ async function salvarConfiguracoes() {
     let modoSelecionado = 'auto';
     const radios = document.getElementsByName('modo_sorteio');
     for (const radio of radios) { if (radio.checked) { modoSelecionado = radio.value; break; } }
+
     const nomeSala = document.getElementById('config-nome-sala').value;
     const urlPadrao = document.getElementById('config-url-padrao').value;
     const urlLive = document.getElementById('config-url-live').value;
@@ -560,14 +908,32 @@ async function salvarConfiguracoes() {
     const tipoSorteio = document.getElementById('config-tipo-sorteio').value;
     const tipoEntrada = document.getElementById('config-entrada-cartelas').value;
     const isSorteioAuto = document.getElementById('config-sorteio-automatizado').checked;
+    const atrasoVideo = document.getElementById('config-atraso-video').value;
+// --- REGRA DE OURO: AJUSTE DO ATRASO DE VÍDEO ---
+    let atrasoVideoInput = document.getElementById('config-atraso-video').value;
+    let valorAtrasoFinal = parseInt(atrasoVideoInput) || 0;
 
+    // Se o modo for diferente de manual, forçamos o atraso para 0
+    if (modoSelecionado !== 'manual') {
+        valorAtrasoFinal = 0;
+        document.getElementById('config-atraso-video').value = 0;
+    }
+   
     const payload = {
-        tempo_ganhador: winnerTime, modo_sorteio: modoSelecionado, voz_ativa: isVoz, camera_ativa: isCam,
-        nome_sala: nomeSala, url_padrao: urlPadrao, url_live: urlLive, url_mongo_vendas: urlMongo,
-        tipo_sorteio: parseInt(tipoSorteio) || 15, tipo_entrada_de_cartelas: parseInt(tipoEntrada) || 1,
-        sorteio_automatizado: isSorteioAuto,aviso_fim_das_vendas: parseInt(tempoVendas) || 120
-    };
-    
+        tempo_ganhador: winnerTime, 
+        modo_sorteio: modoSelecionado, 
+        voz_ativa: isVoz, 
+        camera_ativa: isCam,
+        nome_sala: nomeSala, 
+        url_padrao: urlPadrao, 
+        url_live: urlLive, 
+        url_mongo_vendas: urlMongo,
+        tipo_sorteio: parseInt(tipoSorteio) || 15, 
+        tipo_entrada_de_cartelas: parseInt(tipoEntrada) || 1,
+        sorteio_automatizado: isSorteioAuto,
+        aviso_fim_das_vendas: parseInt(tempoVendas) || 120,
+        aguardandoVideo: valorAtrasoFinal // Envia o valor já tratado pela regra
+    };  
 
     try {
         await fetch(`${API_BASE_URL}/api/admin/salvar_config`, {
@@ -575,7 +941,9 @@ async function salvarConfiguracoes() {
         });
         
         vozAtiva = isVoz; cameraAtiva = isCam; modoSorteio = modoSelecionado;
-        aplicarVisualModoSorteio(modoSorteio); aplicarVisibilidadeCamera(cameraAtiva);
+        aplicarVisualModoSorteio(modoSorteio);
+        aplicarVisibilidadeCamera(cameraAtiva);
+        aguardandoVideo = valorAtrasoFinal;
         fecharModal('modal-config');
         customAlert("Configurações salvas com sucesso!");
     } catch (e) { console.error(e); customAlert("Erro ao salvar no servidor."); }
@@ -652,7 +1020,7 @@ async function sortearBola() {
     const btn = document.getElementById('btn-sortear');
     if(btn) { btn.disabled = true; btn.textContent = "SORTEANDO..."; }
     try {
-        const response = await fetch(`${API_BASE_URL}/api/admin/sortear`, { 
+        const response = await fetch(`${API_BASE_URL}/api/admin/sortear_mesa`, { 
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({})
         });
         const data = await response.json();
@@ -663,26 +1031,85 @@ async function sortearBola() {
             if(el) el.classList.add('bg-green-600', 'text-white');            
             falarTextoLocutor(`${data.bola}`);
         }
+        // aquix
+        matrizEnvio.push({
+           tipo: 'BOLA_CLIENTE',
+           valor: data.bola,
+           hora: Date.now()
+        });
+        
     } catch (error) { console.error(error); } 
     finally { isSorting = false; if(btn) { btn.disabled = false; btn.textContent = "SORTEAR BOLA 🎲"; } }
 }
 
+// admin.js - Substitua a função inteira
+
 async function inserirBolaManual() {
     const input = document.getElementById('input-bola-manual');
     const erroLabel = document.getElementById('erro-manual');
-    const valor = parseInt(input.value);
-    if (isNaN(valor) || valor < 1 || valor > 90) { erroLabel.textContent = "Digite entre 1 e 90"; input.value = ""; input.focus(); return; }
-    if (bolasSorteadasCache.includes(valor)) { erroLabel.textContent = `Bola ${valor} já foi!`; input.value = ""; return; }
+    let valor = parseInt(input.value);
+
+    // 1. Validações Básicas
+    if (isNaN(valor) || valor < 1 || valor > MAX_BOLAS) { 
+        erroLabel.textContent = `Digite entre 1 e ${MAX_BOLAS}`; 
+        input.value = ""; 
+        return; 
+    }
+    
+    // Verifica duplicidade no cache local (evita clique duplo)
+    if (bolasSorteadasCache.includes(valor) || bolasCacheLocal.has(valor)) { 
+        erroLabel.textContent = `Bola ${valor} já foi!`; 
+        input.value = ""; 
+        return; 
+    }
+
+    // 2. AÇÃO IMEDIATA (ADMIN)
     erroLabel.textContent = "";
+    input.value = ''; 
+    devolverFocoAoJogo();
+    
+    // Feedback visual local (Admin vê na hora)
+    bolaDestaque.textContent = valor;
+    if (vozAtiva) falarTextoLocutor(String(valor));
+    
+    // Adiciona ao cache local temporário
+    bolasCacheLocal.add(valor);
+
     try {
-        const response = await fetch(`${API_BASE_URL}/api/admin/sortear`, {
-            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ bola_manual: valor })
+        // --- AQUI ESTAVA O ERRO ---
+        // Agora chamamos a rota ESPECÍFICA DA MESA (sem broadcast)
+        const response = await fetch(`${API_BASE_URL}/api/admin/sortear_mesa`, {
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({ bola_manual: valor })
         });
+        
         const data = await response.json();
-        if (data.error) { erroLabel.textContent = data.error; input.value = ""; input.focus(); } 
-        else { input.value = ''; devolverFocoAoJogo(); bolaDestaque.textContent = data.bola; falarTextoLocutor(`${data.bola}`); }
-    } catch (e) { customAlert("Erro de conexão"); }
+        
+        if (data.error) {
+            console.error("Erro mesa:", data.error);
+            erroLabel.textContent = data.error;
+            bolasCacheLocal.delete(valor); // Libera para tentar de novo
+            return;
+        }
+
+        // 3. AGENDAMENTO DO PÚBLICO (CLIENTES)
+        // Só agora colocamos na fila para ser enviado ao público daqui a X segundos
+        matrizEnvio.push({
+            tipo: 'BOLA_CLIENTE',
+            valor: valor,
+            hora: Date.now()
+        });
+        
+        console.log(`Bola ${valor} registrada na Mesa. Agendada para público.`);
+
+    } catch (e) {
+        console.error("Erro de conexão:", e);
+        erroLabel.textContent = "Erro ao conectar com servidor!";
+        bolasCacheLocal.delete(valor);
+    }
 }
+
 
 function aplicarVisibilidadeCamera(ativa) {
     const container = document.getElementById('camera-preview-container');
@@ -751,31 +1178,53 @@ function aplicarVisualModoSorteio(modo) {
 }
 
 
-// --- FUNÇÃO 1: INÍCIO DO PROCESSO (CLIQUE NO BOTÃO CARREGAR) ---
+// SUBSTITUA A FUNÇÃO carregarEvento POR ESTA:
+
 async function carregarEvento(idEvento) {
-    const confirmou = await customConfirm(`Deseja INICIAR este evento?\n\nIsso irá BLOQUEAR novas vendas e iniciar o temporizador de segurança.`);
+    const confirmou = await customConfirm(`Deseja INICIAR este evento?\n\nIsso irá preparar a base de cartelas e iniciar o timer.`);
     if(!confirmou) return;
     
+    // Fecha o modal de lista para focar no loading
     fecharModal('modal-eventos');
     
-    // 1. Muda status para FINALIZADO no banco (Trava Vendas)
-    showLoading("Encerrando vendas no sistema...");
+    // 1. INICIA LOADING (Bloqueia a tela enquanto troca o arquivo)
+    showLoading("🔄 Carregando base de cartelas...");
+
     try {
+        // 2. PASSO CRUCIAL: Chama a preparação (Troca de Arquivo)
+        const respPrep = await fetch(`${API_BASE_URL}/api/admin/preparar_evento`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ id_evento: idEvento })
+        });
+        
+        const dadosPrep = await respPrep.json();
+        if (dadosPrep.error) {
+            throw new Error(dadosPrep.error);
+        }
+
+        // 3. Atualiza mensagem do Loading
+        showLoading("🔒 Encerrando vendas...");
+
+        // 4. Fecha as vendas no servidor
         await fetch(`${API_BASE_URL}/api/admin/fechar_vendas_evento`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ id_evento: idEvento })
         });
-    } catch(e) {
-        console.error("Erro ao fechar vendas", e);
-        // Continua mesmo com erro, mas avisa? Ou para? Vamos continuar por segurança operacional.
-    } finally {
-        hideLoading();
-    }
 
-    // 2. Inicia o Cronômetro de Espera
+    } catch(e) {
+        console.error("Erro ao preparar evento:", e);
+        customAlert("⛔ Erro crítico ao carregar cartelas: " + e.message);
+        hideLoading();
+        return; // Para tudo se der erro na troca de arquivo
+    } 
+
+    // 5. Remove o Loading e Inicia o Timer Visual
+    hideLoading();
     iniciarTimerEspera(idEvento);
 }
+
 
 // --- FUNÇÃO 2: GERENCIA O TIMER VISUAL ---
 function iniciarTimerEspera(idEvento) {
@@ -844,7 +1293,8 @@ async function pularEsperaVendas() { // <--- ADICIONE O 'async' AQUI
 }
 
 
-// --- FUNÇÃO 3: O CARREGAMENTO REAL (ANTIGA carregarEvento) ---
+// SUBSTITUA A FUNÇÃO executarCarregamentoReal POR ESTA:
+
 async function executarCarregamentoReal(idEvento) {
     // Força o fechamento do menu lateral
     const menu = document.getElementById('admin-side-menu');
@@ -852,13 +1302,18 @@ async function executarCarregamentoReal(idEvento) {
     if (menu) menu.classList.add('-translate-x-full'); 
     if (menuOverlay) menuOverlay.classList.add('hidden'); 
 
-    // INICIA LOADING (Aqui o sistema busca os dados REAIS, incluindo as últimas vendas)
+    // INICIA LOADING
     showLoading("Sincronizando últimas vendas e carregando jogo...");
+
+    // Trava de segurança para início do jogo
+    if (aguardandoVideo > 0 && !modoRoboAtivo) {
+        await new Promise(r => setTimeout(r, aguardandoVideo));
+    }
 
     try {
         await fetch(`${API_BASE_URL}/api/admin/resetar`, { method: 'POST' });
         
-        // Agora busca os detalhes (que já devem incluir as vendas feitas durante o timer)
+        // Agora busca os detalhes
         const response = await fetch(`${API_BASE_URL}/api/admin/detalhes_evento?id_evento=${idEvento}`);
         const dados = await response.json();
 
@@ -872,7 +1327,23 @@ async function executarCarregamentoReal(idEvento) {
        
         dadosEventoAtual = dados; 
         document.getElementById('painel-evento-ativo').classList.remove('hidden');
-        // ... (Preenche campos da tela igual antes) ...
+
+        // --- CORREÇÃO AQUI: DETECTA O TIPO E AJUSTA O GRID ---
+        const tipoCartela = parseInt(dados.tipo_cartela || 15);
+        if (tipoCartela === 25) {
+            MAX_BOLAS = 75;
+            console.log("🎱 Evento Configurado: BINGO 75");
+        } else {
+            MAX_BOLAS = 90;
+            console.log("🎱 Evento Configurado: BINGO 90");
+        }
+        
+        const labelQuadra = (MAX_BOLAS === 75) ? '4 Cantos' : 'Quadra';
+
+        // Força o redesenho do grid vazio com a quantidade correta (75 ou 90)
+        initGrid(); 
+        // -----------------------------------------------------
+
         document.getElementById('info-descricao').textContent = dados.descricao;
         document.getElementById('info-data-hora').textContent = `${dados.data_evento} ${dados.hora_evento}`;
         document.getElementById('info-inicial').textContent = dados.numero_inicial;
@@ -886,7 +1357,7 @@ async function executarCarregamentoReal(idEvento) {
         containerPremios.innerHTML = '';
         const premios = dados.premios;
         const listaPremios = [
-            { key: 'quadra', label: 'Quadra' },
+            { key: 'quadra', label: labelQuadra },
             { key: 'linha', label: 'Linha', extra: premios.qtde_linhas > 1 ? `(${premios.qtde_linhas}x)` : '' },
             { key: 'falta_um', label: 'Falta 1' },
             { key: 'bingo', label: 'Bingo' },
@@ -907,11 +1378,10 @@ async function executarCarregamentoReal(idEvento) {
         
         definirProximoPremioAutomatico();
         bolaDestaque.textContent = "--";
-        initGrid();
-        // aquix
+        
+        // (O initGrid já foi chamado lá em cima, não precisa chamar de novo aqui)
+
         if (sorteioAutomatizadoConfig && modoSorteio === 'auto') {
-        //    const iniciarRobo = await customConfirm("⚙️ Deseja iniciar o modo ROBÔ agora?");
-            //if (iniciarRobo) iniciarModoRobo();
            iniciarModoRobo(); 
         }
 
@@ -943,16 +1413,25 @@ async function definirProximoPremioAutomatico() {
 
 // --- FUNÇÕES DE GRID E RANKING ---
 function initGrid() {
+    const gridContainer = document.getElementById('grid-bolas');
+    if (!gridContainer) return;
+    
     gridContainer.innerHTML = '';
-    for (let i = 1; i <= 90; i++) {
+    
+    // Usa a variável MAX_BOLAS em vez do número fixo 90
+    for (let i = 1; i <= MAX_BOLAS; i++) {
         const div = document.createElement('div');
         div.id = `admin-ball-${i}`;
+        // Mantém seu estilo original
         div.className = 'h-4 w-full flex items-center justify-center bg-gray-900/50 text-gray-700 rounded text-[11px] border border-gray-700';
         div.textContent = i;
         gridContainer.appendChild(div);
     }
-    renderHistorico([]);
+    
+    const contador = document.getElementById('contador-bolas');
+    if (contador) contador.textContent = `0 / ${MAX_BOLAS}`;
 }
+
 
 function updateGrid(bolas) {
     document.querySelectorAll('[id^="admin-ball-"]').forEach(el => {
@@ -979,63 +1458,170 @@ function renderHistorico(bolas) {
     });
 }
 
-// --- FUNÇÃO renderRanking CORRIGIDA (MOSTRA POSIÇÃO DA LINHA) ---
+
+// SUBSTITUA A FUNÇÃO renderRanking INTEIRA POR ESTE BLOCO:
+
+// --- FUNÇÃO ROTEADORA (DECIDE QUAL VISUAL USAR) ---
 function renderRanking(lista, tipo) {
-    const c = document.getElementById('ranking-lista'); if(!c) return;
+    if (MAX_BOLAS === 75) {
+        renderRanking75(lista, tipo);
+    } else {
+        renderRanking90(lista, tipo);
+    }
+}
+
+// --- VISUAL EXCLUSIVO BINGO 90 BOLAS (CLÁSSICO) ---
+function renderRanking90(lista, tipo) {
+    const c = document.getElementById('ranking-lista'); 
+    if(!c) return;
+    
     document.getElementById('label-premio-ranking').textContent = tipo || "";
     c.innerHTML = '';
-    if (!lista || lista.length === 0) { c.innerHTML = '<div class="text-gray-600 text-center text-xs py-2">Calculando...</div>'; return; }
+    
+    if (!lista || lista.length === 0) { 
+        c.innerHTML = '<div class="text-gray-600 text-center text-xs py-2">Calculando...</div>'; 
+        return; 
+    }
     
     lista.slice(0, 10).forEach((item, i) => {
         const status = (item.premio && item.premio !== "null") ? item.premio : "";
         const nums = item.numeros_faltantes || [];
         
-        // Monta o HTML dos números
+        // HTML dos números
         let htmlNums = nums.map(n => n<10?`0${n}`:n).join(' ');
 
-        // === CORREÇÃO AQUI: INSERE A POSIÇÃO (Sup/Cen/Inf) ===
-        if (["QUADRA", "LINHA"].includes(status) && item.posicao) {
-            // Cria uma pequena tag amarela antes dos números
-            const tagPosicao = `<span class="text-[9px] bg-yellow-900/60 text-yellow-300 px-1.5 rounded border border-yellow-700 mr-1.5">${item.posicao}</span>`;
-            htmlNums = tagPosicao + htmlNums;
+        // Visual de Linhas (Sup/Cen/Inf)
+        if (["LINHA"].includes(status) && item.posicao) {
+            htmlNums = `<span class=" text-center text-[9px] bg-yellow-900/60 text-yellow-300 px-1.5 rounded border border-yellow-700 mr-1.5">${item.posicao}</span>` + htmlNums;
         }
-        // =====================================================
 
-        if (["BINGO","DUPLO BINGO"].includes(status)) htmlNums = `<span class="text-green-400 font-black animate-pulse">${status}</span>`;
-        else if (status === "LINHA") htmlNums = `<span class="text-yellow-400 font-bold animate-pulse">${status} <span class="text-xs">(${item.posicao || ''})</span></span>`;
-        else if (["QUADRA","FALTA UM"].includes(status)) htmlNums = `<span>${htmlNums}</span> <span class="text-[10px] text-yellow-300 bg-yellow-900/50 px-1 ml-1 border border-yellow-700">${status}</span>`;
+        // Etiquetas de Vitória
+        if (["BINGO","DUPLO BINGO"].includes(status)) {
+            htmlNums = `<span class="text-green-400 font-black animate-pulse">${status}</span>`;
+        } else if (status === "LINHA") {
+            htmlNums = `<span class="text-center  text-yellow-400 font-bold animate-pulse">${status} <span class="text-xs">(${item.posicao || ''})</span></span>`;
+        }
         
+        // Cores da Linha
         const row = document.createElement('div');
         let cl = "grid grid-cols-6 gap-1 px-1 py-0.5 rounded border items-center mb-0.5 ";
+        
         if (["BINGO","LINHA"].includes(status)) cl += "bg-green-900/40 border-green-500 shadow-lg scale-[1.02]";
         else if (status.includes("FALTA") || status.includes("QUADRA")) cl += "bg-red-900/60 border-red-500";
         else if (i===0) cl += "bg-gray-700 border-yellow-600";
         else cl += "bg-gray-800 border-gray-700";
         
         row.className = cl;
-        // Ajustei o col-span dos números para 3 para caber a tag de posição
-        row.innerHTML = `<div class="col-span-1 font-mono font-bold text-yellow-500 text-[16px]">${item.cartela}</div><div class="col-span-3 text-[16px] font-mono flex items-center">${htmlNums}</div><div class="col-span-2 text-right truncate text-xs text-blue-500">${item.nome==="null"?'---':item.nome}</div>`;
+        row.innerHTML = `<div class="col-span-1 font-mono font-bold text-center text-yellow-500 text-[16px]">${item.cartela}</div><div class="col-span-3 text-[16px] font-mono flex items-center">${htmlNums}</div><div class="col-span-2 text-right truncate text-xs text-blue-500">${item.nome==="null"?'---':item.nome}</div>`;
         c.appendChild(row);
     });
 }
 
+// --- VISUAL EXCLUSIVO BINGO 75 BOLAS (PADRÕES) ---
+function renderRanking75(lista, tipo) {
+    const c = document.getElementById('ranking-lista'); 
+    if(!c) return;
+
+    // Ajuste do Título do Ranking (Tradução Visual)
+    let tituloDisplay = tipo || "";
+    if (tituloDisplay === "QUADRA") tituloDisplay = "4 CANTOS";
+    
+    document.getElementById('label-premio-ranking').textContent = tituloDisplay;
+    c.innerHTML = '';
+
+    if (!lista || lista.length === 0) { 
+        c.innerHTML = '<div class="text-gray-600 text-center text-xs py-2">Calculando Padrões...</div>'; 
+        return; 
+    }
+    
+    lista.slice(0, 10).forEach((item, i) => {
+        let status = (item.premio && item.premio !== "null") ? item.premio : "";
+        let posicao = item.posicao || "";
+
+        // Máscara Visual (Tradução)
+        if (status === "QUADRA") status = "4 CANTOS";
+        if (posicao === "QUADRA") posicao = "4 CANTOS";
+        
+        const nums = item.numeros_faltantes || [];
+        let htmlNums = nums.map(n => n<10?`0${n}`:n).join(' ');
+
+        // --- LÓGICA VISUAL ESPECÍFICA PARA PADRÕES ---
+        
+        // Se já ganhou (BINGO ou PADRÃO BATIDO)
+        if (status === "BINGO" || status === "BATIDO!" || item.qtde === 0) {
+             // Se for padrão específico batido (ex: 4 Cantos), mostra o nome do padrão
+             const textoVitoria = (status === "BINGO") ? "BINGO CHEIO" : (posicao || "BATIDO!");
+             htmlNums = `<span class="text-green-400 font-black animate-pulse tracking-widest text-xs">${textoVitoria}</span>`;
+        } 
+        // Se falta pouco (Falta 1, Boa, etc)
+        else {
+            // Mostra qual padrão ele está perseguindo (Ex: "4 Cantos", "Linha 3")
+            if (posicao) {
+                // Tag Azulada para Padrões
+                const tag = `<span class="text-[9px] bg-blue-900/60 text-blue-200 px-1.5 rounded border border-blue-700 mr-1.5 uppercase font-bold">${posicao}</span>`;
+                htmlNums = tag + htmlNums;
+            }
+        }
+
+        // Cores da Linha (Row Background)
+        const row = document.createElement('div');
+        let cl = "grid grid-cols-6 gap-1 px-1 py-0.5 rounded border items-center mb-0.5 ";
+        
+        // Prioridade de Cores
+        if (item.qtde === 0) {
+            // Ganhou
+            cl += "bg-green-900/40 border-green-500 shadow-lg scale-[1.02] z-10";
+        } else if (item.qtde <= 1) {
+            // Por uma (Boa)
+            cl += "bg-red-900/40 border-red-500 animate-pulse"; // Pulsa levemente para chamar atenção
+        } else if (i === 0) {
+            // Líder
+            cl += "bg-gray-700 border-yellow-600";
+        } else {
+            // Resto
+            cl += "bg-gray-800 border-gray-700";
+        }
+        
+        row.className = cl;
+        row.innerHTML = `<div class="col-span-1 text-center font-mono font-bold text-yellow-500 text-[16px]">${item.cartela}</div><div class="col-span-3 text-[16px] font-mono flex items-center overflow-hidden whitespace-nowrap">${htmlNums}</div><div class="col-span-2 text-right truncate text-xs text-blue-500">${item.nome==="null"?'---':item.nome}</div>`;
+        c.appendChild(row);
+    });
+}
+
+
+// SUBSTITUA A FUNÇÃO renderListaGanhadores POR ESTA:
+
 function renderListaGanhadores(data) {
-    const c = document.getElementById('lista-ganhadores'); if(!c) return; c.innerHTML = '';
+    const c = document.getElementById('lista-ganhadores');
+    if(!c) return;
+    c.innerHTML = '';
     const count = document.getElementById('count-ganhadores');
 
-    if (!data || data.length === 0) { c.innerHTML = '<span class="text-gray-600 text-center italic mt-2">Nenhum.</span>'; if(count) count.textContent="0"; return; }
+    if (!data || data.length === 0) {
+        c.innerHTML = '<span class="text-gray-600 text-center italic mt-2">Nenhum.</span>';
+        if(count) count.textContent="0";
+        return;
+    }
+    
     let total = 0;
     data.forEach(g => {
-        const h = document.createElement('div'); h.className = "text-green-400 font-bold uppercase border-b border-gray-700 -mt-2 mb-0.5 pt-1 text-[9px]"; h.textContent = g.premio; c.appendChild(h);
+        const h = document.createElement('div');
+        h.className = "text-green-400 font-bold uppercase border-b border-gray-700 -mt-2 mb-0.5 pt-1 text-[9px]";
+        h.textContent = g.premio;
+        c.appendChild(h);
+        
         if(g.ganhadores) g.ganhadores.forEach(w => {
             total++;
-            const r = document.createElement('div'); r.className = "flex justify-between bg-gray-900 px-0.5 py-0.5 rounded mb-0 -mt-1 border border-gray-700";
+            const r = document.createElement('div');
+            r.className = "flex justify-between bg-gray-900 px-0.5 py-0.5 rounded mb-0 -mt-1 border border-gray-700";
             r.innerHTML = `<span class="text-yellow-500 font-mono text-xs">${w.cartela}</span><span class="text-white font-bold truncate w-24">${w.nome||'Cliente'}</span><span class="text-green-600 font-bold text-xs">${w.valor_rateio||''}</span>`;
             c.appendChild(r);
         });
     });
+    
     if(count) count.textContent = total;
 }
+
 
 // =========================================================
 // === 5. AUDITORIA & TROCA DE PRÊMIO (Manual e Auto) ===
@@ -1044,20 +1630,34 @@ function renderListaGanhadores(data) {
 function abrirSessaoAuditoria(modoSilencioso = false) {
     const modal = document.getElementById('modal-conferencia');
     const input = document.getElementById('input-auditoria');
+    const listaSessao = document.getElementById('lista-auditoria-session'); // Referência da lista visual
 
+    // Se estiver no modo Robô (automatizado), ignora a abertura manual
+    if (modoRoboAtivo && !modoSilencioso) return;
+    
     if (!modoSilencioso && autoSorteioAtivo) {
         toggleAutoSorteio(); 
     }
     
     houveGanhadorNaSessao = false;
+    
+    // --- LIMPEZA CRÍTICA PARA NOVA SESSÃO ---
     document.getElementById('auditoria-resultado').classList.add('hidden');
     document.getElementById('conf-grid').innerHTML = '';
-    document.getElementById('lista-auditoria-session').innerHTML = '<span class="text-gray-600">Nenhum</span>';
+    
+    // Zera a lista visual de cartelas confirmadas "nesta sessão"
+    if (listaSessao) {
+        listaSessao.innerHTML = '<span class="text-gray-600">Nenhum</span>';
+    }
+    // ----------------------------------------
+    
+    // Renderiza os pendentes que ainda faltam validar (Array Global)
+    renderListaPendentes(cartelasPendentesAuditoria);
     
     modal.classList.remove('hidden');
     modal.classList.add('flex');
     
-    if (modoSilencioso) {
+    if (modoRoboAtivo || modoSilencioso) {
         input.disabled = true;
     } else {
         input.value = '';
@@ -1065,8 +1665,9 @@ function abrirSessaoAuditoria(modoSilencioso = false) {
         setTimeout(() => input.focus(), 200);
     }
 }
+	
+// SUBSTITUA A FUNÇÃO validarCartelaAuditoria POR ESTA:
 
-// --- FUNÇÃO CORRIGIDA: VALIDAR CARTELA (COM LOADING) ---
 async function validarCartelaAuditoria() {
     const input = document.getElementById('input-auditoria');
     const cartela = input.value;
@@ -1074,60 +1675,68 @@ async function validarCartelaAuditoria() {
 
     if(!cartela) return;
     
-    // 1. INICIA LOADING
-    showLoading("Conferindo cartela...");
-
+    // --- ALTERAÇÃO: Removemos o bloqueio de tempo aqui ---
+    // O Admin precisa ver o resultado NA HORA.
+    // showLoading("Conferindo cartela..."); 
+    
     try {
-        const response = await fetch(`${API_BASE_URL}/api/admin/validar_cartela`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cartela: cartela })
+        let urlEndpoint = `${API_BASE_URL}/api/admin/validar_cartela`; 
+        if (typeof MAX_BOLAS !== 'undefined' && MAX_BOLAS === 75) {
+            urlEndpoint = `${API_BASE_URL}/api/admin/validar_cartela_75`;
+        }
+        
+        const response = await fetch(urlEndpoint, {
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ cartela: cartela })
         });
         const data = await response.json();
 
-        const resDiv = document.getElementById('auditoria-resultado');
-        resDiv.classList.remove('hidden');
-        document.getElementById('conf-info').textContent = `${data.cartela_id || cartela} - ${data.ganhador || 'Desconhecido'}`;
-        const msgLabel = document.getElementById('conf-msg');
+        // Lógica de Mensagem Contextualizada
+        let msgExibicao = data.msg;
+        const elStatus = document.getElementById('status-premio');
+        const premioBuscado = elStatus ? elStatus.textContent.replace('Buscando: ', '').toUpperCase() : "";
         
-        if (data.status_code === 'WIN') {
-            msgLabel.textContent = `✅ ${data.msg}`;
-            msgLabel.className = "text-xl font-black text-green-400 animate-pulse";
-            
-            if (!modoRoboAtivo) {
-                btnConfirmar.classList.remove('hidden'); 
-                btnConfirmar.onclick = () => confirmarGanhadorAtual(); 
-                setTimeout(() => btnConfirmar.focus(), 100);
-            } else {
-                btnConfirmar.classList.add('hidden');
-            }
-        } else {
-            msgLabel.textContent = `❌ ${data.msg}`;
-            if (data.status_code === 'NOT_SOLD') msgLabel.className = "text-xl font-black text-yellow-500";
-            else msgLabel.className = "text-xl font-black text-red-400";
-            btnConfirmar.classList.add('hidden');
+        if (data.status_code === 'LOSS' && data.msg.includes("Faltam")) {
+             if (premioBuscado.includes("LINHA")) {
+                 msgExibicao = `❌ ${data.msg} para a LINHA.`;
+             } else if (premioBuscado.includes("QUADRA") || premioBuscado.includes("CANTOS")) {
+                 msgExibicao = `❌ ${data.msg} para a ${premioBuscado}.`;
+             }
         }
 
-        const grid = document.getElementById('conf-grid');
-        grid.innerHTML = '';
-        if (data.layout) {
-            const bolas = (data.bolas || bolasSorteadasCache || []).map(String);
-            [data.layout.superior, data.layout.central, data.layout.inferior].forEach(linha => {
-                const row = document.createElement('div'); row.className = "flex justify-between gap-1 mb-1";
-                linha.forEach(num => {
-                    const cell = document.createElement('div');
-                    const marcado = bolas.includes(String(num));
-                    cell.className = `w-full h-8 flex items-center justify-center font-bold text-lg rounded border ${marcado ? "bg-yellow-600 text-white border-yellow-400" : "bg-gray-700 text-gray-300 border-gray-400"}`;
-                    cell.textContent = num;
-                    row.appendChild(cell);
-                });
-                grid.appendChild(row);
-            });
+        const resDiv = document.getElementById('auditoria-resultado');
+        if(resDiv) resDiv.classList.remove('hidden');
+        
+        const elInfo = document.getElementById('conf-info');
+        if(elInfo) elInfo.textContent = `${data.cartela_id || cartela} - ${data.ganhador || 'Desconhecido'}`;
+        
+        const msgLabel = document.getElementById('conf-msg');
+        if(msgLabel) {
+            if (data.status_code === 'WIN') {
+                msgLabel.textContent = `✅ ${data.msg}`;
+                msgLabel.className = "text-xl font-black text-green-400 animate-pulse";
+                
+                if (!modoRoboAtivo && btnConfirmar) {
+                    btnConfirmar.classList.remove('hidden'); 
+                    btnConfirmar.onclick = () => confirmarGanhadorAtual(); 
+                    setTimeout(() => btnConfirmar.focus(), 100);
+                }
+            } else {
+                msgLabel.textContent = msgExibicao; 
+                if (data.status_code === 'NOT_SOLD') msgLabel.className = "text-xl font-black text-yellow-500";
+                else msgLabel.className = "text-xl font-black text-red-400";
+                if(btnConfirmar) btnConfirmar.classList.add('hidden');
+            }
         }
+
+        if(typeof renderGridConferencia === 'function') renderGridConferencia(data);
+
     } catch (e) { 
         console.error(e);
-        customAlert("Erro de conexão ao validar."); 
+        alert("Erro de conexão ao validar."); 
     } finally {
-        // 2. REMOVE LOADING (SEMPRE)
-        hideLoading();
+        hideLoading(); // Garante que o loading some
     }
 }
 
@@ -1136,34 +1745,42 @@ async function validarCartelaAuditoria() {
 async function confirmarGanhadorAtual() {
     houveGanhadorNaSessao = true; 
     const input = document.getElementById('input-auditoria');
-    
-    // 1. Captura o valor ANTES de limpar o input
-    const cartelaConfirmada = input.value; 
+    // Forçamos a conversão para String e limpamos espaços para garantir a exclusão
+    const cartelaConfirmada = String(input.value).trim(); 
 
-    // 2. Atualiza lista visual
-    const lista = document.getElementById('lista-auditoria-session');
+    if (!cartelaConfirmada) return;
+
+    // 1. Registra na Blacklist para o WebSocket não reinserir a cartela
+    idsConfirmadosNestaRodada.add(cartelaConfirmada);
+
+    // 2. Remove estritamente esta cartela do array global de pendentes
+    cartelasPendentesAuditoria = cartelasPendentesAuditoria.filter(c => 
+        String(c.cartela).trim() !== cartelaConfirmada
+    );
     
-    // Se a lista tiver apenas o placeholder "Nenhum", limpa ela
-    if (lista.innerText.trim() === 'Nenhum' || lista.children.length === 0) {
-        lista.innerHTML = '';
+    // 3. Redesenha a lista de pendentes (agora com um item a menos)
+    renderListaPendentes(cartelasPendentesAuditoria);
+
+    // --- Limpeza Visual e Logística de Banco ---
+    const listaSessao = document.getElementById('lista-auditoria-session');
+    if (listaSessao && (listaSessao.innerText.trim() === 'Nenhum' || listaSessao.children.length === 0)) {
+        listaSessao.innerHTML = '';
     }
     
-    const tag = document.createElement('span');
-    // Estilo ajustado para espaçamento
-    tag.className = "inline-block bg-green-900 text-green-300 px-2 py-1 rounded border border-green-700 text-xs font-bold mr-2 mb-1";
-    tag.textContent = `Cartão: ${cartelaConfirmada}`;
-    lista.appendChild(tag);
-    
-    // 3. Limpa a área de resultado
+    if (listaSessao) {
+        const tag = document.createElement('span');
+        tag.className = "inline-block bg-green-900 text-green-300 px-2 py-1 rounded border border-green-700 text-xs font-bold mr-2 mb-1";
+        tag.textContent = `Cartão: ${cartelaConfirmada}`;
+        listaSessao.appendChild(tag);
+    }
+
+    input.value = ''; 
     document.getElementById('auditoria-resultado').classList.add('hidden');
     document.getElementById('conf-grid').innerHTML = '';
-    document.getElementById('btn-confirmar-ganhador').classList.add('hidden'); // Esconde botão por segurança
     
     try { await fetch(`${API_BASE_URL}/api/admin/limpar_conferencia`, { method: 'POST' }); } catch(e) {}
 
-    // 4. Prepara para a próxima conferência (Se manual)
     if (!modoRoboAtivo) {
-        input.value = ''; 
         input.disabled = false; 
         input.focus();
     }
@@ -1184,7 +1801,7 @@ async function encerrarSessaoConferencia(modoSilencioso = false) {
     }
 }
 
-// === FUNÇÃO MANUAL DE TROCA DE PRÊMIO (RECUPERADA) ===
+// SUBSTITUA A FUNÇÃO processarProximoPremio POR ESTA VERSÃO:
 async function processarProximoPremio() {
     // ... (código inicial de busca de dados permanece igual) ...
     let info = null;
@@ -1192,12 +1809,12 @@ async function processarProximoPremio() {
     try {
         const resp = await fetch(`${API_BASE_URL}/api/initial-data`);
         const dados = await resp.json();
-        info = dados.buscandoData[0];
+        info = dados.buscandoMesaData[0];
         if (typeof dadosEventoAtual !== 'undefined' && dadosEventoAtual) dadosEvento = dadosEventoAtual;
     } catch (e) { return; }
 
     if (!info) return;
-
+   
     // Se ainda está buscando linha e faltam linhas, não faz nada
     if (info.buscando_o_premio === 'LINHA' && info.buscando_a_linha && info.buscando_a_linha.length > 0) {
         return; 
@@ -1246,35 +1863,111 @@ async function processarProximoPremio() {
     }
 }
 
-// --- FUNÇÃO mudarPremio CORRIGIDA (COM LOADING) ---
-async function mudarPremio(tipo) {
-    // INICIA LOADING
-    showLoading(`Alterando prêmio para ${tipo}...`);
+
+
+async function processarProximoPremio2() {
+    let info = null;
+    let dadosEvento = null;
     try {
-        const response = await fetch(`${API_BASE_URL}/api/admin/definir_premio`, {
+        const resp = await fetch(`${API_BASE_URL}/api/initial-data`);
+        const dados = await resp.json();
+        info = dados.buscandoMesaData[0];
+        // dadosEventoAtual é a variável global com os detalhes do evento carregado (com 'premios')
+        if (typeof dadosEventoAtual !== 'undefined' && dadosEventoAtual) dadosEvento = dadosEventoAtual;
+    } catch (e) { return; }
+
+    if (!info) return;
+
+    // --- CORREÇÃO CRÍTICA AQUI ---
+    // Se o evento é de 1 Linha (qtde_linhas == 1) e o prêmio ativo era Linha,
+    // e o usuário acabou de confirmar, consideramos a busca por LINHA como CONCLUÍDA.
+    const qtdeLinhasEvento = parseInt(dadosEvento?.premios?.qtde_linhas || 0);
+
+    if (info.buscando_o_premio === 'LINHA' && qtdeLinhasEvento === 1) {
+        // Ignora qualquer lógica de 'linhas restantes' e força o avanço de índice.
+        console.log("Sistema 1-Linha: Linha confirmada, forçando avanço para o próximo prêmio.");
+        // A chave 'LINHA' será ignorada na busca abaixo.
+    } else {
+        // Se ainda está buscando linha e faltam linhas (sistema 3-linhas), não faz nada
+        if (info.buscando_o_premio === 'LINHA' && info.buscando_a_linha && info.buscando_a_linha.length > 0) {
+            return; 
+        }
+    }
+    // ----------------------------
+
+    const ordem = ['QUADRA', 'LINHA', 'FALTAUM', 'BINGO', 'DUPLO BINGO'];
+    let atualKey = info.buscando_o_premio;
+    if (atualKey === 'FALTA 1') atualKey = 'FALTAUM';
+    if (atualKey === '3 LINHAS') atualKey = 'LINHA';
+    
+    const indexAtual = ordem.indexOf(atualKey);
+    if (indexAtual === -1) return;
+
+    let proximoKey = null;
+    let dadosPremios = dadosEvento ? dadosEvento.premios : null;
+
+    if (dadosPremios) {
+        for (let i = indexAtual + 1; i < ordem.length; i++) {
+            const keyTeste = ordem[i];
+            let keyDados = keyTeste.toLowerCase();
+            if (keyTeste === 'FALTAUM') keyDados = 'falta_um';
+            if (keyTeste === 'DUPLO BINGO') keyDados = 'segundo_bingo';
+            
+            // Verifica se o valor do prêmio é maior que zero
+            if (parseFloat(dadosPremios[keyDados] || 0) > 0) {
+                proximoKey = keyTeste;
+                break;
+            }
+        }
+    }
+
+    if (proximoKey) {
+        await customAlert(`Prêmio confirmado.\n\nAvançando prêmio para: ${proximoKey}`, 3); // Alerta por 3 segundos
+        await mudarPremio(proximoKey);
+
+    } else {
+        setTimeout(async () => {
+            if (await customConfirm(`⚠️ Fim da sequência de prêmios!\n\nEste foi o último prêmio ativo.\nDeseja FINALIZAR o evento agora?`)) {
+                resetarJogo();
+            }
+        }, 500);
+    }
+}
+
+async function mudarPremio(tipo) {
+    // 1. Atualiza visualmente o Admin na hora (Feedback rápido)
+    const elStatus = document.getElementById('status-premio');
+    if (elStatus) elStatus.textContent = `Buscando: ${tipo} (Mesa)`;
+    const elTitulo = document.getElementById('premio-atual'); 
+    if (elTitulo) elTitulo.textContent = tipo;
+
+    try {
+        // 2. Chama a Rota da MESA (Imediata)
+        await fetch(`${API_BASE_URL}/api/admin/definir_premio_mesa`, {
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ premio: tipo })
         });
         
-        // Atualiza visualmente na hora
-        const elStatus = document.getElementById('status-premio');
-        if (elStatus) elStatus.textContent = `Buscando: ${tipo}`;
+        // 3. Agenda a Rota PÚBLICA (Com Delay)
+        // Se o atraso estiver configurado, vai para a fila.
+        matrizEnvio.push({
+            tipo: 'PREMIO_CLIENTE',
+            valor: tipo,
+            hora: Date.now()
+        });
         
-        // Aguarda um pouco para a animação ser notada
-        await new Promise(r => setTimeout(r, 500));
+        console.log(`Prêmio alterado para ${tipo} na Mesa. Agendado para público.`);
 
-    } catch (e) { 
-        console.error("Erro mudarPremio:", e);
-        customAlert("Erro ao mudar prêmio no servidor."); 
-    } finally {
-         // REMOVE LOADING
-        hideLoading();
+    } catch(e) {
+        console.error("Erro ao mudar prêmio:", e);
     }
 }
 
 
+
 // --- FUNÇÃO RESETAR CORRIGIDA (COM LOADING) ---
+
 async function resetarJogo(force = false) {
     if(!force && !(await customConfirm("TEM CERTEZA? Isso limpará a tela e encerrará o jogo atual."))) { 
         devolverFocoAoJogo(); return; 
@@ -1289,7 +1982,67 @@ async function resetarJogo(force = false) {
     try {
         await fetch(`${API_BASE_URL}/api/admin/resetar`, { method: 'POST' });
         
+        // --- LIMPEZA DE CACHE (CRÍTICO PARA NÃO TRAVAR O PRÓXIMO JOGO) ---
+        bolasCacheLocal = new Set(); 
+        bolasSorteadasCache = [];
+        matrizEnvio = []; 
+        idsConfirmadosNestaRodada = new Set();
+        ultimoTotalBolasProcessadas = -1; // Reseta contador de bolas
+        jaAlertouNestaBola = false;
+        // -----------------------------------------------------------------
+
         // Limpeza visual
+        if(bolaDestaque) bolaDestaque.textContent = "--"; 
+        initGrid();
+        
+        const elStatus = document.getElementById('status-premio');
+        if(elStatus) elStatus.textContent = "Buscando: ...";
+        
+        const elContador = document.getElementById('contador-bolas');
+        if(elContador) elContador.textContent = "0 / 90";
+        
+        renderHistorico([]);
+        renderRanking([], "");
+        renderListaGanhadores([]); // Limpa ganhadores da tela
+
+        const painelEvento = document.getElementById('painel-evento-ativo');
+        if(painelEvento) painelEvento.classList.add('hidden');
+        
+        // Aguarda um pouco para o usuário ver que limpou
+        await new Promise(r => setTimeout(r, 800));
+
+        if (!force) {
+            abrirModalEventos();
+        } else {
+            customAlert("Evento finalizado pelo Sorteio Automatizado.","Sorteio Automatizado", 3);
+            abrirModalEventos();
+        }
+    } catch (e) { 
+        console.error(e);
+        customAlert("Erro ao resetar."); 
+    } finally {
+        hideLoading();
+    }
+}
+
+async function resetarJogo3(force = false) {
+    if(!force && !(await customConfirm("TEM CERTEZA? Isso limpará a tela e encerrará o jogo atual."))) { 
+        devolverFocoAoJogo(); return; 
+    } 
+    
+    // INICIA LOADING
+    showLoading("Resetando sistema e limpando dados...");
+
+    if (autoSorteioAtivo) pararAutoSorteio();
+    if (modoRoboAtivo) pararModoRobo();
+
+    try {
+        await fetch(`${API_BASE_URL}/api/admin/resetar`, { method: 'POST' });
+        bolasCacheLocal = new Set(); 
+        bolasSorteadasCache = [];
+        matrizEnvio = []; 
+        // Limpeza visual
+        idsConfirmadosNestaRodada = new Set() 
         bolaDestaque.textContent = "--"; 
         initGrid();
         document.getElementById('status-premio').textContent = "Buscando: ...";
@@ -1314,6 +2067,59 @@ async function resetarJogo(force = false) {
     } finally {
         // REMOVE LOADING (Sempre acontece)
         hideLoading();
+    }
+}
+
+// --- FUNÇÃO RESETAR CORRIGIDA (COM LOADING) ---
+async function resetarJogo2() {
+    // 1. Pergunta de segurança 
+    const confirmou = await customConfirm(`Tem certeza que deseja RESETAR o jogo? Isso apagará tudo!`);    
+    if(!confirmou) return;
+
+    try {
+        const btn = document.getElementById('btn-resetar');
+        if(btn) btn.disabled = true;
+
+        // 2. Manda o Servidor limpar o Banco de Dados
+        const response = await fetch(`${API_BASE_URL}/api/admin/resetar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const data = await response.json();
+        if (data.status) {
+            customAlert("Jogo Resetado com Sucesso!");
+            console.error("data '");
+
+            // --- AQUI ESTÁ A SOLUÇÃO DA SUA PREOCUPAÇÃO ---
+            // Forçamos o navegador a esquecer tudo o que aconteceu
+            
+            // 1. Limpa a memória de proteção contra duplo clique
+            bolasCacheLocal = new Set(); 
+            bolasSorteadasCache = [];
+            
+            // 2. Limpa a fila de atraso (se tiver bola esperando para ir pro público, cancela)
+            matrizEnvio = []; 
+            
+            // 3. Limpa visualmente a tela do Admin na hora
+            //renderizarBolasCantadas([]);
+            //renderizarUltimasBolas([]);
+            if(bolaDestaque) bolaDestaque.textContent = "--";
+            //atualizarGridVisual([]);
+            
+            // 4. Limpa lista de ganhadores
+            renderListaGanhadores([]);
+            
+        } else {
+            customAlert("Erro ao resetar: " + (data.error || "Desconhecido"));
+        }
+
+    } catch (e) {
+        console.error(e);   
+        customAlert("Erro de conexão ao tentar resetar.");
+    } finally {
+        const btn = document.getElementById('btn-resetar');
+        if(btn) btn.disabled = false;
     }
 }
 

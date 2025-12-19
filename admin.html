@@ -204,6 +204,12 @@
                         <input type="text" id="config-url-live" class="w-full bg-gray-900 border border-gray-600 rounded p-1.5 text-blue-300 text-xs truncate focus:text-white focus:outline-none" placeholder="Link do YouTube...">
                     </div>
 
+                    <div class="mb-1">
+                       <label class="block text-gray-400 text-xs mb-0 uppercase">Atraso de Sincronia Vídeo (ms)</label>
+                       <input type="number" id="config-atraso-video" class="w-full bg-gray-800 border border-gray-600 rounded px-2 py-0 text-white" value="2000">
+                       <small class="text-gray-500 -mt-2">Aumente se o dado chegar antes da imagem no YouTube.</small>
+                    </div>
+
                     <div>
                         <label class="block text-[10px] font-bold text-gray-400 uppercase">Banco de Dados Vendas (MongoDB)</label>
                         <input type="text" id="config-url-mongo" class="w-full bg-gray-900 border border-gray-600 rounded p-1.5 text-green-300 text-xs truncate focus:text-white focus:outline-none" placeholder="mongodb+srv://...">
@@ -304,7 +310,7 @@
                 <div class="flex items-center gap-4">
                      <div id="bola-destaque" class="text-5xl font-black text-white mb-2 bg-gray-900 rounded-lg py-2 px-6 border-4 border-blue-500">--</div>
 
-                    <button id="btn-f1-buscar" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-2 rounded border border-blue-400 shadow-lg flex items-center gap-2" title="Atalho: F1">
+                    <button id="btn-f1-buscar" class="bg-gray-700 hover:bg-blue-900 text-white font-bold py-2 px-2 rounded border-2 border-blue-500 shadow-lg flex items-center gap-2" title="Atalho: F1">
                         <span>🔍</span>
                        <span>F1 - BUSCAR</span>
                    </button>
@@ -420,7 +426,7 @@
                 </div>
             </div>
 
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-2 mt-4 shadow-lg">
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-2 mt-1 shadow-lg">
                 <h3 class="text-yellow-500 font-bold uppercase text-sm border-b border-gray-600 pb-0 mb-0 flex justify-between items-center">
                    <span>🏆 Ranking (Top 10)</span>
                    <span id="label-premio-ranking" class="text-[12px] text-green-400">BINGO</span>
@@ -462,8 +468,8 @@
                 </div>
             </div>
 
-            <div class="bg-gray-900 p-2 rounded-xl border border-gray-700 flex-col mt-auto">
-                <h2 class="text-blue-400 font-bold text-lg uppercase mb-1 border-b border-gray-700 pb-1 text-center">LIVE THE BET</h2>
+            <div class="bg-gray-900 p-1 rounded-xl border border-gray-700 flex-col mt-auto">
+                <h2 class="text-blue-400 font-bold text-sm uppercase mb-0 border-b border-gray-700 pb-0 text-center">LIVE THE BET</h2>
             </div>
         </section>       
     </div>
@@ -494,7 +500,17 @@
         </div>
 
         <div class="bg-gray-800 border-x-4 border-b-4 border-blue-600 rounded-b-2xl shadow-2xl p-2 w-full max-w-md flex flex-col items-center gap-4">
-            
+     
+
+<div class="mt-2 border-t border-gray-700 pt-3">
+    <h3 class="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-1">
+        Aguardando Validação:
+    </h3>
+    <div id="lista-pendentes-contemplados">
+        <div class="text-gray-500 text-xs py-2 text-center italic">Carregando...</div>
+    </div>
+</div>
+       
             <div class="w-full bg-gray-900 p-1 rounded-xl border border-gray-600 flex flex-col gap-2 -mt-3">
                 <label class="text-xs text-gray-400 font-bold uppercase">Digite a Cartela para Conferir:</label>
                 <div class="flex gap-2">
@@ -512,7 +528,7 @@
 
                 <div id="conf-grid" class="flex flex-col gap-2 bg-black p-2 -mt-2  rounded-lg border border-gray-600"></div>
 
-                <button id="btn-confirmar-ganhador" onclick="confirmarGanhadorAtual()" class="hidden w-full bg-green-700 hover:bg-green-500 text-white font-bold py-3 rounded-lg shadow-lg uppercase tracking-wide flex items-center justify-center gap-2 -mt-1">
+                <button id="btn-confirmar-ganhador" onclick="confirmarGanhadorAtual()" class="hidden w-full bg-green-700 hover:bg-green-500 text-white font-bold py-3 rounded-lg shadow-lg uppercase tracking-wide flex items-center justify-center gap-2 ">
                     <span>🏆</span> CONFIRMAR GANHADOR
                 </button>
             </div>
@@ -549,5 +565,3 @@
 
 </body>
 </html>
-
-

@@ -16,6 +16,30 @@ from geventwebsocket.handler import WebSocketHandler
 from geventwebsocket.exceptions import WebSocketError
 import sys
 
+# --- NO TOPO DO SERVER.PY (Logo após os imports) ---
+
+# 1. Lista Global para guardar as TVs conectadas
+clientes_conectados = []
+
+# 2. A função que envia mensagem para todos
+def broadcast_para_clientes(mensagem_dict):
+    import json
+    texto = json.dumps(mensagem_dict)
+    para_remover = []
+    
+    for ws in clientes_conectados:
+        try:
+            ws.send(texto)
+        except:
+            para_remover.append(ws)
+            
+    # Limpa conexões mortas
+    for morto in para_remover:
+        if morto in clientes_conectados:
+            clientes_conectados.remove(morto)
+
+
+
 def converter_decimal(valor):
     """Converte Decimal128 ou String para Float"""
     if isinstance(valor, Decimal128):
@@ -26,6 +50,7 @@ def converter_decimal(valor):
         except:
             return 0.0
     return float(valor) if valor else 0.0
+
 
 # --- FUNÇÕES AUXILIARES DE MOEDA (RATEIO) ---
 def parse_brl(valor_str):
@@ -44,6 +69,7 @@ def format_brl(valor_float):
         return f"{valor_float:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
     except:
         return "0,00"
+
 
 # --- FUNÇÃO PARA ENVIAR AVISOS AO TERMINAL ---
 def enviar_aviso_sistema(titulo, mensagem, tempo_str):
@@ -74,16 +100,80 @@ except Exception:
 
 VERSION = "2.1.0-SingleTenant"
 
-# --- CONFIGURAÇÕES DE AMBIENTE ---
-# No DigitalOcean/Heroku, essas variáveis virão das "Environment Variables" do painel.
-# No seu PC, ele usa os valores padrão (segundo argumento do get).
+# --- CONFIGURAÇÃO DE ROTEAMENTO DE SALAS ---
 
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://rivaldosp:TecBin24@tecbinon.3zsz7md.mongodb.net/")
+# 1. URI ONDE BUSCAMOS A LISTA DE SALAS (INTEGRAÇÃO CENTRALIZADA)
+# Aqui fica o banco 'db_master_controle' com a tabela 'salas'
+URI_CONSULTA_SALAS = "mongodb+srv://tecbin_db_vendas:TecBin24@cluster0.blwq4du.mongodb.net/?appName=Cluster0"
+
+# 2. URI PADRÃO / FALLBACK (LEGADO)
+# Se não informar sala, ou se a sala não for encontrada na consulta acima, usa esta:
+URI_FALLBACK_PADRAO = "mongodb+srv://rivaldosp:TecBin24@tecbinon.3zsz7md.mongodb.net/"
+
+# Tenta ler o parâmetro 'IDSALA' do ambiente
+PARAM_ID_SALA = os.environ.get("IDSALA", "000")
+
+def buscar_uri_da_sala(id_sala_alvo):
+    """
+    1. Conecta no Cluster de Vendas (URI_CONSULTA_SALAS).
+    2. Busca no banco 'db_master_controle', coleção 'salas'.
+    3. Se achar, retorna o link específico.
+    4. Se não achar ou erro, retorna URI_FALLBACK_PADRAO.
+    """
+    
+    # Se ID for nulo ou 0, já retorna o padrão direto sem nem buscar
+    if not id_sala_alvo or id_sala_alvo == "0" or id_sala_alvo == "000":
+        print(f"ℹ️ [ROTEAMENTO] ID Sala não definido. Usando Padrão.")
+        return URI_FALLBACK_PADRAO
+
+    print(f"🔍 [ROTEAMENTO] Buscando configuração para Sala ID: {id_sala_alvo}...")
+    
+    uri_final = URI_FALLBACK_PADRAO # Começamos assumindo o padrão
+
+    client_consulta = None
+    try:
+        # Configura conexão segura
+        mongo_kwargs = { 'server_api': ServerApi('1') }
+        if _TLS_CA_FILE: mongo_kwargs['tlsCAFile'] = _TLS_CA_FILE
+        
+        # Conecta no Cluster de Consulta (Vendas)
+        client_consulta = MongoClient(URI_CONSULTA_SALAS, **mongo_kwargs)
+        
+        # Acessa o banco específico de controle
+        db_controle = client_consulta.get_database("db_master_controle")
+        
+        # Busca a sala
+        sala_doc = db_controle.salas.find_one({'id_sala': id_sala_alvo})
+        
+        if sala_doc and 'url_mongo_sorteio' in sala_doc:
+            novo_link = sala_doc['url_mongo_sorteio']
+            
+            if novo_link and len(novo_link) > 10:
+                uri_final = novo_link
+                print(f"✅ [ROTEAMENTO] Sala {id_sala_alvo} encontrada! Redirecionando banco.")
+            else:
+                print(f"⚠️ [ROTEAMENTO] Sala encontrada, mas campo 'url_mongo_sorteio' inválido. Usando Padrão.")
+        else:
+            print(f"⚠️ [ROTEAMENTO] Sala {id_sala_alvo} não cadastrada no Master Controle. Usando Padrão.")
+
+    except Exception as e:
+        print(f"❌ [ROTEAMENTO] Erro ao consultar master de salas: {e}")
+        print("   -> Mantendo URI Padrão por segurança.")
+    
+    finally:
+        if client_consulta:
+            client_consulta.close()
+            
+    return uri_final
+
+# --- DEFINE A URI REAL DO SISTEMA ---
+MONGO_URI = buscar_uri_da_sala(PARAM_ID_SALA)
+
+# O nome do banco principal (pode vir do ambiente ou fixo)
 DB_NAME = os.environ.get("DB_NAME", "dados_do_sorteio")
 
 LOCAL_PATH = os.environ.get("LOCAL_PATH", "c:/chefemesa/json")
-#is_local_mode = os.path.exists(LOCAL_PATH)
-is_local_mode = False  # <--- FORÇA O MODO ONLINE (COM BANCO DE DADOS)
+is_local_mode = False
 
 app = Flask(__name__)
 CORS(app)
@@ -105,60 +195,40 @@ CACHE_JOGO = {
     'cartelas': [] # Lista de objetos: {'id': 100, 'nome': 'José', 'layout': {sup: set, cen: set...}}
 }
 
+# SUBSTITUA A FUNÇÃO carregar_cache_evento POR ESTA:
+
 def carregar_cache_evento(id_evento, sales_db):
-    """
-    Carrega TODAS as cartelas vendidas e seus layouts para a Memória RAM do Servidor.
-    Executado apenas UMA VEZ ao selecionar o evento.
-    """
     global CACHE_JOGO, db
     print(f"🚀 Iniciando carregamento em memória do Evento {id_evento}...")
     
-    # Reseta estado inicial
     CACHE_JOGO['ativo'] = False
     CACHE_JOGO['cartelas'] = []
 
     try:
-        # 1. Busca Vendas
+        # 1. Busca Vendas (Mantido)
         nome_col = f"vendas{id_evento}"
         if nome_col not in sales_db.list_collection_names():
-             print(f"⚠️ Coleção '{nome_col}' não existe no banco de vendas.")
-             # Mesmo sem coleção, marcamos como ativo (vazio) para não travar o ranking
              CACHE_JOGO['ativo'] = True
-             db.melhores.delete_many({}) # Limpa ranking antigo
+             db.melhores.delete_many({})
              return
 
         col_vendas = sales_db[nome_col]
-        
-        # Projeção otimizada
-        cursor_vendas = col_vendas.find({}, {
-            'numero_inicial':1, 'numero_final':1, 
-            'numero_inicial2':1, 'numero_final2':1, 
-            'nome_cliente':1
-        })
+        cursor_vendas = col_vendas.find({}, {'numero_inicial':1, 'numero_final':1, 'numero_inicial2':1, 'numero_final2':1, 'nome_cliente':1})
 
-        mapa_vendas = {} # cartela_id -> nome
-        
+        mapa_vendas = {}
         for v in cursor_vendas:
             nome = v.get('nome_cliente', '---')
-            # Faixa 1
             if v.get('numero_inicial') is not None and v.get('numero_final') is not None:
-                for c in range(v['numero_inicial'], v['numero_final'] + 1):
-                    mapa_vendas[c] = nome
-            # Faixa 2
+                for c in range(v['numero_inicial'], v['numero_final'] + 1): mapa_vendas[c] = nome
             if v.get('numero_inicial2') is not None and v.get('numero_final2') is not None:
-                for c in range(v['numero_inicial2'], v['numero_final2'] + 1):
-                    mapa_vendas[c] = nome
+                for c in range(v['numero_inicial2'], v['numero_final2'] + 1): mapa_vendas[c] = nome
         
-        count_vendas = len(mapa_vendas)
-        print(f"📋 Vendas encontradas no banco: {count_vendas} cartelas.")
-
-        if count_vendas == 0:
-            print("⚠️ Evento sem cartelas vendidas (ou erro de leitura).")
-            CACHE_JOGO['ativo'] = True # <--- CORREÇÃO: Marca como ativo mesmo vazio
+        if not mapa_vendas:
+            CACHE_JOGO['ativo'] = True
             db.melhores.delete_many({})
             return
 
-        # 2. Busca Layouts no Banco Principal
+        # 2. Busca Layouts
         ids = list(mapa_vendas.keys())
         cursor_cartelas = db.cartelas.find({'cartao': {'$in': ids}})
 
@@ -166,57 +236,92 @@ def carregar_cache_evento(id_evento, sales_db):
 
         for doc in cursor_cartelas:
             c_id = doc.get('cartao')
+            tipo_detectado = 90
+            layout_data = {}
             
-            def to_set(val):
-                if isinstance(val, str) and val:
-                    return set(map(int, val.replace(' ', '').split(',')))
-                if isinstance(val, list): return set(val)
-                return set()
+            # --- 1. DETECÇÃO E PARSING BINGO 75 ---
+            # Checa se é BINGO 75 (Campo 'numeros' é lista e tem 25)
+            if 'numeros' in doc and isinstance(doc['numeros'], list) and len(doc['numeros']) >= 25:
+                tipo_detectado = 75
+                lista_ordenada = doc['numeros'] 
+                nums_set = set(lista_ordenada)
+                nums_set.discard(0) # Remove o FREE (0)
+                
+                layout_data = {
+                    'lista_75': lista_ordenada, 
+                    'geral': nums_set
+                }
+            
+            # --- 2. DETECÇÃO E PARSING BINGO 90 (FALLBACK) ---
+            else:
+                tipo_detectado = 90
+                def to_set(val):
+                    if isinstance(val, str) and val: return set(map(int, val.replace(' ', '').split(',')))
+                    if isinstance(val, list): return set(val)
+                    return set()
 
-            sup = to_set(doc.get('superior'))
-            cen = to_set(doc.get('central'))
-            inf = to_set(doc.get('inferior'))
+                sup = to_set(doc.get('superior'))
+                cen = to_set(doc.get('central'))
+                inf = to_set(doc.get('inferior'))
+                
+                layout_data = {
+                    'sup': sup, 'cen': cen, 'inf': inf,
+                    'geral': sup | cen | inf
+                }
             
+            # Adiciona ao cache
             lista_cache.append({
                 'id': c_id,
                 'nome': mapa_vendas.get(c_id, '---'),
-                'layout': {
-                    'sup': sup,
-                    'cen': cen,
-                    'inf': inf,
-                    'geral': sup | cen | inf 
-                }
+                'tipo': tipo_detectado,
+                'layout': layout_data
             })
+
+
 
         CACHE_JOGO['cartelas'] = lista_cache
         CACHE_JOGO['ativo'] = True
-        print(f"✅ CACHE CARREGADO: {len(lista_cache)} cartelas na memória.")
+        print(f"✅ CACHE CARREGADO: {len(lista_cache)} cartelas.")
         
-        # Força cálculo inicial
-        #print("🔄 Executando cálculo inicial do Ranking...")
-        recalcular_ranking_top10()
+        recalcular_ranking_principal()         
 
     except Exception as e:
-        print(f"❌ Erro ao carregar cache: {e}")
+        print(f"❌ Erro cache: {e}")
         import traceback
         traceback.print_exc()
-        CACHE_JOGO['ativo'] = False # Só marca false se der erro grave de código
+        CACHE_JOGO['ativo'] = False
 
 
-
-# --- CONEXÃO BANCO PRINCIPAL ---
 def connect_main_db():
     global db
     if not is_local_mode:
         try:
-            print(f"🔌 Conectando ao MongoDB Principal...")
+            # Mostra o Cluster para conferência (Oculta senha)
+            cluster_name = MONGO_URI.split('@')[-1].split('/')[0]
+            print(f"🔌 CONECTANDO NO CLUSTER: {cluster_name}")
+            
             mongo_kwargs = { 'server_api': ServerApi('1') }
             if _TLS_CA_FILE: mongo_kwargs['tlsCAFile'] = _TLS_CA_FILE
             
             client = MongoClient(MONGO_URI, **mongo_kwargs)
-            db = client.get_database(DB_NAME)
+            
+            # --- LÓGICA DE BANCO PADRONIZADO ---
+            # 1. Tenta pegar o nome do banco se estiver escrito no link (ex: ...net/meu_banco)
+            # 2. Se não tiver nada no link, assume "dados_do_sorteio" (PADRÃO)
+            try:
+                db_target = client.get_default_database()
+                print(f"✅ Banco definido no link: '{db_target.name}'")
+                db = db_target
+            except:
+                # O link veio limpo (ex: ...mongodb.net). Usamos o nome padrão.
+                NOME_PADRAO = "dados_do_sorteio"
+                print(f"⚠️ Link sem nome de banco. Usando padronizado: '{NOME_PADRAO}'")
+                db = client.get_database(NOME_PADRAO)
+            # ------------------------------------
+
             client.admin.command('ping') 
-            print("✅ Sucesso: Conectado ao MongoDB Principal!")
+            print(f"✅ CONEXÃO BEM SUCEDIDA NO CLUSTER: {cluster_name}")
+            
         except Exception as e:
             print(f"❌ Erro fatal ao conectar ao MongoDB: {e}")
             sys.exit(1)
@@ -310,6 +415,9 @@ def fetch_data_from_mongodb():
             for i in l: i['_id'] = str(i['_id'])
             return l
 
+        bolas_mesa = clean(db.bolas_mesa.find({}))
+        buscando_mesa = clean(db.buscando_mesa.find({}))
+
         bolas = clean(db.bolas.find({}))
         buscando = clean(db.buscando.find({}))
         premios_raw = clean(db.premio.find({}))
@@ -345,7 +453,7 @@ def fetch_data_from_mongodb():
         param_doc = parametros[0] if parametros else {}
         
         avisos = clean(db.avisos.find({}))
-
+   
         if 'tipo_entrada_de_cartelas' not in param_doc: param_doc['tipo_entrada_de_cartelas'] = 1
 
         return {
@@ -354,6 +462,9 @@ def fetch_data_from_mongodb():
             'topeData': tope_data, 'cardRanges': card_ranges, 'promocionalData': [],
             'parametrosInfo': param_doc, 'melhoresData': melhores, 
             
+            'bolasMesaData': bolas_mesa, 
+            'buscandoMesaData': buscando_mesa,
+           
             # ENVIA AS DUAS LISTAS
             'ganhadoresData': lista_terminal, 
             'ganhadoresLive': lista_live,
@@ -440,13 +551,32 @@ def broadcast(data):
             clients.discard(client)
 
 
+# Crie esta nova função no seu código:
+
+def recalcular_ranking_principal():
+    """
+    Função Despachante: Decide qual rotina de ranking (90 ou 75) deve ser executada.
+    """
+    global CACHE_JOGO
+    if not CACHE_JOGO['ativo']:
+        return
+        
+    # Assume 90 como padrão, mas verifica a primeira cartela no cache
+    tipo_jogo_atual = 90 
+    if CACHE_JOGO['cartelas']:
+        # Verifica o tipo de cartela que foi carregada (baseado na tag 'tipo' que definimos)
+        tipo_jogo_atual = CACHE_JOGO['cartelas'][0].get('tipo', 90)
+
+    if tipo_jogo_atual == 75:
+        # ATENÇÃO: Confirme o nome correto desta sua nova função de 75
+        # Ela precisa existir no seu server.py
+        recalcular_ranking_top10_75() 
+    else:
+        # Chamada para o ranking de 90 bolas (a versão que acabamos de corrigir)
+        recalcular_ranking_top10()
+
+
 def recalcular_ranking_top10():
-    """
-    Versão Inteligente: 
-    1. Ignora linhas (Sup/Cen/Inf) que JÁ foram ganhas na rodada.
-    2. Se todas as linhas saírem, mostra distância para Bingo.
-    3. Mantém formatação de string e correção da Quadra.
-    """
     global db, CACHE_JOGO
     
     # print("🔄 [RANKING] Iniciando cálculo...")
@@ -457,7 +587,7 @@ def recalcular_ranking_top10():
         return
 
     try:
-        dados_bolas = db.bolas.find_one({}) or {}
+        dados_bolas = db.bolas_mesa.find_one({}) or {}
         bolas_cantadas = set(dados_bolas.get('bolas_cantadas', []))
         
         dados_premio = db.buscando.find_one({}) or {}
@@ -469,24 +599,33 @@ def recalcular_ranking_top10():
         busca_falta_um = 'FALTA' in premio_buscado
         busca_duplo    = 'DUPLO' in premio_buscado or 'SEGUNDO' in premio_buscado
         
-        # --- NOVO: IDENTIFICA LINHAS JÁ GANHAS ---
+        # --- NOVO: IDENTIFICA LINHAS JÁ GANHAS (COM CORREÇÃO PARA 1 LINHA) ---
         linhas_ja_ganhas = set()
         if busca_linha:
-            # Busca ganhadores desta rodada que ganharam LINHA
             rodada_atual = db.rodada.find_one({})
             id_rodada = rodada_atual.get('id_evento') if rodada_atual else 0
             
-            # ATENÇÃO: É importante que o 'admin_validar_cartela' esteja salvando 'linha_ganha_tag'
-            # Se não tiver ID de rodada na tabela ganhadores, assume todos (cuidado se não limpar tabela)
-            ganhadores_linha = db.ganhadores.find({'premio': {'$regex': 'LINHA'}})
+            ganhadores_linha = list(db.ganhadores.find({'premio': {'$regex': 'LINHA'}}))
             
-            for g in ganhadores_linha:
-                tag = g.get('linha_ganha_tag') # Esperado: 'Sup', 'Cen', 'Inf'
-                if tag: linhas_ja_ganhas.add(tag)
-        # -----------------------------------------
+            # Busca a configuração de Quantidade de Linhas do Prêmio
+            tabela_premios = db.premio.find_one({}) or {}
+            qtde_linhas_jogo = int(tabela_premios.get('qtde_linha', 1))
+
+            # SE FOR JOGO DE 1 LINHA E ALGUÉM JÁ GANHOU, BLOQUEIA TODAS AS OUTRAS
+            if qtde_linhas_jogo == 1 and len(ganhadores_linha) > 0:
+                 linhas_ja_ganhas.add('Sup')
+                 linhas_ja_ganhas.add('Cen')
+                 linhas_ja_ganhas.add('Inf')
+            else:
+                # Se for jogo de 2 ou 3 linhas, remove apenas a que saiu
+                for g in ganhadores_linha:
+                    tag = g.get('linha_ganha_tag') 
+                    if tag: linhas_ja_ganhas.add(tag)
+        # ---------------------------------------------------------------------
 
         # Mapa de Ganhadores Gerais (Bingo)
         ids_vencedores_bingo = set()
+
         if busca_duplo:
             vencedores = db.ganhadores.find({'premio': {'$regex': 'BINGO', '$options': 'i'}})
             for v in vencedores:
@@ -566,7 +705,7 @@ def recalcular_ranking_top10():
             elif qtde_falta == 1:
                 if busca_quadra: msg_premio = "QUADRA"
                 elif busca_falta_um: msg_premio = "FALTA UM"
-            # aquix
+            
             resultados.append({
                 'cartela': c_id,
                 'nome': item['nome'],
@@ -606,6 +745,254 @@ def recalcular_ranking_top10():
 
     except Exception as e:
         print(f"❌ [ERRO RANKING] {e}")
+        import traceback
+        traceback.print_exc()
+
+
+
+def recalcular_ranking_top10_75():
+    """
+    Calcula ranking para BINGO 75 (Lógica Rígida de Fluxo).
+    """
+    global db, CACHE_JOGO
+    if not CACHE_JOGO['ativo']: return
+    
+    try:
+        dados_bolas = db.bolas_mesa.find_one({}) or {}
+        bolas_cantadas = set(dados_bolas.get('bolas_cantadas', []))
+        
+        # --- BUSCA O ESTADO ATUAL ---
+        dados_premio = db.buscando.find_one({}) or {}
+        premio_buscado_texto = dados_premio.get('buscando_o_premio', 'BINGO').upper()
+
+        # --- 1. VERIFICAÇÃO DE VENCEDORES NO BANCO ---
+        qtd_linha = db.ganhadores.count_documents({'premio': {'$regex': 'LINHA', '$options': 'i'}})
+        qtd_cantos = db.ganhadores.count_documents({'premio': {'$regex': 'CANTOS|QUADRA', '$options': 'i'}})
+
+        ganhou_linha = qtd_linha > 0
+        ganhou_cantos = qtd_cantos > 0
+
+        # --- 2. ÁRVORE DE DECISÃO DO FLUXO ---
+        buscar_linha_agora = False
+        buscar_cantos_agora = False
+        buscar_bingo_agora = False
+        
+        novo_nome_premio = 'BINGO' # Default
+
+        if 'BINGO' == premio_buscado_texto or 'ACUMULADO' in premio_buscado_texto:
+            buscar_bingo_agora = True
+            novo_nome_premio = premio_buscado_texto
+        
+        elif ganhou_linha and ganhou_cantos:
+            buscar_bingo_agora = True
+            novo_nome_premio = 'BINGO'
+            
+        elif ganhou_linha and not ganhou_cantos:
+            buscar_cantos_agora = True
+            novo_nome_premio = '4 CANTOS'
+            
+        elif ganhou_cantos and not ganhou_linha:
+            buscar_linha_agora = True
+            novo_nome_premio = 'LINHA'
+            
+        else:
+            buscar_linha_agora = True
+            buscar_cantos_agora = True
+            novo_nome_premio = '4 CANTOS E LINHA'
+
+        # --- ATUALIZA O NOME DO PRÊMIO ---
+        if novo_nome_premio != dados_premio.get('buscando_o_premio'):
+             db.buscando.update_one({}, {'$set': {'buscando_o_premio': novo_nome_premio}}, upsert=True)
+             db.buscando_mesa.update_one({}, {'$set': {'buscando_o_premio': novo_nome_premio}}, upsert=True)
+             # broadcast_para_clientes({'type': 'UPDATE_PREMIO'}) # Opcional
+
+        # --- EXCLUSÃO DE DUPLO BINGO ---
+        cartelas_excluir_bingo = set()
+        if 'DUPLO' in premio_buscado_texto or 'SEGUNDO' in premio_buscado_texto:
+            vencedores = db.ganhadores.find({'premio': {'$regex': 'BINGO', '$options': 'i'}})
+            for v in vencedores:
+                if 'DUPLO' not in (v.get('premio') or '').upper():
+                    try: cartelas_excluir_bingo.add(v['cartela'])
+                    except: pass
+
+        resultados = []
+
+        for item in CACHE_JOGO['cartelas']:
+            c_id = item['id']
+            if c_id in cartelas_excluir_bingo: continue
+            if item.get('tipo', 90) != 75: continue
+            
+            layout = item['layout']
+            lista_nums = layout.get('lista_75', [])
+            if not lista_nums or len(lista_nums) < 25: continue
+
+            opcoes_proximidade = []
+            
+            # --- CÁLCULO: BINGO ---
+            if layout.get('geral'):
+                faltam_bingo = layout['geral'] - bolas_cantadas
+                qtde_bingo = len(faltam_bingo)
+                if qtde_bingo == 0:
+                     opcoes_proximidade.append({'tag': 'BINGO', 'set': faltam_bingo, 'qtde': 0, 'premio': 'BINGO'})
+                elif buscar_bingo_agora:
+                     opcoes_proximidade.append({'tag': 'Geral', 'set': faltam_bingo, 'qtde': qtde_bingo, 'premio': 'BINGO'})
+
+            # --- CÁLCULO: 4 CANTOS ---
+            if buscar_cantos_agora:
+                alvo_cantos = {lista_nums[0], lista_nums[4], lista_nums[20], lista_nums[24]} - {0}
+                faltam_cantos = alvo_cantos - bolas_cantadas
+                qtde_cantos = len(faltam_cantos)
+                if qtde_cantos == 0:
+                    opcoes_proximidade.append({'tag': 'CANTOS', 'set': faltam_cantos, 'qtde': 0, 'premio': '4 CANTOS'})
+                else:
+                    opcoes_proximidade.append({'tag': 'Cantos', 'set': faltam_cantos, 'qtde': qtde_cantos, 'premio': '4 CANTOS'})
+
+            # --- CÁLCULO: LINHA ---
+            if buscar_linha_agora:
+                linhas_indices = [
+                    [0, 5, 10, 15, 20], [1, 6, 11, 16, 21], [2, 7, 12, 17, 22], [3, 8, 13, 18, 23], [4, 9, 14, 19, 24]
+                ]
+                melhor_linha_set = set()
+                melhor_linha_qtde = 99
+                bateu_linha = False
+                for indices_da_linha in linhas_indices:
+                    linha_set = {lista_nums[i] for i in indices_da_linha} - {0}
+                    f_linha = linha_set - bolas_cantadas
+                    q_linha = len(f_linha)
+                    if q_linha == 0:
+                        opcoes_proximidade.append({'tag': 'LINHA', 'set': f_linha, 'qtde': 0, 'premio': 'LINHA'})
+                        bateu_linha = True
+                        break 
+                    if q_linha < melhor_linha_qtde:
+                        melhor_linha_qtde = q_linha
+                        melhor_linha_set = f_linha
+                if not bateu_linha:
+                    opcoes_proximidade.append({'tag': 'Linha', 'set': melhor_linha_set, 'qtde': melhor_linha_qtde, 'premio': 'LINHA'})
+
+            # --- SELEÇÃO FINAL ---
+            if not opcoes_proximidade: continue
+
+            vitorias = [op for op in opcoes_proximidade if op['qtde'] == 0]
+            
+            if len(vitorias) > 0:
+                nomes_premios = sorted(list(set([v['premio'] for v in vitorias])))
+                msg_vitoria = " E ".join(nomes_premios)
+                escolhido = vitorias[0]
+                qtde, faltam, tag = 0, escolhido['set'], escolhido['tag']
+            else:
+                melhor = min(opcoes_proximidade, key=lambda x: x['qtde'])
+                qtde = melhor['qtde']
+                faltam = melhor['set']
+                tag = melhor['tag']
+                
+                # --- CORREÇÃO AQUI ---
+                # Antes: msg_vitoria = f"Falta {qtde}"
+                # Agora: Deixamos vazio para não sujar o campo 'premio' no banco
+                msg_vitoria = "" 
+
+            resultados.append({
+                'cartela': c_id, 'nome': item['nome'],
+                'numeros_faltantes': sorted(list(faltam)),
+                'qtde': qtde, 'posicao': tag, 'premio': msg_vitoria
+            })
+
+        # --- GRAVAÇÃO ---
+        resultados.sort(key=lambda x: (x['qtde'], x['cartela']))
+        top_10 = resultados[:10]
+        
+        rodada_info = db.rodada.find_one({})
+        id_evt = rodada_info.get('id_evento', 0) if rodada_info else 0
+
+        novos_docs = []
+        for i, r in enumerate(top_10):
+            try:
+                qtde_segura = int(r.get('qtde', 999))
+                pos_raw = r.get('posicao', "")
+                pos_letra = pos_raw[0] if pos_raw else "" 
+                lista_original = r.get('numeros_faltantes') or []
+                string_numeros = ",".join(f"{n:02d}" for n in lista_original)
+                
+                novos_docs.append({
+                    "id_posicao": i + 1, "cartela": str(r['cartela']), "posicao": pos_letra,
+                    "numeros": string_numeros, "numeros_faltantes": lista_original,
+                    "premio": str(r.get('premio', '')), "nome": str(r.get('nome', '---')),
+                    "rodada": int(id_evt), "qtde": qtde_segura
+                })
+            except: continue
+
+        db.melhores.delete_many({})
+        if novos_docs: db.melhores.insert_many(novos_docs)
+
+    except Exception as e:
+        print(f"❌ Erro Ranking 75: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def verificar_e_sincronizar_cartelas(evento_num_max, evento_tipo_cartela):
+    """
+    Verifica se a tabela 'cartelas' está sincronizada com o evento.
+    Se não, carrega o arquivo JSON correspondente e atualiza.
+    """
+    if db is None: return
+
+    try:
+        # 1. Busca parâmetros atuais
+        param = db.parametros.find_one({}) or {}
+        
+        # Pega os valores atuais do banco (convertendo para int para comparação segura)
+        atual_arquivo = int(param.get('arquivo_de_cartela', 0))
+        atual_tipo = int(param.get('tipo_cartela', 0))
+        
+        # Valores alvo vindos do Evento
+        alvo_max = int(evento_num_max)
+        alvo_tipo = int(evento_tipo_cartela)
+
+        # 2. Comparação
+        if atual_arquivo == alvo_max and atual_tipo == alvo_tipo:
+            # Já está tudo certo, não precisa fazer nada
+            return
+
+        print(f"🔄 Sincronização necessária! Atual: {atual_arquivo}/{atual_tipo} -> Novo: {alvo_max}/{alvo_tipo}")
+
+        # 3. Formatação do Nome do Arquivo
+        # Ex: 72000 -> "0072000" (7 dígitos) + "_" + "15" + ".json"
+        nome_arquivo = f"{alvo_max:07d}_{alvo_tipo}.json"
+        caminho_arquivo = os.path.join(BASE_DIR, 'cartelas', nome_arquivo)
+
+        print(f"📂 Buscando arquivo: {caminho_arquivo}")
+
+        if not os.path.exists(caminho_arquivo):
+            print(f"❌ ERRO CRÍTICO: Arquivo de cartelas '{nome_arquivo}' não encontrado na pasta 'cartelas'.")
+            return
+
+        # 4. Carregamento e Atualização
+        with open(caminho_arquivo, 'r', encoding='utf-8') as f:
+            novas_cartelas = json.load(f)
+        
+        if novas_cartelas:
+            # Limpa tabela antiga
+            print("🗑️ Limpando tabela 'cartelas' antiga...")
+            db.cartelas.delete_many({})
+            
+            # Insere novas (Batch insert é mais rápido)
+            print(f"📥 Inserindo {len(novas_cartelas)} novas cartelas...")
+            db.cartelas.insert_many(novas_cartelas)
+            
+            # 5. Atualiza Parametros
+            db.parametros.update_one({}, {
+                '$set': {
+                    'arquivo_de_cartela': alvo_max,
+                    'tipo_cartela': alvo_tipo
+                }
+            }, upsert=True)
+            
+            print("✅ Base de cartelas atualizada com sucesso!")
+        else:
+            print("⚠️ O arquivo JSON está vazio.")
+
+    except Exception as e:
+        print(f"❌ Erro ao sincronizar cartelas: {e}")
         import traceback
         traceback.print_exc()
 
@@ -791,7 +1178,8 @@ def admin_fechar_vendas():
         if not sales_db.eventos.find_one(filtro):
             filtro = {'id_evento': str(id_evt)}
 
-        result = sales_db.eventos.update_one(filtro, {'$set': {'status': 'finalizado'}})
+        # finalizar as vendas
+        #result = sales_db.eventos.update_one(filtro, {'$set': {'status': 'finalizado'}})
         
         if result.modified_count > 0:
             print(f"🔒 Evento {id_evt} FINALIZADO. Aviso enviado. Vendas até aprox: {hora_final_str} (BRT)")
@@ -864,20 +1252,45 @@ def api_consultar_cartelas():
         return jsonify({'error': str(e)}), 500
 
 
-# --- WEBSOCKET ---
+
+# --- WEBSOCKET CORRIGIDO ---
 def websocket_app(environ, start_response):
+    # 1. Primeiro verificamos se é uma conexão WebSocket
     if 'wsgi.websocket' in environ:
-        ws = environ['wsgi.websocket']
+        ws = environ['wsgi.websocket'] # <--- AQUI O 'ws' NASCE
+        
+        # 2. AGORA que 'ws' existe, podemos adicionar na lista
+        clientes_conectados.append(ws) 
+        print(f"TV Conectada! Total: {len(clientes_conectados)}")
+
+        # Se você usa a variável 'clients' antiga, mantenha isso, senão pode apagar
         clients.add(ws)
+
         try:
             # Envia estado inicial
             data = fetch_data()
             ws.send(json.dumps({'type': 'UPDATE', **data}, default=str))
+            
+            # Loop para manter a conexão viva
             while not ws.closed:
                 ws.receive()
-        except: pass
-        finally: clients.discard(ws)
+                
+        except Exception as e:
+            # Ignora erros de desconexão comuns
+            pass
+            
+        finally:
+            # 3. Quando o loop acabar (desconectou), removemos da lista
+            if ws in clientes_conectados:
+                clientes_conectados.remove(ws)
+                print(f"TV Saiu. Restam: {len(clientes_conectados)}")
+            
+            # Removemos também do 'clients' antigo se estiver usando
+            clients.discard(ws)
+            
         return []
+
+    # Se não for WebSocket, segue o fluxo normal do site
     return app(environ, start_response)
 
 
@@ -898,6 +1311,9 @@ def admin_salvar_config():
         update_fields['nome_sala'] = str(nome_sala_input).strip()
     else:
         update_fields['nome_sala'] = "LIVE THE BET"
+
+    if 'aguardandoVideo' in data:
+        update_fields['aguardandoVideo'] = data.get('aguardandoVideo');
 
 
     # --- 2. Controle de Vídeos YouTube ---
@@ -925,10 +1341,10 @@ def admin_salvar_config():
     # Nota: A lógica de ler da tabela "eventos" deve ser feita no carregamento (GET). 
     # Aqui no (POST/Gravação), salvamos o que vier ou o padrão 15.
     try:
-        t_sorteio = int(data.get('tipo_sorteio', 15))
-        update_fields['tipo_sorteio'] = t_sorteio
+        t_sorteio = int(data.get('tipo_cartela', 15))
+        update_fields['tipo_cartela'] = t_sorteio
     except (ValueError, TypeError):
-        update_fields['tipo_sorteio'] = 15
+        update_fields['tipo_cartela'] = 15
 
     # Tipo Entrada de Cartelas (int32) - Valores: 1 ou 2 (Padrão = 1)
     try:
@@ -948,7 +1364,7 @@ def admin_salvar_config():
     # 2. Modo de Sorteio ('auto' ou 'manual')
     if 'modo_sorteio' in data:
         update_fields['modo_sorteio'] = str(data['modo_sorteio'])
-        
+
     # 3. Voz Ativa (Boolean)
     if 'voz_ativa' in data:
         update_fields['voz_ativa'] = bool(data['voz_ativa'])
@@ -975,6 +1391,118 @@ def admin_salvar_config():
             return jsonify({'error': str(e)}), 500
             
     return jsonify({'error': 'Nenhum dado válido enviado'}), 400
+
+
+@app.route('/api/admin/publicar_bola', methods=['POST'])
+def publicar_bola():
+    try:
+        data = request.json
+        bola = int(data.get('bola'))
+        
+        # 1. Busca as bolas que JÁ estavam públicas antes
+        dados_atuais = db.bolas.find_one({}) or {}
+        lista_publica = dados_atuais.get('bolas_cantadas', [])
+        
+        # 2. Adiciona a nova bola na lista (se não for repetida)
+        if bola not in lista_publica:
+            lista_publica.append(bola)
+        
+        # 3. ATUALIZA o documento existente (Não cria um novo!)
+        db.bolas.update_one({}, {
+            '$set': {
+                'bolas_cantadas': lista_publica,
+                'proxima_bola': bola,
+                'ordem': len(lista_publica),
+                'ultimas_bolas': lista_publica[-3:], # Pega as últimas 3
+                'timestamp': datetime.now()
+            }
+        }, upsert=True)
+        
+        # 4. Avisa as TVs
+        print(f"📢 Enviando bola {bola} para as TVs (Total: {len(lista_publica)})")
+        broadcast_para_clientes({
+            'type': 'UPDATE',
+            'ultimaBola': bola,
+            # Opcional: Mandar a lista toda garante que quem reconectar pegue tudo
+            'bolasData': [{'bolas_cantadas': lista_publica, 'proxima_bola': bola}]
+        })
+        
+        return jsonify({'status': 'ok'})
+
+    except Exception as e:
+        print(f"Erro publicar_bola: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/sortear_mesa', methods=['POST'])
+def admin_sortear_mesa():
+    global db, timeStart
+    if db is None: return jsonify({'error': 'Sem conexão com DB'}), 500
+    
+    try:
+        # Pega dados enviados
+        data = request.json or {}
+        bola_manual = data.get('bola_manual') 
+
+        # 1. Busca bolas já sorteadas NA MESA (Tabela Interna)
+        # --- ALTERADO: Lê da tabela privada da mesa ---
+        dados_bolas = db.bolas_mesa.find_one({})
+        bolas_cantadas = dados_bolas.get('bolas_cantadas', []) if dados_bolas else []
+        
+        # Define máximo de bolas (ajuste se for 75 ou 90 conforme sua config global)
+        MAX_BOLAS = 90 
+
+        # 2. Verifica fim de jogo
+        if len(bolas_cantadas) >= MAX_BOLAS:
+            return jsonify({'error': 'Todas as bolas já foram sorteadas'}), 400
+
+        nova_bola = 0
+
+        if bola_manual:
+            # --- MODO MANUAL ---
+            nova_bola = int(bola_manual)
+            if nova_bola < 1 or nova_bola > MAX_BOLAS:
+                return jsonify({'error': f'Bola deve ser entre 1 e {MAX_BOLAS}'}), 400
+            
+            # Valida se já existe na lista da MESA
+            if nova_bola in bolas_cantadas:
+                return jsonify({'error': f'Bola {nova_bola} já foi registrada na Mesa!'}), 400
+        else:
+            # --- MODO AUTOMÁTICO (RANDOM) ---
+            import random
+            todas_bolas = list(range(1, MAX_BOLAS + 1))
+            disponiveis = [b for b in todas_bolas if b not in bolas_cantadas]
+            if not disponiveis: return jsonify({'error': 'Todas as bolas sorteadas'}), 400
+            nova_bola = random.choice(disponiveis)
+        
+        # 3. Atualiza lista local
+        bolas_cantadas.append(nova_bola)
+
+        if len(bolas_cantadas) == 1:
+            timeStart = datetime.now()
+            print(f"⏰ Jogo Iniciado (Mesa) em: {timeStart.strftime('%H:%M:%S')}")
+
+        # --- ALTERADO: Grava na tabela privada 'bolas_mesa' ---
+        db.bolas_mesa.update_one({}, {
+            '$set': {
+                'bolas_cantadas': bolas_cantadas,
+                'proxima_bola': nova_bola,          
+                'ordem' : len(bolas_cantadas),
+                'ultimas_bolas': bolas_cantadas[-3:]
+            }
+        }, upsert=True)
+        
+        # 4. Dispara o Cálculo de Ranking (IMEDIATO)
+        # O Admin precisa saber na hora quem ganhou.
+        # IMPORTANTE: Sua função 'recalcular_ranking_principal' precisa ser ajustada
+        # para ler os números sorteados de 'bolas_mesa' e não de 'bolas'.
+        threading.Thread(target=recalcular_ranking_principal).start()
+
+        return jsonify({'bola': nova_bola, 'total_sorteadas': len(bolas_cantadas)})
+        
+    except Exception as e:
+        print(f"Erro ao sortear mesa: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 # Endpoint para Sortear Bola
@@ -1023,13 +1551,13 @@ def admin_sortear():
         db.bolas.update_one({}, {
             '$set': {
                 'bolas_cantadas': bolas_cantadas,
-                'proxima_bola': nova_bola,
+                'proxima_bola': len(bolas_cantadas),  # nova_bola, aquix
                 'ordem' : len(bolas_cantadas),
                 'ultimas_bolas': bolas_cantadas[-3:]
             }
         }, upsert=True)
         
-        threading.Thread(target=recalcular_ranking_top10).start()
+        threading.Thread(target=recalcular_ranking_principal).start()
 
         return jsonify({'bola': nova_bola, 'total_sorteadas': len(bolas_cantadas)})
         
@@ -1038,58 +1566,289 @@ def admin_sortear():
         return jsonify({'error': str(e)}), 500
 
 
-# --- ROTA ATUALIZADA: MUDAR PRÊMIO (INICIALIZA LINHAS) ---
-@app.route('/api/admin/definir_premio', methods=['POST'])
-def admin_definir_premio():
+
+# --- SUBSTITUIÇÃO DA ROTA ANTIGA DE PRÊMIO ---
+
+# ROTA 1: MESA (Imediata - O Admin vê na hora)
+@app.route('/api/admin/definir_premio_mesa', methods=['POST'])
+def definir_premio_mesa():
     data = request.json
     nome_premio = data.get('premio')
     if not nome_premio: return jsonify({'error': 'Nome necessário'}), 400
     
     try:
-        # 1. Inicializa o dicionário
+        # Prepara os dados
         update_data = {} 
-
-        # Define o prêmio base
-        update_data['buscando_o_premio'] = nome_premio
-
-        # 2. Busca configurações de linhas na tabela 'premio'
-        # Isso é necessário para saber se é um jogo de 3 linhas
-        tabela_premios = db.premio.find_one({}) or {}
-        qtde = tabela_premios.get('qtde_linha', 1) 
+        update_data['buscando_o_premio'] = nome_premio.upper()
+        update_data['buscando_tal_premio'] = nome_premio.upper()
         
-        # --- CORREÇÃO: GRAVA A QUANTIDADE DE LINHAS NA TABELA 'BUSCANDO' ---
-        update_data['qtde_linha'] = qtde 
-        # -------------------------------------------------------------------
-
-        # Lógica de Linhas
-        if 'LINHA' in nome_premio:
-            if qtde == 3:
-                # Se for 3 linhas, ativa a busca por todas e define nome visual
-                update_data['buscando_tal_premio'] = "3 LINHAS" 
-                update_data['buscando_a_linha'] = "Sup,Cen,Inf" 
-            else:
-                # Se for 1 linha
-                update_data['buscando_tal_premio'] = nome_premio 
-                update_data['buscando_a_linha'] = "" 
+        # Lógica de Linhas (Mantida do seu código original)
+        tabela_premios = db.premio.find_one({}) or {}
+        qtde_linhas = tabela_premios.get('qtde_linha', 1) 
+        update_data['qtde_linha'] = qtde_linhas
+        
+        tipo_jogo = CACHE_JOGO['cartelas'][0].get('tipo', 90) if CACHE_JOGO['cartelas'] else 90
+         
+        if 'LINHA' in nome_premio.upper() and tipo_jogo == 90:
+            if qtde_linhas > 1:
+                update_data['buscando_a_linha'] = "SUP,CEN,INF" 
+                update_data['buscando_tal_premio'] = f"{qtde_linhas} LINHAS"
+            else: 
+                 update_data['buscando_a_linha'] = "SUP,CEN,INF"
+        elif 'LINHA' in nome_premio.upper() and tipo_jogo == 75:
+            update_data['buscando_a_linha'] = "" 
+            update_data['buscando_tal_premio'] = 'LINHA'
         else:
-            # Outros prêmios (Bingo, Quadra, etc)
-            update_data['buscando_tal_premio'] = nome_premio
             update_data['buscando_a_linha'] = ""
+        
+        # GRAVA NA TABELA DA MESA (PRIVADA)
+        db.buscando_mesa.update_one({}, {'$set': update_data}, upsert=True)
 
-        # Atualiza o banco
-        db.buscando.update_one({}, {'$set': update_data}, upsert=True)
-
-        threading.Thread(target=recalcular_ranking_top10).start()
-
-        return jsonify({'status': 'OK', 'dados_gravados': update_data})
+        # Atualiza o Ranking do Admin Imediatamente
+        threading.Thread(target=recalcular_ranking_principal).start()
+        
+        return jsonify({'status': 'OK', 'msg': 'Mesa atualizada'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-# --- FUNÇÃO CORRIGIDA E BLINDADA: VALIDAR CARTELA ---
+# ROTA 2: PÚBLICO (Atrasada - A TV vê depois)
+@app.route('/api/admin/definir_premio_publico', methods=['POST'])
+def definir_premio_publico():
+    data = request.json
+    nome_premio = data.get('premio')
+    if not nome_premio: return jsonify({'error': 'Nome necessário'}), 400
+
+    try:
+        # Repete a lógica para garantir que a tabela pública fique igualzinha à da mesa
+        update_data = {} 
+        update_data['buscando_o_premio'] = nome_premio.upper()
+        update_data['buscando_tal_premio'] = nome_premio.upper()
+        
+        tabela_premios = db.premio.find_one({}) or {}
+        qtde_linhas = tabela_premios.get('qtde_linha', 1) 
+        update_data['qtde_linha'] = qtde_linhas
+        
+        tipo_jogo = CACHE_JOGO['cartelas'][0].get('tipo', 90) if CACHE_JOGO['cartelas'] else 90
+       
+        if 'LINHA' in nome_premio.upper() and tipo_jogo == 90:
+            if qtde_linhas > 1:
+                update_data['buscando_a_linha'] = "SUP,CEN,INF" 
+                update_data['buscando_tal_premio'] = f"{qtde_linhas} LINHAS"
+            else:
+                 update_data['buscando_a_linha'] = "SUP,CEN,INF"
+        elif 'LINHA' in nome_premio.upper() and tipo_jogo == 75:
+            update_data['buscando_a_linha'] = "" 
+            update_data['buscando_tal_premio'] = 'LINHA'
+        else:
+            update_data['buscando_a_linha'] = ""
+        
+        # GRAVA NA TABELA PÚBLICA (OFICIAL)
+        db.buscando.update_one({}, {'$set': update_data}, upsert=True)
+        
+        # AVISA AS TVs
+        broadcast_para_clientes({'type': 'UPDATE_PREMIO'})
+        
+        return jsonify({'status': 'OK', 'msg': 'Público atualizado'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome, id_evento_ativo, nome_ganhador):
+    """
+    Contém todo o código de validação, gravação e retorno do Bingo 75.
+    (Movido para evitar duplicação de rota)
+    """
+    global db
+    
+    # --- BUSCA OS CAMPOS DE LAYOUT (CORRIGIDO PARA BUSCAR DO DB) ---
+    lista_nums = cartela_doc.get('numeros', []) 
+    if not lista_nums:
+        lista_nums = cartela_doc.get('lista_75', []) # Fallback (Se vier do cache)
+    # ---------------------------------------------------------------
+
+    bolas_set = set(bolas_lista)
+    
+    eh_valido = False
+    msg_validacao = "Incompleto"
+    tag_premio = ""
+    
+    # --- CORREÇÃO CRÍTICA: Inicializa status_code (Default LOSS) ---
+    status_code = 'LOSS' 
+    # ---------------------------------------------------------------
+
+    if not lista_nums or len(lista_nums) < 25:
+        return {'status_code': 'ERROR', 'msg': 'Erro: Layout 75 inválido.'} 
+
+    # Lógica Interna de Validação 75
+    bateu_cantos = False
+    bateu_linha = False
+    bateu_bingo = False
+    detalhes_msg = []
+    tags_vitoria = []
+
+    # 1. BINGO CHEIO
+    alvo_geral = set(lista_nums) - {0}
+    if len(alvo_geral - bolas_set) == 0:
+        bateu_bingo = True
+
+    # 2. 4 CANTOS (Indices 0, 4, 20, 24)
+    alvo_cantos = {lista_nums[0], lista_nums[4], lista_nums[20], lista_nums[24]} - {0}
+    if len(alvo_cantos - bolas_set) == 0:
+        bateu_cantos = True
+
+    # 3. LINHA (Colunas Verticais = Linhas Horizontais)
+    linhas_indices = [
+        [0, 5, 10, 15, 20], [1, 6, 11, 16, 21], [2, 7, 12, 17, 22], [3, 8, 13, 18, 23], [4, 9, 14, 19, 24]
+    ]
+    for idxs in linhas_indices:
+        linha_set = {lista_nums[i] for i in idxs} - {0}
+        if len(linha_set - bolas_set) == 0:
+            bateu_linha = True
+            break
+
+    # Decisão
+    if 'BINGO' == premio_nome or 'ACUMULADO' in premio_nome:
+        if bateu_bingo:
+            eh_valido, msg_validacao, tag_premio = True, "BINGO (Cartela Cheia)!", "BINGO"
+        else:
+            msg_validacao = f"Faltam {len(alvo_geral - bolas_set)} p/ Bingo."
+    else:
+        # Fase Inicial
+        if bateu_cantos: 
+            detalhes_msg.append("4 CANTOS")
+            tags_vitoria.append("4 CANTOS")
+        if bateu_linha: 
+            detalhes_msg.append("LINHA")
+            tags_vitoria.append("LINHA")
+        
+        if detalhes_msg:
+            eh_valido = True
+            msg_validacao = " E ".join(detalhes_msg) + " CONFIRMADO!"
+            tag_premio = " E ".join(tags_vitoria)
+        else:
+            msg_validacao = "Incompleta p/ Linha ou Cantos."
+
+    status_code = 'WIN' if eh_valido else 'LOSS'
+    
+    # TV Confere
+    db.confere.delete_many({})
+    db.confere.insert_one({
+        "rodada": int(id_evento_ativo), "cartao": cartela_id,
+        "numeros": msg_validacao, "ganhador": nome_ganhador, "status": "conferindo"
+    })
+    
+    # Grava Ganhador
+    if eh_valido:
+
+
+# --- NOVO TRECHO: BUSCA O VALOR TOTAL NA TABELA PREMIO ---
+        valor_total_float = 0.0
+        try:
+            tabela_premios = db.premio.find_one({}) or {}
+            
+            # Mapeamento do prêmio de validação para o campo do banco 'premio'
+            # Usa 'LINHA' se a tag tiver 'LINHA', senão usa a tag completa (BINGO/4 CANTOS)
+            chave_simples = 'LINHA' if 'LINHA' in tag_premio.upper() else ('QUADRA' if 'CANTOS' in tag_premio.upper() else tag_premio)
+            chave_premio_map = {'4 CANTOS': 'premio_quadra', 'QUADRA': 'premio_quadra', 'LINHA': 'premio_linha', 'BINGO': 'premio_bingo', 'DUPLO BINGO': 'premio_duplo_bingo'}
+            
+            campo_valor = chave_premio_map.get(chave_simples)
+            if campo_valor:
+                # Usa sua função auxiliar para converter Decimal128 ou string para float
+                val_total_float = converter_decimal(tabela_premios.get(campo_valor)) 
+        except Exception as e_val:
+            print(f"⚠️ Erro ao buscar valor do prêmio {tag_premio}: {e_val}")
+            
+        str_total = f"R$ {format_brl(val_total_float)}" # Formata o valor total
+
+
+        if not db.ganhadores.find_one({'cartela': cartela_id, 'premio': tag_premio}):
+            db.ganhadores.insert_one({
+                'premio': tag_premio,
+                'valor_total_premio': str_total,
+                'cartela': cartela_id,
+                'nome': nome_ganhador,
+                'valor_rateio': str_total,
+                'linha_ganha_tag': tag_premio
+            })
+
+    return {
+        'status_code': status_code,
+        'valid': eh_valido,
+        'msg': msg_validacao,
+        'ganhador': nome_ganhador,
+        'cartela_id': cartela_id,
+        'layout': {'tipo': 75, 'lista': lista_nums}, 
+        'bolas': list(bolas_set)
+    }
+
+
+@app.route('/api/admin/validar_cartela_75', methods=['POST'])
+def admin_validar_cartela_75():
+    global db
+    if db is None: return jsonify({'status_code': 'ERROR', 'msg': 'Sem conexão DB'})
+    
+    data = request.json or {}
+    raw_cartela = data.get('cartela')
+    
+    try: cartela_id = int(raw_cartela)
+    except: return jsonify({'status_code': 'ERROR', 'msg': 'Número de cartela inválido'})
+    
+    try:
+        # 1. Dados Iniciais
+        rodada_info = db.rodada.find_one({})
+        id_evento_ativo = rodada_info.get('id_evento') if rodada_info else 0
+        
+        # 2. Venda e Ganhador (Lógica simplificada, adaptada do bloco 90)
+        try: sales_db = get_sales_db_connection()
+        except: sales_db = None
+            
+        nome_ganhador = "Desconhecido"
+        col_vendas_name = f"vendas{id_evento_ativo}"
+        
+        if sales_db is not None and col_vendas_name in sales_db.list_collection_names():
+             venda_encontrada = sales_db[col_vendas_name].find_one({
+                '$or': [
+                    { 'numero_inicial': {'$lte': cartela_id}, 'numero_final': {'$gte': cartela_id} },
+                    { 'numero_inicial2': {'$lte': cartela_id}, 'numero_final2': {'$gte': cartela_id} }
+                ]
+             })
+             if not venda_encontrada:
+                  return jsonify({'status_code': 'NOT_SOLD', 'msg': f'⛔ Cartela {cartela_id} NÃO VENDIDA!'})
+             nome_ganhador = venda_encontrada.get('nome_cliente', 'Cliente Balcão')
+
+        # 3. Busca Layout
+
+        cartela_doc = db.cartelas.find_one({'cartao': cartela_id})
+        if not cartela_doc: 
+            return jsonify({'status_code': 'MISSING_MATRIX', 'msg': 'Layout não cadastrado.'})
+
+        # 4. Dados do Jogo
+        dados_bolas = db.bolas.find_one({})
+        bolas_lista = dados_bolas.get('bolas_cantadas', []) if dados_bolas else []
+        premio_doc = db.buscando.find_one({})
+        premio_nome = premio_doc.get('buscando_o_premio', '').replace(" ", "").upper()
+        
+        # 5. Chama a Lógica de Validação 75
+        resultado = logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome, id_evento_ativo, nome_ganhador)
+      
+        return jsonify(resultado)
+
+    except Exception as e:
+        print(f"❌ Erro Fatal Validação 75 Rota: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status_code': 'ERROR', 'msg': str(e)}), 500
+
+
 @app.route('/api/admin/validar_cartela', methods=['POST'])
 def admin_validar_cartela():
-    if db is None: return jsonify({'status_code': 'ERROR', 'msg': 'Sem conexão DB'})
+    global db
+    print("📥 [VALIDAÇÃO] Recebendo requisição...") # Log para debug
+    
+    if db is None: 
+        print("❌ Erro: DB desconectado.")
+        return jsonify({'status_code': 'ERROR', 'msg': 'Sem conexão DB'})
     
     data = request.json or {}
     raw_cartela = data.get('cartela')
@@ -1103,17 +1862,17 @@ def admin_validar_cartela():
         id_evento_ativo = rodada_info.get('id_evento') if rodada_info else 0
         
         if not id_evento_ativo:
-             return jsonify({'status_code': 'ERROR', 'msg': 'Nenhum evento ativo no momento.'})
+             return jsonify({'status_code': 'ERROR', 'msg': 'Nenhum evento ativo.'})
 
-        # 2. VERIFICA SE A CARTELA FOI VENDIDA NESTE EVENTO (CRÍTICO)
-        sales_db = get_sales_db_connection()
+        # 2. VERIFICA SE A CARTELA FOI VENDIDA
+        # (Tenta importar a função de conexão, se não existir, define None)
+        try: sales_db = get_sales_db_connection()
+        except: sales_db = None
+            
         col_vendas_name = f"vendas{id_evento_ativo}"
-        
         venda_encontrada = None
-        nome_ganhador = "Desconhecido"
-
+        
         if sales_db is not None and col_vendas_name in sales_db.list_collection_names():
-             # Busca se o ID está dentro de algum intervalo de venda (Range 1 ou Range 2)
              venda_encontrada = sales_db[col_vendas_name].find_one({
                 '$or': [
                     { 'numero_inicial': {'$lte': cartela_id}, 'numero_final': {'$gte': cartela_id} },
@@ -1121,22 +1880,35 @@ def admin_validar_cartela():
                 ]
              })
         
-        # --- AQUI ESTÁ A CORREÇÃO PRINCIPAL ---
         if not venda_encontrada:
             return jsonify({
                 'status_code': 'NOT_SOLD', 
-                'msg': f'⛔ Cartela {cartela_id} NÃO VENDIDA neste evento!',
-                'layout': None # Não retorna layout para não confundir
+                'msg': f'⛔ Cartela {cartela_id} NÃO VENDIDA!',
+                'layout': None
             })
-        # --------------------------------------
 
         nome_ganhador = venda_encontrada.get('nome_cliente', 'Cliente Balcão')
 
-        # 3. BUSCA LAYOUT DA CARTELA (Se passou pela venda, busca o desenho)
+        # 3. BUSCA O LAYOUT NO BANCO
         cartela_doc = db.cartelas.find_one({'cartao': cartela_id})
         if not cartela_doc: 
-            return jsonify({'status_code': 'MISSING_MATRIX', 'msg': 'Erro: Layout da cartela não cadastrado.'})
+            return jsonify({'status_code': 'MISSING_MATRIX', 'msg': 'Layout não cadastrado.'})
 
+        # --- DADOS GERAIS DO JOGO ---
+        # a dados_bolas = db.bolas.find_one({})
+
+        dados_bolas = db.bolas_mesa.find_one({})
+        bolas_lista = dados_bolas.get('bolas_cantadas', []) if dados_bolas else []
+        bolas_set = set(bolas_lista)
+        
+        premio_doc = db.buscando_mesa.find_one({})
+        premio_nome = premio_doc.get('buscando_o_premio', '').replace(" ", "").upper()
+
+        print(f"ℹ️ Validando Bingo 90 - Bolas  {dados_bolas}")
+
+        print(f"ℹ️ Validando Bingo 90 - Premio {premio_nome}")
+        
+        print(f"ℹ️ Validando Bingo 90 - Cartela {cartela_id}")
         def parse(val):
             if isinstance(val, list): return set(val)
             if isinstance(val, str): return set(map(int, val.replace(' ','').split(',')))
@@ -1147,17 +1919,10 @@ def admin_validar_cartela():
         inf_set = parse(cartela_doc.get('inferior'))
         todos_set = sup_set | cen_set | inf_set
 
-        # 4. PREPARA FORMATAÇÃO VISUAL
-        dados_bolas = db.bolas.find_one({})
-        bolas_lista = dados_bolas.get('bolas_cantadas', []) if dados_bolas else []
-        bolas_set = set(bolas_lista)
+        # Formatação Visual
         ultima_bola = bolas_lista[-1] if bolas_lista else -1
-        
-        lista_sup = sorted(list(sup_set))
-        lista_cen = sorted(list(cen_set))
-        lista_inf = sorted(list(inf_set))
-
-        # Monta string visual para o telão
+        lista_sup, lista_cen, lista_inf = sorted(list(sup_set)), sorted(list(cen_set)), sorted(list(inf_set))
+            
         numeros_visual_ordem = lista_sup + lista_cen + lista_inf
         str_numeros_formatada = ""
         for i, num in enumerate(numeros_visual_ordem):
@@ -1166,101 +1931,74 @@ def admin_validar_cartela():
             if i > 0:
                 if num == ultima_bola: separador = "*" 
                 elif num in bolas_set: separador = "+"
-                str_numeros_formatada += separador
-            str_numeros_formatada += num_str
-        
-        # 5. ATUALIZA TABELA CONFERE (Para aparecer na TV)
+            str_numeros_formatada += separador + num_str
+           
+        # TV Confere
         db.confere.delete_many({})
         db.confere.insert_one({
-            "rodada": int(id_evento_ativo),
-            "cartao": cartela_id,
-            "numeros": str_numeros_formatada,
-            "ganhador": nome_ganhador,
-            "status": "conferindo"
+            "rodada": int(id_evento_ativo), "cartao": cartela_id,
+            "numeros": str_numeros_formatada, "ganhador": nome_ganhador, "status": "conferindo"
         })
-        
-        # 6. VALIDAÇÃO DO PRÊMIO
-        premio_doc = db.buscando.find_one({})
-        premio_nome = premio_doc.get('buscando_o_premio', '').replace(" ", "").upper()
+            
+        # Regras 90
+        bateu, detalhes, linha_ganha = False, "", ""
         linhas_faltantes = premio_doc.get('buscando_a_linha', '').upper()
 
-        bateu = False
-        detalhes = ""
-        linha_ganha = "" 
-
-        # Regra Duplo Bingo
-        if 'DUPLOBINGO' in premio_nome or 'SEGUNDO BINGO' in premio_nome:
+        if 'DUPLO' in premio_nome or 'SEGUNDO' in premio_nome:
             ja_ganhou_bingo = db.ganhadores.find_one({'cartela': cartela_id, 'premio': 'BINGO'})
             if ja_ganhou_bingo:
-                return jsonify({
-                    'status_code': 'LOSS', 
-                    'msg': f'❌ Cartela {cartela_id} já fez o 1º Bingo (Não vale p/ Duplo).', 
-                    'layout': {'superior': lista_sup, 'central': lista_cen, 'inferior': lista_inf}, 
-                    'bolas': list(bolas_set)
-                })
-
-        if 'BINGO' in premio_nome or 'ACUMULADO' in premio_nome or 'DUPLOBINGO' in premio_nome:
+                return jsonify({'status_code': 'LOSS', 'msg': 'Cartela já fez o 1º Bingo.'})
+            
+        if 'BINGO' in premio_nome or 'ACUMULADO' in premio_nome or 'DUPLO' in premio_nome:
             faltam = todos_set - bolas_set
             bateu = (len(faltam) == 0)
             detalhes = "BINGO!" if bateu else f"Faltam: {len(faltam)}"
-            
+
         elif 'LINHA' in premio_nome:
             check_sup = len(sup_set - bolas_set) == 0
             check_cen = len(cen_set - bolas_set) == 0
             check_inf = len(inf_set - bolas_set) == 0
-            
+                
             if check_sup and ('SUP' in linhas_faltantes or not linhas_faltantes):
-                bateu = True; detalhes = "Linha SUPERIOR!"; linha_ganha = "Sup"
+                bateu, detalhes, linha_ganha = True, "Linha SUPERIOR!", "Sup"
             elif check_cen and ('CEN' in linhas_faltantes or not linhas_faltantes):
-                bateu = True; detalhes = "Linha CENTRAL!"; linha_ganha = "Cen"
+                bateu, detalhes, linha_ganha = True, "Linha CENTRAL!", "Cen"
             elif check_inf and ('INF' in linhas_faltantes or not linhas_faltantes):
-                bateu = True; detalhes = "Linha INFERIOR!"; linha_ganha = "Inf"
+                bateu, detalhes, linha_ganha = True, "Linha INFERIOR!", "Inf"
             else:
-                bateu = False
-                detalhes = "Linha incompleta ou já batida."
+                bateu, detalhes = False, "Linha incompleta."
 
         elif 'QUADRA' in premio_nome:
             s, c, i = len(sup_set & bolas_set), len(cen_set & bolas_set), len(inf_set & bolas_set)
-            if s>=4 or c>=4 or i>=4: bateu=True; detalhes="QUADRA!"
-            else: bateu=False; detalhes="Sem quadra."
-            
+            if s>=4 or c>=4 or i>=4: bateu, detalhes = True, "QUADRA!"
+            else: bateu, detalhes = False, "Sem quadra."
+
         elif 'FALTA' in premio_nome:
-             faltam = todos_set - bolas_set
-             bateu = (len(faltam) == 1)
-             detalhes = "Falta 1!" if bateu else f"Faltam {len(faltam)}."
-             
+            faltam = todos_set - bolas_set
+            bateu = (len(faltam) == 1)
+            detalhes = "Falta 1!" if bateu else f"Faltam {len(faltam)}."
         else:
-             bateu = True; detalhes = "Validação Visual."
+            bateu, detalhes = True, "Validação Visual."
 
         status_code = 'WIN' if bateu else 'LOSS'
 
-        # 7. REGISTRO AUTOMÁTICO SE FOR VENCEDOR (Pré-registro)
         if bateu:
-            # (Código de cálculo monetário mantido igual...)
-            valor_monetario = "R$ --"
-            try:
-                tabela_premios = db.premio.find_one({}) or {}
-                campo_valor = ''
-                if 'QUADRA' in premio_nome: campo_valor = 'premio_quadra'
-                elif 'LINHA' in premio_nome: campo_valor = 'premio_linha'
-                elif 'BINGO' in premio_nome: campo_valor = 'premio_bingo'
-                elif 'DUPLO' in premio_nome: campo_valor = 'premio_duplo_bingo'
-                elif 'ACUMULADO' in premio_nome: campo_valor = 'premio_acumulado'
-                elif 'FALTA' in premio_nome: campo_valor = 'premio_falta_Um'
-                
-                if campo_valor:
-                    def cvt(v): 
-                        if hasattr(v, 'to_decimal'): return float(v.to_decimal())
-                        return float(v) if v else 0.0
-                    raw_val = cvt(tabela_premios.get(campo_valor))
-                    valor_monetario = f"R$ {raw_val:,.2f}".replace('.', ',')
-            except: pass
-
             premio_registro = f"{premio_nome} ({linha_ganha})" if linha_ganha else premio_nome
+            if not db.ganhadores.find_one({'cartela': cartela_id, 'premio': premio_registro}):
+                valor_monetario = "R$ --"
+                try:
+                    tabela_premios = db.premio.find_one({}) or {}
+                    campo_valor = ''
+                    if 'QUADRA' in premio_nome: campo_valor = 'premio_quadra'
+                    elif 'LINHA' in premio_nome: campo_valor = 'premio_linha'
+                    elif 'BINGO' in premio_nome: campo_valor = 'premio_bingo'
+                    elif 'DUPLO' in premio_nome: campo_valor = 'premio_duplo_bingo'
+                    elif 'ACUMULADO' in premio_nome: campo_valor = 'premio_acumulado'
+                    if campo_valor:
+                         raw_val = float(str(tabela_premios.get(campo_valor, 0)))
+                         valor_monetario = f"R$ {raw_val:,.2f}".replace('.', ',')
+                except: pass
 
-            # Verifica duplicidade para não gravar 2x o mesmo prêmio pra mesma cartela
-            duplicado = db.ganhadores.find_one({'cartela': cartela_id, 'premio': premio_registro})
-            if not duplicado:
                 db.ganhadores.insert_one({
                     'premio': premio_registro,
                     'valor_total_premio': valor_monetario,
@@ -1276,17 +2014,64 @@ def admin_validar_cartela():
             'msg': detalhes,
             'ganhador': nome_ganhador,
             'cartela_id': cartela_id,
-            'layout': {
-                'superior': lista_sup,
-                'central': lista_cen,
-                'inferior': lista_inf
-            },
+            'layout': {'superior': lista_sup, 'central': lista_cen, 'inferior': lista_inf},
             'bolas': list(bolas_set)
         })
 
     except Exception as e:
-        print(f"Erro Validação: {e}")
+        print(f"❌ Erro Fatal Validação: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'status_code': 'ERROR', 'msg': str(e)}), 500
+
+
+
+# --- ROTA: ATUALIZAR LINHAS RESTANTES (RESOLVE O PROBLEMA DE LINHA REPETIDA) ---
+@app.route('/api/admin/atualizar_linhas_restantes', methods=['POST'])
+def atualizar_linhas():
+    # Esta função verifica os ganhadores da rodada e remove as linhas ganhas da lista de busca
+    try:
+        premio_doc = db.buscando.find_one({})
+        premio_nome = premio_doc.get('buscando_o_premio', '')
+        
+        if 'LINHA' not in premio_nome:
+            return jsonify({'status': 'Ignored'})
+
+        # Busca todas as linhas já registradas
+        ganhadores_linha = list(db.ganhadores.find({'premio': {'$regex': 'LINHA'}}))
+        
+        linhas_ganhas_tags = set()
+        for g in ganhadores_linha:
+            # Ex: 'LINHA (SUP)' -> 'SUP'
+            tag = g.get('linha_ganha_tag')
+            if tag: linhas_ganhas_tags.add(tag.upper())
+            
+        # Linhas iniciais
+        lista_busca = ['SUP', 'CEN', 'INF']
+        
+        # --- CORREÇÃO: VERIFICA QUANTAS LINHAS ESTÃO EM JOGO ---
+        tabela_premios = db.premio.find_one({}) or {}
+        qtde_linhas_jogo = int(tabela_premios.get('qtde_linha', 1))
+
+        nova_lista = []
+
+        # Se o jogo é de 1 linha e já saiu alguma, limpa tudo.
+        if qtde_linhas_jogo == 1 and len(linhas_ganhas_tags) > 0:
+             nova_lista = []
+        else:
+             # Se for 2 ou 3 linhas, remove apenas as que saíram
+             nova_lista = [l for l in lista_busca if l not in linhas_ganhas_tags]
+        # -------------------------------------------------------
+        
+        novo_texto = ",".join(nova_lista)
+        
+        db.buscando.update_one({}, {'$set': {'buscando_a_linha': novo_texto}})
+        db.buscando_mesa.update_one({}, {'$set': {'buscando_a_linha': novo_texto}})
+        
+        return jsonify({'status': 'Updated', 'restantes': novo_texto})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # --- ADICIONE ESTA NOVA ROTA PARA LIMPAR A TELA ---
@@ -1319,21 +2104,17 @@ def admin_resetar():
     try:
         # --- 0. PREPARAÇÃO DE DADOS GERAIS ---
         rodada_info = db.rodada.find_one({}) or {}
-        
         # Proteção contra ID Nulo
         raw_id = rodada_info.get('id_evento')
         id_evento = int(raw_id) if raw_id else 0
-        
         # Dados das Bolas
-        dados_bolas = db.bolas.find_one({}) or {}
+        dados_bolas = db.bolas_mesa.find_one({}) or {}
         bolas_lista = dados_bolas.get('bolas_cantadas', [])
         total_bolas = len(bolas_lista)
-        
         # Dados de Tempo
         now = datetime.now()
         data_hoje = now.strftime("%d/%m/%Y")
         hora_atual = now.strftime("%H:%M")
-        
         # --- LÓGICA DA HORA INICIAL ---
         # Se timeStart foi gravado (jogo começou), usa ele. Senão, usa hora atual.
         if timeStart:
@@ -1341,7 +2122,6 @@ def admin_resetar():
         else:
             hora_inicial = hora_atual 
         # ------------------------------
-
         # --- 1. PROCESSAMENTO DOS GANHADORES (Igual ao anterior) ---
         ganhadores_ativos = list(db.ganhadores.find({}))
         
@@ -1349,8 +2129,7 @@ def admin_resetar():
 
         lista_osganhadores = []      
         lista_resultados_ganhadores = [] 
-       
-        if ganhadores_ativos:
+        if ganhadores_ativos	:
             grupos_rateio = {}
             for g in ganhadores_ativos:
                 raw_premio = g.get('premio', '').upper()
@@ -1398,6 +2177,14 @@ def admin_resetar():
                 # 3. Formata para String (R$)
                 str_total = f"R$ {format_brl(val_total_float)}"
                 str_rateio = f"R$ {format_brl(val_rateio_float)}"
+
+                db.ganhadores.update_many(
+                    {'_id': {'$in': [w['_id'] for w in lista_vencedores]}},
+                    {'$set': {
+                        'valor_total_premio': str_total,
+                        'valor_rateio': str_rateio
+                    }}
+                )
                 
                 for w in lista_vencedores:
                     nome_final_premio = w.get('premio', chave)
@@ -1421,13 +2208,11 @@ def admin_resetar():
                     item_local['rodada'] = id_evento
                     lista_osganhadores.append(item_local)
                     lista_resultados_ganhadores.append(obj_ganhador)
-
         # --- 2. GRAVAÇÃO LOCAL 'osganhadores' ---
         db.osganhadores.delete_many({})
         if lista_osganhadores:
             db.osganhadores.insert_many(lista_osganhadores)
             print(f"✅ 'osganhadores' atualizada: {len(lista_osganhadores)} registros.")
-
         # --- 3. GRAVAÇÃO REMOTA 'resultados' (COM CONDIÇÃO) ---
         # Só grava se tiver bolas sorteadas E tiver ganhadores na lista
         if total_bolas > 0 and len(lista_resultados_ganhadores) > 0:
@@ -1451,14 +2236,13 @@ def admin_resetar():
                 print(f"⚠️ Erro não-fatal ao salvar Sales DB: {e_sales}")
         else:
             print(f"ℹ️ Histórico NÃO salvo (Bolas: {total_bolas}, Ganhadores: {len(lista_resultados_ganhadores)}).")
-
         # --- 4. LIMPEZA (RESET) ---
         timeStart = None # <--- RESETA A HORA INICIAL PARA O PRÓXIMO JOGO
         
         db.bolas.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': []}}, upsert=True)
+        db.bolas_mesa.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': []}}, upsert=True)
         db.ganhadores.delete_many({})
         db.melhores.delete_many({})
-        
         db.confere.delete_many({})
         db.confere.insert_one({
             "rodada": int(id_evento),
@@ -1466,56 +2250,15 @@ def admin_resetar():
             "numeros": "null",
             "ganhador": "null"
         })
-        
         db.rodada.update_one({}, {'$set': {'estado': 'intervalo', 'ordem': 0}}, upsert=True)
-        
         return jsonify({'status': 'Reset concluído com sucesso'})
         
     except Exception as e:
-        traceback.print_exc() 
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-
-
-# --- ROTA PARA REMOVER LINHA GANHA (CHAMADA AO FECHAR CONFERÊNCIA) ---
-@app.route('/api/admin/atualizar_linhas_restantes', methods=['POST'])
-def atualizar_linhas():
-    # Esta função verifica os ganhadores da rodada e remove as linhas ganhas da lista de busca
-    try:
-        rodada_info = db.rodada.find_one({})
-        id_evento = rodada_info.get('id_evento')
-        
-        # Pega configuração atual
-        premio_doc = db.buscando.find_one({})
-        premio_nome = premio_doc.get('buscando_o_premio', '')
-        linhas_atuais = premio_doc.get('buscando_a_linha', '')
-        
-        if 'LINHA' not in premio_nome or not linhas_atuais:
-            return jsonify({'status': 'Ignored'})
-
-        # Busca ganhadores recentes de LINHA
-        ganhadores = list(db.ganhadores.find({'premio': {'$regex': 'LINHA'}}))
-        
-        linhas_ganhas = set()
-        for g in ganhadores:
-            tag = g.get('linha_ganha_tag')
-            if tag: linhas_ganhas.add(tag.upper())
-            
-        # Filtra o que sobrou
-        lista_busca = linhas_atuais.upper().split(',')
-        nova_lista = [l for l in lista_busca if l not in linhas_ganhas]
-        
-        novo_texto = ",".join(nova_lista)
-        
-        db.buscando.update_one({}, {'$set': {'buscando_a_linha': novo_texto}})
-        
-        return jsonify({'status': 'Updated', 'restantes': novo_texto})
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-# --- ROTA DE DETALHES COM CAMPOS EXTRAS ADICIONADOS E TRAVA DE SEGURANÇA ---
+#
+# --- ROTA DE DETALHES (COM SINCRONIZAÇÃO AUTOMÁTICA DE CARTELAS) ---
 @app.route('/api/admin/detalhes_evento', methods=['GET'])
 def get_event_details():
     id_evt = request.args.get('id_evento')
@@ -1532,6 +2275,17 @@ def get_event_details():
         if not evento: evento = sales_db.eventos.find_one({'id_evento': str(id_evt)})
         
         if not evento: return jsonify({'error': 'Evento não encontrado'}), 404
+
+        # === NOVO: SINCRONIZAÇÃO DA BASE DE CARTELAS ===
+        # Pega os dados do evento para verificar o arquivo
+        num_max_evento = evento.get('numero_maximo', 72000)
+        tipo_cartela_evento = evento.get('tipo_de_cartela', 15)
+        
+        # Chama a função de verificação (em Thread para não travar a resposta da API se o arquivo for grande)
+        # Se preferir que o usuário espere o carregamento para garantir, remova o Threading.
+        # Recomendo deixar SEM thread aqui para garantir que ao carregar a tela, a base já esteja certa.
+        verificar_e_sincronizar_cartelas(num_max_evento, tipo_cartela_evento)
+        # ===============================================
 
         col_vendas_name = f"vendas{id_evt}"
         qtde_vendida = 0
@@ -1560,16 +2314,14 @@ def get_event_details():
                 ultimo_cartao = resultado[0].get('max_cartao', 0)
                 soma_vendas_reais = resultado[0].get('soma_valor', 0)
 
-        # === NOVA TRAVA DE SEGURANÇA (POSICIONADA CORRETAMENTE) ===
-        # Verifica se não há vendas (seja porque a tabela não existe ou porque o total é 0)
+        # TRAVA DE SEGURANÇA
         if qtde_vendida == 0:
             print(f"⛔ Evento {id_evt} bloqueado: 0 vendas.")
             return jsonify({
                 'error': 'EVENTO VAZIO: Nenhuma cartela vendida encontrada para este evento. O sorteio não pode ser iniciado.'
             }), 400
-        # ==========================================================
 
-        # 2. Se passou pela trava, busca os detalhes das vendas
+        # 2. Busca detalhes das vendas
         if col_vendas_name in sales_db.list_collection_names():
             col_vendas = sales_db[col_vendas_name]
             cursor_detalhes = col_vendas.find({}, {
@@ -1626,20 +2378,21 @@ def get_event_details():
         if db is not None:
              db.parametros.update_one({}, {'$set': {
                 'nome_sala': response_data['descricao'],
-                'tipo_sorteio': response_data['tipo_cartela']
+                # Nota: 'tipo_sorteio' já foi atualizado pela função de sincronização se necessário,
+                # mas não faz mal garantir aqui ou deixar a função cuidar disso.
+                # A função verificar_e_sincronizar_cartelas cuida do 'arquivo_de_cartela' e 'tipo_sorteio'
             }}, upsert=True)
+             
              db.rodada.update_one({}, {'$set': {'id_evento': id_evt}}, upsert=True)
              
-             # --- INSERÇÃO COM NOVOS CAMPOS ---
              db.premio.delete_many({})
              
-             # Pega o numero maximo do evento (serie) ou usa padrão se não tiver
              serie_max = evento.get('numero_maximo', 72000) 
              
              db.premio.insert_one({
                  'premio_quadra': response_data['premios']['quadra'],
                  'premio_linha': response_data['premios']['linha'],
-                 'qtde_linha': response_data['premios']['qtde_linhas'],
+                 'qtde_linha': response_data['premios']['qtde_linhas'] or 1,
                  'premio_falta_Um': response_data['premios']['falta_um'],
                  'premio_bingo': response_data['premios']['bingo'],
                  'premio_duplo_bingo': response_data['premios']['segundo_bingo'],
@@ -1648,14 +2401,12 @@ def get_event_details():
                  'preco': response_data['valor_venda'],
                  'multiplo': response_data['unidade_venda'],
                  'rodada': id_evt,
-                 
-                 # === NOVOS CAMPOS SOLICITADOS ===
-                 'serie_em_jogo': serie_max,          # Carregado do evento
-                 'minimo_de_cartelas': 1,             # Fixo
-                 'maximo_de_cartelas': 6000,          # Fixo
-                 'inicial1': 1,                       # Fixo
-                 'final1': serie_max,                 # Igual serie
-                 'total_cartelas_em_jogo': qtde_vendida # Soma das vendidas
+                 'serie_em_jogo': serie_max,
+                 'minimo_de_cartelas': 1,
+                 'maximo_de_cartelas': 6000,
+                 'inicial1': 1,
+                 'final1': serie_max,
+                 'total_cartelas_em_jogo': qtde_vendida
              })
 
              threading.Thread(target=carregar_cache_evento, args=(id_evt, sales_db)).start()
@@ -1703,6 +2454,61 @@ def get_cartelas_game():
         except Exception as e:
             print(f"❌ Erro ao buscar cartelas: {e}")
             return jsonify({'error': str(e)}), 500
+
+
+
+@app.route('/api/admin/preparar_evento', methods=['POST'])
+def admin_preparar_evento():
+    """
+    Rota chamada ANTES de iniciar o timer.
+    Objetivo: Identificar o tipo do evento e trocar a base de cartelas (JSON) imediatamente.
+    """
+    data = request.json or {}
+    id_evt = data.get('id_evento')
+    
+    if not id_evt: return jsonify({'error': 'ID do evento necessário'}), 400
+
+    print(f"🔄 Preparando ambiente para o Evento {id_evt}...")
+
+    # 1. Conecta no Banco de Vendas para ler a configuração do evento
+    sales_db = get_sales_db_connection()
+    if sales_db is None: 
+        return jsonify({'error': 'Sem conexão com DB Vendas'}), 500
+
+    try:
+        # Busca o evento (int ou str)
+        evento = sales_db.eventos.find_one({'id_evento': int(id_evt)})
+        if not evento: evento = sales_db.eventos.find_one({'id_evento': str(id_evt)})
+        
+        if not evento: 
+            return jsonify({'error': 'Evento não encontrado'}), 404
+
+        # 2. Extrai as configurações de cartela
+        # Padrão: 72000 cartelas e Tipo 15 (Bingo 90) se não estiver definido
+        num_max = evento.get('numero_maximo', 72000)
+        tipo_cartela = evento.get('tipo_de_cartela', 15)
+        
+        print(f"📂 Evento pede: Arquivo {num_max} | Tipo {tipo_cartela}")
+
+        # 3. Executa a Troca de Arquivo (Sincronização)
+        # Chamamos a função que já existe no seu código, mas de forma síncrona (sem Thread)
+        # para garantir que o frontend espere terminar.
+        verificar_e_sincronizar_cartelas(num_max, tipo_cartela)
+        
+        # 4. Já atualiza os parâmetros globais para os terminais detectarem a mudança
+        if db is not None:
+             db.parametros.update_one({}, {'$set': {
+                'tipo_sorteio': int(tipo_cartela),
+                'arquivo_de_cartela': int(num_max),
+                # Atualiza também o nome da sala se possível, para já mudar no header do cliente
+                'nome_sala': evento.get('descricao', 'Sorteio')
+            }}, upsert=True)
+
+        return jsonify({'status': 'ok', 'msg': 'Base de cartelas sincronizada com sucesso.'})
+
+    except Exception as e:
+        print(f"❌ Erro ao preparar evento: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 # --- MAIN ---
