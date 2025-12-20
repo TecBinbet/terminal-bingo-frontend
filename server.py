@@ -2271,7 +2271,7 @@ def admin_resetar():
         # --- 4. LIMPEZA (RESET) ---
         timeStart = None # <--- RESETA A HORA INICIAL PARA O PRÓXIMO JOGO
         
-        db.bolas.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': []}}, upsert=True)
+        db.bolas.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': [],'ordem':0}}, upsert=True)
         db.bolas_mesa.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': []}}, upsert=True)
         db.ganhadores.delete_many({})
         db.melhores.delete_many({})
@@ -2415,8 +2415,8 @@ def get_event_details():
                 # A função verificar_e_sincronizar_cartelas cuida do 'arquivo_de_cartela' e 'tipo_sorteio'
             }}, upsert=True)
              
-             db.rodada.update_one({}, {'$set': {'id_evento': id_evt}}, upsert=True)
-             
+             db.rodada.update_one({}, {'$set': {'id_evento': id_evt,'estado': 'em andamento'}}, upsert=True)
+
              db.premio.delete_many({})
              
              serie_max = evento.get('numero_maximo', 72000) 

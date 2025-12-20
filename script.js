@@ -1492,15 +1492,30 @@ async function fetchAndProcessCards() {
         // (Tentamos pegar do initialData se disponível, senão das variáveis globais)
         
         let bolas = [];
-        if (typeof globalBolasCantadas !== 'undefined' && Array.isArray(globalBolasCantadas)) {
-             bolas = globalBolasCantadas;
+
+
+        // Verifica se existe dados vindo de variáveis externas (bolasData)
+        if (typeof bolasData !== 'undefined' && bolasData && bolasData.length > 0) {
+            const novasBolas = bolasData[0].bolas_cantadas;
+            
+            // CASO 1: Temos bolas novas? Usa elas.
+            if (novasBolas && novasBolas.length > 0) {
+                bolas = novasBolas;
+            } 
+            // CASO 2: Veio vazio, mas temos memória? Mantém a memória (Anti-Pisca).
+            else if (typeof globalBolasCantadas !== 'undefined' && globalBolasCantadas.length > 0) {
+                bolas = globalBolasCantadas;
+            }
+        } 
+        // CASO 3: Não veio bolasData, usa direto a global
+        else if (typeof globalBolasCantadas !== 'undefined' && Array.isArray(globalBolasCantadas)) {
+            bolas = globalBolasCantadas;
+        }
+        // CASO 4: Fallback antigo (Cache de sorteio)
+        else if (typeof bolasSorteadasCache !== 'undefined') { 
+            bolas = bolasSorteadasCache; 
         }
 
-        if (typeof bolasData !== 'undefined' && bolasData && bolasData.length > 0) {
-             bolas = bolasData[0].bolas_cantadas;
-        } else if (typeof bolasSorteadasCache !== 'undefined') { // Fallback
-             bolas = bolasSorteadasCache; 
-        }
 
         // Garante valores padrão para prêmio
         let premio = buscando_o_premio || "BINGO";
@@ -2722,14 +2737,19 @@ function renderMelhores(melhoresData) {
 
         // 2. Verifica se é Array (Lista) ou String (Texto) para formatar corretamente
         if (Array.isArray(rawNums)) {
-            // Se for Array [5, 10, 15] -> Transforma em "05 . 10 . 15"
-            numerosComEspaco = rawNums.map(n => n.toString().padStart(2, '0')).join(' . ');
+            // Pega apenas os 5 primeiros itens do array
+            numerosComEspaco = rawNums.slice(0, 5).map(n => n.toString().padStart(2, '0')).join(' . ');
+
         } else if (typeof rawNums === 'string') {
-            // Se for String "5,10,15" -> Transforma em "5 . 10 . 15"
-            numerosComEspaco = rawNums.replaceAll(',', ' . ');
+            // Divide a string, pega os 5 primeiros e formata
+            const lista = rawNums.split(',');
+            numerosComEspaco = lista.slice(0, 5).map(n => n.trim().padStart(2, '0')).join(' . ');
+
+            //if (lista.length > 5) numerosComEspaco += " ...";
         }
+        
         numerosFaltantes.textContent = `${numerosComEspaco} ${winnerPremio}`;
-        numerosFaltantes.className = 'text-green-300'
+        numerosFaltantes.className = 'text-green-300';  
 
         // 4. Nome (Player)
         const nome = document.createElement('span');
@@ -3014,7 +3034,7 @@ function renderOscartoes75(bolasInput) {
                 const cardDiv = document.createElement('div');
                 cardDiv.className = 'bg-gray-900 border border-gray-700 rounded p-1 flex flex-col gap-0.5 shadow-sm';
 
-                const faltam = cardData.missingNumbers ? cardData.missingNumbers.length : 24;
+                const faltam = cardData.missingNumbers ? cardData.missingNumbers.length : 25;
                 const faltamClass = faltam <= 1 ? 'text-green-400 animate-pulse' : 'text-blue-400';
                 const header = document.createElement('div');
                 header.className = 'flex justify-between items-center border-b border-gray-700 pb-0.5 mb-0.5';
@@ -3102,6 +3122,7 @@ async function renderMainContent(data) {
 
     // Estado da Rodada
     const rodadaState = rodadaData && rodadaData.length > 0 ? rodadaData[0].estado.trim() : null;
+ 
     if (rodadaState === 'intervalo' && lastRodadaState !== 'intervalo') {
         clearPanels();
         lastRodadaState = rodadaState; 

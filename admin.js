@@ -1786,7 +1786,8 @@ async function resetarJogo(force = false) {
         
         bolasCacheLocal = new Set(); 
         bolasSorteadasCache = [];
-        matrizEnvio = []; 
+        matrizEnvio = [];
+         
         idsConfirmadosNestaRodada = new Set();
         ultimoTotalBolasProcessadas = -1; 
         jaAlertouNestaBola = false;
@@ -1803,6 +1804,7 @@ async function resetarJogo(force = false) {
         renderHistorico([]);
         renderRanking([], "");
         renderListaGanhadores([]); 
+        cartelasPendentesAuditoria = [];
 
         const painelEvento = document.getElementById('painel-evento-ativo');
         if(painelEvento) painelEvento.classList.add('hidden');
