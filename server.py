@@ -1643,6 +1643,7 @@ def definir_premio_publico():
         else:
             update_data['buscando_a_linha'] = ""
         
+        
         # GRAVA NA TABELA PÚBLICA (OFICIAL)
         db.buscando.update_one({}, {'$set': update_data}, upsert=True)
         
@@ -1656,48 +1657,47 @@ def definir_premio_publico():
 
 def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome, id_evento_ativo, nome_ganhador):
     """
-    Contém todo o código de validação, gravação e retorno do Bingo 75.
-    (Movido para evitar duplicação de rota)
+    Validação Bingo 75 Completa:
+    - Verifica Linha, Cantos, Bingo.
+    - Gera string visual formatada (01+05*...) para a TV.
+    - Calcula valor do prêmio e grava ganhador.
     """
     global db
     
-    # --- BUSCA OS CAMPOS DE LAYOUT (CORRIGIDO PARA BUSCAR DO DB) ---
+    # 1. BUSCA O LAYOUT
     lista_nums = cartela_doc.get('numeros', []) 
     if not lista_nums:
-        lista_nums = cartela_doc.get('lista_75', []) # Fallback (Se vier do cache)
-    # ---------------------------------------------------------------
+        lista_nums = cartela_doc.get('lista_75', []) 
 
     bolas_set = set(bolas_lista)
+    ultima_bola = bolas_lista[-1] if bolas_lista else -1
     
     eh_valido = False
     msg_validacao = "Incompleto"
     tag_premio = ""
-    
-    # --- CORREÇÃO CRÍTICA: Inicializa status_code (Default LOSS) ---
     status_code = 'LOSS' 
-    # ---------------------------------------------------------------
 
     if not lista_nums or len(lista_nums) < 25:
         return {'status_code': 'ERROR', 'msg': 'Erro: Layout 75 inválido.'} 
 
-    # Lógica Interna de Validação 75
+    # 2. VALIDAÇÃO DAS REGRAS
     bateu_cantos = False
     bateu_linha = False
     bateu_bingo = False
     detalhes_msg = []
     tags_vitoria = []
 
-    # 1. BINGO CHEIO
+    # Bingo Cheio
     alvo_geral = set(lista_nums) - {0}
     if len(alvo_geral - bolas_set) == 0:
         bateu_bingo = True
 
-    # 2. 4 CANTOS (Indices 0, 4, 20, 24)
+    # 4 Cantos
     alvo_cantos = {lista_nums[0], lista_nums[4], lista_nums[20], lista_nums[24]} - {0}
     if len(alvo_cantos - bolas_set) == 0:
         bateu_cantos = True
 
-    # 3. LINHA (Colunas Verticais = Linhas Horizontais)
+    # Linha (Colunas no array = Linhas Visuais)
     linhas_indices = [
         [0, 5, 10, 15, 20], [1, 6, 11, 16, 21], [2, 7, 12, 17, 22], [3, 8, 13, 18, 23], [4, 9, 14, 19, 24]
     ]
@@ -1707,14 +1707,13 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
             bateu_linha = True
             break
 
-    # Decisão
+    # 3. DECISÃO DO PRÊMIO
     if 'BINGO' == premio_nome or 'ACUMULADO' in premio_nome:
         if bateu_bingo:
             eh_valido, msg_validacao, tag_premio = True, "BINGO (Cartela Cheia)!", "BINGO"
         else:
             msg_validacao = f"Faltam {len(alvo_geral - bolas_set)} p/ Bingo."
     else:
-        # Fase Inicial
         if bateu_cantos: 
             detalhes_msg.append("4 CANTOS")
             tags_vitoria.append("4 CANTOS")
@@ -1730,46 +1729,81 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
             msg_validacao = "Incompleta p/ Linha ou Cantos."
 
     status_code = 'WIN' if eh_valido else 'LOSS'
+
+    # 4. GERAÇÃO DA STRING VISUAL (PARA A TV CONFERE)
+    # Transforma indices de Coluna (0,1,2...) para Ordem Visual de Linha (0,5,10...)
+    ordem_visual = [
+        0, 5, 10, 15, 20,
+        1, 6, 11, 16, 21,
+        2, 7, 12, 17, 22,
+        3, 8, 13, 18, 23,
+        4, 9, 14, 19, 24
+    ]
+    numeros_visual_ordem = [lista_nums[i] for i in ordem_visual]
     
-    # TV Confere
+    str_numeros_formatada = ""
+    for i, num in enumerate(numeros_visual_ordem):
+        num_str = f"{num:02d}"
+        separador = " " 
+        
+        if i > 0:
+            if num == ultima_bola:
+                separador = "*" # Última bola (piscar)
+            elif num in bolas_set or num == 0: 
+                separador = "+" # Já sorteado ou Free
+        
+        if i == 0: str_numeros_formatada += num_str
+        else: str_numeros_formatada += separador + num_str
+
+    # 5. GRAVAÇÃO NA TV (CONFERE)
     db.confere.delete_many({})
     db.confere.insert_one({
-        "rodada": int(id_evento_ativo), "cartao": cartela_id,
-        "numeros": msg_validacao, "ganhador": nome_ganhador, "status": "conferindo"
+        "rodada": int(id_evento_ativo), 
+        "cartao": cartela_id,
+        "numeros": str_numeros_formatada,    # AQUI VAI A STRING FORMATADA (05+10*22...)
+        "mensagem": msg_validacao,        # A mensagem de texto vai num campo separado
+        "ganhador": nome_ganhador, 
+        "status": "conferindo"
     })
     
-    # Grava Ganhador
+    # 6. GRAVAÇÃO DO GANHADOR COM VALORES
     if eh_valido:
-
-
-# --- NOVO TRECHO: BUSCA O VALOR TOTAL NA TABELA PREMIO ---
-        valor_total_float = 0.0
+        # Busca Valor do Prêmio
+        val_total_float = 0.0
         try:
             tabela_premios = db.premio.find_one({}) or {}
-            
-            # Mapeamento do prêmio de validação para o campo do banco 'premio'
-            # Usa 'LINHA' se a tag tiver 'LINHA', senão usa a tag completa (BINGO/4 CANTOS)
             chave_simples = 'LINHA' if 'LINHA' in tag_premio.upper() else ('QUADRA' if 'CANTOS' in tag_premio.upper() else tag_premio)
-            chave_premio_map = {'4 CANTOS': 'premio_quadra', 'QUADRA': 'premio_quadra', 'LINHA': 'premio_linha', 'BINGO': 'premio_bingo', 'DUPLO BINGO': 'premio_duplo_bingo'}
             
+            # Mapeamento para os campos do banco
+            chave_premio_map = {
+                '4 CANTOS': 'premio_quadra', 'QUADRA': 'premio_quadra', 
+                'LINHA': 'premio_linha', 'BINGO': 'premio_bingo', 
+                'DUPLO BINGO': 'premio_duplo_bingo'
+            }
             campo_valor = chave_premio_map.get(chave_simples)
+            
             if campo_valor:
-                # Usa sua função auxiliar para converter Decimal128 ou string para float
+                # Assume que converter_decimal existe no escopo global do server.py
                 val_total_float = converter_decimal(tabela_premios.get(campo_valor)) 
         except Exception as e_val:
-            print(f"⚠️ Erro ao buscar valor do prêmio {tag_premio}: {e_val}")
+            print(f"⚠️ Erro valor prêmio: {e_val}")
             
-        str_total = f"R$ {format_brl(val_total_float)}" # Formata o valor total
+        # Formata valor (Assume que format_brl existe)
+        try:
+            str_total = f"R$ {format_brl(val_total_float)}"
+        except:
+            str_total = f"R$ {val_total_float:.2f}".replace('.', ',')
 
-
+        # Verifica duplicidade antes de inserir
         if not db.ganhadores.find_one({'cartela': cartela_id, 'premio': tag_premio}):
             db.ganhadores.insert_one({
                 'premio': tag_premio,
                 'valor_total_premio': str_total,
                 'cartela': cartela_id,
                 'nome': nome_ganhador,
-                'valor_rateio': str_total,
-                'linha_ganha_tag': tag_premio
+                'valor_rateio': str_total, # Rateio pode ser ajustado depois se houver mais ganhadores
+                'linha_ganha_tag': tag_premio,
+                'hora': datetime.now().strftime("%H:%M:%S")
             })
 
     return {
@@ -1778,7 +1812,6 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
         'msg': msg_validacao,
         'ganhador': nome_ganhador,
         'cartela_id': cartela_id,
-        'layout': {'tipo': 75, 'lista': lista_nums}, 
         'bolas': list(bolas_set)
     }
 
@@ -1904,11 +1937,11 @@ def admin_validar_cartela():
         premio_doc = db.buscando_mesa.find_one({})
         premio_nome = premio_doc.get('buscando_o_premio', '').replace(" ", "").upper()
 
-        print(f"ℹ️ Validando Bingo 90 - Bolas  {dados_bolas}")
+        #print(f"ℹ️ Validando Bingo 90 - Bolas  {dados_bolas}")
 
-        print(f"ℹ️ Validando Bingo 90 - Premio {premio_nome}")
+        #print(f"ℹ️ Validando Bingo 90 - Premio {premio_nome}")
         
-        print(f"ℹ️ Validando Bingo 90 - Cartela {cartela_id}")
+        #print(f"ℹ️ Validando Bingo 90 - Cartela {cartela_id}")
         def parse(val):
             if isinstance(val, list): return set(val)
             if isinstance(val, str): return set(map(int, val.replace(' ','').split(',')))
@@ -2064,7 +2097,6 @@ def atualizar_linhas():
         # -------------------------------------------------------
         
         novo_texto = ",".join(nova_lista)
-        
         db.buscando.update_one({}, {'$set': {'buscando_a_linha': novo_texto}})
         db.buscando_mesa.update_one({}, {'$set': {'buscando_a_linha': novo_texto}})
         

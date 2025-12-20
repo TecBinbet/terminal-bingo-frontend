@@ -35,8 +35,15 @@ const digitalBolaPanel = document.getElementById('digital-bola-panel');
 const bolaDigitalElement = document.getElementById('bola-digital');
 let tipoDoSorteio = "";
 let Carregando = true;
-
+let cachedRawCards = [];
 let MAX_BOLAS = 90;
+let globalBolasCantadas = [];
+
+let configBingo75 = {
+    horizontal: true,  // Padrão: Ativo
+    vertical: false,   // Padrão: Inativo
+    diagonal: false    // Padrão: Inativo
+};
 
 let encontradoGanhadores = false;
 const youtubePanel = document.getElementById('youtube-panel'); 
@@ -166,6 +173,9 @@ let winnerBingo = false;
 
 let reconnectInterval = null;
 let cartelaRanges = [];
+
+let newRanges = [];
+
 let loadedCards = [];
 let isFetchingCards = false;
 let bingoWinners = new Set();
@@ -667,8 +677,8 @@ async function carregarCartelasAutomaticas(idEvento) {
             const novasFaixas = agruparNumerosEmRanges(data.cartelas);
             
             // 2. Atualiza a variável global CORRETA (cartelasRenges)
-            cartelaRanges = novasFaixas; 
-           
+            cartelaRanges = novasFaixas;
+          
             // 3. Atualiza visualização (se houver essa função)
             if (typeof displayCartelaRanges === 'function') displayCartelaRanges(); 
             
@@ -1086,6 +1096,14 @@ function handleFullscreenChange() {
            startPromocionalTimer();
         }      
     }
+    if (typeof loadedCards !== 'undefined' && typeof globalBolasCantadas !== 'undefined') {
+        // Se estiver no modo 75, chama renderOscartoes75
+        if (MAX_BOLAS === 75) {
+            renderOscartoes75(globalBolasCantadas);
+        } //else {
+       //     renderOscartoes90(globalBolasCantadas);
+       // }
+    }
 }
 
 // --- NOVA FUNÇÃO: Abrir Modal Minhas Cartelas (Com Loading) ---
@@ -1428,7 +1446,7 @@ async function fetchAndProcessCards() {
 
     // 1. Usa a variável global 'cartelaRanges' (que já está sendo preenchida corretamente)
     if (!cartelaRanges || cartelaRanges.length === 0) {
-        loadedCards = [];
+        //loadedCards = [];
         displayLoadedCards([]);
         isFetchingCards = false;
         return;
@@ -1451,6 +1469,8 @@ async function fetchAndProcessCards() {
 
         const cards = await response.json();
 
+        cachedRawCards = cards || [];
+
         // 3. Se não veio nada
         if (!cards || cards.length === 0) {
             console.warn("API retornou 0 cartelas.");
@@ -1472,6 +1492,10 @@ async function fetchAndProcessCards() {
         // (Tentamos pegar do initialData se disponível, senão das variáveis globais)
         
         let bolas = [];
+        if (typeof globalBolasCantadas !== 'undefined' && Array.isArray(globalBolasCantadas)) {
+             bolas = globalBolasCantadas;
+        }
+
         if (typeof bolasData !== 'undefined' && bolasData && bolasData.length > 0) {
              bolas = bolasData[0].bolas_cantadas;
         } else if (typeof bolasSorteadasCache !== 'undefined') { // Fallback
@@ -1668,85 +1692,198 @@ function processCards90(cards, bolasCantadas, premioBuscado, linhasAtivas) {
     finalizeProcessing(processedCards, premioBuscado);
 }
 
-// --- LÓGICA BINGO 75 (NOVA) ---
+
+
+// --- LÓGICA BINGO 75 (CORRIGIDA: VISUALIZAÇÃO E ORDENAÇÃO) ---
 function processCards75(cards, bolasCantadas, premioBuscado) {
+    // console.log(`🔍 [PROCESS 75] Iniciando... Prémio: "${premioBuscado}" | Bolas: ${bolasCantadas.length}`);
+
     const processedCards = [];
     if (premioBuscado === 'BINGO') bingoWinners.clear();
 
+    const premioNormalizado = premioBuscado.replace(/\s+/g, '').toUpperCase();
     const bolasSet = new Set(bolasCantadas);
 
+    // 1. BIBLIOTECA DE PADRÕES
+    const bibliotecaPadroes = {
+        horizontal: [
+            // Linha 1 (Índices 0, 5, 10, 15, 20)
+            [0, 5, 10, 15, 20], 
+            // Linha 2 (Índices 1, 6, 11, 16, 21)
+            [1, 6, 11, 16, 21], 
+            // Linha 3 (Índices 2, 7, 12, 17, 22)
+            [2, 7, 12, 17, 22], 
+            // Linha 4 (Índices 3, 8, 13, 18, 23)
+            [3, 8, 13, 18, 23], 
+            // Linha 5 (Índices 4, 9, 14, 19, 24)
+            [4, 9, 14, 19, 24]
+        ],
+        vertical: [
+            // Coluna B (0 a 4)
+            [0, 1, 2, 3, 4], 
+            // Coluna I (5 a 9)
+            [5, 6, 7, 8, 9], 
+            // Coluna N (10 a 14)
+            [10, 11, 12, 13, 14], 
+            // Coluna G (15 a 19)
+            [15, 16, 17, 18, 19], 
+            // Coluna O (20 a 24)
+            [20, 21, 22, 23, 24]
+        ],
+        diagonal: [
+            [0, 6, 12, 18, 24], // Esq-Sup para Dir-Inf
+            [4, 8, 12, 16, 20]  // Esq-Inf para Dir-Sup
+        ]
+    };
+
+    // 2. Monta lista de padrões ativos
+    let padroesAtivos = [];
+    if (typeof configBingo75 !== 'undefined') {
+        if (configBingo75.horizontal) padroesAtivos.push(...bibliotecaPadroes.horizontal);
+        if (configBingo75.vertical) padroesAtivos.push(...bibliotecaPadroes.vertical);
+        if (configBingo75.diagonal) padroesAtivos.push(...bibliotecaPadroes.diagonal);
+    } else {
+        padroesAtivos.push(...bibliotecaPadroes.horizontal);
+    }
+
+    const buscaLinha = premioNormalizado.includes('LINHA');
+    const buscaCantos = premioNormalizado.includes('CANTOS') || premioNormalizado.includes('QUADRA');
+    const buscaBingo = premioNormalizado.includes('BINGO') && !buscaLinha && !buscaCantos; // Bingo só se não for fase anterior
+
     cards.forEach(card => {
-        // Tenta pegar a lista de 25 números (pode vir em 'numeros' ou 'em_ordem' dependendo do backend)
         let rawList = card.numeros || card.em_ordem || [];
         if (typeof rawList === 'string') {
             rawList = rawList.split(',').map(n => parseInt(n.trim()));
         }
         
-        // Garante 25 números (preenchendo com 0 se falhar)
-        if (!Array.isArray(rawList) || rawList.length < 24) return; // Cartela inválida
+        if (!Array.isArray(rawList) || rawList.length < 24) return;
 
-        // O índice 12 é o FREE (Centro). Se vier 0, ok. Se vier número, tratamos.
-        // Geralmente Bingo 75 tem 24 números + FREE ou 25 números.
-        
         let countGeral = 0;
         let countCantos = 0;
-        let layoutGrid = rawList; 
-        
-        // Índices para 4 Cantos (0, 4, 20, 24)
         const indicesCantos = [0, 4, 20, 24];
+        let faltamCantosSet = []; // Para exibição visual
         
+        // A. Contagem Geral e Cantos
         rawList.forEach((num, idx) => {
-            // O Zero (Free) conta como marcado
             if (num === 0 || bolasSet.has(num)) {
                 countGeral++;
                 if (indicesCantos.includes(idx)) countCantos++;
+            } else {
+                // Se não marcou
+                if (indicesCantos.includes(idx)) faltamCantosSet.push(num);
             }
         });
 
-        const missing = rawList.filter(n => n !== 0 && !bolasSet.has(n));
+        // B. Contagem de Linhas (Descobre a Melhor Linha)
+        let maxLinhaCount = 0;
+        let completouLinha = false;
+        let faltamNaMelhorLinha = []; // Para exibição visual
+
+        if (padroesAtivos.length > 0) {
+            padroesAtivos.forEach((padrao) => {
+                let countNestaLinha = 0;
+                let faltamNesta = [];
+                
+                padrao.forEach(idx => {
+                    const num = rawList[idx];
+                    if (num === 0 || bolasSet.has(num)) {
+                        countNestaLinha++;
+                    } else {
+                        faltamNesta.push(num);
+                    }
+                });
+
+                // Se esta linha for a melhor da cartela até agora, guarda os dados dela
+                if (countNestaLinha > maxLinhaCount) {
+                    maxLinhaCount = countNestaLinha;
+                    faltamNaMelhorLinha = faltamNesta;
+                }
+                if (countNestaLinha === 5) completouLinha = true;
+            });
+        }
+
+        // --- DEFINIÇÃO DO QUE MOSTRAR NA TELA (missingNumbers) ---
+        let missing = [];
+        
+        // Se estamos buscando LINHA e a cartela tem um bom jogo de linha (mais de 2 acertos), mostra o que falta pra linha
+        if (buscaLinha && maxLinhaCount >= 2) {
+             missing = faltamNaMelhorLinha;
+        } 
+        // Se estamos buscando CANTOS e não linha
+        else if (buscaCantos && !buscaLinha) {
+             missing = faltamCantosSet;
+        }
+        // Senão, mostra o geral (Bingo Cheio)
+        else {
+             missing = rawList.filter(n => n !== 0 && !bolasSet.has(n));
+        }
 
         let cardObj = {
             cartao: card.cartao,
-            linhaId: null, // Bingo 75 usa padrões, não linhas fixas Sup/Cen/Inf da mesma forma
-            counts: { geral: countGeral, cantos: countCantos },
+            linhaId: null, 
+            counts: { 
+                geral: countGeral, 
+                cantos: countCantos, 
+                linha: maxLinhaCount 
+            },
             premioEncontrado: null,
             originalData: { geral: rawList },
             layoutGrid: rawList,
-            missingNumbers: missing,
+            missingNumbers: missing, // Agora contém os números corretos (ex: 15, 42)
             type: 75
         };
 
-        // Verificação de Prêmios
-        if (premioBuscado.includes('BINGO') && countGeral === 25) { // 24 nums + free
+        // --- Verificações de Vitória ---
+        if (premioNormalizado.includes('BINGO') && countGeral === 25) { 
              cardObj.premioEncontrado = 'BINGO';
              bingoWinners.add(card.cartao);
              playPremiadoSound(bingoSound);
              showPremiadoGif('bingo');
         } 
-        else if ((premioBuscado.includes('4 CANTOS') || premioBuscado.includes('QUADRA')) && countCantos === 4) {
+        else if (buscaCantos && countCantos === 4) {
              cardObj.premioEncontrado = '4 CANTOS';
              playPremiadoSound(quadraSound);
              showPremiadoGif('quadra');
         }
-        else if (premioBuscado.includes('LINHA')) {
-             // Verificar linhas verticais/horizontais/diagonais se necessário
-             // Para simplificar, vamos assumir que o backend valida a linha e aqui só contamos
-             // Implemente a lógica de linha 5x5 se o cliente validar localmente
+        else if (buscaLinha) {
+             if (completouLinha) {
+                 cardObj.premioEncontrado = 'LINHA';
+                 playPremiadoSound(linhaSound); 
+                 showPremiadoGif('linha');
+             }
         }
 
         processedCards.push(cardObj);
     });
 
-    // Ordenação Específica para 75
-    if (premioBuscado.includes('CANTOS') || premioBuscado.includes('QUADRA')) {
+    // --- ORDENAÇÃO INTELIGENTE (CORREÇÃO DO TOP 6) ---
+    
+    if (buscaLinha && buscaCantos) {
+        // Se o prêmio é "4 CANTOS E LINHA", o melhor card é aquele que está mais perto de bater QUALQUER UM DOS DOIS.
+        // Ordenamos pelo MAIOR valor entre (pontos na linha) e (pontos nos cantos)
+        processedCards.sort((a, b) => {
+            const melhorA = Math.max(a.counts.linha, a.counts.cantos);
+            const melhorB = Math.max(b.counts.linha, b.counts.cantos);
+            return melhorB - melhorA; // Decrescente
+        });
+    } 
+    else if (buscaCantos) {
         processedCards.sort((a, b) => b.counts.cantos - a.counts.cantos);
-    } else {
+    } 
+    else if (buscaLinha) {
+        processedCards.sort((a, b) => b.counts.linha - a.counts.linha);
+    } 
+    else {
         processedCards.sort((a, b) => b.counts.geral - a.counts.geral);
     }
 
     loadedCards = processedCards;
     displayLoadedCards(bolasCantadas);
 }
+
+
+
+
 
 // Helper para finalizar e chamar o display
 function finalizeProcessing(processedCards, premioBuscado) {
@@ -1766,8 +1903,8 @@ function finalizeProcessing(processedCards, premioBuscado) {
 }
 
 
-
-function recalculateAndDisplayCards(bolasCantadas, premioBuscado, linhasAtivas) {
+// apagarx
+function _recalculateAndDisplayCards(bolasCantadas, premioBuscado, linhasAtivas) {
     if (!loadedCards || loadedCards.length === 0) {
         return;
     }
@@ -2036,6 +2173,10 @@ function clearPanels() {
 
     precoSerie.textContent = '';    
     cartelaRanges = [];
+    newRanges = [];
+    cachedRawCards = [];
+    globalBolasCantadas = [];
+
     loadedCards = [];
     displayLoadedCards([]);
     isFetchingCards = false;
@@ -2056,7 +2197,7 @@ function clearPanels() {
         mobilePrizesContent.classList.add('hidden');
         toggleCartelasButton.textContent = 'INCLUIR Cartelas';
         togglePrizesButton.textContent = 'Apresentar Prêmios';
-    }    
+    }   //  2
     displayPrizeInfo([{ buscando_o_premio: null }],[]);
     iniciandoRodada = true;
     startPromocionalTimer();     
@@ -2095,15 +2236,17 @@ function displayLastThree(bolasData) {
     const lastOrder = isMobile ? mobileLastOrderElement : lastOrderElement;
     const balls = isMobile ? [mobileLastBall1, mobileLastBall2, mobileLastBall3] : [lastBall1, lastBall2, lastBall3];
 
-    lastRound.textContent = '...';
-    lastOrder.textContent = '...';
-    balls.forEach(ball => ball.textContent = '');
-
+    // --- CORREÇÃO: REMOVIDAS AS LINHAS DE LIMPEZA PRÉVIA ---
+    
     if (bolasData && typeof bolasData === 'object' && Array.isArray(bolasData.bolas_cantadas)) {
         const bolasCantadas = bolasData.bolas_cantadas;
         const lastThree = bolasCantadas.slice(-3).reverse();
-        lastRound.textContent = bolasData.rodada || 'N/A';
-        lastOrder.textContent = bolasData.ordem === 0 || bolasData.ordem ? bolasData.ordem : '0';
+        
+        if (bolasData.rodada) lastRound.textContent = bolasData.rodada;
+        
+        // Atualiza ordem sem limpar antes
+        const totalBolas = bolasData.ordem === 0 || bolasData.ordem ? bolasData.ordem : bolasCantadas.length;
+        lastOrder.textContent = totalBolas;
 
         for (let i = 0; i < 3; i++) {
             if (lastThree[i]) {
@@ -2115,6 +2258,9 @@ function displayLastThree(bolasData) {
                     balls[i].classList.add('bg-green-800', 'text-gray-300');
                 }
             } else {
+                // Só limpa se realmente não tiver bola (início do jogo)
+                balls[i].textContent = ''; 
+                balls[i].classList.remove('bg-red-700', 'bg-green-800', 'text-gray-300');
                 balls[i].classList.add('bg-gray-300', 'text-gray-800');
             }
         }
@@ -2123,22 +2269,31 @@ function displayLastThree(bolasData) {
     }
 }
 
+
 function displayPrizeInfo(buscandoData, premioData = null) {
     const isMobile = isMobileDevice();
     const prizeInfoContainerCurrent = isMobile ? mobilePrizeInfoContainer : prizeInfoContainer;
+
+    // --- BLINDAGEM CONTRA O ERRO ---
+    // Se buscandoData for inválido ou vazio, usa um objeto vazio {} para não quebrar o código
+    const dadosBuscando = (buscandoData && Array.isArray(buscandoData) && buscandoData.length > 0) 
+                          ? buscandoData[0] 
+                          : {}; 
+
+    // --- CORREÇÃO DO PISCA: Não limpamos o innerHTML aqui ---
     
     const cleanTextForComparison = (text) => {
         if (!text) return "";
-        // Remove todos os espaços em branco (\s) globalmente (g) e converte para MAIÚSCULAS
         return text.toString().replace(/\s/g, '').toUpperCase();
     }
-    prizeInfoContainerCurrent.innerHTML = '';
+
     const prizeItem = document.createElement('span');
     prizeItem.className = 'text-3xl text-gray-200 font-semibold';
 
-    let buscandoValue = buscandoData && buscandoData.length > 0 ? buscandoData[0].buscando_o_premio : null;
-    const linhasTaisLinhas = buscandoData[0]?.buscando_a_linha || '';
-    const qtdeLinhas = buscandoData[0]?.qtde_linha || '';
+    // Agora lemos de 'dadosBuscando' que é seguro (não trava se estiver vazio)
+    let buscandoValue = dadosBuscando.buscando_o_premio || null;
+    const linhasTaisLinhas = dadosBuscando.buscando_a_linha || '';
+    const qtdeLinhas = dadosBuscando.qtde_linha || '';
  
     let prizeToFind = cleanTextForComparison(buscandoValue);
 
@@ -2150,22 +2305,17 @@ function displayPrizeInfo(buscandoData, premioData = null) {
     if (prizeToFind === 'FALTAUM') {
        prizeToFind ='FALTA1';
     }
-    // --- LÓGICA DE BUSCA DO PRÊMIO ---
+
+    // Busca valor
     let valorPremio = '';
-    let nomePremio = '';
     if (premioData && premioData.length > 0 && prizeToFind) {
-        
-        // Loop FOR...OF para iterar por todos os prêmios
         for (const item of premioData) {
-            // Normaliza o tipo de prêmio do item atual para comparação
-            const itemPrizeType =cleanTextForComparison(item.tipo_premio);
+            const itemPrizeType = cleanTextForComparison(item.tipo_premio);
             if (itemPrizeType === prizeToFind ) {
-                // Encontrado! Extrai os dados
-                nomePremio = item.tipo_premio;
-                valorPremio = item.valor; // Assumindo que 'valor' já está formatado como R$
+                valorPremio = item.valor; 
                 const comValor = `${buscandoValue}  -  ${valorPremio}`  
                 buscandoValue = comValor;
-                break; // Sai do loop imediatamente, pois já encontramos o prêmio
+                break; 
             }
         }
     }
@@ -2175,14 +2325,20 @@ function displayPrizeInfo(buscandoData, premioData = null) {
     } else {
         prizeItem.innerHTML = buscandoValue;
     }
+
+    // --- ATUALIZAÇÃO ATÔMICA (Sem Piscar) ---
+    prizeInfoContainerCurrent.innerHTML = ''; 
     prizeInfoContainerCurrent.appendChild(prizeItem);
 }
+
 
 function displayPrizeValues(premioData, topeData = null) {
     const isMobile = isMobileDevice();
     const prizeValuesContainerCurrent = isMobile ? mobilePrizeValuesContainer : prizeValuesContainer;
     
-    prizeValuesContainerCurrent.innerHTML = '';
+    // --- CORREÇÃO: Cria um fragmento em memória primeiro (Evita Piscar) ---
+    const fragment = document.createDocumentFragment();
+
     if (premioData && Array.isArray(premioData) && premioData.length > 0) {
         const validPrizes = premioData.filter(premio => {
             const cleanedValue = premio.valor.toString().replace('R$', '').replace('.', '').trim();
@@ -2194,37 +2350,27 @@ function displayPrizeValues(premioData, topeData = null) {
             const defaultMessage = document.createElement('span');
             defaultMessage.className = 'text-lg text-white';
             defaultMessage.textContent = 'Nenhum prêmio cadastrado.';
-            prizeValuesContainerCurrent.appendChild(defaultMessage);
-            return;
-        }
+            fragment.appendChild(defaultMessage);
+        } else {
+            const prizeOrder = ['QUADRA', 'LINHA', '3 LINHAS', 'FALTA 1', 'BINGO', 'DUPLO BINGO', 'TRIPLO BINGO', 'SUPER BINGO', 'ACUMULADO'];
 
-        const prizeOrder = ['QUADRA', 'LINHA', '3 LINHAS', 'FALTA 1', 'BINGO', 'DUPLO BINGO', 'TRIPLO BINGO', 'SUPER BINGO', 'ACUMULADO'];
+            validPrizes.sort((a, b) => {
+                const indexA = prizeOrder.indexOf(a.tipo_premio);
+                const indexB = prizeOrder.indexOf(b.tipo_premio);
+                const aIsValid = indexA > -1;
+                const bIsValid = indexB > -1;
+                if (aIsValid && !bIsValid) return -1;
+                if (!aIsValid && !bIsValid) return 1;
+                if (!aIsValid && !bIsValid) return 0;
+                return indexA - indexB;
+            });
 
-        validPrizes.sort((a, b) => {
-            const indexA = prizeOrder.indexOf(a.tipo_premio);
-            const indexB = prizeOrder.indexOf(b.tipo_premio);
-            
-            const aIsValid = indexA > -1;
-            const bIsValid = indexB > -1;
-
-            if (aIsValid && !bIsValid) return -1;
-            if (!aIsValid && !bIsValid) return 1;
-            if (!aIsValid && !bIsValid) return 0;
-            
-            return indexA - indexB;
-        });
-        validPrizes.forEach(premio => {
-            let prizeText = `${premio.tipo_premio}: ${premio.valor}`;   
-            if (iniciandoRodada) {
-               if (premio.tipo_premio=== 'BINGO') {
-                  const valorLimpo = premio.valor
-                      .replace('R$', '')  // Remove o símbolo da moeda
-                      .replace(/\./g, '') // Remove o separador de milhares (ponto)
-                      .replace(',', '.')  // Troca a vírgula por ponto (separador decimal do JS)
-                      .trim();             // Remove espaços extras
-                  const valorNumerico = parseFloat(valorLimpo);
-                  if (valorNumerico > 0 )  {   
-                      if (mobilePrizesContent.classList.contains('hidden')) {
+            validPrizes.forEach(premio => {
+                let prizeText = `${premio.tipo_premio}: ${premio.valor}`;   
+                if (iniciandoRodada && premio.tipo_premio === 'BINGO') {
+                   // Lógica mobile mantida...
+                   const valorLimpo = premio.valor.replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
+                   if (parseFloat(valorLimpo) > 0 && mobilePrizesContent.classList.contains('hidden')) {
                          seePromocoes = false; 
                          hidePromocionalPanel();
                          startPrizeHideTimer();
@@ -2232,30 +2378,35 @@ function displayPrizeValues(premioData, topeData = null) {
                          togglePrizesButton.textContent = 'Ocultar Prêmios';
                          togglePrizesButton.classList.remove('bg-gray-700');
                          togglePrizesButton.classList.add('bg-red-800'); 
-                      }
                    }
-               }
-            }    
-            if (topeData && topeData.length > 0) {
-                const currentTopeData = topeData[0];
-                if (premio.tipo_premio.includes('SUPER BINGO') && currentTopeData.bola_tope_sb) {
-                    prizeText += ` (TOPE: ${currentTopeData.bola_tope_sb})`;
-                } else if (premio.tipo_premio.includes('ACUMULADO') && currentTopeData.bola_tope_ac) {
-                    prizeText += ` (TOPE: ${currentTopeData.bola_tope_ac})`;
+                }    
+                if (topeData && topeData.length > 0) {
+                    const currentTopeData = topeData[0];
+                    if (premio.tipo_premio.includes('SUPER BINGO') && currentTopeData.bola_tope_sb) {
+                        prizeText += ` (TOPE: ${currentTopeData.bola_tope_sb})`;
+                    } else if (premio.tipo_premio.includes('ACUMULADO') && currentTopeData.bola_tope_ac) {
+                        prizeText += ` (TOPE: ${currentTopeData.bola_tope_ac})`;
+                    }
                 }
-            }
-            const prizeItem = document.createElement('div');
-            prizeItem.className = 'text-lg text-white font-medium text-center';
-            prizeItem.textContent = prizeText;
-            prizeValuesContainerCurrent.appendChild(prizeItem);
-        });
+                const prizeItem = document.createElement('div');
+                prizeItem.className = 'text-lg text-white font-medium text-center';
+                prizeItem.textContent = prizeText;
+                fragment.appendChild(prizeItem);
+            });
+        }
     } else {
         const defaultMessage = document.createElement('span');
         defaultMessage.className = 'text-lg text-white';
         defaultMessage.textContent = 'Nenhum prêmio cadastrado.';
-        prizeValuesContainerCurrent.appendChild(defaultMessage);
+        fragment.appendChild(defaultMessage);
     }
+
+    // --- ATUALIZAÇÃO ATÔMICA (Só limpa e insere no final) ---
+    prizeValuesContainerCurrent.innerHTML = '';
+    prizeValuesContainerCurrent.appendChild(fragment);
 }
+
+
 
 function updateCardHighlighting(bolasCantadas) {
     const lastBall = bolasCantadas[bolasCantadas.length - 1];
@@ -2341,16 +2492,24 @@ function displayCardGrid75(numeros, bolasCantadas) {
         const cleanStr = numeros.replace(/[^\d,]/g, ' '); 
         listaNumeros = cleanStr.trim().split(/\s+/).map(Number);
     }
-
     // Garante 25 posições
     while(listaNumeros.length < 25) listaNumeros.push(0);
+ 
+    const ordemVisual = [
+        0, 1, 2, 3, 4,
+        5, 6, 7, 8, 9,
+        10, 11, 12, 13, 14,
+        15, 16, 17, 18, 19,
+        20, 21, 22, 23, 24
+    ];
 
-    listaNumeros.forEach((num, index) => {
+    ordemVisual.forEach(realIndex => {
+        const num = listaNumeros[realIndex];
         const div = document.createElement('div');
-        // Quadrado menor para caber 5x5
+        
         div.className = 'h-10 w-full flex items-center justify-center rounded font-bold text-lg border border-gray-600';
         
-        const isFree = (index === 12); // Centro é sempre Free no 75
+        const isFree = false; // (realIndex === 12); 
         
         if (isFree) {
             div.textContent = '★';
@@ -2359,17 +2518,18 @@ function displayCardGrid75(numeros, bolasCantadas) {
             div.textContent = num;
             if (bolasCantadas.includes(num)) {
                 if (num === bolasCantadas[bolasCantadas.length-1]) {
-                    div.className += ' bg-red-600 text-white border-red-400'; // Última bola
+                    div.className += ' bg-red-600 text-white border-red-400'; 
                 } else {
-                    div.className += ' bg-yellow-500 text-black border-yellow-300'; // Marcada
+                    div.className += ' bg-yellow-500 text-black border-yellow-300'; 
                 }
             } else {
-                div.className += ' bg-gray-800 text-gray-300'; // Normal
+                div.className += ' bg-gray-800 text-gray-300'; 
             }
         }
         cardGridElement.appendChild(div);
     });
 }
+
 
 
 function displayConferencePanel(confereData, bolasCantadas) {
@@ -2650,15 +2810,22 @@ function renderOscartoes(bolasCantadas) {
     }
 }
 
-// ATUALIZADO: Renderiza as 8 melhores cartelas com Destaque APENAS na Linha Alvo
-function renderOscartoes90(bolasCantadas) {
-    const totalCartelas = loadedCards ? loadedCards.length : 0;
-    const formattedCount = new Intl.NumberFormat('pt-BR').format(cartelasEmJogo);
-    const textoTitulo = `8 Melhores Cartelas (${formattedCount})`;
+// ATUALIZADO: Renderiza as 10 melhores cartelas (Correção de Tipos e Destaque)
+function renderOscartoes90(bolasInput) {
+    let listaRealDeBolas = [];
+    if (Array.isArray(bolasInput) && bolasInput.length > 0) {
+        listaRealDeBolas = bolasInput;
+    } else if (typeof globalBolasCantadas !== 'undefined' && Array.isArray(globalBolasCantadas)) {
+        listaRealDeBolas = globalBolasCantadas;
+    }
+    // Set de inteiros para garantir a marcação correta
+    const bolasSet = new Set(listaRealDeBolas.map(b => parseInt(b)).filter(b => b > 0));
+
+    const formattedCount = new Intl.NumberFormat('pt-BR').format(typeof cartelasEmJogo !== 'undefined' ? cartelasEmJogo : 0);
+    const textoTitulo = `Top 10 Melhores (${formattedCount})`;
 
     const pcHeader = document.getElementById('oscartoes-header');
     const mobileHeader = document.getElementById('mobile-oscartoes-header');
-
     if (pcHeader) pcHeader.textContent = textoTitulo;
     if (mobileHeader) mobileHeader.textContent = textoTitulo;
 
@@ -2667,213 +2834,252 @@ function renderOscartoes90(bolasCantadas) {
         document.getElementById('mobile-oscartoes-content') 
     ];
 
-    let conteudoVazio = false;
-    let dadosParaRenderizar = [];
+    let dadosParaRenderizar = (loadedCards && loadedCards.length > 0) ? loadedCards.slice(0, 10) : [];
+    const conteudoVazio = dadosParaRenderizar.length === 0;
 
-    if (!loadedCards || loadedCards.length === 0) {
-        conteudoVazio = true;
-    } else {
-        dadosParaRenderizar = loadedCards.slice(0, 8);
-    }
-
-    // Verifica se é modo LINHA ou QUADRA
-    const premioAtual = buscando_o_premio.replace(/\s+/g, '').toUpperCase();
-    const isModoLinhaOuQuadra = premioAtual.includes('LINHA') || premioAtual.includes('QUADRA');
+    const premioRaw = typeof buscando_o_premio !== 'undefined' ? buscando_o_premio : '';
+    const isModoLinhaOuQuadra = premioRaw.toUpperCase().includes('LINHA') || premioRaw.toUpperCase().includes('QUADRA');
 
     containers.forEach(container => {
         if (!container) return; 
 
-        container.innerHTML = '';
-        container.className = 'grid grid-cols-2 gap-2 pb-4 content-start';
+        const fragment = document.createDocumentFragment();
+        let newContainerClass = '';
 
         if (conteudoVazio) {
-            container.className = 'flex flex-col items-center justify-center h-full';
-            container.innerHTML = '<p class="text-center text-gray-500 text-xs mt-4">Nenhuma cartela processada.</p>';
-            return;
-        }
+            newContainerClass = 'flex flex-col items-center justify-center h-full';
+            const p = document.createElement('p');
+            p.className = 'text-center text-gray-500 text-xs mt-4';
+            p.textContent = 'Aguardando início...';
+            fragment.appendChild(p);
+        } else {
+            newContainerClass = 'grid grid-cols-2 gap-2 pb-4 content-start';
+            container.style.maxHeight = (typeof telaFull !== 'undefined' && telaFull) ? '480px' : '380px';
 
-        dadosParaRenderizar.forEach(cardData => {
-            const numeroCartao = cardData.cartao;
-            
-            const numerosGerais = cardData.layoutGrid && cardData.layoutGrid.length > 0 
-                                  ? cardData.layoutGrid 
-                                  : (cardData.originalData ? cardData.originalData.geral : []);
+            dadosParaRenderizar.forEach(cardData => {
+                const numeroCartao = cardData.cartao;
+                const numerosGerais = cardData.layoutGrid && cardData.layoutGrid.length > 0 
+                                      ? cardData.layoutGrid 
+                                      : (cardData.originalData ? cardData.originalData.geral : []);
 
-            if (!numerosGerais || numerosGerais.length === 0) return;
+                if (!numerosGerais || numerosGerais.length === 0) return;
 
-            // Container
-            const cardDiv = document.createElement('div');
-            cardDiv.className = 'bg-gray-900 border border-gray-700 rounded p-1 flex flex-col gap-0.5 shadow-sm';
+                const cardDiv = document.createElement('div');
+                cardDiv.className = 'bg-gray-900 border border-gray-700 rounded p-1 flex flex-col gap-0.5 shadow-sm';
 
-            // Header
-            const faltam = cardData.missingNumbers ? cardData.missingNumbers.length : 15;
-            const faltamClass = faltam <= 1 ? 'text-green-400 animate-pulse' : 'text-blue-400';
+                const faltam = cardData.missingNumbers ? cardData.missingNumbers.length : 15;
+                const faltamClass = faltam <= 1 ? 'text-green-400 animate-pulse font-bold' : 'text-blue-400 font-bold';
 
-            const header = document.createElement('div');
-            header.className = 'flex justify-between items-center border-b border-gray-700 pb-0.5 mb-0.5';
-            header.innerHTML = `
-                <span class="text-gray-400 font-bold text-[10px]">Cartela: <span class="text-yellow-500">${numeroCartao}</span></span>
-                <span class="text-[10px] font-bold ${faltamClass}">Faltam: ${faltam}</span>
-            `;
-            cardDiv.appendChild(header);
+                const header = document.createElement('div');
+                header.className = 'flex justify-between items-center border-b border-gray-700 pb-0.5 mb-0.5';
+                header.innerHTML = `
+                    <span class="text-gray-400 font-bold text-[10px]">Cartela: <span class="text-yellow-500">${numeroCartao}</span></span>
+                    <span class="text-[10px] ${faltamClass}">Faltam: ${faltam}</span>
+                `;
+                cardDiv.appendChild(header);
 
-            // Grid
-            const grid = document.createElement('div');
-            grid.className = 'grid grid-cols-5 gap-0.5';
+                const grid = document.createElement('div');
+                grid.className = 'grid grid-cols-5 gap-0.5';
 
-            numerosGerais.forEach((num, index) => {
-                const cell = document.createElement('div');
-                let cellClass = 'h-4 w-full flex items-center justify-center text-[9px] font-bold rounded border ';
-                
-                if (bolasCantadas.includes(num)) {
-                    // 1. JÁ SORTEADO (Cinza Escuro / Apagado)
-                    cellClass += 'bg-gray-800 text-gray-600 border-gray-800'; 
-                } else {
-                    // 2. NÃO SORTEADO (Faltante)
-                    let isTargetLine = true;
+                numerosGerais.forEach((val, index) => {
+                    const num = parseInt(val);
+                    const cell = document.createElement('div');
+                    let cellClass = 'h-4 w-full flex items-center justify-center text-[9px] font-bold rounded border ';
+                    
+                    // --- APLICAÇÃO DO SEU LAYOUT ---
+                    if (bolasSet.has(num)) {
+                        // 1. JÁ SORTEADO (Cinza Escuro / Apagado)
+                        cellClass += 'bg-gray-800 text-gray-600 border-gray-800'; 
+                    } else {
+                        // 2. NÃO SORTEADO (Faltante)
+                        let isTargetLine = true;
 
-                    // Se for modo LINHA/QUADRA, verifica se o número pertence à linha "boa"
-                    if (isModoLinhaOuQuadra && cardData.linhaId) {
-                        let linhaDoNumero = '';
-                        if (index >= 0 && index <= 4) linhaDoNumero = 'Sup';
-                        else if (index >= 5 && index <= 9) linhaDoNumero = 'Cen';
-                        else if (index >= 10 && index <= 14) linhaDoNumero = 'Inf';
+                        if (isModoLinhaOuQuadra && cardData.linhaId) {
+                            let linhaDoNumero = '';
+                            if (index >= 0 && index <= 4) linhaDoNumero = 'SUP';
+                            else if (index >= 5 && index <= 9) linhaDoNumero = 'CEN';
+                            else if (index >= 10 && index <= 14) linhaDoNumero = 'INF';
 
-                        // Se a linha do número não for a linha premiada da cartela
-                        if (linhaDoNumero !== cardData.linhaId) {
-                            isTargetLine = false;
+                            if (linhaDoNumero !== cardData.linhaId) {
+                                isTargetLine = false;
+                            }
+                        }
+
+                        if (isTargetLine) {
+                            // DESTAQUE (Branco com Borda Amarela)
+                            cellClass += 'bg-gray-800 text-white border-yellow-600 shadow-sm'; 
+                        } else {
+                            // "GRAY-250" (Cinza Claro discreto)
+                            cellClass += 'bg-gray-800 text-gray-400 border-gray-800'; 
                         }
                     }
+                    // -------------------------------
+                    
+                    cell.className = cellClass;
+                    cell.textContent = num;
+                    grid.appendChild(cell);
+                });
 
-                    if (isTargetLine) {
-                        // DESTAQUE (Branco com Borda Amarela)
-                        // É um número faltante NA linha que estamos torcendo
-                        cellClass += 'bg-gray-800 text-white border-yellow-600 shadow-sm'; 
-                    } else {
-                        // "GRAY-250" (Cinza Claro mas sem destaque)
-                        // É um número faltante, mas numa linha que NÃO vai bater agora
-                        // Usamos text-gray-400 para simular o "gray-250" visível mas discreto
-                        cellClass += 'bg-gray-800 text-gray-300 border-gray-800'; 
-                    }
+                cardDiv.appendChild(grid);
+                
+                if (cardData.premioEncontrado) {
+                    const footer = document.createElement('div');
+                    footer.className = 'mt-0.5 text-center text-[8px] font-bold rounded py-0.5 animate-prize-blink bg-yellow-600 text-black uppercase';
+                    footer.textContent = `${cardData.premioEncontrado}`;
+                    cardDiv.appendChild(footer);
                 }
                 
-                cell.className = cellClass;
-                cell.textContent = num;
-                grid.appendChild(cell);
+                fragment.appendChild(cardDiv);
             });
+        }
 
-            cardDiv.appendChild(grid);
-            
-            if (cardData.premioEncontrado) {
-                const footer = document.createElement('div');
-                footer.className = 'mt-0.5 text-center text-[8px] font-bold rounded py-0.5 animate-prize-blink';
-                footer.textContent = `${cardData.premioEncontrado}`;
-                cardDiv.appendChild(footer);
-            }
-
-            container.appendChild(cardDiv);
-        });
+        container.innerHTML = '';
+        container.className = newContainerClass;
+        container.appendChild(fragment);
     });
 }
 
-// --- RENDERIZADOR BINGO 75 (Top 6 - Grade 5x5) ---
-function renderOscartoes75(bolasCantadas) {
-    const totalCartelas = loadedCards ? loadedCards.length : 0;
-    const formattedCount = new Intl.NumberFormat('pt-BR').format(cartelasEmJogo);
-    const textoTitulo = `Top 6 Melhores (${formattedCount})`;
 
-    // Atualiza cabeçalhos
+// --- RENDERIZADOR BINGO 75 (Top 6 - Grade 5x5) ---
+function renderOscartoes75(bolasInput) {
+    let listaRealDeBolas = [];
+    if (Array.isArray(bolasInput) && bolasInput.length > 0) {
+        listaRealDeBolas = bolasInput;
+    } else if (typeof globalBolasCantadas !== 'undefined' && Array.isArray(globalBolasCantadas)) {
+        listaRealDeBolas = globalBolasCantadas;
+    }
+    // Proteção contra zero e criação do Set
+    const bolasSet = new Set(listaRealDeBolas.map(b => parseInt(b)).filter(b => b > 0));
+
+    const containers = [
+        document.getElementById('oscartoes-content'),        
+        document.getElementById('mobile-oscartoes-content') 
+    ];
+
+    const formattedCount = new Intl.NumberFormat('pt-BR').format(typeof cartelasEmJogo !== 'undefined' ? cartelasEmJogo : 0);
+    const textoTitulo = `Top 10 Melhores (${formattedCount})`;
+
     const pcHeader = document.getElementById('oscartoes-header');
     const mobileHeader = document.getElementById('mobile-oscartoes-header');
     if (pcHeader) pcHeader.textContent = textoTitulo;
     if (mobileHeader) mobileHeader.textContent = textoTitulo;
 
-    const containers = [
-        document.getElementById('oscartoes-content'),       
-        document.getElementById('mobile-oscartoes-content') 
-    ];
+    let dadosParaRenderizar = (loadedCards && loadedCards.length > 0) ? loadedCards.slice(0, 10) : [];
+    const conteudoVazio = dadosParaRenderizar.length === 0;
 
-    let dadosParaRenderizar = loadedCards.slice(0, 6); // LIMITADO A 6 PARA CABER NA TELA
+    const premioRaw = typeof buscando_o_premio !== 'undefined' ? buscando_o_premio : '';
+    const isModoLinhaOuQuadra = premioRaw.toUpperCase().includes('LINHA') || premioRaw.toUpperCase().includes('QUADRA');
 
     containers.forEach(container => {
         if (!container) return; 
-        container.innerHTML = '';
         
-        // CSS Grid ajustado para cartelas maiores (5x5 exige mais altura)
-        // No Mobile: 2 colunas. No PC: 3 colunas (para 6 cartelas) ou manter o grid responsivo.
-        container.className = 'grid grid-cols-2 md:grid-cols-3 gap-2 pb-4 content-start';
+        // --- CORREÇÃO: USAR FRAGMENTO PARA NÃO PISCAR ---
+        const fragment = document.createDocumentFragment();
+        let newClasses = '';
 
-        if (dadosParaRenderizar.length === 0) {
-            container.innerHTML = '<p class="col-span-full text-center text-gray-500 text-xs mt-4">Aguardando...</p>';
-            return;
-        }
+        if (conteudoVazio) {
+            newClasses = 'flex flex-col items-center justify-center h-full';
+            const p = document.createElement('p');
+            p.className = 'text-center text-gray-500 text-xs mt-4';
+            p.textContent = 'Aguardando...';
+            fragment.appendChild(p);
+        } else {
+            newClasses = 'grid grid-cols-2 gap-2 pb-4 content-start';
+            
+            // Ajuste de altura dinâmica
+            container.style.maxHeight = (typeof telaFull !== 'undefined' && telaFull) ? '420px' : '320px';
 
-        dadosParaRenderizar.forEach(cardData => {
-            const numeros = cardData.layoutGrid; // Array de 25 números
-            if (!numeros || numeros.length < 24) return;
+            dadosParaRenderizar.forEach(cardData => {
+                const numeroCartao = cardData.cartao;
+                const numerosGerais = cardData.layoutGrid || [];
+                if (!numerosGerais || numerosGerais.length < 24) return;
 
-            const cardDiv = document.createElement('div');
-            cardDiv.className = 'bg-gray-900 border border-gray-600 rounded p-1 shadow-md';
-
-            // Header
-            const faltam = cardData.missingNumbers.length;
-            const header = document.createElement('div');
-            header.className = 'flex justify-between items-center border-b border-gray-700 pb-1 mb-1 px-1';
-            header.innerHTML = `
-                <span class="text-yellow-500 font-bold text-xs">${cardData.cartao}</span>
-                <span class="text-[10px] font-bold ${faltam <= 1 ? 'text-green-400 animate-pulse' : 'text-blue-400'}">Faltam: ${faltam}</span>
-            `;
-            cardDiv.appendChild(header);
-
-            // GRID 5x5
-            const grid = document.createElement('div');
-            grid.className = 'grid grid-cols-5 gap-0.5';
-
-            numeros.forEach((num, idx) => {
-                const cell = document.createElement('div');
-                // Estilo base
-                let cellClass = 'h-5 w-full flex items-center justify-center text-[10px] font-bold rounded border ';
-                
-                const isFree = (num === 0 || idx === 12) && MAX_BOLAS === 75; // Centro é Free
-                const sorteado = bolasCantadas.includes(num);
-
-                if (isFree) {
-                    cellClass += 'bg-green-700 text-white border-green-500';
-                    cell.textContent = '★';
-                } else if (sorteado) {
-                    cellClass += 'bg-red-900/80 text-red-200 border-red-800'; // Marcado
-                } else {
-                    cellClass += 'bg-gray-800 text-gray-300 border-gray-700'; // Normal
+                let targetRowIndex = -1; 
+                if (isModoLinhaOuQuadra) {
+                    const visualRows = [
+                       [0, 5, 10, 15, 20], [1, 6, 11, 16, 21], [2, 7, 12, 17, 22], 
+                       [3, 8, 13, 18, 23], [4, 9, 14, 19, 24]
+                    ];
+                    let maxHits = -1;
+                    visualRows.forEach((rowIndices, rIdx) => {
+                        let hits = 0;
+                        rowIndices.forEach(idx => {
+                            const val = parseInt(numerosGerais[idx]);
+                            if (val === 0 || bolasSet.has(val)) hits++;
+                        });
+                        if (hits > maxHits) { maxHits = hits; targetRowIndex = rIdx; }
+                    });
                 }
 
-                if (!isFree) cell.textContent = num;
-                cell.className = cellClass;
-                grid.appendChild(cell);
-            });
+                const cardDiv = document.createElement('div');
+                cardDiv.className = 'bg-gray-900 border border-gray-700 rounded p-1 flex flex-col gap-0.5 shadow-sm';
 
-            cardDiv.appendChild(grid);
-            container.appendChild(cardDiv);
-        });
+                const faltam = cardData.missingNumbers ? cardData.missingNumbers.length : 24;
+                const faltamClass = faltam <= 1 ? 'text-green-400 animate-pulse' : 'text-blue-400';
+                const header = document.createElement('div');
+                header.className = 'flex justify-between items-center border-b border-gray-700 pb-0.5 mb-0.5';
+                header.innerHTML = `<span class="text-gray-400 font-bold text-[10px]">Cartela: <span class="text-yellow-500">${numeroCartao}</span></span><span class="text-[10px] font-bold ${faltamClass}">Faltam: ${faltam}</span>`;
+                cardDiv.appendChild(header);
+
+                const grid = document.createElement('div');
+                grid.className = 'grid grid-cols-5 gap-0.5';
+
+                const ordemVisual = [0, 5, 10, 15, 20, 1, 6, 11, 16, 21, 2, 7, 12, 17, 22, 3, 8, 13, 18, 23, 4, 9, 14, 19, 24];
+
+                ordemVisual.forEach((realIndex, visualIndex) => {
+                    const num = parseInt(numerosGerais[realIndex]);
+                    const cell = document.createElement('div');
+                    let cellClass = 'h-4 w-full flex items-center justify-center text-[9px] font-bold rounded border ';
+                    
+                    const isFree = false; 
+                    if (isFree) {
+                        cellClass += 'bg-green-700 text-white border-green-500';
+                        cell.textContent = '★';
+                    } else if (bolasSet.has(num)) {
+                        // CORREÇÃO VISUAL: PADRONIZAÇÃO DAS CORES
+                        cellClass += 'bg-gray-800 text-gray-600 border-gray-800'; 
+                        cell.textContent = num;
+                    } else {
+                        let isTargetLine = true;
+                        if (isModoLinhaOuQuadra) {
+                            const currentRow = Math.floor(visualIndex / 5);
+                            if (currentRow !== targetRowIndex) isTargetLine = false;
+                        }
+                        if (isTargetLine) cellClass += 'bg-gray-800 text-white border-yellow-600 shadow-sm';
+                        else cellClass += 'bg-gray-900 text-gray-400 border-gray-800 opacity-40';
+                        cell.textContent = num;
+                    }
+                    cell.className = cellClass;
+                    grid.appendChild(cell);
+                });
+
+                cardDiv.appendChild(grid);
+                
+                if (cardData.premioEncontrado) {
+                    const footer = document.createElement('div');
+                    footer.className = 'mt-0.5 text-center text-[8px] font-bold rounded py-0.5 animate-prize-blink bg-yellow-900 text-yellow-100';
+                    footer.textContent = `${cardData.premioEncontrado}`;
+                    cardDiv.appendChild(footer);
+                }
+                fragment.appendChild(cardDiv);
+            });
+        }
+
+        // --- ATUALIZAÇÃO ATÔMICA ---
+        container.innerHTML = '';
+        container.className = newClasses;
+        container.appendChild(fragment);
     });
 }
+
 
 
 async function renderMainContent(data) {
     if (!data) return;
 
-    // 1. Desestruturação dos dados recebidos
     const { 
-        bolasData, 
-        buscandoData, 
-        premioData,
-        ganhadoresData, 
-        promocionalData, 
-        rodadaData, 
-        confereData, 
-        topeData, 
-        premioInfo, 
-        parametrosInfo = {},
-        avisosData = []
+        bolasData, buscandoData, premioData, ganhadoresData, promocionalData, 
+        rodadaData, confereData, topeData, premioInfo, parametrosInfo = {}, avisosData = []
     } = data;
     
     if (Carregando) {
@@ -2882,141 +3088,132 @@ async function renderMainContent(data) {
     }
     controlarPainelMobileEntrada();
     
-    // =========================================================================
-    // >>> LÓGICA DE CARREGAMENTO AUTOMÁTICO DE CARTELAS (PRIORIDADE ALTA) <<<
-    // =========================================================================
-    // Movemos isso para o topo para garantir que cartelas sejam carregadas 
-    // assim que soubermos qual é o evento, independente de bolas ou prêmios.
-   
+    // Auto-Load
     if (typeof clienteLogadoId !== 'undefined' && clienteLogadoId) {
-        // Verifica se temos a informação da rodada (evento) atual
-        // Pode vir em premioInfo.rodada OU rodadaData[0].id_evento (depende do seu backend)
         const eventoAtual = premioInfo?.rodada || rodadaData?.[0]?.id_evento;
         if (eventoAtual) {
-            // Inicializa a variável de controle se não existir
-            if (typeof window.ultimoEventoProcessado === 'undefined') {
-                window.ultimoEventoProcessado = null;
-            }
-
-            // Se o evento mudou OU se é a primeira carga (null) e temos evento
+            if (typeof window.ultimoEventoProcessado === 'undefined') window.ultimoEventoProcessado = null;
             if (window.ultimoEventoProcessado != eventoAtual) {
-                console.log(`[AutoLoad] Novo evento detectado: ${window.ultimoEventoProcessado} -> ${eventoAtual}`);
-                console.log("Buscando cartelas para o cliente ID:", clienteLogadoId);
-                
-                // Atualiza o controle para não buscar repetidamente
                 window.ultimoEventoProcessado = eventoAtual;
-                
-                // Chama a função que vai no server.py -> mongo vendas -> busca cartelas
-                // IMPORTANTE: Não usamos 'await' aqui para não bloquear a renderização da tela
                 carregarCartelasAutomaticas(eventoAtual);
             }
         }
     }
-    // =========================================================================
 
-    // 2. Gerenciamento de Estado da Rodada (Intervalo vs Em Jogo)
+    // Estado da Rodada
     const rodadaState = rodadaData && rodadaData.length > 0 ? rodadaData[0].estado.trim() : null;
-    
     if (rodadaState === 'intervalo' && lastRodadaState !== 'intervalo') {
         clearPanels();
         lastRodadaState = rodadaState; 
-        // Resetamos o controle de evento para forçar recarga quando o intervalo acabar
         window.ultimoEventoProcessado = null; 
         return; 
     } else if (rodadaState !== null) {
         lastRodadaState = rodadaState;
     }
     
-    // 3. Processamento das Bolas
-    const bolasCantadas = (bolasData && bolasData.length > 0) ? bolasData[0].bolas_cantadas : [];
+    // =========================================================================
+    // >>> PROTEÇÃO ANTI-PISCA NAS BOLAS (CORREÇÃO DO "FALTAM 15") <<<
+    // =========================================================================
+    let bolasCantadasRaw = (bolasData && bolasData.length > 0) ? bolasData[0].bolas_cantadas : [];
     
+    // Se veio vazio do servidor, mas nós já tínhamos bolas na memória...
+    if (bolasCantadasRaw.length === 0 && globalBolasCantadas.length > 0) {
+        // Verifica se NÃO é um Reset real (se ainda estamos buscando prêmio, o jogo continua)
+        if (buscando_o_premio && buscando_o_premio !== '...' && buscando_o_premio !== 'null') {
+             // console.warn("🛡️ Mantendo bolas anteriores para evitar zerar cartelas.");
+             bolasCantadasRaw = globalBolasCantadas; // Ignora o vazio e usa o cache
+        }
+    }
+    
+    const bolasCantadas = bolasCantadasRaw;
+    globalBolasCantadas = bolasCantadas; // Atualiza a global
+
     const proximaBola = (bolasData && bolasData.length > 0 && bolasData[0].proxima_bola) ? bolasData[0].proxima_bola : "--";
     const ultimaBolaDaLista = bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : null;
 
-    // 4. Atualização do Painel Digital
-    if (tipoDoSorteio !== 'manual') {
-       updateDigitalBola(proximaBola);
+    if (tipoDoSorteio !== 'manual') updateDigitalBola(proximaBola);
+
+    // =========================================================================
+    // >>> PROTEÇÃO ANTI-PISCA NOS DADOS DE PRÊMIO <<<
+    // =========================================================================
+    
+    let dadosBuscando = {};
+    let usarDadosFake = false;
+
+    if (buscandoData && buscandoData.length > 0) {
+        dadosBuscando = buscandoData[0];
+    } else {
+        // Se veio vazio, mas temos bolas sorteadas, é bug do servidor.
+        if (bolasCantadas.length > 0 && buscando_o_premio) {
+            usarDadosFake = true;
+            dadosBuscando = {
+                buscando_o_premio: buscando_o_premio, 
+                buscando_a_linha: buscando_a_linha,   
+                qtde_linha: 1 
+            };
+        }
     }
 
-    // 5. Verificação de Prêmio (BLINDADO)
-    const dadosBuscando = (buscandoData && buscandoData.length > 0) ? buscandoData[0] : {};
     const premioBuscadoDaAPI = (dadosBuscando.buscando_o_premio || '').replace(/\s+/g, '').trim();
     const linhasAtivasDaAPI = dadosBuscando.buscando_a_linha || '';
 
-    if (premioBuscadoDaAPI !== buscando_o_premio.replace(/\s+/g, '').trim() || linhasAtivasDaAPI !== buscando_a_linha) {
+    // Detecta mudanças
+    const premioMudou = (premioBuscadoDaAPI !== buscando_o_premio.replace(/\s+/g, '').trim() || linhasAtivasDaAPI !== buscando_a_linha);
+    const bolaMudou = (ultimaBolaDaLista !== ultimaBolaCantada);
+
+    if (premioMudou) {
         buscando_o_premio = premioBuscadoDaAPI;
         buscando_a_linha = linhasAtivasDaAPI;
         bolaBuscandoPremio = bolasCantadas.length;
-        
-        // --- CORREÇÃO DE VARIÁVEL AQUI (Usar cartelaRanges) ---
-        if (cartelaRanges && cartelaRanges.length > 0) {
-            fetchAndProcessCards();
-        } else {
-            loadedCards = [];
-            displayLoadedCards([]);
-        }
-    } else if (ultimaBolaDaLista !== ultimaBolaCantada) {
-        if (ultimaBolaDaLista !== null && ultimaBolaDaLista !== undefined) {
-             falarTexto(`${ultimaBolaDaLista}`);
-        }
-        ultimaBolaCantada = ultimaBolaDaLista;
-        if (loadedCards.length > 0) {
-            recalculateAndDisplayCards(bolasCantadas, premioBuscadoDaAPI, linhasAtivasDaAPI);
-        }
+    }
+
+    if (bolaMudou) {
+        if (ultimaBolaDaLista !== null && ultimaBolaDaLista !== undefined) ;
+           falarTexto(`${ultimaBolaDaLista}`) 
+           ultimaBolaCantada = ultimaBolaDaLista;
+    }
+
+    // --- REPROCESSAMENTO LOCAL ---
+    // Agora que 'bolasCantadas' está protegido, o cálculo será correto (não dará 15)
+    if ((premioMudou || bolaMudou) && cachedRawCards.length > 0) {
+        const premioNormalizado = premioBuscadoDaAPI.replace(/\s+/g, '').trim();
+        processCards(cachedRawCards, bolasCantadas, premioNormalizado, linhasAtivasDaAPI);
+    } 
+    else if (cartelaRanges && cartelaRanges.length > 0 && cachedRawCards.length === 0 && !isFetchingCards) {
+         fetchAndProcessCards();
     }
     
-    // 6. Dados Promocionais
+    // =========================================================================
+
     globalPromocionalData = promocionalData;
 
-    // 7. Configurações da Sala e Vídeo
     if (parametrosInfo) {
         const nome_da_sala = parametrosInfo.nome_sala; 
-
-        if (nome_da_sala && salaTitleElement) {
-            salaTitleElement.textContent = nome_da_sala;
-        }
+        if (nome_da_sala && salaTitleElement) salaTitleElement.textContent = nome_da_sala;
         
         const tipoCartelaConfig = parseInt(parametrosInfo.tipo_cartela || 15);
-        if (tipoCartelaConfig === 25) {
-            MAX_BOLAS = 75;
-        } else {
-            MAX_BOLAS = 90;
-        }
-
+        MAX_BOLAS = (tipoCartelaConfig === 25) ? 75 : 90;
         tempoExibicaoGanhador = parseInt(parametrosInfo.tempo_ganhador);
         
         const tipoSorteio = parametrosInfo.modo_sorteio;
-
         const rawVideoID = parametrosInfo.url_live || parametrosInfo.url_padrao || '';
         video_local = parametrosInfo.video_local;
         
-        // Só atualiza vídeo se mudar (evita reload do iframe)
         const videoID = rawVideoID.split('&')[0];
         const newVideoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1`;
-        
-        if (currentVideoUrl !== newVideoUrl) {
-             currentVideoUrl = newVideoUrl;
-             // Lógica de atualização do iframe se necessário
-        }
+        if (currentVideoUrl !== newVideoUrl) currentVideoUrl = newVideoUrl;
         
         tipoDoSorteio = tipoSorteio;
     
         if (abrirYoutubeBtn) {
             const isLocal = String(video_local).toLowerCase() === 'true'; 
             updateEstatisticasPanelWidth(tipoSorteio);
-
             if (isLocal || tipoSorteio != "manual") {
                 abrirYoutubeBtn.classList.add('hidden');
-                if (youtubePanel && !youtubePanel.classList.contains('hidden')) {
-                    abrirYoutubeBtn.click(); 
-                }  
-                if (tipoSorteio === "digital") {
-                   digitalBolaPanel.classList.remove('hidden');
-                }  
+                if (youtubePanel && !youtubePanel.classList.contains('hidden')) abrirYoutubeBtn.click(); 
+                if (tipoSorteio === "digital") digitalBolaPanel.classList.remove('hidden');
             } else {
-                if (tipoSorteio !== "digital") {
-                   digitalBolaPanel.classList.add('hidden');
-                }  
+                if (tipoSorteio !== "digital") digitalBolaPanel.classList.add('hidden');
                 abrirYoutubeBtn.classList.remove('hidden');
             }
         }
@@ -3024,7 +3221,6 @@ async function renderMainContent(data) {
 
     renderAvisoPanel(avisosData);
 
-    // 8. Listeners de Promoção
     if (promocionalContainer) {
         promocionalContainer.onclick = () => {
             hidePromocionalPanel();
@@ -3032,55 +3228,41 @@ async function renderMainContent(data) {
         };
     }
     
-    // 9. Atualização de Paineis Visuais
+    // Passa 'bolasCantadas' (que agora está protegido) para os paineis
     updateNumericPanel(bolasCantadas);
-
     displayLastThree(bolasData && bolasData.length > 0 ? bolasData[0] : {});
-
     displayConferencePanel(confereData, bolasCantadas);
 
-    // 10. Preço da Série
     if (premioInfo && typeof premioInfo.preco === 'number') {
         const preco = premioInfo.preco  / premioInfo.multiplo;
         ValorSerie = preco;
-        const formattedPreco = new Intl.NumberFormat('pt-BR', {
-            style: 'decimal',
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        }).format(preco);
-        
+        const formattedPreco = new Intl.NumberFormat('pt-BR', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(preco);
         if(precoSerieElement) precoSerieElement.textContent = formattedPreco;
         if(mobilePrecoSerieElement) mobilePrecoSerieElement.textContent = formattedPreco;
     }
 
-    // 11. Exibe os períodos de cartelas na tela (Tags azuis)
-    // Se o backend mandar ranges globais, exibe. 
-    // Se preferir exibir os locais (do cliente), use 'cartelaRanges'
     if (cartelaRanges && cartelaRanges.length > 0) {
         displayCardRanges(cartelaRanges);
     } else if (data.cardRanges) {
         displayCardRanges(data.cardRanges); 
     }
 
-    // 12. Exibe informações de Prêmios e Totais
-    displayPrizeInfo(buscandoData, premioData);
+    const dadosParaDisplay = usarDadosFake ? [dadosBuscando] : buscandoData;
+    displayPrizeInfo(dadosParaDisplay, premioData);
+
     displayPrizeValues(premioData, topeData);
    
-   // 13. Exibe Ganhadores da Rodada 
-   
-   if (ganhadoresData && ganhadoresData.length > 0) {
+    if (ganhadoresData && ganhadoresData.length > 0) {
         displayWinnersPanel(ganhadoresData);
     } 
 
-    // Atualiza totalizadores visuais
     const totalAtual = isMobileDevice() ? 
         (mobileTotalCartelasSpan ? parseInt(mobileTotalCartelasSpan.textContent) : 0) : 
         (totalCartelasSpan ? parseInt(totalCartelasSpan.textContent) : 0);
-        
     checkTotalCards(totalAtual);
 }
 
-
+//==============
 async function init() {
     checkDeviceType();
     createNumberPanel();
