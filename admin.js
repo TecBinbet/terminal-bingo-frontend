@@ -277,11 +277,22 @@ function renderGridConferencia(data) {
     const grid = document.getElementById('conf-grid');
     if (!grid) return;
     grid.innerHTML = '';
+
+    // 1. Proteção Básica: Se não tem layout, para aqui.
+    if (!data || !data.layout) {
+        grid.innerHTML = '<span class="text-red-400 text-xs p-2">Dados da cartela indisponíveis.</span>';
+        return;
+    }
     
     const bolas = (data.bolas || bolasSorteadasCache || []).map(String);
-    const tipoJogo = data.layout?.tipo || 90; 
-    let numerosDaCartela = [];
 
+    let tipoJogo = data.layout.tipo;
+    if (!tipoJogo) {
+        if (data.layout.lista && data.layout.lista.length > 0) tipoJogo = 75;
+        else tipoJogo = 90;
+    }
+
+    let numerosDaCartela = [];
     if (tipoJogo === 75) {
         numerosDaCartela = data.layout?.lista || [];
     } else {
@@ -290,6 +301,8 @@ function renderGridConferencia(data) {
                             .concat(data.layout?.inferior || []);
     }
 
+    const ultimaBola = bolas.length > 0 ? bolas[0] : null;
+    console.error("ultimaBola               :",ultimaBola); 
     if (tipoJogo === 75 && numerosDaCartela.length === 25) { 
         grid.className = "grid grid-cols-5 gap-1 bg-black p-2 rounded border border-gray-600 w-full max-w-[300px] mx-auto";
         for (let linha = 0; linha < 5; linha++) {
@@ -298,22 +311,30 @@ function renderGridConferencia(data) {
                 const num = numerosDaCartela[index];
                 const cell = document.createElement('div');
                 const isFree = (index === 12 && num === 0);
-                let marcado = bolas.includes(String(num)) || isFree; 
+                
 
+                let marcado = bolas.includes(String(num)) || isFree; 
+                
+                const isLast = (String(num) === String(ultimaBola));
                 let cssClass = "h-10 w-full flex items-center justify-center font-bold text-sm rounded border ";
                 
-                if (isFree) {
-                    cssClass += "bg-green-600 text-white border-green-400";
-                    cell.textContent = "★";
-                } else {
-                    if (marcado) {
-                        cssClass += "bg-yellow-500 text-black border-yellow-300 shadow-inner";
-                    } else {
-                        cssClass += "bg-gray-800 text-white border-gray-600";
-                    }
-                    cell.textContent = num;
-                }
-                
+                //if (isFree) {
+                //    cssClass += "bg-green-600 text-white border-green-400";
+                //    cell.textContent = "★";
+                cell.textContent = num;
+
+                if (isLast) {
+                    // DESTAQUE DA ÚLTIMA BOLA (Ex: Laranja + Piscando)
+                    cssClass += "bg-orange-600 text-white border-white animate-pulse scale-105 shadow-lg z-10";
+                } 
+                else if (marcado) {
+                    // Marcado Normal (Amarelo)
+                    cssClass += "bg-yellow-500 text-black border-yellow-300 shadow-inner";
+                } 
+                else {
+                    // Não Marcado (Cinza)
+                    cssClass += "bg-gray-800 text-white border-gray-600";
+                }                
                 cell.className = cssClass;
                 grid.appendChild(cell);
             }
@@ -330,7 +351,21 @@ function renderGridConferencia(data) {
                 const cell = document.createElement('div');
                 const marcado = bolas.includes(String(num));
                 
-                cell.className = `w-full h-9 flex items-center justify-center font-bold text-lg rounded border ${marcado ? "bg-yellow-500 text-black border-yellow-300" : "bg-gray-800 text-gray-300 border-gray-600"}`;
+               // AQUI TAMBÉM: Verifica última bola no Bingo 90
+                const isLast = (String(num) === String(ultimaBola));
+                
+                let cssClass = "w-full h-9 flex items-center justify-center font-bold text-lg rounded border ";
+
+                if (isLast) {
+                     cssClass += "bg-orange-600 text-white border-white animate-pulse scale-105 shadow-lg z-10";
+                } else if (marcado) {
+                     cssClass += "bg-yellow-500 text-black border-yellow-300";
+                } else {
+                     cssClass += "bg-gray-800 text-gray-300 border-gray-600";
+                }
+
+                cell.className = cssClass;
+
                 cell.textContent = num;
                 row.appendChild(cell);
             });
@@ -601,7 +636,7 @@ function customAlert(mensagem, titulo = "⚠️ Atenção", tempo = 0) {
         modalActions.innerHTML = '';
         
         const btnOk = document.createElement('button');
-        btnOk.className = "bg-blue-600 hover:bg-blue-500 text-white font-bold py-1 px-6 rounded-lg shadow-lg";
+        btnOk.className = "bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-lg shadow-lg";
         
         if (tempo > 0) {
             btnOk.textContent = `OK (${tempo}s)`;
@@ -636,11 +671,11 @@ function customConfirm(mensagem, titulo = "❓ Confirmação") {
         modalMessage.innerText = mensagem;
         modalActions.innerHTML = '';
         const btnCancel = document.createElement('button');
-        btnCancel.className = "bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-4 rounded-lg";
+        btnCancel.className = "bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-4 rounded-lg";
         btnCancel.textContent = "Cancelar";
         btnCancel.onclick = () => { fecharCustomModal(); resolve(false); };
         const btnConfirm = document.createElement('button');
-        btnConfirm.className = "bg-green-600 hover:bg-green-500 text-white font-bold py-1 px-4 rounded-lg shadow-lg";
+        btnConfirm.className = "bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg";
         btnConfirm.textContent = "Confirmar";
         btnConfirm.onclick = () => { fecharCustomModal(); resolve(true); };
         modalActions.appendChild(btnCancel);
@@ -1664,9 +1699,14 @@ async function processarProximoPremio() {
 
     if (proximoKey) {
         setTimeout(async () => {
-            if (await customConfirm(`Todas as linhas conferidas!\n\nAvançar prêmio para: ${proximoKey}?`)) {
-                await mudarPremio(proximoKey);
-            }
+            // Removemos o 'if (confirm)' e deixamos apenas o Alert e a Ação
+            // Adicionei um título "Próximo Prêmio" e 3 segundos para fechar sozinho (opcional)
+            await customAlert(
+                `Todas as linhas conferidas!\n\nAvançando prêmio para: ${proximoKey}`, 
+                "Avanço Automático", 
+                3
+            );            
+            await mudarPremio(proximoKey);
         }, 500);
     } else {
         setTimeout(async () => {

@@ -1708,196 +1708,136 @@ function processCards90(cards, bolasCantadas, premioBuscado, linhasAtivas) {
 }
 
 
-
 // --- LÓGICA BINGO 75 (CORRIGIDA: VISUALIZAÇÃO E ORDENAÇÃO) ---
 function processCards75(cards, bolasCantadas, premioBuscado) {
-    // console.log(`🔍 [PROCESS 75] Iniciando... Prémio: "${premioBuscado}" | Bolas: ${bolasCantadas.length}`);
-
     const processedCards = [];
     if (premioBuscado === 'BINGO') bingoWinners.clear();
 
-    const premioNormalizado = premioBuscado.replace(/\s+/g, '').toUpperCase();
+    const premioUpper = (premioBuscado || "").toUpperCase();
     const bolasSet = new Set(bolasCantadas);
 
-    // 1. BIBLIOTECA DE PADRÕES
-    const bibliotecaPadroes = {
-        horizontal: [
-            // Linha 1 (Índices 0, 5, 10, 15, 20)
-            [0, 5, 10, 15, 20], 
-            // Linha 2 (Índices 1, 6, 11, 16, 21)
-            [1, 6, 11, 16, 21], 
-            // Linha 3 (Índices 2, 7, 12, 17, 22)
-            [2, 7, 12, 17, 22], 
-            // Linha 4 (Índices 3, 8, 13, 18, 23)
-            [3, 8, 13, 18, 23], 
-            // Linha 5 (Índices 4, 9, 14, 19, 24)
-            [4, 9, 14, 19, 24]
-        ],
-        vertical: [
-            // Coluna B (0 a 4)
-            [0, 1, 2, 3, 4], 
-            // Coluna I (5 a 9)
-            [5, 6, 7, 8, 9], 
-            // Coluna N (10 a 14)
-            [10, 11, 12, 13, 14], 
-            // Coluna G (15 a 19)
-            [15, 16, 17, 18, 19], 
-            // Coluna O (20 a 24)
-            [20, 21, 22, 23, 24]
-        ],
-        diagonal: [
-            [0, 6, 12, 18, 24], // Esq-Sup para Dir-Inf
-            [4, 8, 12, 16, 20]  // Esq-Inf para Dir-Sup
-        ]
-    };
+    // --- CONFIGURAÇÃO IDÊNTICA AO SERVER.PY ---
+    // Índices do Array 0..24 (Colunas no Banco -> Linhas Visuais)
+    const linhasIndices = [
+        [0, 5, 10, 15, 20], // Linha 1 (Superior)
+        [1, 6, 11, 16, 21], // Linha 2
+        [2, 7, 12, 17, 22], // Linha 3 (Central - Inclui Free)
+        [3, 8, 13, 18, 23], // Linha 4
+        [4, 9, 14, 19, 24]  // Linha 5 (Inferior)
+    ];
+    const indicesCantos = [0, 4, 20, 24]; // B1, B5, O1, O5
 
-    // 2. Monta lista de padrões ativos
-    let padroesAtivos = [];
-    if (typeof configBingo75 !== 'undefined') {
-        if (configBingo75.horizontal) padroesAtivos.push(...bibliotecaPadroes.horizontal);
-        if (configBingo75.vertical) padroesAtivos.push(...bibliotecaPadroes.vertical);
-        if (configBingo75.diagonal) padroesAtivos.push(...bibliotecaPadroes.diagonal);
-    } else {
-        padroesAtivos.push(...bibliotecaPadroes.horizontal);
-    }
-
-    const buscaLinha = premioNormalizado.includes('LINHA');
-    const buscaCantos = premioNormalizado.includes('CANTOS') || premioNormalizado.includes('QUADRA');
-    const buscaBingo = premioNormalizado.includes('BINGO') && !buscaLinha && !buscaCantos; // Bingo só se não for fase anterior
+    // Decide o Modo de Jogo baseado no Prêmio
+    const buscarBingo = premioUpper.includes('BINGO') || premioUpper.includes('ACUMULADO');
+    // Se não for Bingo, verifica se é fase de Linha ou Cantos
+    const buscarLinha = !buscarBingo && (premioUpper.includes('LINHA') || premioUpper.includes('4 CANTOS E LINHA'));
+    const buscarCantos = !buscarBingo && (premioUpper.includes('CANTOS') || premioUpper.includes('QUADRA'));
 
     cards.forEach(card => {
-        let rawList = card.numeros || card.em_ordem || [];
-        if (typeof rawList === 'string') {
-            rawList = rawList.split(',').map(n => parseInt(n.trim()));
-        }
-        
+        let rawList = card.numeros || card.em_ordem || card.lista_75 || [];
+        // Normaliza string para array se necessário
+        if (typeof rawList === 'string') rawList = rawList.split(',').map(Number);
         if (!Array.isArray(rawList) || rawList.length < 24) return;
 
-        let countGeral = 0;
-        let countCantos = 0;
-        const indicesCantos = [0, 4, 20, 24];
-        let faltamCantosSet = []; // Para exibição visual
-        
-        // A. Contagem Geral e Cantos
-        rawList.forEach((num, idx) => {
-            if (num === 0 || bolasSet.has(num)) {
-                countGeral++;
-                if (indicesCantos.includes(idx)) countCantos++;
-            } else {
-                // Se não marcou
-                if (indicesCantos.includes(idx)) faltamCantosSet.push(num);
+        // 1. CÁLCULO GERAL (BINGO CHEIO)
+        // Filtra: não é 0 (Free) E não foi sorteado
+        const faltamGeral = rawList.filter(n => n !== 0 && !bolasSet.has(n));
+        const countGeral = faltamGeral.length;
+
+        // 2. CÁLCULO LINHA (Melhor Linha Horizontal)
+        let melhorLinhaFaltam = 99;
+        let numerosFaltantesLinha = [];
+        let linhaCompleta = false;
+
+        linhasIndices.forEach(indices => {
+            // Pega os números desta linha específica
+            const faltamNesta = indices
+                .map(i => rawList[i])
+                .filter(n => n !== 0 && !bolasSet.has(n));
+            
+            const qtd = faltamNesta.length;
+            // Se esta linha for melhor (menos faltantes), guarda ela
+            if (qtd < melhorLinhaFaltam) {
+                melhorLinhaFaltam = qtd;
+                numerosFaltantesLinha = faltamNesta;
             }
+            if (qtd === 0) linhaCompleta = true;
         });
 
-        // B. Contagem de Linhas (Descobre a Melhor Linha)
-        let maxLinhaCount = 0;
-        let completouLinha = false;
-        let faltamNaMelhorLinha = []; // Para exibição visual
+        // 3. CÁLCULO CANTOS
+        const faltamCantos = indicesCantos
+            .map(i => rawList[i])
+            .filter(n => n !== 0 && !bolasSet.has(n));
+        const countCantos = faltamCantos.length;
+        const cantosCompleto = (countCantos === 0);
 
-        if (padroesAtivos.length > 0) {
-            padroesAtivos.forEach((padrao) => {
-                let countNestaLinha = 0;
-                let faltamNesta = [];
-                
-                padrao.forEach(idx => {
-                    const num = rawList[idx];
-                    if (num === 0 || bolasSet.has(num)) {
-                        countNestaLinha++;
-                    } else {
-                        faltamNesta.push(num);
-                    }
-                });
+        // 4. DECISÃO FINAL (O que mostrar na tela?)
+        let missingToDisplay = [];
+        let qtdeParaRanking = 99;
+        let premioEncontrado = null;
 
-                // Se esta linha for a melhor da cartela até agora, guarda os dados dela
-                if (countNestaLinha > maxLinhaCount) {
-                    maxLinhaCount = countNestaLinha;
-                    faltamNaMelhorLinha = faltamNesta;
-                }
-                if (countNestaLinha === 5) completouLinha = true;
-            });
-        }
-
-        // --- DEFINIÇÃO DO QUE MOSTRAR NA TELA (missingNumbers) ---
-        let missing = [];
-        
-        // Se estamos buscando LINHA e a cartela tem um bom jogo de linha (mais de 2 acertos), mostra o que falta pra linha
-        if (buscaLinha && maxLinhaCount >= 2) {
-             missing = faltamNaMelhorLinha;
+        if (buscarBingo) {
+            // Modo Bingo: Mostra tudo o que falta
+            missingToDisplay = faltamGeral;
+            qtdeParaRanking = countGeral;
+            if (countGeral === 0) premioEncontrado = 'BINGO';
         } 
-        // Se estamos buscando CANTOS e não linha
-        else if (buscaCantos && !buscaLinha) {
-             missing = faltamCantosSet;
+        else if (buscarLinha && buscarCantos) {
+            // Modo Híbrido (4 Cantos E Linha): Mostra o mais próximo
+            if (melhorLinhaFaltam <= countCantos) {
+                missingToDisplay = numerosFaltantesLinha;
+                qtdeParaRanking = melhorLinhaFaltam;
+            } else {
+                missingToDisplay = faltamCantos;
+                qtdeParaRanking = countCantos;
+            }
+            // Checa vitórias
+            if (linhaCompleta) premioEncontrado = 'LINHA';
+            if (cantosCompleto) premioEncontrado = (premioEncontrado ? premioEncontrado + ' E ' : '') + '4 CANTOS';
         }
-        // Senão, mostra o geral (Bingo Cheio)
+        else if (buscarLinha) {
+            // Modo Só Linha: Mostra só a melhor linha
+            missingToDisplay = numerosFaltantesLinha;
+            qtdeParaRanking = melhorLinhaFaltam;
+            if (linhaCompleta) premioEncontrado = 'LINHA';
+        }
+        else if (buscarCantos) {
+            // Modo Só Cantos: Mostra só os cantos
+            missingToDisplay = faltamCantos;
+            qtdeParaRanking = countCantos;
+            if (cantosCompleto) premioEncontrado = '4 CANTOS';
+        }
         else {
-             missing = rawList.filter(n => n !== 0 && !bolasSet.has(n));
+            // Fallback: Mostra Geral
+            missingToDisplay = faltamGeral;
+            qtdeParaRanking = countGeral;
         }
 
-        let cardObj = {
+        // Sons e Efeitos
+        if (premioEncontrado && !bingoWinners.has(card.cartao + '_' + premioEncontrado)) {
+             // Lógica de disparo de som/gif aqui se necessário
+        }
+
+        processedCards.push({
             cartao: card.cartao,
-            linhaId: null, 
-            counts: { 
-                geral: countGeral, 
-                cantos: countCantos, 
-                linha: maxLinhaCount 
+            counts: {
+                ranking: qtdeParaRanking // Usado para ordenar
             },
-            premioEncontrado: null,
-            originalData: { geral: rawList },
-            layoutGrid: rawList,
-            missingNumbers: missing, // Agora contém os números corretos (ex: 15, 42)
+            missingNumbers: missingToDisplay, // Números específicos do prêmio (Destaque)
+            premioEncontrado: premioEncontrado,
+            layoutGrid: rawList, // Grid completo para desenho
             type: 75
-        };
-
-        // --- Verificações de Vitória ---
-        if (premioNormalizado.includes('BINGO') && countGeral === 25) { 
-             cardObj.premioEncontrado = 'BINGO';
-             bingoWinners.add(card.cartao);
-             playPremiadoSound(bingoSound);
-             showPremiadoGif('bingo');
-        } 
-        else if (buscaCantos && countCantos === 4) {
-             cardObj.premioEncontrado = '4 CANTOS';
-             playPremiadoSound(quadraSound);
-             showPremiadoGif('quadra');
-        }
-        else if (buscaLinha) {
-             if (completouLinha) {
-                 cardObj.premioEncontrado = 'LINHA';
-                 playPremiadoSound(linhaSound); 
-                 showPremiadoGif('linha');
-             }
-        }
-
-        processedCards.push(cardObj);
+        });
     });
 
-    // --- ORDENAÇÃO INTELIGENTE (CORREÇÃO DO TOP 6) ---
-    
-    if (buscaLinha && buscaCantos) {
-        // Se o prêmio é "4 CANTOS E LINHA", o melhor card é aquele que está mais perto de bater QUALQUER UM DOS DOIS.
-        // Ordenamos pelo MAIOR valor entre (pontos na linha) e (pontos nos cantos)
-        processedCards.sort((a, b) => {
-            const melhorA = Math.max(a.counts.linha, a.counts.cantos);
-            const melhorB = Math.max(b.counts.linha, b.counts.cantos);
-            return melhorB - melhorA; // Decrescente
-        });
-    } 
-    else if (buscaCantos) {
-        processedCards.sort((a, b) => b.counts.cantos - a.counts.cantos);
-    } 
-    else if (buscaLinha) {
-        processedCards.sort((a, b) => b.counts.linha - a.counts.linha);
-    } 
-    else {
-        processedCards.sort((a, b) => b.counts.geral - a.counts.geral);
-    }
+    // 5. ORDENAÇÃO (Menos faltantes no topo)
+    processedCards.sort((a, b) => a.counts.ranking - b.counts.ranking);
 
     loadedCards = processedCards;
-    displayLoadedCards(bolasCantadas);
+    
+    // Renderiza
+    displayLoadedCards(bolasCantadas); 
 }
-
-
-
 
 
 // Helper para finalizar e chamar o display
@@ -2781,7 +2721,7 @@ function getBallColorClass(numero) {
 
 function updateDigitalBola(numeroBola) {
     if (!bolaDigitalElement) return;
-    
+
     const allBgColors = [
         'bg-gray-700', 'bg-blue-600', 'bg-red-600', 
         'bg-purple-600', 'bg-green-600', 'bg-yellow-600'
@@ -2814,7 +2754,7 @@ function updateEstatisticasPanelWidth(tipoSorteio) {
 
     estatisticasPanel.classList.remove(classDigital, classPadrao);
 
-    if (tipoSorteio === "digital") {
+    if (tipoSorteio !== "manual") {
         estatisticasPanel.classList.add(classDigital);
     } else {
         estatisticasPanel.classList.add(classPadrao);
@@ -2968,13 +2908,7 @@ function renderOscartoes75(bolasInput) {
     } else if (typeof globalBolasCantadas !== 'undefined' && Array.isArray(globalBolasCantadas)) {
         listaRealDeBolas = globalBolasCantadas;
     }
-    // Proteção contra zero e criação do Set
     const bolasSet = new Set(listaRealDeBolas.map(b => parseInt(b)).filter(b => b > 0));
-
-    const containers = [
-        document.getElementById('oscartoes-content'),        
-        document.getElementById('mobile-oscartoes-content') 
-    ];
 
     const formattedCount = new Intl.NumberFormat('pt-BR').format(typeof cartelasEmJogo !== 'undefined' ? cartelasEmJogo : 0);
     const textoTitulo = `Top 10 Melhores (${formattedCount})`;
@@ -2987,13 +2921,14 @@ function renderOscartoes75(bolasInput) {
     let dadosParaRenderizar = (loadedCards && loadedCards.length > 0) ? loadedCards.slice(0, 10) : [];
     const conteudoVazio = dadosParaRenderizar.length === 0;
 
-    const premioRaw = typeof buscando_o_premio !== 'undefined' ? buscando_o_premio : '';
-    const isModoLinhaOuQuadra = premioRaw.toUpperCase().includes('LINHA') || premioRaw.toUpperCase().includes('QUADRA');
+    const containers = [
+        document.getElementById('oscartoes-content'),        
+        document.getElementById('mobile-oscartoes-content') 
+    ];
 
     containers.forEach(container => {
         if (!container) return; 
         
-        // --- CORREÇÃO: USAR FRAGMENTO PARA NÃO PISCAR ---
         const fragment = document.createDocumentFragment();
         let newClasses = '';
 
@@ -3001,74 +2936,74 @@ function renderOscartoes75(bolasInput) {
             newClasses = 'flex flex-col items-center justify-center h-full';
             const p = document.createElement('p');
             p.className = 'text-center text-gray-500 text-xs mt-4';
-            p.textContent = 'Aguardando...';
+            p.textContent = 'Aguardando início...';
             fragment.appendChild(p);
         } else {
             newClasses = 'grid grid-cols-2 gap-2 pb-4 content-start';
-            
-            // Ajuste de altura dinâmica
-            container.style.maxHeight = (typeof telaFull !== 'undefined' && telaFull) ? '420px' : '320px';
+            container.style.maxHeight = (typeof telaFull !== 'undefined' && telaFull) ? '480px' : '380px';
 
             dadosParaRenderizar.forEach(cardData => {
                 const numeroCartao = cardData.cartao;
                 const numerosGerais = cardData.layoutGrid || [];
-                if (!numerosGerais || numerosGerais.length < 24) return;
-
-                let targetRowIndex = -1; 
-                if (isModoLinhaOuQuadra) {
-                    const visualRows = [
-                       [0, 5, 10, 15, 20], [1, 6, 11, 16, 21], [2, 7, 12, 17, 22], 
-                       [3, 8, 13, 18, 23], [4, 9, 14, 19, 24]
-                    ];
-                    let maxHits = -1;
-                    visualRows.forEach((rowIndices, rIdx) => {
-                        let hits = 0;
-                        rowIndices.forEach(idx => {
-                            const val = parseInt(numerosGerais[idx]);
-                            if (val === 0 || bolasSet.has(val)) hits++;
-                        });
-                        if (hits > maxHits) { maxHits = hits; targetRowIndex = rIdx; }
-                    });
-                }
+                
+                if (numerosGerais.length < 24) return;
 
                 const cardDiv = document.createElement('div');
                 cardDiv.className = 'bg-gray-900 border border-gray-700 rounded p-1 flex flex-col gap-0.5 shadow-sm';
 
+                // Usa a lista calculada no processCards75 para saber quantos faltam "de verdade" para o prêmio
                 const faltam = cardData.missingNumbers ? cardData.missingNumbers.length : 25;
-                const faltamClass = faltam <= 1 ? 'text-green-400 animate-pulse' : 'text-blue-400';
+//                const faltamClass = faltam === 0 ? 'text-green-400 animate-pulse font-black' : (faltam <= 1 ? 'text-yellow-400 animate-pulse' : 'text-blue-400');
+ 
+               const faltamClass = faltam <= 1 ? 'text-green-400 animate-pulse font-bold' : 'text-blue-400 font-bold';
+               
                 const header = document.createElement('div');
                 header.className = 'flex justify-between items-center border-b border-gray-700 pb-0.5 mb-0.5';
-                header.innerHTML = `<span class="text-gray-400 font-bold text-[10px]">Cartela: <span class="text-yellow-500">${numeroCartao}</span></span><span class="text-[10px] font-bold ${faltamClass}">Faltam: ${faltam}</span>`;
+                header.innerHTML = `
+                    <span class="text-gray-400 font-bold text-[10px]">Cartela: <span class="text-yellow-500">${numeroCartao}</span></span>
+                    <span class="text-[10px] font-bold ${faltamClass}">Faltam: ${faltam}</span>
+                `;
                 cardDiv.appendChild(header);
 
                 const grid = document.createElement('div');
                 grid.className = 'grid grid-cols-5 gap-0.5';
 
+                // Mapeamento Visual (0, 5, 10...)
                 const ordemVisual = [0, 5, 10, 15, 20, 1, 6, 11, 16, 21, 2, 7, 12, 17, 22, 3, 8, 13, 18, 23, 4, 9, 14, 19, 24];
+                
+                // Cria um Set dos números que faltam PARA O PRÊMIO (para destacar)
+                const missingSet = new Set(cardData.missingNumbers || []);
 
                 ordemVisual.forEach((realIndex, visualIndex) => {
                     const num = parseInt(numerosGerais[realIndex]);
                     const cell = document.createElement('div');
                     let cellClass = 'h-4 w-full flex items-center justify-center text-[9px] font-bold rounded border ';
                     
-                    const isFree = false; 
+                    const isFree = (num === 0 || (visualIndex === 12 && num === 0));
+                    
                     if (isFree) {
-                        cellClass += 'bg-green-700 text-white border-green-500';
-                        cell.textContent = '★';
-                    } else if (bolasSet.has(num)) {
-                        // CORREÇÃO VISUAL: PADRONIZAÇÃO DAS CORES
+                        // ESPAÇO GRÁTIS
+                        cellClass += 'bg-yellow-700 text-yellow-100 border-yellow-600';
+                        cell.textContent = '★'; 
+                    } 
+                    else if (bolasSet.has(num)) {
+                        // 1. JÁ SORTEADO (Cinza Escuro / Apagado)
                         cellClass += 'bg-gray-800 text-gray-600 border-gray-800'; 
                         cell.textContent = num;
-                    } else {
-                        let isTargetLine = true;
-                        if (isModoLinhaOuQuadra) {
-                            const currentRow = Math.floor(visualIndex / 5);
-                            if (currentRow !== targetRowIndex) isTargetLine = false;
-                        }
-                        if (isTargetLine) cellClass += 'bg-gray-800 text-white border-yellow-600 shadow-sm';
-                        else cellClass += 'bg-gray-900 text-gray-400 border-gray-800 opacity-40';
+                    } 
+                    else if (missingSet.has(num)) {
+                        // 2. DESTAQUE (Branco com Borda Amarela)
+                        // Este número faz parte da Linha/Canto que estamos buscando
+                        cellClass += 'bg-gray-800 text-white border-yellow-600 shadow-sm'; 
+                        cell.textContent = num;
+                    } 
+                    else {
+                        // 3. OUTROS FALTANTES (Cinza Claro discreto)
+                        // Número falta, mas não na linha principal
+                        cellClass += 'bg-gray-800 text-gray-400 border-gray-800'; 
                         cell.textContent = num;
                     }
+                    
                     cell.className = cellClass;
                     grid.appendChild(cell);
                 });
@@ -3077,7 +3012,7 @@ function renderOscartoes75(bolasInput) {
                 
                 if (cardData.premioEncontrado) {
                     const footer = document.createElement('div');
-                    footer.className = 'mt-0.5 text-center text-[8px] font-bold rounded py-0.5 animate-prize-blink bg-yellow-900 text-yellow-100';
+                    footer.className = 'mt-0.5 text-center text-[8px] font-bold rounded py-0.5 animate-prize-blink bg-yellow-600 text-black uppercase';
                     footer.textContent = `${cardData.premioEncontrado}`;
                     cardDiv.appendChild(footer);
                 }
@@ -3085,13 +3020,11 @@ function renderOscartoes75(bolasInput) {
             });
         }
 
-        // --- ATUALIZAÇÃO ATÔMICA ---
         container.innerHTML = '';
         container.className = newClasses;
         container.appendChild(fragment);
     });
 }
-
 
 
 async function renderMainContent(data) {
@@ -3151,8 +3084,8 @@ async function renderMainContent(data) {
 
     const proximaBola = (bolasData && bolasData.length > 0 && bolasData[0].proxima_bola) ? bolasData[0].proxima_bola : "--";
     const ultimaBolaDaLista = bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : null;
-
-    if (tipoDoSorteio !== 'manual') updateDigitalBola(proximaBola);
+    
+      if (tipoDoSorteio !== 'manual') updateDigitalBola(proximaBola);
 
     // =========================================================================
     // >>> PROTEÇÃO ANTI-PISCA NOS DADOS DE PRÊMIO <<<
@@ -3232,9 +3165,9 @@ async function renderMainContent(data) {
             if (isLocal || tipoSorteio != "manual") {
                 abrirYoutubeBtn.classList.add('hidden');
                 if (youtubePanel && !youtubePanel.classList.contains('hidden')) abrirYoutubeBtn.click(); 
-                if (tipoSorteio === "digital") digitalBolaPanel.classList.remove('hidden');
+                if (tipoSorteio !== "manual") digitalBolaPanel.classList.remove('hidden');
             } else {
-                if (tipoSorteio !== "digital") digitalBolaPanel.classList.add('hidden');
+                if (tipoSorteio === "manual") digitalBolaPanel.classList.add('hidden');
                 abrirYoutubeBtn.classList.remove('hidden');
             }
         }

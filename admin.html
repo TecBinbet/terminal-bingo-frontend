@@ -492,7 +492,7 @@
 
     <div id="modal-conferencia" class="fixed inset-0 bg-black/0 hidden z-[70] flex flex-col items-center justify-center backdrop-blur-md">
         
-        <div class="w-full max-w-md bg-gray-800 p-2 rounded-t-2xl border-x-4 border-t-4 border-blue-600 flex justify-between items-center">
+        <div class="w-full max-w-md bg-gray-800 p-2 -mb-3 -mt-1 rounded-t-2xl border-x-4 border-t-4 border-blue-600 flex justify-between items-center">
             <h3 class="text-xl font-black text-yellow-400 uppercase tracking-widest pl-2">🕵️ AUDITORIA</h3>
             <button onclick="encerrarSessaoConferencia()" class="bg-red-600 hover:bg-red-500 text-white font-bold py-1 px-4 rounded text-xs uppercase">
                 ENCERRAR E AVANÇAR ⮕
@@ -501,21 +501,20 @@
 
         <div class="bg-gray-800 border-x-4 border-b-4 border-blue-600 rounded-b-2xl shadow-2xl p-2 w-full max-w-md flex flex-col items-center gap-4">
      
-
-<div class="mt-2 border-t border-gray-700 pt-3">
-    <h3 class="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-1">
-        Aguardando Validação:
-    </h3>
-    <div id="lista-pendentes-contemplados">
-        <div class="text-gray-500 text-xs py-2 text-center italic">Carregando...</div>
-    </div>
-</div>
+            <div class=" border-t border-gray-700">
+               <h3 class="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-1">
+                     Aguardando Validação:
+               </h3>
+               <div id="lista-pendentes-contemplados">
+                    <div class="text-gray-500 text-xs py-2 text-center italic">Carregando...</div>
+               </div>
+            </div>
        
             <div class="w-full bg-gray-900 p-1 rounded-xl border border-gray-600 flex flex-col gap-2 -mt-3">
-                <label class="text-xs text-gray-400 font-bold uppercase">Digite a Cartela para Conferir:</label>
-                <div class="flex gap-2">
-                    <input type="number" id="input-auditoria" class="w-full bg-black border-2 border-blue-500 rounded p-0 -mt-2 text-white font-black text-xl text-center focus:outline-none focus:border-yellow-400" placeholder="000">
-                    <button onclick="validarCartelaAuditoria()" class="bg-blue-700 hover:bg-blue-500 text-white font-bold px-4  rounded text-xl shadow-lg">OK</button>
+                <label class="text-xs text-gray-400 font-bold uppercase">Digite a Cartela a ser Conferida:</label>
+                <div class="flex gap-1">
+                    <input type="number" id="input-auditoria" class="w-full bg-black border-2 border-blue-500 rounded -mt-2 text-white font-black text-2xl text-center focus:outline-none focus:border-yellow-400" placeholder="00000">
+                    <button onclick="validarCartelaAuditoria()" class="bg-blue-700 hover:bg-blue-500 text-white font-bold px-4 py-1 rounded text-xl shadow-lg">OK</button>
                 </div>
             </div>
 
@@ -523,10 +522,10 @@
                 
                 <div class="text-center border-b border-gray-700 -mt-3 pb-2">
                     <p id="conf-msg" class="text-lg font-bold text-white animate-pulse">...</p>
-                    <span id="conf-info" class="text-sm font-bold text-blue-300 block">#000 - Nome</span>
+                    <span id="conf-info" class="-mt-2 -mb-2 text-2xl font-bold text-blue-300 block">#000 - Nome</span>
                 </div>
 
-                <div id="conf-grid" class="flex flex-col gap-2 bg-black p-2 -mt-2  rounded-lg border border-gray-600"></div>
+                <div id="conf-grid" class="flex flex-col gap-2 bg-black p-2 -mt-1  rounded-lg border border-gray-600"></div>
 
                 <button id="btn-confirmar-ganhador" onclick="confirmarGanhadorAtual()" class="hidden w-full bg-green-700 hover:bg-green-500 text-white font-bold py-3 rounded-lg shadow-lg uppercase tracking-wide flex items-center justify-center gap-2 ">
                     <span>🏆</span> CONFIRMAR GANHADOR
@@ -534,7 +533,7 @@
             </div>
 
             <div class="w-full bg-gray-900 rounded p-2 -mt-3 border border-gray-700">
-                <p class="text-[10px] text-gray-500 uppercase mb-1">Confirmados nesta rodada:</p>
+                <p class="text-[10px] text-gray-400 uppercase mb-1 -mt-2">Confirmados nesta rodada:</p>
                 <div id="lista-auditoria-session" class="flex flex-wrap gap-2 text-xs font-mono text-yellow-500 h-10 overflow-y-auto">
                     </div>
             </div>

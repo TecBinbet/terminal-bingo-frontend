@@ -188,6 +188,7 @@ local_data = {}
 mongo_data = {}
 stop_flag = threading.Event()
 timeStart = None
+CACHE_MAX_BOLAS = 90
 
 # --- CACHE EM MEMÓRIA (VELOCIDADE MÁXIMA) ---
 CACHE_JOGO = {
@@ -1436,7 +1437,7 @@ def publicar_bola():
 
 @app.route('/api/admin/sortear_mesa', methods=['POST'])
 def admin_sortear_mesa():
-    global db, timeStart
+    global db, timeStart, CACHE_MAX_BOLAS
     if db is None: return jsonify({'error': 'Sem conexão com DB'}), 500
     
     try:
@@ -1450,7 +1451,7 @@ def admin_sortear_mesa():
         bolas_cantadas = dados_bolas.get('bolas_cantadas', []) if dados_bolas else []
         
         # Define máximo de bolas (ajuste se for 75 ou 90 conforme sua config global)
-        MAX_BOLAS = 90 
+        MAX_BOLAS = CACHE_MAX_BOLAS 
 
         # 2. Verifica fim de jogo
         if len(bolas_cantadas) >= MAX_BOLAS:
@@ -1508,7 +1509,7 @@ def admin_sortear_mesa():
 # Endpoint para Sortear Bola
 @app.route('/api/admin/sortear', methods=['POST'])
 def admin_sortear():
-    global db, timeStart
+    global db, timeStart, CACHE_MAX_BOLAS
     if db is None: return jsonify({'error': 'Sem conexão com DB'}), 500
     
     try:
@@ -1520,8 +1521,10 @@ def admin_sortear():
         dados_bolas = db.bolas.find_one({})
         bolas_cantadas = dados_bolas.get('bolas_cantadas', []) if dados_bolas else []
         
+        MAX_BOLAS = CACHE_MAX_BOLAS 
+
         # 2. Verifica fim de jogo
-        if len(bolas_cantadas) >= 90:
+        if len(bolas_cantadas) >= MAX_BOLAS:
             return jsonify({'error': 'Todas as bolas já foram sorteadas'}), 400
 
         nova_bola = 0
@@ -1529,14 +1532,14 @@ def admin_sortear():
         if bola_manual:
             # --- MODO MANUAL ---
             nova_bola = int(bola_manual)
-            if nova_bola < 1 or nova_bola > 90:
-                return jsonify({'error': 'Bola deve ser entre 1 e 90'}), 400
+            if nova_bola < 1 or nova_bola > MAX_BOLAS:
+                return jsonify({'error': f'Bola deve ser entre 1 e {MAX_BOLAS}'}), 400
             if nova_bola in bolas_cantadas:
                 return jsonify({'error': f'Bola {nova_bola} já foi sorteada!'}), 400
         else:
             # --- MODO AUTOMÁTICO (RANDOM) ---
             import random
-            todas_bolas = list(range(1, 91))
+            todas_bolas = list(range(1, MAX_BOLAS + 1))
             disponiveis = [b for b in todas_bolas if b not in bolas_cantadas]
             if not disponiveis: return jsonify({'error': 'Todas as bolas sorteadas'}), 400
             nova_bola = random.choice(disponiveis)
@@ -1755,6 +1758,7 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
         if i == 0: str_numeros_formatada += num_str
         else: str_numeros_formatada += separador + num_str
 
+
     # 5. GRAVAÇÃO NA TV (CONFERE)
     db.confere.delete_many({})
     db.confere.insert_one({
@@ -1818,66 +1822,90 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
 
 @app.route('/api/admin/validar_cartela_75', methods=['POST'])
 def admin_validar_cartela_75():
-    global db
-    if db is None: return jsonify({'status_code': 'ERROR', 'msg': 'Sem conexão DB'})
-    
-    data = request.json or {}
-    raw_cartela = data.get('cartela')
-    
-    try: cartela_id = int(raw_cartela)
-    except: return jsonify({'status_code': 'ERROR', 'msg': 'Número de cartela inválido'})
-    
     try:
-        # 1. Dados Iniciais
+        data = request.json
+        cartela_id_str = str(data.get('cartela'))
+        try:
+            cartela_id_int = int(cartela_id_str)
+        except:
+            return jsonify({'status_code': 'ERROR', 'msg': 'Cartela inválida', 'layout': {'lista': []}})
+        
+        # 1. IDENTIFICA O EVENTO ATIVO
         rodada_info = db.rodada.find_one({})
         id_evento_ativo = rodada_info.get('id_evento') if rodada_info else 0
         
-        # 2. Venda e Ganhador (Lógica simplificada, adaptada do bloco 90)
-        try: sales_db = get_sales_db_connection()
-        except: sales_db = None
-            
-        nome_ganhador = "Desconhecido"
-        col_vendas_name = f"vendas{id_evento_ativo}"
+        if not id_evento_ativo:
+             return jsonify({'status_code': 'ERROR', 'msg': 'Nenhum evento ativo.', 'layout': {'lista': []}})
+
+        # ==============================================================================
+        # OTIMIZAÇÃO: BUSCA O NOME DIRETAMENTE DO CACHE DO JOGO (MELHORES/TOP 10)
+        # ==============================================================================
+        ganhador_nome = "Balcão / Anônimo"
         
-        if sales_db is not None and col_vendas_name in sales_db.list_collection_names():
-             venda_encontrada = sales_db[col_vendas_name].find_one({
-                '$or': [
-                    { 'numero_inicial': {'$lte': cartela_id}, 'numero_final': {'$gte': cartela_id} },
-                    { 'numero_inicial2': {'$lte': cartela_id}, 'numero_final2': {'$gte': cartela_id} }
-                ]
-             })
-             if not venda_encontrada:
-                  return jsonify({'status_code': 'NOT_SOLD', 'msg': f'⛔ Cartela {cartela_id} NÃO VENDIDA!'})
-             nome_ganhador = venda_encontrada.get('nome_cliente', 'Cliente Balcão')
+        # A coleção 'melhores' já contém as cartelas em jogo com os nomes processados
+        # Se a cartela está validando prêmio, ela certamente está nesta lista.
+        cartela_em_jogo = db.melhores.find_one({
+            "$or": [{"cartela": cartela_id_str}, {"cartela": cartela_id_int}]
+        })
 
-        # 3. Busca Layout
+        if cartela_em_jogo:
+            # Pega o nome que já foi processado pelo motor do jogo
+            ganhador_nome = cartela_em_jogo.get('nome', 'Cliente Sem Nome')
+            print(f"✅ [CACHE] Nome recuperado de 'melhores': {ganhador_nome}")
+        else:
+            # Se não está nos melhores, é muito estranho (pode ser cartela não vendida ou erro)
+            # Mantemos como Anônimo ou podemos bloquear se preferir.
+            print(f"⚠️ [CACHE] Cartela {cartela_id_str} não encontrada em 'melhores'. Usando Anônimo.")
 
-        cartela_doc = db.cartelas.find_one({'cartao': cartela_id})
-        if not cartela_doc: 
-            return jsonify({'status_code': 'MISSING_MATRIX', 'msg': 'Layout não cadastrado.'})
+        # ==============================================================================
 
-        # 4. Dados do Jogo
-        dados_bolas = db.bolas.find_one({})
+        # 3. BUSCA LAYOUT (Para desenhar no Admin)
+        cartela = db.cartelas.find_one({
+            "$or": [{"cartao": cartela_id_str}, {"cartao": cartela_id_int}]
+        })
+
+        if not cartela:
+            return jsonify({'status_code': 'NOT_FOUND', 'msg': 'Layout não encontrado', 'layout': { 'lista': [] }}), 404
+
+        # 4. PREPARA DADOS
+        dados_bolas = db.bolas_mesa.find_one({})
         bolas_lista = dados_bolas.get('bolas_cantadas', []) if dados_bolas else []
-        premio_doc = db.buscando.find_one({})
-        premio_nome = premio_doc.get('buscando_o_premio', '').replace(" ", "").upper()
         
-        # 5. Chama a Lógica de Validação 75
-        resultado = logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome, id_evento_ativo, nome_ganhador)
-      
-        return jsonify(resultado)
+        premio_doc = db.buscando_mesa.find_one({})
+        premio_nome = premio_doc.get('buscando_o_premio', 'BINGO').upper()
+        
+        # 5. EXECUTA VALIDAÇÃO E ENVIA PARA TV
+        resultado = logica_validacao_bingo_75(
+            cartela_id_str, 
+            cartela, 
+            bolas_lista, 
+            premio_nome, 
+            id_evento_ativo, 
+            ganhador_nome
+        )
+
+        numeros_cartela = cartela.get('geral') or cartela.get('numeros') or cartela.get('lista_75') or []
+
+        return jsonify({
+            'status_code': resultado['status_code'],
+            'msg': resultado['msg'],
+            'cartela_id': cartela_id_str,
+            'ganhador': ganhador_nome,
+            'bolas': resultado['bolas'],
+            'layout': { 'tipo': 75, 'lista': numeros_cartela }
+        })
 
     except Exception as e:
-        print(f"❌ Erro Fatal Validação 75 Rota: {e}")
+        print(f"Erro validar 75: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'status_code': 'ERROR', 'msg': str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/admin/validar_cartela', methods=['POST'])
 def admin_validar_cartela():
     global db
-    print("📥 [VALIDAÇÃO] Recebendo requisição...") # Log para debug
+    print("📥 [VALIDAÇÃO 90] Recebendo requisição...") # Log para debug
     
     if db is None: 
         print("❌ Erro: DB desconectado.")
@@ -1897,30 +1925,31 @@ def admin_validar_cartela():
         if not id_evento_ativo:
              return jsonify({'status_code': 'ERROR', 'msg': 'Nenhum evento ativo.'})
 
-        # 2. VERIFICA SE A CARTELA FOI VENDIDA
-        # (Tenta importar a função de conexão, se não existir, define None)
-        try: sales_db = get_sales_db_connection()
-        except: sales_db = None
+        # ==============================================================================
+        # 2. VERIFICA O NOME (OTIMIZADO VIA CACHE MELHORES)
+        # Substitui a busca lenta no banco de vendas pela busca rápida no cache do jogo
+        # ==============================================================================
+        nome_ganhador = "Balcão / Anônimo"
+        
+        # Busca na coleção 'melhores'. Verifica int e str para garantir.
+        cartela_cache = db.melhores.find_one({
+            '$or': [
+                {'cartela': cartela_id}, 
+                {'cartela': str(cartela_id)}
+            ]
+        })
+        
+        if cartela_cache:
+            nome_ganhador = cartela_cache.get('nome', 'Cliente Sem Nome')
+        else:
+            # Se não está em 'melhores', a cartela pode não ter sido carregada para o jogo.
+            # Mantemos como Anônimo, mas logamos o aviso.
+            print(f"⚠️ [VALIDAÇÃO 90] Cartela {cartela_id} não encontrada no cache 'melhores'.")
             
-        col_vendas_name = f"vendas{id_evento_ativo}"
-        venda_encontrada = None
-        
-        if sales_db is not None and col_vendas_name in sales_db.list_collection_names():
-             venda_encontrada = sales_db[col_vendas_name].find_one({
-                '$or': [
-                    { 'numero_inicial': {'$lte': cartela_id}, 'numero_final': {'$gte': cartela_id} },
-                    { 'numero_inicial2': {'$lte': cartela_id}, 'numero_final2': {'$gte': cartela_id} }
-                ]
-             })
-        
-        if not venda_encontrada:
-            return jsonify({
-                'status_code': 'NOT_SOLD', 
-                'msg': f'⛔ Cartela {cartela_id} NÃO VENDIDA!',
-                'layout': None
-            })
+            # (Opcional) Se quiser bloquear cartelas que não estão no jogo, descomente:
+            # return jsonify({'status_code': 'NOT_SOLD', 'msg': f'⛔ Cartela {cartela_id} fora de jogo!', 'layout': None})
 
-        nome_ganhador = venda_encontrada.get('nome_cliente', 'Cliente Balcão')
+        # ==============================================================================
 
         # 3. BUSCA O LAYOUT NO BANCO
         cartela_doc = db.cartelas.find_one({'cartao': cartela_id})
@@ -1928,8 +1957,6 @@ def admin_validar_cartela():
             return jsonify({'status_code': 'MISSING_MATRIX', 'msg': 'Layout não cadastrado.'})
 
         # --- DADOS GERAIS DO JOGO ---
-        # a dados_bolas = db.bolas.find_one({})
-
         dados_bolas = db.bolas_mesa.find_one({})
         bolas_lista = dados_bolas.get('bolas_cantadas', []) if dados_bolas else []
         bolas_set = set(bolas_lista)
@@ -1937,11 +1964,6 @@ def admin_validar_cartela():
         premio_doc = db.buscando_mesa.find_one({})
         premio_nome = premio_doc.get('buscando_o_premio', '').replace(" ", "").upper()
 
-        #print(f"ℹ️ Validando Bingo 90 - Bolas  {dados_bolas}")
-
-        #print(f"ℹ️ Validando Bingo 90 - Premio {premio_nome}")
-        
-        #print(f"ℹ️ Validando Bingo 90 - Cartela {cartela_id}")
         def parse(val):
             if isinstance(val, list): return set(val)
             if isinstance(val, str): return set(map(int, val.replace(' ','').split(',')))
@@ -1965,7 +1987,7 @@ def admin_validar_cartela():
                 if num == ultima_bola: separador = "*" 
                 elif num in bolas_set: separador = "+"
             str_numeros_formatada += separador + num_str
-           
+            
         # TV Confere
         db.confere.delete_many({})
         db.confere.insert_one({
@@ -2056,7 +2078,6 @@ def admin_validar_cartela():
         import traceback
         traceback.print_exc()
         return jsonify({'status_code': 'ERROR', 'msg': str(e)}), 500
-
 
 
 # --- ROTA: ATUALIZAR LINHAS RESTANTES (RESOLVE O PROBLEMA DE LINHA REPETIDA) ---
@@ -2491,6 +2512,7 @@ def get_cartelas_game():
 
 @app.route('/api/admin/preparar_evento', methods=['POST'])
 def admin_preparar_evento():
+    global db, CACHE_MAX_BOLAS
     """
     Rota chamada ANTES de iniciar o timer.
     Objetivo: Identificar o tipo do evento e trocar a base de cartelas (JSON) imediatamente.
@@ -2519,7 +2541,11 @@ def admin_preparar_evento():
         # Padrão: 72000 cartelas e Tipo 15 (Bingo 90) se não estiver definido
         num_max = evento.get('numero_maximo', 72000)
         tipo_cartela = evento.get('tipo_de_cartela', 15)
-        
+     
+        if tipo_cartela == 25:
+            CACHE_MAX_BOLAS = 75
+        else:
+            CACHE_MAX_BOLAS = 90   
         print(f"📂 Evento pede: Arquivo {num_max} | Tipo {tipo_cartela}")
 
         # 3. Executa a Troca de Arquivo (Sincronização)
