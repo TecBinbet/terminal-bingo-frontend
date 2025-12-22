@@ -33,6 +33,28 @@ const lastBall3 = document.getElementById('last-ball-3');
 
 const digitalBolaPanel = document.getElementById('digital-bola-panel'); 
 const bolaDigitalElement = document.getElementById('bola-digital');
+// Cores
+let corFundoCartela = "bg-gray-900";                 
+let corBordaCartela = "border-gray-700";             
+
+let corNumeroCartela = "text-yellow-600";          
+let corTituloCartela = "text-gray-400";                  
+
+let corNumeroFaltam = "text-blue-400";                
+let corNumeroFaltam1 = "text-green-400";          
+
+let corFundoNumerosSorte = "bg-gray-800";         
+let corFundoNumerosNSorte = "bg-gray-800";      
+let corFundoNumerosDest = "bg-gray-800";          
+
+let corNumerosSorte = "text-gray-600";              
+let corNumerosNSorte = "text-gray-700";          
+let corNumerosDest = "text-text-white";              
+
+let corNumerosBordaSorte = "border-gray-800";               
+let corNumerosBordaNSorte = "border-gray-800"; 
+let corNumerosBordaDest = "border-2 border-yellow-600";
+//
 let tipoDoSorteio = "";
 let Carregando = true;
 let cachedRawCards = [];
@@ -2185,6 +2207,7 @@ function updateNumericPanel(bolasCantadas) {
     }
 }
 
+
 function displayLastThree(bolasData) {
     const isMobile = isMobileDevice();
     const lastRound = isMobile ? mobileLastRoundElement : lastRoundElement;
@@ -2949,19 +2972,17 @@ function renderOscartoes75(bolasInput) {
                 if (numerosGerais.length < 24) return;
 
                 const cardDiv = document.createElement('div');
-                cardDiv.className = 'bg-gray-900 border border-gray-700 rounded p-1 flex flex-col gap-0.5 shadow-sm';
+                cardDiv.className = ` ${corFundoCartela} border ${corBordaCartela} rounded p-1 flex flex-col gap-0.5 shadow-sm`;
 
                 // Usa a lista calculada no processCards75 para saber quantos faltam "de verdade" para o prêmio
                 const faltam = cardData.missingNumbers ? cardData.missingNumbers.length : 25;
-//                const faltamClass = faltam === 0 ? 'text-green-400 animate-pulse font-black' : (faltam <= 1 ? 'text-yellow-400 animate-pulse' : 'text-blue-400');
- 
-               const faltamClass = faltam <= 1 ? 'text-green-400 animate-pulse font-bold' : 'text-blue-400 font-bold';
+                const faltamClass = faltam <= 1 ? ` ${corNumeroFaltam1} animate-pulse font-bold` : ` ${corNumeroFaltam} font-bold` ;
                
                 const header = document.createElement('div');
                 header.className = 'flex justify-between items-center border-b border-gray-700 pb-0.5 mb-0.5';
-                header.innerHTML = `
-                    <span class="text-gray-400 font-bold text-[10px]">Cartela: <span class="text-yellow-500">${numeroCartao}</span></span>
-                    <span class="text-[10px] font-bold ${faltamClass}">Faltam: ${faltam}</span>
+                 header.innerHTML = `
+                     <span class="${corTituloCartela} font-bold text-[10px]">Cartela: <span class="${corNumeroCartela}">${numeroCartao}</span></span>
+                     <span class="text-[10px] font-bold ${faltamClass}">Faltam: ${faltam}</span>
                 `;
                 cardDiv.appendChild(header);
 
@@ -2988,19 +3009,19 @@ function renderOscartoes75(bolasInput) {
                     } 
                     else if (bolasSet.has(num)) {
                         // 1. JÁ SORTEADO (Cinza Escuro / Apagado)
-                        cellClass += 'bg-gray-800 text-gray-600 border-gray-800'; 
+                        cellClass += ` ${corFundoNumerosSorte} ${corNumerosSorte} ${corNumerosBordaSorte}`; 
                         cell.textContent = num;
                     } 
                     else if (missingSet.has(num)) {
                         // 2. DESTAQUE (Branco com Borda Amarela)
                         // Este número faz parte da Linha/Canto que estamos buscando
-                        cellClass += 'bg-gray-800 text-white border-yellow-600 shadow-sm'; 
+                        cellClass += ` ${corFundoNumerosDest} ${corNumerosDest} ${corNumerosBordaDest}`; 
                         cell.textContent = num;
                     } 
                     else {
                         // 3. OUTROS FALTANTES (Cinza Claro discreto)
                         // Número falta, mas não na linha principal
-                        cellClass += 'bg-gray-800 text-gray-400 border-gray-800'; 
+                        cellClass += ` ${corFundoNumerosNSorte} ${corNumerosNSorte} ${corNumerosBordaNSorte}`; 
                         cell.textContent = num;
                     }
                     
@@ -3024,6 +3045,64 @@ function renderOscartoes75(bolasInput) {
         container.className = newClasses;
         container.appendChild(fragment);
     });
+}
+
+
+// --- FUNÇÃO DE TEMA (GLOBAL) ---
+function temaTope10() {
+    if (isDarkMode) {
+        // --- TEMA DARK (Padrão) ---
+        corFundoCartela = "bg-gray-900";
+        corBordaCartela = "border-gray-700";
+
+        corNumeroCartela = "text-yellow-600";
+        corTituloCartela = "text-gray-400";
+
+        corNumeroFaltam = "text-blue-400";
+        corNumeroFaltam1 = "text-green-400";
+
+        corFundoNumerosSorte = "bg-gray-800";
+        corFundoNumerosNSorte = "bg-gray-800";
+        corFundoNumerosDest = "bg-gray-800";
+
+        corNumerosSorte = "text-gray-600";
+        corNumerosNSorte = "text-gray-700";
+        corNumerosDest = "text-white"; // Corrigido 'text-text-white' para 'text-white'
+
+        corNumerosBordaSorte = "border-gray-800";
+        corNumerosBordaNSorte = "border-gray-800";
+        corNumerosBordaDest = "border-yellow-600";
+
+    } else {
+        // --- TEMA LIGHT (Claro) ---
+        corFundoCartela = "bg-gray-100"; // Ajustei para um cinza bem claro para contraste
+        corBordaCartela = "border-gray-300";
+
+        corNumeroCartela = "text-blue-800";
+        corTituloCartela = "text-gray-600";
+
+        corNumeroFaltam = "text-red-600";
+        corNumeroFaltam1 = "text-green-600";
+
+        corFundoNumerosSorte = "bg-gray-200";
+        corFundoNumerosNSorte = "bg-white"; // Fundo branco para números normais no light
+        corFundoNumerosDest = "bg-blue-200";
+
+        corNumerosSorte = "text-gray-400";
+        corNumerosNSorte = "text-gray-400"; // Texto escuro para leitura
+        corNumerosDest = "text-red-600 font-bold"; // Amarelo no fundo azul destaca bem
+
+        corNumerosBordaSorte = "border-gray-300";
+        corNumerosBordaNSorte = "border-gray-300";
+        corNumerosBordaDest = "border-blue-500";
+    }
+
+    // --- ATUALIZAÇÃO IMEDIATA ---
+    // Se houver cartelas carregadas, redesenha o Top 10 com as novas variáveis
+    if (typeof loadedCards !== 'undefined' && loadedCards.length > 0) {
+        // Passa as bolas globais atuais para manter o estado do jogo
+        renderOscartoes(globalBolasCantadas);
+    }
 }
 
 
@@ -3672,20 +3751,26 @@ if (menuBtnSom) {
     });
 }
 
-// Lógica do Botão de Tema (Placeholder para futuro)
+// Lógica do Botão de Tema
 if (menuBtnTema) {
     menuBtnTema.addEventListener('click', () => {
-        // Aqui entra a lógica futura de trocar classes no body
+        // 1. Inverte o estado
         isDarkMode = !isDarkMode;
+        
+        // 2. Atualiza texto do menu
         menuStatusTema.textContent = isDarkMode ? 'DARK' : 'LIGHT';
         
-        // Feedback visual simples por enquanto
-        if (!isDarkMode) {
-            //alert("O modo Light será implementado em breve!");
-            // Reverte para dark visualmente por enquanto
-            isDarkMode = true; 
-            menuStatusTema.textContent = 'DARK';
+        // 3. Muda cor do texto do status para feedback visual
+        if (isDarkMode) {
+            menuStatusTema.classList.remove('text-yellow-500');
+            menuStatusTema.classList.add('text-gray-400');
+        } else {
+            menuStatusTema.classList.remove('text-gray-400');
+            menuStatusTema.classList.add('text-yellow-500');
         }
+
+        // 4. Executa a função de troca de cores e renderização
+        temaTope10(); 
     });
 }
 
@@ -3895,5 +3980,7 @@ function controlarPainelMobileEntrada() {
         painelManual.classList.remove('hidden');
         painelBotoes.classList.add('hidden');
     }
+
+
 }
 // --- FIM DAS NOVAS FUNÇÕES ---
