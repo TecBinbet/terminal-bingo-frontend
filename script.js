@@ -6,6 +6,8 @@ const currentSalaId = urlParamsGlobal.get('idsala') || 'padrao';
 //const frontendVersionElement = document.getElementById('frontend-version');
 const loader = document.getElementById('loader');
 
+const btnToggleTemaMobile = document.getElementById('btn-toggle-tema-mobile');
+
 const numberGrid = document.getElementById('number-grid');
 const mobileNumberGrid = document.getElementById('mobile-number-grid');
 
@@ -47,8 +49,8 @@ let corFundoNumerosSorte = "bg-gray-800";
 let corFundoNumerosNSorte = "bg-gray-800";      
 let corFundoNumerosDest = "bg-gray-800";          
 
-let corNumerosSorte = "text-gray-600";              
-let corNumerosNSorte = "text-gray-700";          
+let corNumerosSorte = "text-gray-500";              
+let corNumerosNSorte = "text-gray-500";          
 let corNumerosDest = "text-text-white";              
 
 let corNumerosBordaSorte = "border-gray-800";               
@@ -314,7 +316,6 @@ async function openEventsPanel() {
         }
         
         const eventos = await response.json();
-        
         // 3. Renderiza os cartões
         renderEventsList(eventos);
         
@@ -524,6 +525,7 @@ function renderEventsList(eventos) {
     eventos.forEach(evt => {
         // --- Tratamento de Data ---
         // Tenta usar a data ISO (padrão seguro) ou faz parse manual
+
         let eventDate;
         if (evt.data && evt.data.includes('/')) {
             const dateParts = evt.data.split('/'); // [04, 12, 2025]
@@ -559,6 +561,7 @@ function renderEventsList(eventos) {
         
         // Mostra se for Futuro OU Ativo, desde que não esteja finalizado.
         const isFutureOrActive = (isFuture && isActive) && !isFinalizado;
+
         // --- Definição de Estilos do Cartão ---
         let cardClass = 'rounded-xl p-3 border shadow-lg flex flex-col gap-1 relative overflow-hidden transition-all duration-300';
         let statusBadge = '';
@@ -598,8 +601,10 @@ function renderEventsList(eventos) {
         // Formatação de Moeda
         const preco = parseFloat(evt.valor_cartela).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+        const listaPremios = Array.isArray(evt.premios_desc) ? evt.premios_desc : [];
+
         // Renderiza a lista de prêmios
-        const premiosHtml = evt.premios_desc.map(p => 
+       const premiosHtml = listaPremios.map(p =>
             `<li class="flex items-start gap-0"><span class="text-yellow-500">★</span> ${p}</li>`
         ).join('');
 
@@ -813,23 +818,23 @@ function updateMenuSoundVisuals() {
     }
     
     // Opcional: Sincroniza também o botãozinho do painel mobile se ele existir
-    const btnToggleVozMobile = document.getElementById('btn-toggle-voz');
-    const iconVozOnMobile = document.getElementById('icon-voz-on');
-    const iconVozOffMobile = document.getElementById('icon-voz-off');
+    //const btnToggleVozMobile = document.getElementById('btn-toggle-voz');
+    //const iconVozOnMobile = document.getElementById('icon-voz-on');
+    //const iconVozOffMobile = document.getElementById('icon-voz-off');
     
-    if (btnToggleVozMobile && iconVozOnMobile) {
-        if (vozAtiva) {
-            iconVozOnMobile.classList.remove('hidden');
-            iconVozOffMobile.classList.add('hidden');
-            //btnToggleVozMobile.classList.add('bg-gray-700');
-            //btnToggleVozMobile.classList.remove('bg-red-900');
-        } else {
-            iconVozOnMobile.classList.add('hidden');
-            iconVozOffMobile.classList.remove('hidden');
-            //btnToggleVozMobile.classList.remove('bg-gray-700');
-            //btnToggleVozMobile.classList.add('bg-red-900');
-        }
-    }
+    //if (btnToggleVozMobile && iconVozOnMobile) {
+    //    if (vozAtiva) {
+    //        iconVozOnMobile.classList.remove('hidden');
+    //        iconVozOffMobile.classList.add('hidden');
+    //        //btnToggleVozMobile.classList.add('bg-gray-700');
+    //        //btnToggleVozMobile.classList.remove('bg-red-900');
+    //   } else {
+    //        iconVozOnMobile.classList.add('hidden');
+    //        iconVozOffMobile.classList.remove('hidden');
+    //        //btnToggleVozMobile.classList.remove('bg-gray-700');
+    //        //btnToggleVozMobile.classList.add('bg-red-900');
+    //    }
+    //}
 }
 
 // Função para tocar o som
@@ -1122,9 +1127,9 @@ function handleFullscreenChange() {
         // Se estiver no modo 75, chama renderOscartoes75
         if (MAX_BOLAS === 75) {
             renderOscartoes75(globalBolasCantadas);
-        } //else {
-       //     renderOscartoes90(globalBolasCantadas);
-       // }
+        } else {
+            renderOscartoes90(globalBolasCantadas);
+        }
     }
 }
 
@@ -2114,21 +2119,22 @@ function createNumberPanel() {
 function clearPanels() {
     updateNumericPanel([]);
     const isMobile = isMobileDevice();
-    const loadedCardsListCurrent = isMobile ? mobileLoadedCardsList : loadedCardsList;
-    const faixasDiv = isMobile ? mobileFaixasAdicionadasDiv : faixasAdicionadasDiv;
-    const totalSpan = isMobile ? mobileTotalCartelasSpan : totalCartelasSpan;
-    const lastRound = isMobile ? mobileLastRoundElement : lastRoundElement;
-    const lastOrder = isMobile ? mobileLastOrderElement : lastOrderElement;
-    const precoSerie =  isMobile ? mobilePrecoSerieElement :precoSerieElement;
-    const ball1 = isMobile ? mobileLastBall1 : lastBall1;
-    const ball2 = isMobile ? mobileLastBall2 : lastBall2;
-    const ball3 = isMobile ? mobileLastBall3 : lastBall3;
-    const prizeInfo = isMobile ? mobilePrizeInfoContainer : prizeInfoContainer;
-    const prizeValues = isMobile ? mobilePrizeValuesContainer : prizeValuesContainer;
-    const cartelaInicial = isMobile ? mobileCartelaInicialInput : cartelaInicialInput;
-    const cartelaFinal = isMobile ? mobileCartelaFinalInput : cartelaFinalInput;
-    const resultadoSoma = isMobile ? mobileResultadoSomaSpan : resultadoSomaSpan;
-    const headerElement = isMobile ? mobileLoadedCardsHeader : loadedCardsHeader; 
+
+    const loadedCardsListCurrent = mobileLoadedCardsList;
+    const faixasDiv = mobileFaixasAdicionadasDiv;
+    const totalSpan = mobileTotalCartelasSpan;
+    const lastRound = mobileLastRoundElement;
+    const lastOrder = mobileLastOrderElement;
+    const precoSerie = mobilePrecoSerieElement;
+    const ball1 = mobileLastBall1;
+    const ball2 = mobileLastBall2;
+    const ball3 = mobileLastBall3;
+    const prizeInfo =mobilePrizeInfoContainer;
+    const prizeValues = mobilePrizeValuesContainer;
+    const cartelaInicial = mobileCartelaInicialInput;
+    const cartelaFinal = mobileCartelaFinalInput;
+    const resultadoSoma = mobileResultadoSomaSpan;
+    const headerElement = mobileLoadedCardsHeader; 
     cartelasEmJogo = 0;
     loadedCardsListCurrent.innerHTML = `<p class="text-white text-center">Nenhuma cartela carregada.</p>`;
     prizeValues.innerHTML = '';
@@ -2210,9 +2216,9 @@ function updateNumericPanel(bolasCantadas) {
 
 function displayLastThree(bolasData) {
     const isMobile = isMobileDevice();
-    const lastRound = isMobile ? mobileLastRoundElement : lastRoundElement;
-    const lastOrder = isMobile ? mobileLastOrderElement : lastOrderElement;
-    const balls = isMobile ? [mobileLastBall1, mobileLastBall2, mobileLastBall3] : [lastBall1, lastBall2, lastBall3];
+    const lastRound = mobileLastRoundElement;
+    const lastOrder = mobileLastOrderElement;
+    const balls = [mobileLastBall1, mobileLastBall2, mobileLastBall3];
 
     // --- CORREÇÃO: REMOVIDAS AS LINHAS DE LIMPEZA PRÉVIA ---
     
@@ -2250,7 +2256,7 @@ function displayLastThree(bolasData) {
 
 function displayPrizeInfo(buscandoData, premioData = null) {
     const isMobile = isMobileDevice();
-    const prizeInfoContainerCurrent = isMobile ? mobilePrizeInfoContainer : prizeInfoContainer;
+    const prizeInfoContainerCurrent = mobilePrizeInfoContainer;
 
     // --- BLINDAGEM CONTRA O ERRO ---
     // Se buscandoData for inválido ou vazio, usa um objeto vazio {} para não quebrar o código
@@ -2312,7 +2318,7 @@ function displayPrizeInfo(buscandoData, premioData = null) {
 
 function displayPrizeValues(premioData, topeData = null) {
     const isMobile = isMobileDevice();
-    const prizeValuesContainerCurrent = isMobile ? mobilePrizeValuesContainer : prizeValuesContainer;
+    const prizeValuesContainerCurrent = mobilePrizeValuesContainer;
     
     // --- CORREÇÃO: Cria um fragmento em memória primeiro (Evita Piscar) ---
     const fragment = document.createDocumentFragment();
@@ -2351,7 +2357,7 @@ function displayPrizeValues(premioData, topeData = null) {
                    if (parseFloat(valorLimpo) > 0 && mobilePrizesContent.classList.contains('hidden')) {
                          seePromocoes = false; 
                          hidePromocionalPanel();
-                         startPrizeHideTimer();
+                         //startPrizeHideTimer();
                          mobilePrizesContent.classList.remove('hidden'); 
                          togglePrizesButton.textContent = 'Ocultar Prêmios';
                          togglePrizesButton.classList.remove('bg-gray-700');
@@ -2367,7 +2373,7 @@ function displayPrizeValues(premioData, topeData = null) {
                     }
                 }
                 const prizeItem = document.createElement('div');
-                prizeItem.className = 'text-lg text-white font-medium text-center';
+                prizeItem.className = 'text-sm font-bold text-green-300 text-center -mt-1';
                 prizeItem.textContent = prizeText;
                 fragment.appendChild(prizeItem);
             });
@@ -2663,15 +2669,15 @@ function renderMelhores(melhoresData) {
         return;
     }
     melhoresData.forEach(item => {
-        let posicaoWidth = '13px'; // Largura padrão se 'posicao' não for vazio
+        let posicaoWidth = '15px'; // 13Largura padrão se 'posicao' não for vazio
         let haGanhador = false;
         // Verifica se 'posicao' é uma string vazia ("") ou nula.
         if (!item.posicao || item.posicao === "") {
             posicaoWidth = '4px'; 
         }
         // 2. Constrói a string da classe
-        // Usa template literals (crase `) para injetar a variável
-        const gridClasses = `grid-cols-[23px_${posicaoWidth}_1fr_55px]`;
+        // Usa template literals (crase `) para injetar a variável   // 23 - 55
+        const gridClasses = `grid-cols-[30px_${posicaoWidth}_1fr_100px]`;
         const row = document.createElement('div');
         row.className = `grid ${gridClasses} text-[8px] leading-none text-white p-0.5 rounded hover:bg-gray-800`;
         // 1. Cartela
@@ -2701,12 +2707,12 @@ function renderMelhores(melhoresData) {
         // 2. Verifica se é Array (Lista) ou String (Texto) para formatar corretamente
         if (Array.isArray(rawNums)) {
             // Pega apenas os 5 primeiros itens do array
-            numerosComEspaco = rawNums.slice(0, 5).map(n => n.toString().padStart(2, '0')).join(' . ');
+            numerosComEspaco = rawNums.map(n => n.toString().padStart(2, '0')).join(' . ');
 
         } else if (typeof rawNums === 'string') {
             // Divide a string, pega os 5 primeiros e formata
             const lista = rawNums.split(',');
-            numerosComEspaco = lista.slice(0, 5).map(n => n.trim().padStart(2, '0')).join(' . ');
+            numerosComEspaco = lista.map(n => n.trim().padStart(2, '0')).join(' . ');
 
             //if (lista.length > 5) numerosComEspaco += " ...";
         }
@@ -2771,20 +2777,6 @@ function updateDigitalBola(numeroBola) {
     bolaDigitalElement.classList.add('animate-pulsing-border'); 
 }
 
-function updateEstatisticasPanelWidth(tipoSorteio) {
-    const classDigital = 'w-3/5';
-    const classPadrao = 'w-2/4';
-
-    estatisticasPanel.classList.remove(classDigital, classPadrao);
-
-    if (tipoSorteio !== "manual") {
-        estatisticasPanel.classList.add(classDigital);
-    } else {
-        estatisticasPanel.classList.add(classPadrao);
-    }
-}
-
-
 function renderOscartoes(bolasCantadas) {
     if (MAX_BOLAS === 75) {
         renderOscartoes75(bolasCantadas);
@@ -2848,17 +2840,21 @@ function renderOscartoes90(bolasInput) {
                 if (!numerosGerais || numerosGerais.length === 0) return;
 
                 const cardDiv = document.createElement('div');
-                cardDiv.className = 'bg-gray-900 border border-gray-700 rounded p-1 flex flex-col gap-0.5 shadow-sm';
+                cardDiv.className = ` ${corFundoCartela} border ${corBordaCartela} rounded p-1 flex flex-col gap-0.5 shadow-sm`;
+                //cardDiv.className = 'bg-gray-900 border border-gray-700 rounded p-1 flex flex-col gap-0.5 shadow-sm';
 
                 const faltam = cardData.missingNumbers ? cardData.missingNumbers.length : 15;
-                const faltamClass = faltam <= 1 ? 'text-green-400 animate-pulse font-bold' : 'text-blue-400 font-bold';
+                const faltamClass = faltam <= 1 ? ` ${corNumeroFaltam1} animate-pulse font-bold` : ` ${corNumeroFaltam} font-bold` ;
+                //const faltamClass = faltam <= 1 ? 'text-green-400 animate-pulse font-bold' : 'text-blue-400 font-bold';
 
                 const header = document.createElement('div');
                 header.className = 'flex justify-between items-center border-b border-gray-700 pb-0.5 mb-0.5';
                 header.innerHTML = `
-                    <span class="text-gray-400 font-bold text-[10px]">Cartela: <span class="text-yellow-500">${numeroCartao}</span></span>
+                     <span class="${corTituloCartela} font-bold text-[10px]">Cartela: <span class="${corNumeroCartela}">${numeroCartao}</span></span>
                     <span class="text-[10px] ${faltamClass}">Faltam: ${faltam}</span>
                 `;
+
+                    //<span class="text-gray-400 font-bold text-[10px]">Cartela: <span class="text-yellow-500">${numeroCartao}</span></span>
                 cardDiv.appendChild(header);
 
                 const grid = document.createElement('div');
@@ -2872,7 +2868,8 @@ function renderOscartoes90(bolasInput) {
                     // --- APLICAÇÃO DO SEU LAYOUT ---
                     if (bolasSet.has(num)) {
                         // 1. JÁ SORTEADO (Cinza Escuro / Apagado)
-                        cellClass += 'bg-gray-800 text-gray-600 border-gray-800'; 
+                        cellClass += ` ${corFundoNumerosSorte} ${corNumerosSorte} ${corNumerosBordaSorte}`;
+                        //cellClass += 'bg-gray-800 text-gray-600 border-gray-800'; 
                     } else {
                         // 2. NÃO SORTEADO (Faltante)
                         let isTargetLine = true;
@@ -2890,10 +2887,12 @@ function renderOscartoes90(bolasInput) {
 
                         if (isTargetLine) {
                             // DESTAQUE (Branco com Borda Amarela)
-                            cellClass += 'bg-gray-800 text-white border-yellow-600 shadow-sm'; 
+                            cellClass += ` ${corFundoNumerosDest} ${corNumerosDest} ${corNumerosBordaDest}`;
+                            //cellClass += 'bg-gray-800 text-white border-yellow-600 shadow-sm'; 
                         } else {
                             // "GRAY-250" (Cinza Claro discreto)
-                            cellClass += 'bg-gray-800 text-gray-400 border-gray-800'; 
+                            cellClass += ` ${corFundoNumerosNSorte} ${corNumerosNSorte} ${corNumerosBordaNSorte}`;
+                            //cellClass += 'bg-gray-800 text-gray-400 border-gray-800'; 
                         }
                     }
                     // -------------------------------
@@ -3065,8 +3064,8 @@ function temaTope10() {
         corFundoNumerosNSorte = "bg-gray-800";
         corFundoNumerosDest = "bg-gray-800";
 
-        corNumerosSorte = "text-gray-600";
-        corNumerosNSorte = "text-gray-700";
+        corNumerosSorte = "text-gray-500";
+        corNumerosNSorte = "text-gray-500";
         corNumerosDest = "text-white"; // Corrigido 'text-text-white' para 'text-white'
 
         corNumerosBordaSorte = "border-gray-800";
@@ -3075,8 +3074,8 @@ function temaTope10() {
 
     } else {
         // --- TEMA LIGHT (Claro) ---
-        corFundoCartela = "bg-gray-100"; // Ajustei para um cinza bem claro para contraste
-        corBordaCartela = "border-gray-300";
+        corFundoCartela = "bg-gray-300"; // Ajustei para um cinza bem claro para contraste
+        corBordaCartela = "border-gray-500";
 
         corNumeroCartela = "text-blue-800";
         corTituloCartela = "text-gray-600";
@@ -3229,18 +3228,67 @@ async function renderMainContent(data) {
         tempoExibicaoGanhador = parseInt(parametrosInfo.tempo_ganhador);
         
         const tipoSorteio = parametrosInfo.modo_sorteio;
-        const rawVideoID = parametrosInfo.url_live || parametrosInfo.url_padrao || '';
-        video_local = parametrosInfo.video_local;
+
+        if (tipoSorteio === 'manual') {
+            vozAtiva = false;
+        } else {
+            vozAtiva = true;
+        }
+
+        updateMenuSoundVisuals();
+        //const rawVideoID = parametrosInfo.url_live || parametrosInfo.url_padrao || '';
+        //video_local = parametrosInfo.video_local;
         
-        const videoID = rawVideoID.split('&')[0];
-        const newVideoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1`;
-        if (currentVideoUrl !== newVideoUrl) currentVideoUrl = newVideoUrl;
+// --- INÍCIO DA SUBSTITUIÇÃO DE VÍDEO ---
+        const rawVideoID =parametrosInfo.url_live || parametrosInfo.url_padrao || '';
+
+        video_local =  parametrosInfo.video_local;
         
+        let videoID = '';
+
+        // 1. Extrai APENAS o ID (11 caracteres) de qualquer link
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+        const match = rawVideoID.match(regExp);
+
+        if (match && match[2].length === 11) {
+            videoID = match[2];
+        } else if (rawVideoID.length === 11) {
+            videoID = rawVideoID;
+        }
+
+        if (!videoID) videoID = ''; 
+
+        // 2. O GRANDE TRUQUE PARA FILE://
+        let paramOrigin = '';
+        
+        // Verifica se está rodando localmente (arquivo)
+        if (window.location.protocol === 'file:') {
+             // Força a origem como sendo o próprio YouTube para enganar a trava
+             paramOrigin = '&origin=https://www.youtube.com';
+        } 
+        else if (window.location.protocol.startsWith('http')) {
+             // Se estiver em servidor real, usa a origem real
+             paramOrigin = `&origin=${window.location.origin}`;
+        }
+
+        // Monta a URL Final
+        const newVideoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1&rel=0${paramOrigin}`;
+        
+        // Atualiza o player apenas se mudou
+        if (currentVideoUrl !== newVideoUrl) {
+            currentVideoUrl = newVideoUrl;
+            if (youtubeIframe && videoID) {
+                youtubeIframe.src = newVideoUrl;
+            } else if (youtubeIframe) {
+                youtubeIframe.src = ''; // Limpa se não tiver ID
+            }
+        }
+        // --- FIM DA SUBSTITUIÇÃO ---
+
         tipoDoSorteio = tipoSorteio;
     
         if (abrirYoutubeBtn) {
             const isLocal = String(video_local).toLowerCase() === 'true'; 
-            updateEstatisticasPanelWidth(tipoSorteio);
             if (isLocal || tipoSorteio != "manual") {
                 abrirYoutubeBtn.classList.add('hidden');
                 if (youtubePanel && !youtubePanel.classList.contains('hidden')) abrirYoutubeBtn.click(); 
@@ -3270,7 +3318,6 @@ async function renderMainContent(data) {
         const preco = premioInfo.preco  / premioInfo.multiplo;
         ValorSerie = preco;
         const formattedPreco = new Intl.NumberFormat('pt-BR', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(preco);
-        if(precoSerieElement) precoSerieElement.textContent = formattedPreco;
         if(mobilePrecoSerieElement) mobilePrecoSerieElement.textContent = formattedPreco;
     }
 
@@ -3307,27 +3354,26 @@ async function init() {
             return;
         }
 
-// NEW: Busca e renderiza os dados iniciais de "Melhores"
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/melhores`);
-        if (response.ok) {
-            const melhoresData = await response.json();
-            renderMelhores(melhoresData);
-        } else {
-            console.error('Erro ao buscar dados iniciais de melhores.');
+        // NEW: Busca e renderiza os dados iniciais de "Melhores"
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/melhores`);
+            if (response.ok) {
+                const melhoresData = await response.json();
+                renderMelhores(melhoresData);
+            } else {
+                console.error('Erro ao buscar dados iniciais de melhores.');
+                renderMelhores([]);
+            }
+        } catch (error) {
+            console.error('Erro ao buscar dados iniciais de melhores:', error);
             renderMelhores([]);
         }
-    } catch (error) {
-        console.error('Erro ao buscar dados iniciais de melhores:', error);
-        renderMelhores([]);
-    }
 
         const versionResponse = await fetch(`${API_BASE_URL}/api/version`);
         const versionData = await versionResponse.json();
         //frontendVersionElement.textContent = "1.0.0";
         //backendVersionElement.textContent = versionData.version;
 
-        //const premioInfo = initialData.premioInfo;
         premioInfo = initialData.premioInfo;
       
         const oTipo = parseInt(tipoEntradaCartelas);
@@ -3339,8 +3385,7 @@ async function init() {
             maxCartelas =  premioInfo?.serie_em_jogo || 0;
         }
        
-
-        // NOVO CÓDIGO: Busca o valor de preco_da_serie e o exibe
+        // NOVO CÓDIGO BLINDADO: Busca o valor de preco_da_serie e o exibe
         if (premioInfo && typeof premioInfo.preco === 'number') {             
             const preco = premioInfo.preco  / premioInfo.multiplo;
             ValorSerie = preco;
@@ -3349,34 +3394,40 @@ async function init() {
                  minimumFractionDigits: 2,
                  maximumFractionDigits: 2
             }).format(preco);
-            precoSerieElement.textContent = formattedPreco;
-            mobilePrecoSerieElement.textContent = formattedPreco;
+            
+            // VERIFICA SE O ELEMENTO EXISTE ANTES DE TENTAR ALTERAR
+            if (mobilePrecoSerieElement) {
+                mobilePrecoSerieElement.textContent = formattedPreco;
+            }
         }
 
         const maxCardNumber = initialData.maxCardNumber || 0;
         setupCartelasEmJogo(maxCardNumber);
 
-        cartelaInicialInput.max = maxCardNumber;
-        cartelaFinalInput.max = maxCardNumber;
-        cartelaInicialInput.min = 1;
+        // PROTEÇÕES EXTRAS PARA INPUTS
+        if(cartelaInicialInput) {
+            cartelaInicialInput.max = maxCardNumber;
+            cartelaInicialInput.min = 1;
+        }
+        if(cartelaFinalInput) cartelaFinalInput.max = maxCardNumber;
 
-        mobileCartelaInicialInput.max = maxCardNumber;
-        mobileCartelaFinalInput.max = maxCardNumber;
-        mobileCartelaInicialInput.min = 1;
-        mobileCartelasContent.classList.add('hidden');
-        mobilePrizesContent.classList.add('hidden');
-        toggleCartelasButton.textContent = 'INCLUIR Cartelas';
-        togglePrizesButton.textContent = 'Apresentar Prêmios';
-
-        loader.style.display = 'none';
+        if(mobileCartelaInicialInput) {
+            mobileCartelaInicialInput.max = maxCardNumber;
+            mobileCartelaInicialInput.min = 1;
+        }
+        if(mobileCartelaFinalInput) mobileCartelaFinalInput.max = maxCardNumber;
         
-        // Renderiza o estado inicial (que pode chamar clearPanels())
+        // PROTEÇÕES PARA PAINÉIS E BOTÕES
+        if(mobileCartelasContent) mobileCartelasContent.classList.add('hidden');
+        if(mobilePrizesContent) mobilePrizesContent.classList.add('hidden');
+        if(toggleCartelasButton) toggleCartelasButton.textContent = 'INCLUIR Cartelas';
+        if(togglePrizesButton) togglePrizesButton.textContent = 'Apresentar Prêmios';
+
+        if(loader) loader.style.display = 'none';
+        
         renderMainContent(initialData); 
         
-        // Conecta ao WebSocket
         connectWebSocket();
-        
-        // A função processarParametrosURL() agora é chamada dentro do 'ws.onopen'
         
     } catch (error) {
         console.error('Erro ao iniciar a aplicação:', error);
@@ -3413,7 +3464,7 @@ function startHideTimer() {
 }
 
 function startPrizeHideTimer() {
-    // Limpa o temporizador anterior, se existir
+    // XXapagar Limpa o temporizador anterior, se existir
     if (prizeTimeoutId) {
         clearTimeout(prizeTimeoutId);
     }
@@ -3443,25 +3494,6 @@ function startPrizeHideTimer() {
     }, secundsPrizeTimeoutId * Mutiplicador); // x segundos * 1000 (Mutiplicador)
 }
 
-togglePrizesButton.addEventListener('click', () => {
-    startPromocionalTimer();
-    mobilePrizesContent.classList.toggle('hidden');
-    if (mobilePrizesContent.classList.contains('hidden')) {
-        // Se o painel for ocultado, cancela qualquer temporizador em execução
-        if (prizeTimeoutId) {
-            clearTimeout(prizeTimeoutId);
-        }
-        togglePrizesButton.textContent = 'Apresentar Prêmios';
-        togglePrizesButton.classList.remove('bg-red-800'); // Ou a classe que define a cor padrão
-        togglePrizesButton.classList.add('bg-gray-700');
-    } else {
-        // Se o painel for exibido, inicia o temporizador
-        startPrizeHideTimer();
-        togglePrizesButton.textContent = 'Ocultar Prêmios';
-        togglePrizesButton.classList.remove('bg-gray-700');
-        togglePrizesButton.classList.add('bg-red-800'); // Ou a classe que define a cor padrã//o
-    }
-});
 
 if (toggleCartelasButton && mobileCartelasContent) {
     toggleCartelasButton.addEventListener('click', () => {
@@ -3689,46 +3721,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-// --- CONTROLE DE VOZ (MOBILE) ---
-    const btnToggleVoz = document.getElementById('btn-toggle-voz');
-    const iconVozOn = document.getElementById('icon-voz-on');
-    const iconVozOff = document.getElementById('icon-voz-off');
-
-    // Sincroniza o botão com o estado inicial (vozAtiva = true)
-    if (btnToggleVoz) {
-        // Função interna para atualizar os ícones
-        const updateVozIcons = () => {
-            if (vozAtiva) {
-                iconVozOn.classList.remove('hidden');
-                iconVozOff.classList.add('hidden');
-                //btnToggleVoz.classList.add('bg-gray-700');     // Estilo Ativo
-                //btnToggleVoz.classList.remove('bg-red-900');
+// --- CONTROLE DE TEMA (BOTÃO MOBILE) ---
+if (btnToggleTemaMobile) {
+    btnToggleTemaMobile.addEventListener('click', () => {
+        // 1. Inverte o estado do tema
+        isDarkMode = !isDarkMode;
+        
+        // 2. Sincroniza com o texto do Menu Lateral (se existir)
+        if (menuStatusTema) {
+            menuStatusTema.textContent = isDarkMode ? 'DARK' : 'LIGHT';
+            if (isDarkMode) {
+                menuStatusTema.classList.remove('text-yellow-500');
+                menuStatusTema.classList.add('text-gray-400');
             } else {
-                iconVozOn.classList.add('hidden');
-                iconVozOff.classList.remove('hidden');
-                //btnToggleVoz.classList.remove('bg-gray-700');
-                //btnToggleVoz.classList.add('bg-red-900');      // Estilo Mudo (Vermelho escuro)
+                menuStatusTema.classList.remove('text-gray-400');
+                menuStatusTema.classList.add('text-yellow-500');
             }
-        };
+        }
 
-        // Estado inicial
-        updateVozIcons();
+        // 3. Aplica o tema visualmente
+        temaTope10(); 
 
-        // Clique no botão
-        btnToggleVoz.addEventListener('click', () => {
-            vozAtiva = !vozAtiva; // Inverte o estado (true <-> false)
-            
-            // Se ativou, tenta desbloquear o áudio (para iOS/Chrome)
-            if (vozAtiva) {
-                desbloquearAudio();
-                falarTexto("Áudio Ativado");
-            } else {
-                window.speechSynthesis.cancel(); // Para qualquer fala atual
-            }
-            
-            updateVozIcons();
-        });
-    }
+    });
+}
 
 
 // Listeners
@@ -3748,6 +3763,7 @@ if (menuBtnSom) {
             window.speechSynthesis.cancel();
         }
         updateMenuSoundVisuals();
+        closeSideMenu();
     });
 }
 
@@ -3770,7 +3786,9 @@ if (menuBtnTema) {
         }
 
         // 4. Executa a função de troca de cores e renderização
-        temaTope10(); 
+        temaTope10();
+        closeSideMenu(); 
+ 
     });
 }
 
@@ -3792,55 +3810,49 @@ if (menuBtnTema) {
         });
     }
  
-// Referencia os painéis e botões
-    const mobilePanelsContainer = document.getElementById('mobile-panels-container');
-    if (abrirYoutubeBtn && youtubePanel && mobilePanelsContainer && youtubePlaceholder) {
+// Referencia o novo container
+    const videoContainer = document.getElementById('video-container');
+
+    if (abrirYoutubeBtn && videoContainer && youtubeIframe) {
         abrirYoutubeBtn.addEventListener('click', () => {
             startPromocionalTimer();
    
             const videoToLoad = currentVideoUrl; 
 
             if (!videoToLoad) {
-                alert('Nenhuma URL de vídeo LIVE ou PADRÃO configurada.');
+                alert('Nenhuma URL de vídeo configurada.');
                 return;
             }
         
-            // Define a URL do iframe
+            // Lógica de URL (mantida)
             let videoUrl;
-        
-            // 1. Tenta identificar se já é um link de embed ou uma URL completa
             if (videoToLoad.includes('youtube.com/embed/')) {
                 videoUrl = videoToLoad; 
             } else {
-                // 2. Assume que é o ID do vídeo (ou link curto) e cria o link de embed
-                // Adicionamos o autoplay=1 para iniciar o vídeo
                 const videoID = videoToLoad.split('&')[0];
-
                 videoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1`;
             }
-            // Alterna a visibilidade do painel do YouTube
-            youtubePanel.classList.toggle('hidden');
+
+            // Alternar visibilidade
+            videoContainer.classList.toggle('hidden');
             
-            // Alterna a visibilidade do painel mobile para mostrar o YouTube
-            mobilePanelsContainer.classList.toggle('hidden');
+            // Verifica estado
+            const isVideoVisible = !videoContainer.classList.contains('hidden');
             
-            // Alterna a visibilidade do placeholder para empurrar o conteúdo
-            youtubePlaceholder.classList.toggle('hidden');
-            // Verifica o estado atual do painel do YouTube
-            const isYoutubePanelVisible = !youtubePanel.classList.contains('hidden');
-            
-            if (isYoutubePanelVisible) {
-                // Se o painel for exibido, altere o texto e inicie o vídeo
+            if (isVideoVisible) {
                 abrirYoutubeBtn.textContent = 'Fechar YouTube';
-                youtubeIframe.src =currentVideoUrl;
+                // Define src para tocar
+                youtubeIframe.src = videoUrl;
                  if (!telaFull) { 
                     goFullscreen(); 
                  } 
             } else {
-                // Se o painel for ocultado, altere o texto e pare o vídeo
                 abrirYoutubeBtn.textContent = 'Abrir YouTube';
-                youtubeIframe.src = ''; // Define o src vazio para parar o vídeo
+                // Limpa src para parar o som
+                youtubeIframe.src = ''; 
             }
+            
+            // Atualiza posição do painel promocional se necessário
             updatePromocionalPanelPosition();
         });
     }
@@ -3983,4 +3995,98 @@ function controlarPainelMobileEntrada() {
 
 
 }
+
+// --- CONTROLE DE ABAS (NUMÉRICO / INFORMATIVO / ESTATÍSTICAS) ---
+function alternarPainelMobile(modo) {
+    // 1. Elementos dos Painéis Principais
+    const panelNumerico = document.getElementById('mobile-panels-container');
+    const panelInformativo = document.getElementById('mobile-prizes-panel');
+    const panelEstatisticas = document.getElementById('estatisticas-panel');
+    
+    // 1.1 Elemento Interno de Prêmios (Correção para exibir prêmios)
+    const mobilePrizesContent = document.getElementById('mobile-prizes-content');
+
+    // 2. Elementos dos Botões
+    const btnNumerico = document.getElementById('btn-tab-numerico');
+    const btnInformativo = document.getElementById('btn-tab-informativo');
+    const btnEstatisticas = document.getElementById('btn-tab-estatisticas');
+    
+    // Função auxiliar para resetar botões
+    const resetBotoes = () => {
+        [btnNumerico, btnInformativo, btnEstatisticas].forEach(btn => {
+            if(btn) {
+                btn.classList.remove('bg-gray-700', 'text-white', 'border-green-500');
+                btn.classList.add('bg-gray-800', 'text-gray-400', 'border-transparent');
+            }
+        });
+    };
+
+    // 3. PRIMEIRO: ESCONDE TUDO
+    // Usamos setProperty('display', 'none', 'important') para vencer o mobile.css
+    if (panelNumerico) {
+        panelNumerico.style.setProperty('display', 'none', 'important');
+    }
+    
+    if (panelInformativo) {
+        panelInformativo.classList.add('hidden');
+        panelInformativo.classList.remove('flex'); // Garante que saia do flex
+    }
+    
+    if (panelEstatisticas) {
+        panelEstatisticas.classList.add('hidden');
+        panelEstatisticas.classList.remove('flex');
+    }
+    
+    resetBotoes();
+
+    // 4. DEPOIS: MOSTRA O ESCOLHIDO
+    switch(modo) {
+        case 'numerico':
+            if (panelNumerico) {
+                // Remove o inline style para que o CSS do mobile.css (display: flex) volte a funcionar
+                panelNumerico.style.removeProperty('display');
+                // Se o CSS não tiver flex, garantimos com classe, mas removemos o hidden
+                panelNumerico.classList.remove('hidden');
+            }
+            if (btnNumerico) {
+                btnNumerico.classList.remove('bg-gray-800', 'text-gray-400', 'border-transparent');
+                btnNumerico.classList.add('bg-gray-700', 'text-white', 'border-green-500');
+            }
+            break;
+
+        case 'informativo':
+            if (panelInformativo) {
+                panelInformativo.classList.remove('hidden');
+                panelInformativo.classList.add('flex'); // Força layout flex
+                
+                // CORREÇÃO CRÍTICA: Garante que o conteúdo interno também apareça
+                if (mobilePrizesContent) {
+                    mobilePrizesContent.classList.remove('hidden');
+                }
+            }
+            if (btnInformativo) {
+                btnInformativo.classList.remove('bg-gray-800', 'text-gray-400', 'border-transparent');
+                btnInformativo.classList.add('bg-gray-700', 'text-white', 'border-green-500');
+            }
+            break;
+
+        case 'estatisticas':
+            if (panelEstatisticas) {
+                panelEstatisticas.classList.remove('hidden');
+                panelEstatisticas.classList.add('flex');
+            }
+            if (btnEstatisticas) {
+                btnEstatisticas.classList.remove('bg-gray-800', 'text-gray-400', 'border-transparent');
+                btnEstatisticas.classList.add('bg-gray-700', 'text-white', 'border-green-500');
+            }
+            break;
+            
+        case 'ocultar':
+            // Tudo já foi ocultado no passo 3.
+            break;
+    }
+}
+
+
+
 // --- FIM DAS NOVAS FUNÇÕES ---

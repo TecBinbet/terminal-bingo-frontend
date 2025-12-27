@@ -35,10 +35,8 @@
 </head>
 
 <body class="bg-gray-800 text-white min-h-screen overflow-hidden">
-    <!-- Botão Fullscreen (F11) -->
     <button id="fullscreen-button">Entrar em Tela Cheia</button>    
     
-    <!-- Loader Global -->
     <div id="loader" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75 z-50 hidden">
         <div class="flex flex-col items-center">
             <div class="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-green-500"></div>
@@ -46,78 +44,119 @@
         </div>
     </div>
 
-    <!-- CABEÇALHO COM MENU HAMBÚRGUER -->
-    <header class="flex justify-between items-center mb-0.5 border-b-2 border-gray-700 pb-1 pl-2 pr-2 pt-1">
+    <header class="flex justify-between items-center mb-0.5 -mt-3 border-b-2 border-gray-700 pb-1 pl-2 pr-2 pt-1">
         <div class="flex items-center gap-3">
-            <!-- Botão do Menu -->
             <button id="btn-open-menu" class="text-gray-300 hover:text-white focus:outline-none">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
             </button>
             
-            <!-- Título da Sala -->
             <h1 class="text-sm font-bold text-green-400" id="sala-title">Terminal OnLine</h1>
         </div>
 
         <div class="text-sm text-gray-400">
             <p class="hidden">Backend: <span id="backend-version">...</span></p>
-            <p>V.: <span id="frontend-version">1.2.1</span></p> 
         </div>
     </header>
 
-    <!-- Botão Flutuante YouTube -->
     <button id="abrir-youtube-btn" class="fixed top-0 right-4 bg-red-600 text-white px-2 py-0 rounded-lg shadow-lg z-50">
     Abrir YouTube
     </button>
 
-    <!-- Container de Vídeo e Estatísticas -->
-    <div id="video-e-estatisticas-container" class="mt-0 mb-1 flex w-full space-x-1 items-start">
+    <section id="digital-bola-panel" class="w-full bg-gray-900 mb-1 p-1 rounded-lg shadow-xl h-[133px] hidden flex items-center justify-center">
+        <div id="bola-container" class="w-full h-full flex items-center justify-center">        
+            <div id="bola-digital" 
+                 class="flex items-center justify-center 
+                    text-white font-black text-6xl 
+                    bg-gray-700 border-4 border-white
+                    rounded-full transition-all duration-300"
+                 style="width: 110px; height: 110px;">
+            </div>
+        </div>
+    </section>
 
-        <!-- Bola Digital (Painel Alternativo) -->
-        <section id="digital-bola-panel" class="w-2/5 bg-gray-900 p-0 rounded-lg shadow-xl h-[133px] hidden flex items-center justify-center">
-            <div id="bola-container" class="w-full h-full flex items-center justify-center">        
-                <div id="bola-digital" 
-                     class="flex items-center justify-center 
-                        text-white font-black text-4xl 
-                        bg-gray-700 border-4 border-white
-                        rounded-full transition-all duration-300"
-                     style="width: 70%; height: 70%;">
+    <div id="video-container" class="hidden mt-0 mb-1 w-full h-[200px] bg-gray-900 rounded-lg shadow-xl overflow-hidden">
+        <iframe id="youtube-iframe" width="100%" height="100%"
+            title="YouTube video player"
+            src=""
+            frameborder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen>
+        </iframe>
+    </div>
+    
+    <div id="panel-controls" class="flex justify-between items-center gap-1 mb-1 px-1">
+        <button onclick="alternarPainelMobile('numerico')" id="btn-tab-numerico" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold py-0 rounded transition-colors border-b-2 border-green-500">
+            Numérico
+        </button>
+        <button onclick="alternarPainelMobile('informativo')" id="btn-tab-informativo" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs font-bold py-0 rounded transition-colors border-b-2 border-transparent">
+            Informativo
+        </button>
+        <button onclick="alternarPainelMobile('estatisticas')" id="btn-tab-estatisticas" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs font-bold py-0 rounded transition-colors border-b-2 border-transparent">
+            Estatísticas
+        </button>
+        <button onclick="alternarPainelMobile('ocultar')" id="btn-tab-ocultar" class="w-16 bg-red-900 hover:bg-red-800 text-white text-xs font-bold py-0 rounded transition-colors border-b-2 border-red-700">
+            Ocultar
+        </button>
+    </div>
+
+    <div id="conteudo-abas-container" class="w-full">
+        
+        <section id="mobile-panels-container" class="flex flex-row gap-1 w-full h-auto">
+            
+            <div id="mobile-number-panel" class="bg-black p-0 rounded-lg shadow-lg flex-grow h-full">
+                <div class="grid grid-cols-10 gap-0 bg-black" id="mobile-number-grid"></div>
+            </div>
+
+            <div class="flex flex-col justify-between items-center gap-1 py-1 w-[30px] shrink-0">
+                <button id="btn-toggle-tema-mobile" class="w-8 h-8 flex items-center justify-center text-white bg-gray-600 hover:bg-gray-500 rounded-full shadow-md focus:outline-none transition-colors">
+                      <span class="text-sm">🎨</span>
+                </button>
+                <button id="btn-proximos-eventos" class="w-8 h-8 flex items-center justify-center text-white bg-gray-600 hover:bg-gray-500 rounded-full shadow-md focus:outline-none transition-colors">
+                     <span class="text-sm">📅</span>
+                </button>
+            </div>
+
+            <aside id="mobile-last-balls-panel" class="flex flex-col justify-center items-center bg-gray-800 p-1 rounded-lg shadow-lg w-auto min-w-[110px]">
+                <div class="flex justify-center items-center space-x-1">
+                    <div id="mobile-last-ball-1" class="h-6 w-6 flex items-center justify-center rounded-full bg-gray-300 text-gray-800 text-[12px] font-bold shadow-md"></div>
+                    <div id="mobile-last-ball-2" class="h-6 w-6 flex items-center justify-center rounded-full bg-gray-300 text-gray-800 text-[12px] font-bold shadow-md"></div>
+                    <div id="mobile-last-ball-3" class="h-6 w-6 flex items-center justify-center rounded-full bg-gray-300 text-gray-800 text-[12px] font-bold shadow-md"></div>
                 </div>
-            </div>
+                <div class="mt-1 flex justify-center items-center gap-3 text-[10px] text-gray-400 leading-tight">
+                   <span>Ordem: <span id="mobile-last-order" class="text-sm font-bold text-white">0</span></span>
+                   <span>Rod: <span id="mobile-last-round" class="text-sm font-bold text-white">...</span></span>
+                </div>
+                <div class="mt-1 w-full flex justify-center items-center gap-2 bg-gray-900 rounded px-1 py-0.5 border border-gray-700">
+                     <span class="text-[10px] text-gray-200">Preço Cartela $</span>
+                     <span id="mobile-preco-serie" class="text-sm font-bold text-green-400">0,00</span>
+                </div>
+            </aside>
         </section>
 
-        <!-- Player YouTube -->
-        <section id="youtube-panel" class="w-2/4 bg-gray-900 mb-1 p-0 rounded-lg shadow-xl h-[133px]">
-            <div style="height: 100%;">
-                <iframe id="youtube-iframe" width="100%" height="100%"
-                    title="YouTube video player"
-                    src = ""
-                    frameborder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    referrerpolicy="strict-origin-when-cross-origin"
-                    allowfullscreen>
-                </iframe>
-            </div>
-        </section>
+        <section id="mobile-prizes-panel" class="hidden bg-gray-900/90 p-0 rounded-lg shadow-lg flex flex-col items-center space-y-2">
+           <div class="w-full text-center border-b border-gray-700 -mt-1 mb-0">
+              <h2 class="text-sm font-bold text-yellow-500">Lista de Prêmios</h2>
+           </div>
+           <div id="mobile-prizes-content" class="w-full ">
+               <div id="mobile-prize-values" class="w-full text-center -mt-1"></div>
+           </div>
+        </section>      
 
-        <!-- Painel Melhores da Rodada -->
-        <section id="estatisticas-panel" class="w-2/4 bg-gray-900 p-0 rounded-lg shadow-lg flex flex-col h-[133px] overflow-x-hidden">
-            <h2 class="text-green-400 text-[7px] mb-0 text-center border-b border-gray-700 pb-0">Melhores da Rodada</h2>
-
-            <div id="estatisticas-header" 
-             class="grid grid-cols-[23px_13px_1fr_45px] text-[6px] font-bold text-blue-400 border-b border-gray-700 pb-0 flex-shrink-0">
+        <section id="estatisticas-panel" class="hidden w-[calc(100%+1rem)] -ml-2 bg-gray-900 p-0 rounded-lg shadow-lg flex-col h-[150px] overflow-x-hidden">     
+            <h2 class="text-green-400 text-[10px] mb-0 text-center border-b border-gray-700 py-0">Melhores da Rodada</h2>
+            <div id="estatisticas-header" class="grid grid-cols-[30px_20px_1fr_100px] text-[9px] font-bold text-blue-400 border-b border-gray-700 pb-0 flex-shrink-0 bg-gray-800">
                 <span class="truncate text-left pl-1">Crt</span> 
                 <span class="text-center">Pos</span>
                 <span class="truncate text-center">Núm. Falt.</span>
                 <span class="truncate text-left pl-1">Player</span>
             </div>
-        
-            <div id="estatisticas-body" 
-                 class="space-y-0 mt-0 text-sm overflow-y-auto flex-grow">        
+            <div id="estatisticas-body" class="space-y-0 mt-0 text-sm overflow-y-auto flex-grow bg-gray-900">        
                 <p id="loading-stats" class="text-center text-gray-500 mt-4">Carregando estatísticas...</p>
             </div>
         </section>
+
     </div>
 
     <div id="labelPremiado" 
@@ -126,7 +165,6 @@
 
     <div id="youtube-placeholder" class="hidden" style="height: 0.5vh; width: 0%;"></div>
 
-    <!-- Overlay Promocional -->
     <div id="promocional-container" class="fixed z-50 hidden" style="top:0; left:0; width:100%; height:100%;">
         <div id="promocional-content" class="absolute">         
              <div id="promocional-gif-bg" class="absolute inset-0 bg-contain bg-no-repeat bg-center" 
@@ -139,98 +177,19 @@
         </div>
     </div>
 
-    <!-- GRID PRINCIPAL (3 COLUNAS) -->
     <main class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         
-        <!-- Painel de Bolas PC -->
         <section id="pc-number-panel" class="bg-gray-900 p-6 rounded-lg shadow-lg col-span-1 lg:col-span-2">
             <h2 id="pc-bolas-sorteadas-title" class="text-2xl font-bold text-white mb-4">Bolas Sorteadas</h2>
             <div class="grid grid-cols-10 gap-2" id="number-grid"></div>
         </section>
-        
-        <!-- Painéis Mobile (Ocultos no PC) -->
-        <section id="mobile-panels-container" class="hidden -mt-1 flex flex-row gap-1 w-full h-auto">
-            
-            <!-- 1. Painel Esquerdo: Grade de Números (Ocupa o espaço restante) -->
-            <div id="mobile-number-panel" class="bg-black p-0 rounded-lg shadow-lg flex-grow h-full">
-                <div class="grid grid-cols-10 gap-0 bg-black" id="mobile-number-grid"></div>
-            </div>
 
-            <!-- 2. Painel Central: Botões de Ação Verticais -->
-            <div class="flex flex-col justify-between items-center gap-1 py-1 w-[30px] shrink-0">
-                
-                <!-- Botão Controle de Som -->
-                <button id="btn-toggle-voz" class="w-8 h-8 flex items-center justify-center text-white bg-gray-600 hover:bg-gray-500 rounded-full shadow-md focus:outline-none transition-colors">
-                    <span id="icon-voz-on" class="text-sm">🔊</span>
-                    <span id="icon-voz-off" class="text-sm hidden">🔇</span>
-                </button>
-
-                <!-- Botão Próximos Eventos (Agenda) -->
-                <button id="btn-proximos-eventos" class="w-8 h-8 flex items-center justify-center text-white bg-gray-600 hover:bg-gray-500 rounded-full shadow-md focus:outline-none transition-colors">
-                     <span class="text-sm">📅</span>
-                </button>
-
-            </div>
-
-            <!-- 3. Painel Direito: Últimas Bolas (Largura fixa ou ajustada ao conteúdo) -->
-            <aside id="mobile-last-balls-panel" class="flex flex-col justify-center items-center bg-gray-800 p-1 rounded-lg shadow-lg w-auto min-w-[110px]">
-                
-                <div class="flex justify-center items-center space-x-1">
-                    <div id="mobile-last-ball-1" class="h-6 w-6 flex items-center justify-center rounded-full bg-gray-300 text-gray-800 text-[12px] font-bold shadow-md"></div>
-                    <div id="mobile-last-ball-2" class="h-6 w-6 flex items-center justify-center rounded-full bg-gray-300 text-gray-800 text-[12px] font-bold shadow-md"></div>
-                    <div id="mobile-last-ball-3" class="h-6 w-6 flex items-center justify-center rounded-full bg-gray-300 text-gray-800 text-[12px] font-bold shadow-md"></div>
-                </div>
-                
-                <!-- Ordem e Rod na mesma linha -->
-                <div class="mt-1 flex justify-center items-center gap-3 text-[10px] text-gray-400 leading-tight">
-                   <span>Ordem: <span id="mobile-last-order" class="text-sm font-bold text-white">0</span></span>
-                   <span>Rod: <span id="mobile-last-round" class="text-sm font-bold text-white">...</span></span>
-                </div>
-                
-                <!-- Série e Valor na mesma linha -->
-                <div class="mt-1 w-full flex justify-center items-center gap-2 bg-gray-900 rounded px-1 py-0.5 border border-gray-700">
-                     <span class="text-[10px] text-gray-200">Preço Cartela $</span>
-                     <span id="mobile-preco-serie" class="text-sm font-bold text-green-400">0,00</span>
-                </div>
-            </aside>
-
-        </section>
-
-        <!-- Painel de Prêmios PC -->
-        <aside id="pc-prize-panel" class="bg-gray-900 p-6 rounded-lg shadow-lg flex flex-col justify-between lg:col-span-1">
-            <div class="text-center mb-6">
-                <div class="flex justify-center items-center mt-2 space-x-4">
-                    <div id="last-ball-1" class="h-10 w-10 flex items-center justify-center rounded-full bg-red-500 text-white text-lg font-black shadow-md"></div>
-                    <div id="last-ball-2" class="h-10 w-10 flex items-center justify-center rounded-full bg-green-500 text-white text-lg font-bold shadow-md"></div>
-                    <div id="last-ball-3" class="h-10 w-10 flex items-center justify-center rounded-full bg-green-500 text-white text-lg font-medium shadow-md"></div>
-                </div>
-
-                <div class="mt-4 flex justify-center items-center space-x-4 text-2xl font-bold text-gray-500">
-                   <span>Rodada: <span id="last-round" class="font-bold text-gray-400">...</span></span>
-                   <span>Ordem: <span id="last-order" class="font-bold text-gray-400">0</span></span>
-               </div>
-                <div class="mt-4 flex justify-center items-center space-x-2 text-2xl font-bold text-gray-300">
-                     <span>Série R$: <span id="preco-serie" class="font-bold text-blue-400">0</span></span>
-                <div>
-            </div>
-
-            <div class="text-center">
-                <div id="prize-info" class="flex items-center justify-center p-1 bg-blue-800 rounded-lg shadow-md">
-                    <span class="text-1xl text-white font-semibold">...</span>
-                </div>
-                <div id="prize-values" class="space-y-1"></div>
-            </div>
-        </aside>
-
-        <!-- Painéis Mobile Buscando  --> 
-        <aside id="mobile-buscando-panel" class="flex-col bg-gray-900 rounded-lg shadow-lg -mt-1.5">
+        <aside id="mobile-buscando-panel" class="flex-col bg-gray-900 rounded-lg shadow-lg ">
            <div id="mobile-prize-info" class="flex items-center justify-center p-0 bg-blue-900 border-b-2 border-blue-600 rounded-lg shadow-md h-5 w-full">
               <span class="text-sm text-gray-150 font-semibold">...</span>
            </div>
         </aside>
 
-        <!-- PAINEL MANUAL DE ENTRADA (MODO 1) -->
-        <!-- Nota: A visibilidade deste painel será gerenciada pelo JS (controlarPainelMobileEntrada) -->
         <section id="mobile-gerenciar-cartelas-panel" class="p-2 bg-gray-900/50 rounded-lg shadow-lg -mt-2">
              <div class="p-1 flex justify-between items-center bg-gray-900/0 rounded-t-lg -m-2 mb-0">
                 <h2 class="text-base font-bold text-gray-400">Entrada de Cartela</h2>
@@ -265,7 +224,6 @@
             </div>
         </section>
 
-        <!-- COLUNA ESQUERDA PC: Gerenciar Cartelas (3/4 LARGURA) -->
         <section id="pc-cartelas-em-jogo-container" class="col-span-1 md:col-span-2 lg:col-span-3 p-2 bg-gray-900 rounded-lg shadow-lg">
             <h2 class="text-2xl font-bold text-white mb-4">Gerenciar Cartelas em Jogo</h2>
             
@@ -296,9 +254,7 @@
             </div>
             <span id="validation-message" class="text-red-500 text-sm font-medium hidden"></span>
 
-            <!-- PAINEL HÍBRIDO PC   custom-scrollbar    aquix -->
             <div class="loaded-cards-container p-4 bg-gray-700 rounded-lg shadow-md">
-                <!-- Modo Lista -->
                 <div id="view-lista-numerica">
                     <div class="flex justify-between items-center mb-2">
                         <h3 class="text-xl font-bold text-gray-400" id="loaded-cards-header">Cartelas Carregadas</h3>
@@ -310,7 +266,6 @@
                     <div id="loaded-cards-list" class="space-y-2"></div>
                 </div>
 
-                <!-- Modo Gráfico Top 10 -->
                 <div id="view-top10-grafico" class="hidden">
                     <div class="flex justify-between items-center mb-2">
                         <h3 id="oscartoes-header" class="text-xl font-bold text-yellow-500">8 Melhores Cartelas</h3>
@@ -326,39 +281,20 @@
             </div>
         </section>
 
-        <!-- Painel de Prêmios Mobile -->
-        <section id="mobile-prizes-panel" class="bg-gray-900/50 p-1 rounded-lg shadow-lg flex flex-col items-center space-y-2 -mt-2">
-           <div class="flex justify-between items-center w-full px-1">
-              <h2 class="text-base font-bold text-gray-400">Prêmios</h2>
-              <button id="toggle-prizes-button" class="mobile-hide-toggle text-xs font-medium text-gray-200 bg-gray-700 px-3 py-1 rounded-full">Ocultar Prêmios</button>
-           </div>
-           <div id="mobile-prizes-content" class="w-full space-y-1">
-               <div id="mobile-prize-values" class="w-full space-y-1 text-center"></div>
-           </div>
-        </section>      
-
-        <!-- NOVO CONTAINER: BOTOES DE COMPRA (MODO 2) -->
-        <!-- Este painel começa oculto e será mostrado via JS se o modo for de compra -->
         <section id="mobile-compra-botoes" class="hidden p-1 bg-gray-900 rounded-lg shadow-lg -mt-2 mb-1">
              <div class="flex justify-between items-center space-x-2">
-                <!-- Botão Comprar Cartelas -->
                 <button id="btn-comprar-cartelas-mobile" class="w-2/3 p-0 bg-green-900 text-lg text-gray-200 font-bold rounded-lg hover:bg-green-700 shadow-md transition-colors">
                     Comprar Cartelas
                 </button>
-                <!-- Botão Minhas Cartelas -->
                 <button id="btn-minhas-cartelas-mobile-view" class="w-1/3 p-1.5 bg-yellow-800 text-xs text-gray-200 font-bold rounded-lg hover:bg-yellow-600 shadow-md transition-colors">
                     Minhas Cartelas
                 </button>
             </div>
         </section>
-        <!-- FIM NOVO CONTAINER -->
 
-
-        <!-- PAINEL HÍBRIDO MOBILE aquiy bg-blue-300/30 -->
         <section id="mobile-loaded-cards-panel" class=" col-span-1 md:col-span-2 lg:col-span-3 p-0 bg-black/30 rounded-lg shadow-lg h-[580px] overflow-y-auto -mt-2">
             <div class="loaded-cards-container p-2 bg-gray-900/50 rounded-lg shadow-md bg-opacity-0">
                 
-                <!-- Modo Lista Mobile  aquiy-->
                 <div id="view-lista-numerica-mobile">
                       <div class="flex justify-between items-start mb-0 sticky top-0 bg-gray-900 z-10 pt-0 pb-1 bg-opacity-90">    
                             <h3 class="text-lg text-center font-bold text-yellow-600 mb-0 mt-0.5" id="mobile-loaded-cards-header">
@@ -372,7 +308,6 @@
                     <div id="mobile-loaded-cards-list" class="space-y-2 h-450 overflow-y-auto pb-10"></div>   
                 </div>
 
-                <!-- Modo Gráfico Top 8 Mobile -->
                 <div id="view-top10-grafico-mobile" class="hidden">
                     <div class="flex justify-between items-center mb-0 sticky top-0 bg-gray-900 z-10 pt-0 pb-1 bg-opacity-10">
                         <h3 id="mobile-oscartoes-header" class="text-sm font-bold text-yellow-500">8 Melhores</h3>
@@ -381,8 +316,6 @@
                             <span>📋</span>
                         </button>
                     </div>
-
-                    <!-- div id="mobile-oscartoes-content" class="gap-2 pb-10" -->
 
                     <div id="mobile-oscartoes-content" class="max-h-60 overflow-y-auto p-1">
                         <p class="text-center text-gray-500 text-xs">Aguardando sorteio...</p>
@@ -394,7 +327,6 @@
 
     </main>
 
-    <!-- PAINEL DE CONFERÊNCIA FLUTUANTE (MODAL) -->
     <div id="conference-panel-container" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/30 backdrop-blur-sm">
         
         <div class="relative bg-gray-900 p-4 rounded-2xl border-4 border-yellow-500 shadow-2xl flex flex-col items-center space-y-2 w-[80%] max-w-[400px]">
@@ -427,30 +359,23 @@
         </div>
     </div>
 
-    <!-- PAINEL DE GANHADORES FLUTUANTE (MODAL) -->
     <div id="winners-panel-container" class="hidden fixed inset-0 z-[110] items-center justify-center bg-black/30 backdrop-blur-sm">
         
-        <!-- Conteúdo (Borda Verde para diferenciar) -->
         <div class="relative bg-gray-900 p-2 rounded-2xl border-4 border-yellow-500 shadow-2xl flex flex-col items-center w-[90%] max-w-[500px] max-h-[90vh]">
             
-            <!-- Botão Fechar -->
             <button id="btn-close-winners" class="absolute top-2 right-2 text-gray-400 hover:text-white transition-colors z-10">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
             </button>
 
-            <!-- Título -->
             <h2 class="text-center text-2xl text-white uppercase tracking-widest border-b-1 border-green-600 pb-2 w-full mb-1">
                 🏆 Ganhadores 🏆
             </h2>
             
-            <!-- Lista Rolável -->
             <div id="winners-list-content" class="w-full overflow-y-auto space-y-4 pr-1 custom-scrollbar">
-                <!-- O JavaScript vai injetar os ganhadores aqui -->
-            </div>
+                </div>
 
-            <!-- Barra de Timer (Visual Opcional) -->
             <div class="w-full h-1 bg-gray-700 mt-4 rounded-full overflow-hidden">
                 <div id="winners-progress-bar" class="h-full bg-green-500 w-full transition-all linear"></div>
             </div>
@@ -458,11 +383,9 @@
         </div>
     </div>
 
-    <!-- PAINEL MINHAS CARTELAS (MODAL) -->
     <div id="my-cards-panel-container" class="hidden fixed inset-0 z-[120] items-center justify-center bg-black/30 backdrop-blur-sm">
         <div class="relative bg-gray-900 p-4 rounded-2xl border-4 border-blue-600 shadow-2xl flex flex-col items-center w-[90%] max-w-[400px]">
             
-            <!-- Botão Fechar -->
             <button id="btn-close-my-cards" class="absolute top-2 right-2 text-gray-400 hover:text-white transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -473,7 +396,6 @@
                 🎟️ Minhas Cartelas
             </h2>
             
-            <!-- Tabela de Períodos -->
             <div class="w-full bg-gray-800 rounded-lg overflow-hidden border border-gray-700 mb-2">
                  <div class="grid grid-cols-3 bg-gray-700 p-1 text-sm text-gray-300 text-center border-b border-gray-600">
                      <span>N° Inicial</span>
@@ -481,12 +403,10 @@
                      <span>Cartelas</span>
                  </div>
                  <div id="my-cards-list" class="max-h-[50vh] overflow-y-auto custom-scrollbar">
-                     <!-- JS vai preencher aqui -->
                      <div class="p-2 text-center text-gray-500 text-lg">Nenhuma cartela.</div>
                  </div>
             </div>
             
-            <!-- Totalizador -->
             <div class="w-full bg-blue-900/30 rounded-lg p-3 border border-blue-500/50 flex justify-between items-center">
                 <span class="text-gray-300 text-sm font-bold">TOTAL:</span>
                 <span id="my-cards-total" class="text-xl font-black text-blue-400">R$ 0,00</span>
@@ -495,12 +415,10 @@
         </div>
     </div>
 
-   <!-- NOVO CONTAINER: PRÓXIMOS EVENTOS (MODAL) -->
-    <div id="events-panel-container" class="hidden fixed inset-0 z-[130] items-center justify-center bg-black/30 backdrop-blur-sm">
+   <div id="events-panel-container" class="hidden fixed inset-0 z-[130] items-center justify-center bg-black/30 backdrop-blur-sm">
         
         <div class="relative bg-gray-900 p-2 rounded-2xl border-4 border-blue-500 shadow-2xl flex flex-col w-[90%] max-w-[500px] max-h-[90vh]">
             
-            <!-- Botão Fechar -->
             <button id="btn-close-events" class="absolute top-1 right-2 text-gray-400 hover:text-white transition-colors z-10">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -511,21 +429,16 @@
                 📅 Próximos Eventos
             </h2>
             
-            <!-- Lista Rolável de Eventos -->
             <div id="events-list-content" class="w-full overflow-y-auto space-y-3 pr-1 custom-scrollbar p-1">
-                <!-- O JS vai preencher aqui -->
                 <div class="text-center text-gray-500">Carregando agenda...</div>
             </div>
 
         </div>
     </div>
-    <!-- FIM CONTAINER PRÓXIMOS EVENTOS -->
 
-    <!-- MENU LATERAL (SIDEBAR) -->
     <div id="side-menu-overlay" class="hidden fixed inset-0 z-[200]">
         <div id="side-menu-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity opacity-0"></div>
         
-        <!-- ALTERADO AQUI: Removido 'bottom-0', adicionado 'h-auto' e 'rounded-br-2xl' -->
         <nav id="side-menu-panel" class="absolute left-0 top-0 w-64 h-auto bg-gray-900 border-r border-gray-700 transform -translate-x-full transition-transform duration-300 shadow-2xl flex flex-col rounded-br-2xl">
             
             <div class="flex justify-between items-center p-2 border-b border-gray-700">
@@ -539,8 +452,6 @@
 
             <div class="flex-1 overflow-y-auto py-2">
                 <ul class="space-y-1 px-2">
-
-                    <!-- NOVA OPÇÃO: Minhas Cartelas -->
                     <li>
                         <button id="menu-btn-cartelas" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
                             <div class="flex items-center gap-2">
@@ -549,8 +460,6 @@
                             </div>
                         </button>
                     </li>
-                    
-                    <!-- NOVA OPÇÃO: Comprar Cartelas -->
                     <li>
                         <button id="menu-btn-comprar" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
                             <div class="flex items-center gap-2">
@@ -559,8 +468,6 @@
                             </div>
                         </button>
                     </li>
-                    
-                    <!-- NOVA OPÇÃO: Próximos Eventos -->
                     <li>
                         <button id="menu-btn-eventos" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
                             <div class="flex items-center gap-2">
@@ -569,10 +476,7 @@
                             </div>
                         </button>
                     </li>
-
-                    <!-- LINHA DIVISÓRIA -->
                     <li><hr class="border-gray-700 my-1"></li>
-                    
                     <li>
                         <button id="menu-btn-som" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
                             <div class="flex items-center gap-2">
@@ -582,7 +486,6 @@
                             <span id="menu-status-som" class="text-xs font-bold text-green-500">LIGADO</span>
                         </button>
                     </li>
-
                     <li>
                         <button id="menu-btn-tema" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
                             <div class="flex items-center gap-2">
@@ -592,39 +495,25 @@
                             <span id="menu-status-tema" class="text-xs font-bold text-gray-500">DARK</span>
                         </button>
                     </li>
-
                 </ul>
             </div>
         </nav>
     </div>
 
     <div id="aviso-panel-container" class="hidden fixed inset-0 z-[250] items-center justify-center bg-black/10 backdrop-blur-md">
-        
         <div class="relative bg-gray-900 p-4 rounded-2xl shadow-2xl flex flex-col items-center w-[90%] max-w-[500px] text-center animated-border-box">
-            
             <button id="btn-close-aviso" class="absolute top-2 right-2 text-gray-400 hover:text-white transition-colors z-20">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-9 w-9" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
             </button>
-
-            <div class="mb-2 text-4xl animate-bounce">
-                📢
-            </div>
-
-            <h2 id="aviso-titulo" class="text-2xl font-black text-yellow-500 uppercase tracking-widest mb-3 drop-shadow-md">
-                Aviso Importante
-            </h2>
-            
-            <p id="aviso-mensagem" class="text-white text-2xl font-medium leading-relaxed mb-6">
-                ...
-            </p>
-
+            <div class="mb-2 text-4xl animate-bounce">📢</div>
+            <h2 id="aviso-titulo" class="text-2xl font-black text-yellow-500 uppercase tracking-widest mb-3 drop-shadow-md">Aviso Importante</h2>
+            <p id="aviso-mensagem" class="text-white text-2xl font-medium leading-relaxed mb-6">...</p>
             <div id="aviso-timer-container" class="hidden flex-col items-center w-full bg-gray-800/50 rounded-xl p-2 border border-gray-700">
                 <span class="text-xl text-blue-400 uppercase tracking-widest mb-1">💸Tempo Restante 💸</span>
                 <span id="aviso-timer" class="text-4xl font-mono font-bold text-green-400">00:00</span>
             </div>
-
         </div>
     </div>
 

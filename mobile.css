@@ -131,28 +131,6 @@ body[data-device="mobile"] #mobile-buscando-panel #mobile-prize-info {
     height: 6 !important;
 }
 
-/* Por padrão, oculta os painéis específicos para mobile em telas grandes (PC) */
-@media (min-width: 768px) {
-    #mobile-panels-container,
-    #mobile-prizes-panel,
-    #mobile-gerenciar-cartelas-panel,
-    #mobile-loaded-cards-panel {
-        display: none !important;
-    }
- /* Outras regras para exibir os painéis de PC */
-}
-
-@media (min-width: 768px) {
-    /* Esta regra esconde o painel de prêmios do celular em telas de PC */
-    #mobile-prizes-panel {
-        display: none !important;
-    }
-    
-    /* Esta regra exibe o painel de prêmios do PC */
-    #pc-prize-panel {
-        display: flex !important;
-    }
-}
 /* desativa a atualização da pagina por movimento */
 html, body {
     overscroll-behavior-y: none;
@@ -253,4 +231,3 @@ html, body {
             from { --angle: 0deg; }
             to { --angle: 360deg; }
         }
-B. Adicione o
