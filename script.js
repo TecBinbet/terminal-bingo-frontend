@@ -57,6 +57,10 @@ let corNumerosBordaSorte = "border-gray-800";
 let corNumerosBordaNSorte = "border-gray-800"; 
 let corNumerosBordaDest = "border-2 border-yellow-600";
 //
+
+let lastPrizeJson = "";
+let lastBuscandoJson = "";
+
 let tipoDoSorteio = "";
 let Carregando = true;
 let cachedRawCards = [];
@@ -2177,9 +2181,9 @@ function clearPanels() {
     resultadoSoma.textContent = '0';
     if (isMobile) {
         mobileCartelasContent.classList.add('hidden');
-        mobilePrizesContent.classList.add('hidden');
+        //mobilePrizesContent.classList.add('hidden');
         toggleCartelasButton.textContent = 'INCLUIR Cartelas';
-        togglePrizesButton.textContent = 'Apresentar Prêmios';
+        //togglePrizesButton.textContent = 'Apresentar Prêmios';
     }   //  2
     displayPrizeInfo([{ buscando_o_premio: null }],[]);
     iniciandoRodada = true;
@@ -2257,42 +2261,41 @@ function displayLastThree(bolasData) {
 function displayPrizeInfo(buscandoData, premioData = null) {
     const isMobile = isMobileDevice();
     const prizeInfoContainerCurrent = mobilePrizeInfoContainer;
+    
+    // Verificação de segurança
+    if (!prizeInfoContainerCurrent) return;
 
-    // --- BLINDAGEM CONTRA O ERRO ---
-    // Se buscandoData for inválido ou vazio, usa um objeto vazio {} para não quebrar o código
+    // --- PREPARAÇÃO DOS DADOS ---
+    // (Sua lógica original de tratamento de dados)
     const dadosBuscando = (buscandoData && Array.isArray(buscandoData) && buscandoData.length > 0) 
                           ? buscandoData[0] 
                           : {}; 
 
-    // --- CORREÇÃO DO PISCA: Não limpamos o innerHTML aqui ---
-    
     const cleanTextForComparison = (text) => {
         if (!text) return "";
         return text.toString().replace(/\s/g, '').toUpperCase();
     }
 
-    const prizeItem = document.createElement('span');
-    prizeItem.className = 'text-3xl text-gray-200 font-semibold';
-
-    // Agora lemos de 'dadosBuscando' que é seguro (não trava se estiver vazio)
     let buscandoValue = dadosBuscando.buscando_o_premio || null;
     const linhasTaisLinhas = dadosBuscando.buscando_a_linha || '';
     const qtdeLinhas = dadosBuscando.qtde_linha || '';
  
     let prizeToFind = cleanTextForComparison(buscandoValue);
 
+    // Lógica de 3 Linhas
     if (qtdeLinhas === 3 && (buscandoValue === "LINHA" || buscandoValue === "L I N H A"))  {
         const linhasEmJogo = `L I N H A S: ( ${linhasTaisLinhas.toUpperCase()} )`  
         buscandoValue = linhasEmJogo;
         prizeToFind = '3LINHAS'
     }
+    // Ajuste Falta Um
     if (prizeToFind === 'FALTAUM') {
        prizeToFind ='FALTA1';
     }
 
-    // Busca valor
+    // --- BUSCA DO VALOR (Lógica original mantida) ---
     let valorPremio = '';
-    if (premioData && premioData.length > 0 && prizeToFind) {
+    if (premioData && Array.isArray(premioData) && premioData.length > 0 && prizeToFind) {
         for (const item of premioData) {
             const itemPrizeType = cleanTextForComparison(item.tipo_premio);
             if (itemPrizeType === prizeToFind ) {
@@ -2304,19 +2307,154 @@ function displayPrizeInfo(buscandoData, premioData = null) {
         }
     }
    
+    // Define o texto final
+    let textoFinal = '';
     if (!buscandoValue || buscandoValue.toString().trim().toLowerCase() === 'null' || buscandoValue.trim() === '') {
-        prizeItem.innerHTML = '. . .';
+        textoFinal = '. . .';
     } else {
-        prizeItem.innerHTML = buscandoValue;
+        textoFinal = buscandoValue;
     }
 
-    // --- ATUALIZAÇÃO ATÔMICA (Sem Piscar) ---
+    // =========================================================
+    // --- A BLINDAGEM (O Segredo para não piscar) ---
+    // =========================================================
+
+    // 1. Se for IDÊNTICO ao anterior, não mexe no DOM.
+    if (textoFinal === lastBuscandoJson) {
+        return; 
+    }
+
+    // 2. PROTEÇÃO DE REGRESSÃO (Evita perder o valor R$)
+    // Verifica se a tela atual tem um valor (R$ ou números) e o novo texto NÃO tem.
+    // Ex: Tela tem "LINHA - R$ 100,00" e novo vem só "LINHA" -> Ignora o novo.
+    const telaTemValor = lastBuscandoJson && (lastBuscandoJson.includes('R$') || /\d+,\d{2}/.test(lastBuscandoJson));
+    const novoTemValor = textoFinal.includes('R$') || /\d+,\d{2}/.test(textoFinal);
+
+    if (telaTemValor && !novoTemValor && textoFinal !== '. . .') {
+        // Se a gente tinha valor e agora sumiu (mas não é um reset total), 
+        // assumimos que é um delay do servidor e IGNORAMOS essa atualização.
+        return;
+    }
+
+    // =========================================================
+    // --- ATUALIZAÇÃO DA TELA (Só chega aqui se for válido) ---
+    // =========================================================
+
+    lastBuscandoJson = textoFinal; // Salva na memória
+
+    // Cria o elemento (igual ao seu código)
+    const prizeItem = document.createElement('span');
+    prizeItem.className = 'text-3xl text-gray-200 font-semibold';
+    prizeItem.innerHTML = textoFinal; // Usa o texto calculado
+
+    // Limpa e insere
     prizeInfoContainerCurrent.innerHTML = ''; 
     prizeInfoContainerCurrent.appendChild(prizeItem);
 }
 
-
 function displayPrizeValues(premioData, topeData = null) {
+    const isMobile = isMobileDevice(); // Mantido do seu código
+    const prizeValuesContainerCurrent = mobilePrizeValuesContainer;
+    
+    if (!prizeValuesContainerCurrent) return;
+
+    // --- PASSO 1: FILTRAGEM PRÉVIA (Para saber se temos dados reais) ---
+    // Fazemos a limpeza e filtro ANTES de decidir se vamos desenhar
+    let validPrizes = [];
+    if (premioData && Array.isArray(premioData)) {
+        validPrizes = premioData.filter(premio => {
+            const cleanedValue = premio.valor.toString().replace('R$', '').replace('.', '').trim();
+            const numericValue = parseFloat(cleanedValue.replace(',', '.'));
+            return numericValue > 0 && !isNaN(numericValue);
+        });
+    }
+
+    // --- PASSO 2: A CURA DO "NENHUM PRÊMIO" (Blindagem Visual) ---
+    // Se a nova lista de prêmios válidos é VAZIA (0), 
+    // MAS a tela JÁ TEM prêmios desenhados (e não é a msg de "Nenhum")...
+    // ENTÃO: O sistema IGNORA essa atualização vazia e mantém os prêmios na tela.
+    const temPremiosNaTela = prizeValuesContainerCurrent.children.length > 0 && 
+                             !prizeValuesContainerCurrent.textContent.includes('Nenhum prêmio');
+    
+    if (validPrizes.length === 0 && temPremiosNaTela) {
+        // Retorna silenciosamente. O usuário continua vendo os prêmios antigos.
+        return; 
+    }
+
+    // --- PASSO 3: O FIM DO PISCA-PISCA (Cache JSON) ---
+    // Compara os dados atuais (Prêmios + Tope) com a memória.
+    // Se for EXATAMENTE IGUAL, não redesenha nada.
+    const currentJson = JSON.stringify({ p: validPrizes, t: topeData });
+    if (currentJson === lastPrizeJson) {
+        return; 
+    }
+    lastPrizeJson = currentJson; // Atualiza a memória
+
+    // --- PASSO 4: DESENHO (Sua lógica original preservada) ---
+    const fragment = document.createDocumentFragment();
+
+    if (validPrizes.length === 0) {
+        // Só entra aqui se a tela estava vazia ou se realmente não tem prêmios
+        const defaultMessage = document.createElement('span');
+        defaultMessage.className = 'text-lg text-white';
+        defaultMessage.textContent = 'Nenhum prêmio cadastrado.';
+        fragment.appendChild(defaultMessage);
+    } else {
+        const prizeOrder = ['QUADRA', 'LINHA', '3 LINHAS', 'FALTA 1', 'BINGO', 'DUPLO BINGO', 'TRIPLO BINGO', 'SUPER BINGO', 'ACUMULADO'];
+
+        validPrizes.sort((a, b) => {
+            const indexA = prizeOrder.indexOf(a.tipo_premio);
+            const indexB = prizeOrder.indexOf(b.tipo_premio);
+            const aIsValid = indexA > -1;
+            const bIsValid = indexB > -1;
+            if (aIsValid && !bIsValid) return -1;
+            if (!aIsValid && !bIsValid) return 1;
+            if (!aIsValid && !bIsValid) return 0;
+            return indexA - indexB;
+        });
+
+        validPrizes.forEach(premio => {
+            let prizeText = `${premio.tipo_premio}: ${premio.valor}`;   
+            
+            // Sua lógica de Mobile/Promocional
+            if (typeof iniciandoRodada !== 'undefined' && iniciandoRodada && premio.tipo_premio === 'BINGO') {
+                const valorLimpo = premio.valor.replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
+                if (parseFloat(valorLimpo) > 0 && mobilePrizesContent && mobilePrizesContent.classList.contains('hidden')) {
+                     if (typeof seePromocoes !== 'undefined') seePromocoes = false; 
+                     if (typeof hidePromocionalPanel === 'function') hidePromocionalPanel();
+                     if (mobilePrizesContent) mobilePrizesContent.classList.remove('hidden'); 
+                     
+                     if (typeof togglePrizesButton !== 'undefined' && togglePrizesButton) {
+                         //togglePrizesButton.textContent = 'Ocultar Prêmios';
+                         //togglePrizesButton.classList.remove('bg-gray-700');
+                         //togglePrizesButton.classList.add('bg-red-800'); 
+                     }
+                }
+            }     
+            
+            // Sua lógica de Tope
+            if (topeData && topeData.length > 0) {
+                const currentTopeData = topeData[0];
+                if (premio.tipo_premio.includes('SUPER BINGO') && currentTopeData.bola_tope_sb) {
+                    prizeText += ` (TOPE: ${currentTopeData.bola_tope_sb})`;
+                } else if (premio.tipo_premio.includes('ACUMULADO') && currentTopeData.bola_tope_ac) {
+                    prizeText += ` (TOPE: ${currentTopeData.bola_tope_ac})`;
+                }
+            }
+
+            const prizeItem = document.createElement('div');
+            prizeItem.className = 'text-sm font-bold text-green-600 text-center -mt-1';
+            prizeItem.textContent = prizeText;
+            fragment.appendChild(prizeItem);
+        });
+    }
+
+    // Limpa e Atualiza (Atomicamente)
+    prizeValuesContainerCurrent.innerHTML = '';
+    prizeValuesContainerCurrent.appendChild(fragment);
+}
+
+function displayPrizeValuesB(premioData, topeData = null) {
     const isMobile = isMobileDevice();
     const prizeValuesContainerCurrent = mobilePrizeValuesContainer;
     
@@ -2646,16 +2784,54 @@ function closeWinnersPanel() {
 
 async function fetchDataFromCollections() {
     try {
-        const response = await fetch(`${API_BASE_URL}/api/initial-data`);
+        // Headers para evitar cache (Mantido do seu código)
+        const response = await fetch(`${API_BASE_URL}/api/initial-data?_=${Date.now()}`, {
+            method: 'GET',
+            cache: 'no-store',
+            headers: {
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            }
+        });
+
         if (!response.ok) {
             throw new Error('Falha ao buscar dados iniciais.');
         }
-        return await response.json();
+
+        const data = await response.json();
+
+        // --- BLINDAGEM ANTI-OSCILAÇÃO (ADICIONADO AQUI) ---
+        // Verifica se a atualização é válida antes de retornar os dados
+        
+        // 1. Pega estado atual da tela
+        const elementRodada = document.getElementById('mobile-last-round');
+        const localRodada = parseInt(elementRodada ? elementRodada.textContent : '0') || 0;
+        
+        // 2. Pega dados que vieram do servidor
+        const novaRodada = data.parametros ? data.parametros.rodada : 0;
+        const bolasNovas = data.bolas_sorteadas ? data.bolas_sorteadas.length : 0;
+        
+        // 3. Conta bolas já pintadas na tela
+        const bolasNaTela = document.querySelectorAll('#mobile-number-grid > div.bg-red-600, #mobile-number-grid > div.bg-blue-600').length;
+
+        // 4. A LÓGICA: Se a rodada é a mesma, mas vieram MENOS bolas, é erro.
+        // Retornamos NULL para que o sistema ignore essa leitura.
+        if (novaRodada === localRodada && novaRodada > 0) {
+            if (bolasNovas < bolasNaTela) {
+                console.warn(`🛡️ Blindagem: Ignorando leitura instável. (Tela: ${bolasNaTela} vs Server: ${bolasNovas})`);
+                return null; // Retorna nulo para não atualizar a tela
+            }
+        }
+        // --- FIM DA BLINDAGEM ---
+
+        return data;
+
     } catch (error) {
         console.error("Erro ao buscar dados iniciais:", error);
         return null;
     }
 }
+
 
 // Função para renderizar os dados de "Melhores"
 function renderMelhores(melhoresData) {
@@ -3219,7 +3395,7 @@ async function renderMainContent(data) {
 
     globalPromocionalData = promocionalData;
 
-    if (parametrosInfo) {
+   if (parametrosInfo && Object.keys(parametrosInfo).length > 0) {
         const nome_da_sala = parametrosInfo.nome_sala; 
         if (nome_da_sala && salaTitleElement) salaTitleElement.textContent = nome_da_sala;
         

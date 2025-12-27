@@ -425,6 +425,10 @@ def fetch_data_from_mongodb():
         rodada = clean(db.rodada.find({}))
         confere = clean(db.confere.find({}))
         parametros = clean(db.parametros.find({}))
+        if not parametros:
+            print("⚠️ Erro Crítico: Tabela 'parametros' vazia ou ilegível. Mantendo estado anterior.")
+            return None
+
         melhores = list(db['melhores'].find({}, {'_id':0}).sort('id_posicao', 1).limit(25))
         
         # --- 1. LISTA PARA O TERMINAL (PÓS-JOGO) ---
@@ -450,8 +454,8 @@ def fetch_data_from_mongodb():
         lista_live = list(ganhadores_live_dict.values())
         
         premio_data, tope_data, card_ranges, premio_info = process_prizes(premios_raw)
-
-        param_doc = parametros[0] if parametros else {}
+        
+        param_doc = parametros[0]   
         
         avisos = clean(db.avisos.find({}))
    
@@ -476,7 +480,7 @@ def fetch_data_from_mongodb():
         print(f"❌ ERRO FATAL EM FETCH_DATA: {e}")
         import traceback
         traceback.print_exc()
-        return {}
+        return None
 
 
 
@@ -529,7 +533,9 @@ def watch_collections():
             
             if current_json != last_data_json:
                 last_data_json = current_json
-                
+                if not current_data: 
+                    time.sleep(1)
+                    continue            
                 # Salva na variável correta para o WebSocket usar na conexão inicial
                 if is_local_mode: local_data = current_data
                 else: mongo_data = current_data
@@ -939,7 +945,11 @@ def verificar_e_sincronizar_cartelas(evento_num_max, evento_tipo_cartela):
 
     try:
         # 1. Busca parâmetros atuais
-        param = db.parametros.find_one({}) or {}
+        param = db.parametros.find_one({}) 
+        
+        if not param:
+            print("⚠️ Sincronização abortada: Não foi possível ler 'parametros'.")
+            return
         
         # Pega os valores atuais do banco (convertendo para int para comparação segura)
         atual_arquivo = int(param.get('arquivo_de_cartela', 0))
@@ -1009,7 +1019,16 @@ def serve_static(path): return send_from_directory(BASE_DIR, path)
 
 @app.route('/api/initial-data')
 def initial_data():
-    return jsonify(fetch_data())
+#    return jsonify(fetch_data())
+    dados = fetch_data()
+    # Se der erro (None), tenta pegar da memória global (cache) em vez de mandar vazio
+    if not dados:
+        if is_local_mode: dados = local_data
+        else: dados = mongo_data
+    
+    # Se ainda assim for vazio (início do sistema), manda {}
+    return jsonify(dados if dados else {})
+
 
 @app.route('/api/melhores')
 def get_melhores():
@@ -2438,11 +2457,11 @@ def get_event_details():
              
              db.rodada.update_one({}, {'$set': {'id_evento': id_evt,'estado': 'em andamento'}}, upsert=True)
 
-             db.premio.delete_many({})
+             # aa db.premio.delete_many({})
              
              serie_max = evento.get('numero_maximo', 72000) 
              
-             db.premio.insert_one({
+             dados_premio = {
                  'premio_quadra': response_data['premios']['quadra'],
                  'premio_linha': response_data['premios']['linha'],
                  'qtde_linha': response_data['premios']['qtde_linhas'] or 1,
@@ -2460,8 +2479,9 @@ def get_event_details():
                  'inicial1': 1,
                  'final1': serie_max,
                  'total_cartelas_em_jogo': qtde_vendida
-             })
+             }
 
+             db.premio.update_one({}, {'$set': dados_premio}, upsert=True)
              threading.Thread(target=carregar_cache_evento, args=(id_evt, sales_db)).start()
 
         return jsonify(response_data)
