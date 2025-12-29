@@ -132,7 +132,7 @@ let globalPromocionalData = [];
 
 let clienteLogadoId = urlParamsGlobal.get('id_cliente') || urlParamsGlobal.get('idcliente') || null;
 
-let vozAtiva = true; 
+let vozAtiva = false; 
 
 let eventoCarregadoAtual = null;
 
@@ -3441,75 +3441,73 @@ async function renderMainContent(data) {
         
         const tipoSorteio = parametrosInfo.modo_sorteio;
 
-        if (tipoSorteio === 'manual') {
-            vozAtiva = false;
-        } else {
-            vozAtiva = true;
-        }
+        //if (tipoSorteio === 'manual') {
+        //    vozAtiva = false;
+        //} else {
+        //    vozAtiva = true;
+        //}
 
         updateMenuSoundVisuals();
-        //const rawVideoID = parametrosInfo.url_live || parametrosInfo.url_padrao || '';
-        //video_local = parametrosInfo.video_local;
-        
-// --- INÍCIO DA SUBSTITUIÇÃO DE VÍDEO ---
-        const rawVideoID =parametrosInfo.url_live || parametrosInfo.url_padrao || '';
-
-        video_local =  parametrosInfo.video_local;
-        
-        let videoID = '';
-
-        // 1. Extrai APENAS o ID (11 caracteres) de qualquer link
-        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-        const match = rawVideoID.match(regExp);
-
-        if (match && match[2].length === 11) {
-            videoID = match[2];
-        } else if (rawVideoID.length === 11) {
-            videoID = rawVideoID;
-        }
-
-        if (!videoID) videoID = ''; 
-
-        // 2. O GRANDE TRUQUE PARA FILE://
-        let paramOrigin = '';
-        
-        // Verifica se está rodando localmente (arquivo)
-        if (window.location.protocol === 'file:') {
-             // Força a origem como sendo o próprio YouTube para enganar a trava
-             paramOrigin = '&origin=https://www.youtube.com';
-        } 
-        else if (window.location.protocol.startsWith('http')) {
-             // Se estiver em servidor real, usa a origem real
-             paramOrigin = `&origin=${window.location.origin}`;
-        }
-
-        // Monta a URL Final
-        const newVideoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1&rel=0${paramOrigin}`;
-        
-        // Atualiza o player apenas se mudou
-        if (currentVideoUrl !== newVideoUrl) {
-            currentVideoUrl = newVideoUrl;
-            if (youtubeIframe && videoID) {
-                youtubeIframe.src = newVideoUrl;
-            } else if (youtubeIframe) {
-                youtubeIframe.src = ''; // Limpa se não tiver ID
-            }
-        }
-        // --- FIM DA SUBSTITUIÇÃO ---
 
         tipoDoSorteio = tipoSorteio;
     
-        if (abrirYoutubeBtn) {
-            const isLocal = String(video_local).toLowerCase() === 'true'; 
-            if (isLocal || tipoSorteio != "manual") {
-                abrirYoutubeBtn.classList.add('hidden');
-                if (youtubePanel && !youtubePanel.classList.contains('hidden')) abrirYoutubeBtn.click(); 
-                if (tipoSorteio !== "manual") digitalBolaPanel.classList.remove('hidden');
-            } else {
-                if (tipoSorteio === "manual") digitalBolaPanel.classList.add('hidden');
-                abrirYoutubeBtn.classList.remove('hidden');
+        let videoID = '';
+        const rawVideoID =parametrosInfo.url_live || parametrosInfo.url_padrao || '';
+        video_local =  parametrosInfo.video_local;
+        
+        if (tipoSorteio === "manual") {             // --- INÍCIO SE MANUAL ---
+       
+            // 1. Extrai APENAS o ID (11 caracteres) de qualquer link
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+            const match = rawVideoID.match(regExp);
+
+            if (match && match[2].length === 11) {
+                videoID = match[2];
+            } else if (rawVideoID.length === 11) {
+                videoID = rawVideoID;
             }
+
+            if (!videoID) videoID = ''; 
+
+            // 2. O GRANDE TRUQUE PARA FILE://
+            let paramOrigin = '';
+        
+            // Verifica se está rodando localmente (arquivo)
+            if (window.location.protocol === 'file:') {
+                 // Força a origem como sendo o próprio YouTube para enganar a trava
+                 paramOrigin = '&origin=https://www.youtube.com';
+            } 
+            else if (window.location.protocol.startsWith('http')) {
+                 // Se estiver em servidor real, usa a origem real
+                 paramOrigin = `&origin=${window.location.origin}`;
+            }
+
+            // Monta a URL Final
+            const newVideoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1&rel=0${paramOrigin}`;
+        
+            // Atualiza o player apenas se mudou
+            if (currentVideoUrl !== newVideoUrl) {
+                currentVideoUrl = newVideoUrl;
+                if (youtubeIframe && videoID) {
+                    youtubeIframe.src = newVideoUrl;
+                } else if (youtubeIframe) {
+                    youtubeIframe.src = ''; // Limpa se não tiver ID
+                }
+            }
+        }         // --- FIM se Manual-
+
+        if (abrirYoutubeBtn) {
+             const isLocal = String(video_local).toLowerCase() === 'true'; 
+             if (isLocal || tipoSorteio != "manual") {
+                 abrirYoutubeBtn.classList.add('hidden');
+                 if (youtubePanel && !youtubePanel.classList.contains('hidden')) abrirYoutubeBtn.click(); 
+                 if (tipoSorteio !== "manual") digitalBolaPanel.classList.remove('hidden');
+             } else {
+                 if (tipoSorteio === "manual") digitalBolaPanel.classList.add('hidden');
+                 abrirYoutubeBtn.classList.remove('hidden');
+             }
         }
+
     }
 
     renderAvisoPanel(avisosData);
