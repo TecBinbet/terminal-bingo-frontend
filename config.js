@@ -5,7 +5,7 @@ const WS_URL = 'https://orca-app-dp256.ondigitalocean.app';
 //const API_BASE_URL = 'http://38.43.105.229:3001';
 //const WS_URL = 'ws://38.43.105.229:3001';
 
-// note p2
+// note 
 //const API_BASE_URL = 'http://192.168.1.147:3001';
 //const WS_URL = 'ws://192.168.1.147:3001';
 
@@ -37,6 +37,4 @@ const acumulado = new Audio('/audio/bingo.mp3');
 
 // Volume Audio
 bingoSound.volume = 0.5;
-
-
 

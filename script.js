@@ -58,6 +58,16 @@ let corNumerosBordaNSorte = "border-gray-800";
 let corNumerosBordaDest = "border-2 border-yellow-600";
 //
 
+//Dark Faltantes
+let corFundoConteiner = "bg-gray-900/50"
+let corFundoTitulo = "bg-gray-800"
+let corFundoNumeroCartao = "bg-gray-700"
+let corFundoPosicaoLinha = "bg-gray-800"
+let corFundoNumeros4 = "bg-transparent border-2 border-blue-800";
+let corFundoNumeros23 = "bg-transparent border-2 border-orange-700"; 
+let corFundoNumero1 = "bg-transparent border-2 border-green-500";
+let corTextoNumeros = "text-gray-200";
+
 let lastPrizeJson = "";
 let lastBuscandoJson = "";
 
@@ -1992,13 +2002,18 @@ function _recalculateAndDisplayCards(bolasCantadas, premioBuscado, linhasAtivas)
 function displayLoadedCards(bolasCantadas) {
     loader.style.display = 'none';
     const isMobile = isMobileDevice();
-    const cardsList = isMobile ? mobileLoadedCardsList : loadedCardsList;
-    
-    const headerElement = isMobile ? mobileLoadedCardsHeader : loadedCardsHeader; 
+    const container = document.getElementById('loaded-cards-container'); 
+    const cardsList = mobileLoadedCardsList;
+    if (container) {   
+       const classesDeLayout = "rounded-lg shadow-md"; 
+       container.className = `${classesDeLayout} ${corFundoConteiner}`;
+    } 
+
+    const headerElement =mobileLoadedCardsHeader; 
     const totalCards = loadedCards.length;
     const formattedCount = new Intl.NumberFormat('pt-BR').format(cartelasEmJogo);
     if (headerElement) {
-        headerElement.className = 'text-center text-sm text-yellow-500 font-bold mb-0'
+        headerElement.className = 'text-center text-sm text-yellow-500 font-bold mb-0 p-2'
         headerElement.textContent = `Cartelas Carregadas = ${formattedCount}`;
     }
  
@@ -2006,9 +2021,8 @@ function displayLoadedCards(bolasCantadas) {
     
     const isLinePrize = buscando_o_premio.includes('QUADRA') || buscando_o_premio.includes('LINHA');
     const isMultiLinePrize = isLinePrize && !!buscando_a_linha;
-
     const headerDiv = document.createElement('div');
-    headerDiv.className = 'flex justify-between w-full p-0 bg-gray-800 rounded-t-lg text-sm text-gray-400 font-bold mb-0';
+    headerDiv.className = ` flex justify-between w-full p-0 ${corFundoTitulo} rounded-t-lg text-sm text-gray-400 font-bold mb-0`;
     
     let headerText = 'Cartelas com Maior Pontuação';
     if (isMultiLinePrize) {
@@ -2053,14 +2067,14 @@ function displayLoadedCards(bolasCantadas) {
             const showLineTag = isLinePrize && card.linhaId;
 
             const cardLabelHtml = showLineTag
-                ? `<div class="flex-shrink-0 flex gap-1"><span class="w-14 p-0 bg-gray-700 rounded-lg text-center font-bold flex items-center justify-center text-sm gap-y-0 ">${formattedCardNumber}</span><span class="w-5 p-0 bg-gray-800 rounded-lg text-center font-bold  flex items-center justify-center">${card.linhaId[0]}</span></div>`
-                : `<div class="flex-shrink-0 p-0 bg-gray-700 rounded-lg text-center font-bold  flex items-center justify-center text-sm gap-y-0 w-14"><span>${formattedCardNumber}</span></div>`;
+                ? `<div class="flex-shrink-0 flex gap-1"><span class="w-14 p-0 ${corFundoNumeroCartao} rounded-lg text-center font-bold flex items-center justify-center text-sm">${formattedCardNumber}</span><span class="w-5 p-0 ${corFundoPosicaoLinha} rounded-lg text-center font-bold flex items-center justify-center">${card.linhaId[0]}</span></div>`
+                : `<div class="flex-shrink-0 p-0 ${corFundoNumeroCartao} rounded-lg text-center font-bold  flex items-center justify-center text-sm w-14"><span>${formattedCardNumber}</span></div>`;
 
             cardDiv.innerHTML = cardLabelHtml;
 
             const numbersContainer = document.createElement('div');
             if (card.premioEncontrado) {
-               numbersContainer.className = 'flex-1 ml-2 p-0  bg-gray-900 rounded-lg flex flex-wrap gap-1 justify-start';
+               numbersContainer.className = 'flex-1 ml-2 p-0 bg-gray-900 rounded-lg flex flex-wrap gap-1 justify-start';
 
                 const premioTexto = card.premioEncontrado === 'DUPLO BINGO' ? 'DUPLO BINGO' : card.premioEncontrado;
                 const premioSpan = document.createElement('span');
@@ -2070,20 +2084,21 @@ function displayLoadedCards(bolasCantadas) {
                 numbersContainer.classList.add('items-center', 'justify-center');
             } else {
                numbersContainer.className = 'flex-1 ml-1 p-0 bg-transparent rounded-lg flex h-5 gap-x-1 gap-y-0 justify-start';
- 
                const missingNumbers = card.missingNumbers || [];
                 
                 missingNumbers.forEach((num, index) => {
                     const numberSpan = document.createElement('span');
-                    
-                    let bgColorClass = 'bg-blue-700';
+
+// aquix   corFundoTitulo
+                   
+                    let bgColorClass = corFundoNumeros4;
                     if (index === 0) {
-                        bgColorClass = 'bg-green-700';
+                        bgColorClass = corFundoNumero1;
                     } else if (index === 1 || index === 2) {
-                        bgColorClass = 'bg-orange-700';
+                        bgColorClass = corFundoNumeros23;
                     }
                     
-                    const numberClass = `py-3 px-2 rounded-lg text-white font-bold ${bgColorClass} text-sm w-7 h-5 flex items-center justify-center flex-shrink-0`;
+                    const numberClass = `py-3 px-2 rounded-lg ${ corTextoNumeros} font-bold ${bgColorClass} text-sm w-7 h-5 flex items-center justify-center flex-shrink-0`;
                     numberSpan.className = numberClass;
                     numberSpan.textContent = num;
                     numbersContainer.appendChild(numberSpan);
@@ -3242,15 +3257,25 @@ function temaTope10() {
 
         corNumerosSorte = "text-gray-500";
         corNumerosNSorte = "text-gray-500";
-        corNumerosDest = "text-white"; // Corrigido 'text-text-white' para 'text-white'
+        corNumerosDest = "text-white"; 
 
         corNumerosBordaSorte = "border-gray-800";
         corNumerosBordaNSorte = "border-gray-800";
         corNumerosBordaDest = "border-yellow-600";
 
+        // --- Cores Numeros Faltantes (Mobile) ---
+        corFundoConteiner = "bg-gray-900/50";
+        corFundoTitulo = "bg-gray-800";
+        corFundoNumeroCartao = "bg-gray-700  border-0";
+        corFundoPosicaoLinha = "bg-gray-800";
+        corFundoNumeros4 = "bg-transparent border-2 border-blue-800";
+        corFundoNumeros23 = "bg-transparent border-2 border-orange-700"; 
+        corFundoNumero1 = "bg-transparent border-2 border-green-500";
+        corTextoNumeros = "text-gray-200";
+
     } else {
         // --- TEMA LIGHT (Claro) ---
-        corFundoCartela = "bg-gray-300"; // Ajustei para um cinza bem claro para contraste
+        corFundoCartela = "bg-gray-300"; 
         corBordaCartela = "border-gray-500";
 
         corNumeroCartela = "text-blue-800";
@@ -3260,23 +3285,34 @@ function temaTope10() {
         corNumeroFaltam1 = "text-green-600";
 
         corFundoNumerosSorte = "bg-gray-200";
-        corFundoNumerosNSorte = "bg-white"; // Fundo branco para números normais no light
+        corFundoNumerosNSorte = "bg-white"; 
         corFundoNumerosDest = "bg-blue-200";
 
         corNumerosSorte = "text-gray-400";
-        corNumerosNSorte = "text-gray-400"; // Texto escuro para leitura
-        corNumerosDest = "text-red-600 font-bold"; // Amarelo no fundo azul destaca bem
+        corNumerosNSorte = "text-gray-400"; 
+        corNumerosDest = "text-red-600 font-bold"; 
 
         corNumerosBordaSorte = "border-gray-300";
         corNumerosBordaNSorte = "border-gray-300";
         corNumerosBordaDest = "border-blue-500";
+
+        // --- Cores Numeros Faltantes (Mobile) ---
+        corFundoConteiner = "bg-blue-300/20";
+        corFundoTitulo = "bg-blue-850";
+        corFundoNumeroCartao = "bg-blue-700 border-2 border-blue-900";
+        corFundoPosicaoLinha = "bg-blue-700";
+        
+        // Ajuste aqui: border-1 não existe padrão, usa-se apenas 'border'
+        corFundoNumeros4 = "bg-transparent border-2 border-blue-950";
+        corFundoNumeros23 = "bg-transparent border-2 border-orange-700";
+        corFundoNumero1 = "bg-blue-800 border-2 border-yellow-500";
+        corTextoNumeros = "text-white";
     }
 
     // --- ATUALIZAÇÃO IMEDIATA ---
-    // Se houver cartelas carregadas, redesenha o Top 10 com as novas variáveis
     if (typeof loadedCards !== 'undefined' && loadedCards.length > 0) {
-        // Passa as bolas globais atuais para manter o estado do jogo
         renderOscartoes(globalBolasCantadas);
+        displayLoadedCards(globalBolasCantadas);
     }
 }
 
