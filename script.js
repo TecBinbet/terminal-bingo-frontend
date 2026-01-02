@@ -2013,7 +2013,7 @@ function displayLoadedCards(bolasCantadas) {
     const totalCards = loadedCards.length;
     const formattedCount = new Intl.NumberFormat('pt-BR').format(cartelasEmJogo);
     if (headerElement) {
-        headerElement.className = 'text-center text-sm text-yellow-500 font-bold mb-0 p-2'
+        headerElement.className = 'text-center text-sm text-yellow-500 font-bold mb-0 -mt-1 p-2'
         headerElement.textContent = `Cartelas Carregadas = ${formattedCount}`;
     }
  
@@ -2178,6 +2178,13 @@ function clearPanels() {
     newRanges = [];
     cachedRawCards = [];
     globalBolasCantadas = [];
+
+    atualizarVisualizacaoAcumulado(
+               premioInfo.premio_acumulado, 
+               topeData[0].bola_tope_ac,  
+               globalBolasCantadas          
+    );
+
 
     loadedCards = [];
     displayLoadedCards([]);
@@ -2512,9 +2519,9 @@ function displayPrizeValuesB(premioData, topeData = null) {
                          hidePromocionalPanel();
                          //startPrizeHideTimer();
                          mobilePrizesContent.classList.remove('hidden'); 
-                         togglePrizesButton.textContent = 'Ocultar Prêmios';
-                         togglePrizesButton.classList.remove('bg-gray-700');
-                         togglePrizesButton.classList.add('bg-red-800'); 
+                         //togglePrizesButton.textContent = 'Ocultar Prêmios';
+                         //togglePrizesButton.classList.remove('bg-gray-700');
+                         //togglePrizesButton.classList.add('bg-red-800'); 
                    }
                 }    
                 if (topeData && topeData.length > 0) {
@@ -3529,6 +3536,12 @@ async function renderMainContent(data) {
         ValorSerie = preco;
         const formattedPreco = new Intl.NumberFormat('pt-BR', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(preco);
         if(mobilePrecoSerieElement) mobilePrecoSerieElement.textContent = formattedPreco;
+        atualizarVisualizacaoAcumulado(
+               premioInfo.premio_acumulado, // Valor do prêmio (ex: 10000 ou "R$ 10.000,00")
+               topeData[0].bola_tope_ac,       // Limite de bolas (ex: 40)
+               globalBolasCantadas             // Array das bolas que já saíram
+        );
+
     }
 
     if (cartelaRanges && cartelaRanges.length > 0) {
@@ -3835,7 +3848,7 @@ ws.onmessage = (event) => {
 };
 
     ws.onclose = (event) => {
-        releaseWakeLock(); // <--- Adicione esta linha
+        releaseWakeLock();
         if (!reconnectInterval) {
             reconnectInterval = setInterval(() => {
                 connectWebSocket();
@@ -4297,6 +4310,47 @@ function alternarPainelMobile(modo) {
     }
 }
 
+function atualizarVisualizacaoAcumulado(valorAcumulado, bolaTope, bolasCantadas) {
+    const container = document.getElementById('quadro-premio-acumulado');
+    const valorSpan = document.getElementById('premio-acumulado');
 
+    // Proteção se os elementos não existirem
+    if (!container || !valorSpan) return;
+
+    // 1. Verifica se existe valor acumulado (maior que zero)
+    // Convertemos para número caso venha como string monetária
+    let valorNumerico = 0;
+    if (typeof valorAcumulado === 'string') {
+        // Remove R$, pontos e troca vírgula por ponto para verificar
+        valorNumerico = parseFloat(valorAcumulado.replace(/[^0-9,-]+/g,"").replace(",","."));
+    } else {
+        valorNumerico = valorAcumulado;
+    }
+
+    // Se for zero ou menor, esconde tudo e sai da função
+    if (!valorNumerico || valorNumerico <= 0) {
+        container.classList.add('hidden');
+        return;
+    }
+
+    // Se chegou aqui, mostra o container e atualiza o texto
+    container.classList.remove('hidden');
+    valorSpan.textContent = typeof valorAcumulado === 'number' 
+        ? `R$ ${valorAcumulado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` 
+        : valorAcumulado;
+
+    // 2. Verifica a regra do Tope (Bola Limite)
+    const quantidadeBolas = bolasCantadas.length; // Ou usar globalBolasCantadas.length
+
+    if (quantidadeBolas <= bolaTope) {
+        // --- ESTILO ATIVO (VÁLIDO) ---
+        // Aplica o estilo amarelo com borda
+        container.className = "text-[8px] font-bold text-yellow-300 border-2 border-yellow-700 rounded-lg px-3";
+    } else {
+        // --- ESTILO INATIVO (ULTRAPASSADO) ---
+        // Aplica o estilo cinza sem borda
+        container.className = "text-[9px] font-semibold text-gray-500 border-0 px-0";
+    }
+}
 
 // --- FIM DAS NOVAS FUNÇÕES ---

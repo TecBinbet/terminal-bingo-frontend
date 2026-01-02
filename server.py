@@ -1829,6 +1829,19 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
                 'hora': datetime.now().strftime("%H:%M:%S")
             })
 
+            if val_total_float > 0:
+                def processar_pagamento_75_bg(evt_id, c_id, val, desc):
+                    try:
+                        s_db = get_sales_db_connection()
+                        id_cli = buscar_id_cliente_por_cartela(s_db, evt_id, int(c_id)) # int() garante busca correta
+                        if id_cli:
+                            registrar_transacao_cliente_mesa(s_db, id_cli, val, 'premio', desc, evt_id)
+                    except Exception as e: print(f"❌ Erro thread pagto 75: {e}")
+
+                threading.Thread(target=processar_pagamento_75_bg, 
+                               args=(int(id_evento_ativo), cartela_id, val_total_float, f"Prêmio {tag_premio} - Evento {id_evento_ativo}")).start()
+            # -----------------------------------
+
     return {
         'status_code': status_code,
         'valid': eh_valido,
@@ -2060,6 +2073,7 @@ def admin_validar_cartela():
             premio_registro = f"{premio_nome} ({linha_ganha})" if linha_ganha else premio_nome
             if not db.ganhadores.find_one({'cartela': cartela_id, 'premio': premio_registro}):
                 valor_monetario = "R$ --"
+                raw_val = 0.0
                 try:
                     tabela_premios = db.premio.find_one({}) or {}
                     campo_valor = ''
@@ -2070,17 +2084,36 @@ def admin_validar_cartela():
                     elif 'ACUMULADO' in premio_nome: campo_valor = 'premio_acumulado'
                     if campo_valor:
                          raw_val = float(str(tabela_premios.get(campo_valor, 0)))
-                         valor_monetario = f"R$ {raw_val:,.2f}".replace('.', ',')
+                         valor_monetario_str = f"R$ {raw_val:,.2f}".replace('.', ',')
                 except: pass
 
                 db.ganhadores.insert_one({
                     'premio': premio_registro,
-                    'valor_total_premio': valor_monetario,
+                    'valor_total_premio': valor_monetario_str,
                     'cartela': cartela_id,
                     'nome': nome_ganhador,
-                    'valor_rateio': valor_monetario,
-                    'linha_ganha_tag': linha_ganha
+                    'valor_rateio': valor_monetario_str,
+                    'linha_ganha_tag': linha_ganha,
+                    'hora': datetime.now().strftime("%H:%M:%S")
                 })
+
+                # 2. --- PAGAMENTO AUTOMÁTICO ---
+                if raw_val > 0:
+                    # Thread para não travar a validação visual
+                    def processar_pagamento_bg(evt_id, c_id, val, desc):
+                        try:
+                            s_db = get_sales_db_connection() # Conecta no banco de vendas
+                            id_cli = buscar_id_cliente_por_cartela(s_db, evt_id, c_id)
+                            if id_cli:
+                                registrar_transacao_cliente_mesa(s_db, id_cli, val, 'premio', desc, evt_id)
+                            else:
+                                print(f"⚠️ Aviso: Cartela {c_id} sem dono identificado nas vendas.")
+                        except Exception as e:
+                            print(f"❌ Erro thread pagto: {e}")
+
+                    threading.Thread(target=processar_pagamento_bg, 
+                                   args=(int(id_evento_ativo), cartela_id, raw_val, f"Prêmio {premio_registro} - Evento {id_evento_ativo}")).start()
+                # -------------------------------
 
         return jsonify({
             'status_code': status_code,
@@ -2587,6 +2620,74 @@ def admin_preparar_evento():
     except Exception as e:
         print(f"❌ Erro ao preparar evento: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# --- FUNÇÃO PARA CREDITAR PRÊMIO AUTOMATICAMENTE ---
+def registrar_transacao_cliente_mesa(sales_db, id_cliente, valor, tipo, descricao, id_evento=None):
+    """
+    Registra crédito na conta do cliente diretamente pela Mesa.
+    """
+    try:
+        if sales_db is None: 
+            print("❌ Erro: DB Vendas desconectado ao tentar pagar prêmio.")
+            return False
+        
+        # Garante que o valor seja float
+        valor_float = float(valor)
+        if valor_float <= 0:
+            return False # Não registra prêmio zerado
+
+        valor_decimal = Decimal128(str(valor_float))
+        
+        # 1. Busca e Atualiza Saldo do Cliente
+        cliente = sales_db.clientes.find_one({'id_cliente': id_cliente})
+        if not cliente: 
+            print(f"❌ Cliente {id_cliente} não encontrado para crédito.")
+            return False
+            
+        saldo_anterior = converter_decimal(cliente.get('saldo_atual', 0.00))
+        saldo_novo = saldo_anterior + valor_float
+        
+        sales_db.clientes.update_one(
+            {'id_cliente': id_cliente},
+            {'$set': {'saldo_atual': Decimal128(str(saldo_novo))}}
+        )
+
+        # 2. Registra no Extrato Unificado
+        transacao_doc = {
+            'id_cliente': id_cliente,
+           'data_hora': datetime.utcnow() - timedelta(hours=3),
+            'tipo': tipo,  # 'premio'
+            'valor': valor_decimal,
+            'saldo_anterior': Decimal128(str(saldo_anterior)),
+            'saldo_posterior': Decimal128(str(saldo_novo)),
+            'descricao': descricao,
+            'id_evento': id_evento,
+            'origem': 'Mesa Controladora'
+        }
+        sales_db.transacoes_clientes.insert_one(transacao_doc)
+        print(f"💰 SUCESSO: Prêmio de R$ {valor_float} creditado para o cliente {id_cliente}.")
+        return True
+
+    except Exception as e:
+        print(f"❌ Erro crítico ao pagar prêmio via Mesa: {e}")
+        return False
+
+def buscar_id_cliente_por_cartela(sales_db, id_evento, cartela_id):
+    """Descobre quem é o dono da cartela na tabela de vendas."""
+    try:
+        col_vendas = sales_db[f"vendas{id_evento}"]
+        # Busca em qualquer uma das faixas
+        venda = col_vendas.find_one({
+            '$or': [
+                {'numero_inicial': {'$lte': cartela_id}, 'numero_final': {'$gte': cartela_id}},
+                {'numero_inicial2': {'$lte': cartela_id}, 'numero_final2': {'$gte': cartela_id}}
+            ]
+        }, {'id_cliente': 1})
+        
+        return venda.get('id_cliente') if venda else None
+    except:
+        return None
 
 
 # --- MAIN ---

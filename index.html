@@ -27,7 +27,6 @@
                 border: 1px solid #166534;
             }
         }
-
         .animate-prize-blink {
             animation: flash-premio 1s infinite; 
         }
@@ -50,18 +49,21 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
-            </button>
-            
+            </button>        
             <h1 class="text-sm font-bold text-green-400" id="sala-title">Terminal OnLine</h1>
         </div>
 
         <div class="text-sm text-gray-400">
             <p class="hidden">Backend: <span id="backend-version">...</span></p>
         </div>
+        <div id ="quadro-premio-acumulado" class="hidden text-[9px] font-bold text-yellow-300 border-2 border-yellow-400 rounded-lg px-3 mt-2">
+            <p >Acum.: <span id ="premio-acumulado" >R$ 0,00</span></p>
+        </div>
+
     </header>
 
     <button id="abrir-youtube-btn" class="fixed top-0 right-4 bg-red-600 text-white px-2 py-0 rounded-lg shadow-lg z-50">
-    Abrir YouTube
+         Abrir YouTube
     </button>
 
     <section id="digital-bola-panel" class="w-full bg-gray-900 mb-1 p-1 rounded-lg shadow-xl h-[133px] hidden flex items-center justify-center">
@@ -268,7 +270,7 @@
 
                 <div id="view-top10-grafico" class="hidden">
                     <div class="flex justify-between items-center mb-2">
-                        <h3 id="oscartoes-header" class="text-xl font-bold text-yellow-500">8 Melhores Cartelas</h3>
+                        <h3 id="oscartoes-header" class="text-xl font-bold text-yellow-500">10 Melhores Cartelas</h3>
                         <button id="btn-ir-para-lista" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded text-sm flex items-center gap-2">
                             <span>Ver Lista Numérica</span>
                             <span class="text-lg">📋</span>
@@ -295,11 +297,11 @@
             <div id="loaded-cards-container" class="loaded-cards-container bg-gray-900/50 rounded-lg shadow-md p-2 bg-opacity-0">
                 
                 <div id="view-lista-numerica-mobile">
-                      <div class="flex justify-between items-start mb-0 sticky top-0 bg-gray-900 z-10 pt-0 pb-1 bg-opacity-10">    
+                      <div class="flex justify-between items-start -mb-2 sticky top-0 bg-gray-900 z-10 pt-0 pb-1 bg-opacity-10">    
                             <h3 class="text-lg text-center font-bold text-yellow-600 mb-0 mt-0.5" id="mobile-loaded-cards-header">
                                    Cartelas
                             </h3>
-                            <button id="btn-ir-para-top10-mobile" class="bg-gray-700 active:bg-gray-500 text-white text-xs font-bold py-1.5 px-3 rounded-full shadow-md flex items-center -mt-1 gap-1">
+                            <button id="btn-ir-para-top10-mobile" class="bg-gray-700 active:bg-gray-500 text-white text-xs font-bold py-1.5 px-3 mt-0.5 rounded-full shadow-md flex items-center  gap-1">
                                  <span>Ver Top 10</span>
                                  <span>📊</span>
                             </button>
@@ -309,8 +311,8 @@
 
                 <div id="view-top10-grafico-mobile" class="hidden">
                     <div class="flex justify-between items-center mb-0 sticky top-0 bg-gray-900 z-10 pt-0 pb-1 bg-opacity-10">
-                        <h3 id="mobile-oscartoes-header" class="text-sm font-bold text-yellow-500">8 Melhores</h3>
-                        <button id="btn-ir-para-lista-mobile" class="bg-gray-700 active:bg-gray-600 text-white text-xs font-bold py-1.5 px-3 rounded-full shadow-md flex items-center -mt-1 gap-1">
+                        <h3 id="mobile-oscartoes-header" class="text-sm font-bold text-yellow-500">10 Melhores</h3>
+                        <button id="btn-ir-para-lista-mobile" class="bg-gray-700 active:bg-gray-600 text-white text-xs font-bold py-1.5 px-3 rounded-full shadow-md flex items-center mt-0.5 gap-1">
                             <span>Ver Lista</span>
                             <span>📋</span>
                         </button>
@@ -515,6 +517,7 @@
             </div>
         </div>
     </div>
+
 
     <script src="config.js"></script>
     <script src="script.js"></script>
