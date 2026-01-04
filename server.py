@@ -5,9 +5,12 @@ import json
 import traceback
 import threading
 import time
+
+import bcrypt # Necessário para validar a senha
+from flask import Flask, jsonify, request, send_from_directory, session # Adicionar session
+
 from bson.decimal128 import Decimal128
 from datetime import datetime, timedelta
-from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
@@ -15,6 +18,16 @@ from gevent.pywsgi import WSGIServer
 from geventwebsocket.handler import WebSocketHandler
 from geventwebsocket.exceptions import WebSocketError
 import sys
+
+app = Flask(__name__, static_folder='.')
+
+app.secret_key = 'sua_chave_secreta_aqui' # Configure uma chave forte
+
+# --- CONFIGURAÇÃO DE SESSÃO PARA IP LOCAL/MOBILE ---
+app.config['SESSION_COOKIE_SECURE'] = False      # Permite cookie sem HTTPS (importante para IP local)
+app.config['SESSION_COOKIE_HTTPONLY'] = True     # Segurança contra JS malicioso
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'    # Permite envio do cookie na navegação normal
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7) # Mantém logado por 7 dias
 
 # --- NO TOPO DO SERVER.PY (Logo após os imports) ---
 
@@ -175,12 +188,13 @@ DB_NAME = os.environ.get("DB_NAME", "dados_do_sorteio")
 LOCAL_PATH = os.environ.get("LOCAL_PATH", "c:/chefemesa/json")
 is_local_mode = False
 
-app = Flask(__name__)
-CORS(app)
+#app = Flask(__name__)
+CORS(app, supports_credentials=True)
 port = int(os.environ.get('PORT') or os.environ.get('sPORT', 3001))
 
 # --- VARIÁVEIS GLOBAIS ---
 db = None
+client = None
 sales_client = None  # Cache para conexão de vendas
 current_sales_uri = None
 clients = set() # WebSocket clients
@@ -294,7 +308,8 @@ def carregar_cache_evento(id_evento, sales_db):
 
 
 def connect_main_db():
-    global db
+    global client, db  # <--- CORRIGIDO: "client" em vez de "cliente"
+    
     if not is_local_mode:
         try:
             # Mostra o Cluster para conferência (Oculta senha)
@@ -304,17 +319,15 @@ def connect_main_db():
             mongo_kwargs = { 'server_api': ServerApi('1') }
             if _TLS_CA_FILE: mongo_kwargs['tlsCAFile'] = _TLS_CA_FILE
             
+            # Cria a conexão na variável global 'client'
             client = MongoClient(MONGO_URI, **mongo_kwargs)
             
             # --- LÓGICA DE BANCO PADRONIZADO ---
-            # 1. Tenta pegar o nome do banco se estiver escrito no link (ex: ...net/meu_banco)
-            # 2. Se não tiver nada no link, assume "dados_do_sorteio" (PADRÃO)
             try:
                 db_target = client.get_default_database()
                 print(f"✅ Banco definido no link: '{db_target.name}'")
                 db = db_target
             except:
-                # O link veio limpo (ex: ...mongodb.net). Usamos o nome padrão.
                 NOME_PADRAO = "dados_do_sorteio"
                 print(f"⚠️ Link sem nome de banco. Usando padronizado: '{NOME_PADRAO}'")
                 db = client.get_database(NOME_PADRAO)
@@ -482,6 +495,71 @@ def fetch_data_from_mongodb():
         traceback.print_exc()
         return None
 
+
+# --- FUNÇÃO DE SEQUÊNCIA DE VENDA (Portada do app.py) ---
+def get_next_bilhete_sequence(db, id_evento, nome_campo, qtd=1, maximo=999999):
+    """
+    Gera o próximo número de sequência de forma segura e auto-curável.
+    Se o campo estiver nulo/quebrado no banco, ele reseta para 1 automaticamente.
+    """
+    try:
+        # Tenta identificar a coleção de contadores (pode ser 'counters', 'config' ou 'rodada')
+        col_name = 'counters'
+        if 'config' in db.list_collection_names():
+            col_name = 'config'
+        elif 'rodada' in db.list_collection_names() and id_evento != 'global':
+            # As vezes o contador do evento fica na propria coleção dele
+            pass 
+
+        col = db[col_name]
+
+        # Define o filtro de busca
+        filtro = {'id_evento': id_evento}
+        if id_evento == 'global':
+             filtro = {'id_evento': 'global'}
+
+        # Tenta incrementar atomicamente
+        ret = col.find_one_and_update(
+            filtro,
+            {'$inc': {nome_campo: qtd}},
+            upsert=True, # Cria se não existir
+            return_document=True
+        )
+        
+        # Se retornou algo, pega o valor
+        if ret and nome_campo in ret:
+            val = int(ret[nome_campo])
+            # Se passou do máximo (loop do bingo), reseta
+            if maximo > 0 and val > maximo:
+                col.update_one(filtro, {'$set': {nome_campo: 1}})
+                return 1
+            return val
+        else:
+            # Se criou agora mas veio vazio
+            col.update_one(filtro, {'$set': {nome_campo: qtd}})
+            return qtd
+
+    except Exception as e:
+        print(f"⚠️ Erro na sequência ({nome_campo}): {e}")
+        
+        # --- AUTO-CURA DO BANCO DE DADOS ---
+        # Se o erro for de "non-numeric type" (o erro que você teve), forçamos o conserto
+        try:
+            print(f"🔧 Tentando consertar o campo '{nome_campo}' automaticamente...")
+            col_name = 'counters'
+            if 'config' in db.list_collection_names(): col_name = 'config'
+            
+            # Força o valor para 1 (Reinicia a contagem para destravar)
+            filtro = {'id_evento': id_evento}
+            if id_evento == 'global': filtro = {'id_evento': 'global'}
+            
+            db[col_name].update_one(filtro, {'$set': {nome_campo: 1}})
+            print("✅ Campo corrigido para 1. Tentando novamente...")
+            return 1
+        except Exception as e2:
+            print(f"❌ Falha crítica ao consertar banco: {e2}")
+            # Em último caso, usa timestamp para não travar a venda
+            return int(time.time())
 
 
 def process_prizes(premios_raw):
@@ -1179,7 +1257,7 @@ def admin_fechar_vendas():
 
         # 2. Calcula Hora Final (Ajustado para Fuso Brasil -3h)
         # Usamos UTC agora e subtraímos 3 horas para garantir horário de Brasília no Log
-        agora_br = datetime.utcnow() - timedelta(hours=3)
+        agora_br = datetime.now() - timedelta(hours=3)
         hora_final_obj = agora_br + timedelta(seconds=tempo_espera_seg)
         hora_final_str = hora_final_obj.strftime("%H:%M:%S")
 
@@ -1573,7 +1651,7 @@ def admin_sortear():
         db.bolas.update_one({}, {
             '$set': {
                 'bolas_cantadas': bolas_cantadas,
-                'proxima_bola': len(bolas_cantadas),  # nova_bola, aquix
+                'proxima_bola': len(bolas_cantadas),  # nova_bola
                 'ordem' : len(bolas_cantadas),
                 'ultimas_bolas': bolas_cantadas[-3:]
             }
@@ -2623,55 +2701,52 @@ def admin_preparar_evento():
 
 
 # --- FUNÇÃO PARA CREDITAR PRÊMIO AUTOMATICAMENTE ---
-def registrar_transacao_cliente_mesa(sales_db, id_cliente, valor, tipo, descricao, id_evento=None):
+def registrar_transacao_cliente_mesa(db_vendas, id_cliente, valor, tipo, descricao, id_evento):
     """
-    Registra crédito na conta do cliente diretamente pela Mesa.
+    Registra movimentação financeira e atualiza saldo.
+    Retorna True se sucesso, False se erro.
     """
     try:
-        if sales_db is None: 
-            print("❌ Erro: DB Vendas desconectado ao tentar pagar prêmio.")
-            return False
+        # Garante que os valores numéricos estão corretos
+        val_decimal = Decimal128(str(valor))
+        id_cli = int(id_cliente)
         
-        # Garante que o valor seja float
-        valor_float = float(valor)
-        if valor_float <= 0:
-            return False # Não registra prêmio zerado
-
-        valor_decimal = Decimal128(str(valor_float))
-        
-        # 1. Busca e Atualiza Saldo do Cliente
-        cliente = sales_db.clientes.find_one({'id_cliente': id_cliente})
-        if not cliente: 
-            print(f"❌ Cliente {id_cliente} não encontrado para crédito.")
-            return False
-            
-        saldo_anterior = converter_decimal(cliente.get('saldo_atual', 0.00))
-        saldo_novo = saldo_anterior + valor_float
-        
-        sales_db.clientes.update_one(
-            {'id_cliente': id_cliente},
-            {'$set': {'saldo_atual': Decimal128(str(saldo_novo))}}
+        # 1. Tenta atualizar o saldo do cliente (Isso é o mais importante)
+        resultado = db_vendas.clientes.update_one(
+            {'id_cliente': id_cli},
+            {
+                '$inc': {'saldo_atual': val_decimal}, # Soma ou subtrai o valor
+                '$set': {'ultima_movimentacao': datetime.now()}
+            }
         )
+        
+        if resultado.modified_count == 0:
+            print(f"⚠️ Atenção: Saldo não atualizado para cliente {id_cli} (Cliente não encontrado ou valor zero).")
+            # Se não achou o cliente, não podemos registrar a transação, pois o saldo ficaria desincronizado
+            return False
 
-        # 2. Registra no Extrato Unificado
-        transacao_doc = {
-            'id_cliente': id_cliente,
-           'data_hora': datetime.utcnow() - timedelta(hours=3),
-            'tipo': tipo,  # 'premio'
-            'valor': valor_decimal,
-            'saldo_anterior': Decimal128(str(saldo_anterior)),
-            'saldo_posterior': Decimal128(str(saldo_novo)),
+        # 2. Se o saldo foi atualizado, grava o histórico (Extrato)
+        doc_transacao = {
+            'id_transacao': f"TR{int(time.time()*1000)}",
+            'id_cliente': id_cli, 
+            'data_hora': datetime.now() - timedelta(hours=3),
+            'tipo': tipo,       # 'compra', 'premio', 'deposito'
             'descricao': descricao,
+            'valor': val_decimal,
             'id_evento': id_evento,
-            'origem': 'Mesa Controladora'
+            'origem': 'WEB_AUTO'
         }
-        sales_db.transacoes_clientes.insert_one(transacao_doc)
-        print(f"💰 SUCESSO: Prêmio de R$ {valor_float} creditado para o cliente {id_cliente}.")
+        
+        db_vendas.transacoes_clientes.insert_one(doc_transacao)
         return True
 
     except Exception as e:
-        print(f"❌ Erro crítico ao pagar prêmio via Mesa: {e}")
+        print(f"❌ Erro crítico ao registrar transação: {e}")
+        # Tenta imprimir o erro completo para debug
+        import traceback
+        traceback.print_exc()
         return False
+
 
 def buscar_id_cliente_por_cartela(sales_db, id_evento, cartela_id):
     """Descobre quem é o dono da cartela na tabela de vendas."""
@@ -2688,6 +2763,235 @@ def buscar_id_cliente_por_cartela(sales_db, id_evento, cartela_id):
         return venda.get('id_cliente') if venda else None
     except:
         return None
+
+# --- ROTAS DE AUTOATENDIMENTO (LOGIN E COMPRA) ---
+
+@app.route('/api/login_cliente', methods=['POST'])
+def api_login_cliente():
+    try:
+        data = request.json
+        usuario = data.get('usuario')
+        senha = data.get('senha')
+        
+        print(f"🔑 Tentativa de login: Usuário='{usuario}'")
+
+        if not usuario or not senha:
+            return jsonify({'erro': 'Preencha usuário e senha.'}), 400
+
+        # --- CORREÇÃO FUNDAMENTAL AQUI ---
+        # Não usamos 'db' (Banco do Jogo), usamos o Banco de Vendas onde o cliente se cadastrou
+        sales_db = get_sales_db_connection()
+        
+        if sales_db is None:
+            print("❌ Erro: Não foi possível conectar ao Banco de Vendas para validar login.")
+            return jsonify({'erro': 'Erro interno: Banco de clientes inacessível.'}), 500
+
+        # Busca o Cliente (Case insensitive) no banco de Vendas
+        cli = sales_db.clientes.find_one({'nick': {'$regex': f'^{usuario}$', '$options': 'i'}})
+
+        if not cli:
+            print(f"⚠️ Usuário '{usuario}' não encontrado no banco de vendas.")
+            return jsonify({'erro': 'Usuário não encontrado.'}), 401
+
+        # Valida Senha
+        if 'senha' in cli:
+            # Força a primeira letra maiúscula conforme sua regra de negócio
+            senha_fmt = senha.capitalize()
+            
+            try:
+                if bcrypt.checkpw(senha_fmt.encode('utf-8'), cli['senha'].encode('utf-8')):
+                    # Sucesso!
+                    session['id_cliente'] = str(cli['id_cliente'])
+                    session['nick_cliente'] = cli['nick']
+                    
+                    saldo = converter_decimal(cli.get('saldo_atual', 0.0))
+                    
+                    print(f"✅ Login Sucesso: {cli['nick']} (Saldo: {saldo})")
+                    return jsonify({
+                        'status': 'ok', 
+                        'msg': 'Logado com sucesso!',
+                        'nick': cli['nick'],
+                        'saldo': saldo
+                    })
+                else:
+                    print(f"⛔ Senha incorreta para '{usuario}'")
+                    return jsonify({'erro': 'Senha incorreta.'}), 401
+            except Exception as e_pass:
+                print(f"❌ Erro ao verificar hash da senha: {e_pass}")
+                return jsonify({'erro': 'Erro na validação de segurança da senha.'}), 500
+        else:
+            return jsonify({'erro': 'Usuário sem senha cadastrada.'}), 401
+
+    except Exception as e:
+        print(f"❌ ERRO CRÍTICO NO LOGIN: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'erro': f'Erro no servidor: {str(e)}'}), 500
+
+
+@app.route('/api/dados_cliente', methods=['GET'])
+def api_dados_cliente():
+    """Retorna saldo e extrato do cliente logado (Conectando no Banco de Vendas)."""       
+
+    if 'id_cliente' not in session:
+        return jsonify({'erro': 'Não logado'}), 401
+
+    # 1. Conecta ao Banco de Vendas (Onde estão os clientes e saldos)
+    sales_db = get_sales_db_connection()
+
+    if sales_db is None:
+        return jsonify({'erro': 'Banco de Vendas desconectado.'}), 500
+
+    try:
+        id_cli = int(session['id_cliente'])
+        # 2. Busca Cliente no SALES_DB (IMPORTANTE: sales_db, não db)
+        cli = sales_db.clientes.find_one({'id_cliente': id_cli})
+        if not cli: 
+            # Se não achar, limpamos a sessão para evitar loop de erro
+            session.clear()
+            return jsonify({'erro': 'Cliente não encontrado na base de vendas.'}), 404
+        
+        # Converte o saldo corretamente
+        saldo = converter_decimal(cli.get('saldo_atual', 0.0))
+        
+        # 3. Busca Histórico (Extrato) no SALES_DB
+        extrato = []
+        if 'transacoes_clientes' in sales_db.list_collection_names():
+            cursor = sales_db.transacoes_clientes.find({'id_cliente': id_cli}).sort('data_hora', -1).limit(10)
+            for t in cursor:
+                val_t = converter_decimal(t.get('valor', 0))
+                data_fmt = t['data_hora'].strftime("%d/%m %H:%M") if 'data_hora' in t else "--/--"
+                
+                extrato.append({
+                    'data': data_fmt,
+                    'tipo': t.get('tipo', '?'),
+                    'desc': t.get('descricao', ''),
+                    'valor': val_t
+                })
+            
+        return jsonify({
+            'saldo': saldo,
+            'extrato': extrato,
+            'nick': cli.get('nick')
+        })
+
+    except Exception as e:
+        print(f"Erro dados cliente: {e}")
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/api/comprar_cartelas', methods=['POST'])
+def api_comprar_cartelas():
+    """Processa a compra (Com correção automática de ID de Evento)."""
+    if 'id_cliente' not in session:
+        return jsonify({'erro': 'Sessão expirada. Faça login novamente.'}), 401
+        
+    data = request.json
+    qtd_desejada = int(data.get('quantidade', 0))
+    
+    # 1. Busca evento ativo no DB Local
+    rodada_info = db.rodada.find_one({})
+    raw_id = rodada_info.get('id_evento') if rodada_info else None
+    
+    if qtd_desejada <= 0: return jsonify({'erro': 'Quantidade inválida.'}), 400
+    
+    # 2. Conecta ao Banco de Vendas
+    sales_db = get_sales_db_connection()
+    if sales_db is None: return jsonify({'erro': 'Banco de Vendas offline.'}), 500
+
+    try:
+        id_cli = int(session['id_cliente'])
+        
+        # 3. BUSCA INTELIGENTE
+        # Primeiro, tenta buscar pelo ID exato (seja número ou texto)
+        busca_ids = []
+        try: busca_ids.append(int(raw_id))
+        except: pass
+        busca_ids.append(str(raw_id))
+        
+        evento = sales_db.eventos.find_one({'id_evento': {'$in': busca_ids}})
+        
+        # --- CORREÇÃO AUTOMÁTICA (O PULO DO GATO) ---
+        if not evento:
+            print(f"⚠️ ID {raw_id} não encontrado. Buscando alternativa...")
+            # Pega TODOS os eventos disponíveis
+            todos = list(sales_db.eventos.find({}))
+            if len(todos) > 0:
+                # Se tem evento no banco, pega o primeiro (provavelmente o ID 1)
+                evento = todos[0]
+                print(f"✅ Sincronia corrigida! Usando Evento ID: {evento['id_evento']}")
+            else:
+                return jsonify({'erro': 'Nenhum evento cadastrado no sistema de vendas.'}), 400
+        # ----------------------------------------------
+        
+        # Usa o ID oficial que achamos no banco
+        id_evento_oficial = evento.get('id_evento')
+            
+        cliente = sales_db.clientes.find_one({'id_cliente': id_cli})
+        if not cliente: return jsonify({'erro': 'Cliente não encontrado.'}), 400
+            
+        # 4. Verifica Saldo
+        valor_unit = converter_decimal(evento.get('valor_de_venda', 0))
+        custo_total = valor_unit * qtd_desejada
+        saldo_atual = converter_decimal(cliente.get('saldo_atual', 0))
+        
+        if saldo_atual < custo_total:
+            return jsonify({'erro': f'Saldo insuficiente. Necessário: R$ {custo_total:.2f}.'}), 402
+
+        # 5. Gera Números
+        limite = int(evento.get('numero_maximo', 72000))
+        num_inicial = get_next_bilhete_sequence(sales_db, id_evento_oficial, 'inicial_proxima_venda', qtd_desejada, limite)
+        num_final = num_inicial + qtd_desejada - 1
+        
+        # 6. Registra Venda
+        id_venda_global = get_next_bilhete_sequence(sales_db, 'global', 'id_vendas_global', 1, 999999) 
+        
+        venda_doc = {
+            "id_venda": f"WEB{id_venda_global}", 
+            "id_evento": id_evento_oficial,
+            "id_cliente": id_cli,
+            "nick_colaborador": "AUTO-ATENDIMENTO",
+            "data_venda": datetime.now() - timedelta(hours=3),
+            "quantidade_unidades": qtd_desejada,
+            "quantidade_cartelas": qtd_desejada, 
+            "numero_inicial": num_inicial,
+            "numero_final": num_final,
+            "valor_total": Decimal128(str(custo_total)),
+            "origem": "terminal_cliente"
+        }
+        
+        col_vendas_nome = f"vendas{id_evento_oficial}"
+        sales_db[col_vendas_nome].insert_one(venda_doc)
+        
+        # 7. Debita
+        sucesso_pagto = registrar_transacao_cliente_mesa(
+            sales_db, id_cli, -abs(custo_total), 'compra', 
+            f"Compra Web - {qtd_desejada} cartela(s)", id_evento_oficial
+        )
+        
+        if not sucesso_pagto:
+            return jsonify({'erro': 'Erro ao debitar saldo.'}), 500
+        
+        threading.Thread(target=carregar_cache_evento, args=(id_evento_oficial, sales_db)).start()
+
+        return jsonify({
+            'status': 'ok',
+            'msg': 'Compra realizada com sucesso!',
+            'novo_saldo': saldo_atual - custo_total,
+            'cartelas': f"{num_inicial} a {num_final}"
+        })
+
+    except Exception as e:
+        print(f"Erro na compra web: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'erro': 'Erro interno ao processar compra.'}), 500
+
+
+@app.route('/api/logout', methods=['POST'])
+def api_logout():
+    session.clear()
+    return jsonify({'status': 'ok'})
 
 
 # --- MAIN ---

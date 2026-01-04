@@ -68,6 +68,8 @@ let corFundoNumeros23 = "bg-transparent border-2 border-orange-700";
 let corFundoNumero1 = "bg-transparent border-2 border-green-500";
 let corTextoNumeros = "text-gray-200";
 
+//let clienteLogado = false;
+
 let lastPrizeJson = "";
 let lastBuscandoJson = "";
 
@@ -598,7 +600,7 @@ function renderEventsList(eventos) {
             
             // Botão de Compra (Só aparece para eventos ativos/futuros)
             btnComprarHtml = `
-                <div class="mt-2 border-t border-gray-700 pt-2">
+                <div class="-mt-1 border-t border-gray-700 pt-1">
                     <button onclick="iniciarCompraCartelas('${evt.id_evento}')" 
                             class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg shadow-md flex items-center justify-center gap-2 transition-colors active:scale-95">
                         <span>🛒</span> COMPRAR CARTELAS
@@ -628,9 +630,9 @@ function renderEventsList(eventos) {
         card.innerHTML = `
             ${statusBadge}
             
-            <div class="pr-2">
-                <h3 class="text-[15px] font-bold text-white leading-tight drop-shadow-sm">${evt.descricao}</h3>
-                <p class="text-[15px] font-semibold text-blue-300 font-mono mt-1 flex items-center gap-1">
+            <div class="pr-2 mt-3">
+                <h3 class="text-[15px] font-bold text-white leading-tight drop-shadow-sm -mb-1">${evt.descricao}</h3>
+                <p class="text-[15px] font-semibold text-blue-300 font-mono -mb-0.5 flex items-center gap-1">
                      ${evt.data} <span class="mx-1">|</span> <span>⏰</span> ${evt.hora}
                 </p>
             </div>
@@ -645,13 +647,13 @@ function renderEventsList(eventos) {
 
             <!-- Rodapé do Cartão (Preço e Info) -->
             <div class="flex justify-between items-end -mt-1">
-                <div class="text-gray-250 text-[14px]">
-                    <span class="block">ID: ${evt.id_evento}</span>
+                <div class="text-gray-250">
+                    <span class="block text-[9px] font-bold">ID: ${evt.id_evento}</span>
                     <span class="text-xs text-gray-300">Kit c/ <strong>${evt.unidade_venda}</strong> cartelas</span>
                 </div>
                 <div class="text-right">
-                    <span class="block text-[9px] font-bold  text-gray-500 uppercase">Valor do Kit</span>
-                    <span class="text-xl font-black text-green-400 tracking-tighter">${preco}</span>
+                    <span class="block text-[9px] font-bold  text-gray-400 uppercase">Valor do Kit</span>
+                    <span class="text-xl font-bold text-green-400 tracking-tighter">${preco}</span>
                 </div>
             </div>
 
@@ -669,13 +671,35 @@ function closeEventsPanel() {
     }
 }
 
-// Função Placeholder para o clique no botão de compra
-// (Será substituída pela lógica real de compra depois)
+
 function iniciarCompraCartelas(idEvento) {
+    // 1. Fecha o painel de listagem de eventos para limpar a tela
     closeEventsPanel();
-    // Exemplo de ação futura:
-    // window.location.href = `/comprar_cartelas?id_evento=${idEvento}`;
-    alert(`Redirecionando para compra do evento ID: ${idEvento}... \n(Em desenvolvimento)`);
+
+    // 2. Se não estiver logado, abre o modal (que deve cair na tela de login)
+    if (!clienteLogado) {
+        abrirMenuCliente(); 
+        return;
+    }
+
+    // 3. Abre o Modal "Minha Carteira"
+    abrirMenuCliente();
+
+    // 4. AUTOMATIZAÇÃO: Clica na aba "Comprar" automaticamente
+    setTimeout(() => {
+        // Usamos o ID que você me mostrou no HTML: 'tab-compra'
+        const btnAbaComprar = document.getElementById('tab-compra'); 
+        
+        if (btnAbaComprar) {
+            // O .click() vai disparar o 'mudarAba' e aplicar os estilos visuais (verde)
+            btnAbaComprar.click();
+        } else {
+            // Caso de segurança: chama a função direto se o botão não for achado
+            if (typeof mudarAba === 'function') {
+                mudarAba('compra');
+            }
+        }
+    }, 100); // Pequeno delay para dar tempo do modal abrir
 }
 
 
@@ -2089,7 +2113,7 @@ function displayLoadedCards(bolasCantadas) {
                 missingNumbers.forEach((num, index) => {
                     const numberSpan = document.createElement('span');
 
-// aquix   corFundoTitulo
+//    corFundoTitulo
                    
                     let bgColorClass = corFundoNumeros4;
                     if (index === 0) {
@@ -4350,6 +4374,229 @@ function atualizarVisualizacaoAcumulado(valorAcumulado, bolaTope, bolasCantadas)
         // --- ESTILO INATIVO (ULTRAPASSADO) ---
         // Aplica o estilo cinza sem borda
         container.className = "text-[9px] font-semibold text-gray-500 border-0 px-0";
+    }
+}
+
+// --- LÓGICA DE CLIENTE / AUTOATENDIMENTO ---
+
+let clienteLogado = false;
+
+// Função chamada pelos botões do menu principal
+function abrirMenuCliente() {
+    // Verifica se os modais existem no HTML antes de tentar abrir
+    const modalLogin = document.getElementById('modal-login');
+    if (!modalLogin) {
+        alert("Erro: Modais não encontrados. Verifique se copiou o HTML corretamente.");
+        return;
+    }
+
+    if (!clienteLogado) {
+        modalLogin.classList.remove('hidden');
+    } else {
+        atualizarDadosCliente();
+        document.getElementById('modal-carteira').classList.remove('hidden');
+    }
+}
+function fecharModal(id) {
+    document.getElementById(id).classList.add('hidden');
+}
+
+async function fazerLogin() {
+    const user = document.getElementById('login-user').value;
+    const pass = document.getElementById('login-pass').value;
+    const btn = event.target; // Captura o botão clicado
+    
+    if (!user || !pass) {
+        alert("Por favor, preencha usuário e senha.");
+        return;
+    }
+
+    // Feedback visual no botão
+    const textoOriginal = btn.textContent;
+    btn.textContent = "Verificando...";
+    btn.disabled = true;
+
+    try {                                    
+        const res = await fetch(`${API_BASE_URL}/api/login_cliente`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'include',
+            body: JSON.stringify({usuario: user, senha: pass})
+        });
+
+        // VERIFICAÇÃO DE ERRO DE REDE/SERVIDOR
+        if (!res.ok) {
+            // Se for erro 404, 500, etc.
+            const textoErro = await res.text(); // Tenta ler o erro como texto
+            console.error("Erro Servidor:", textoErro);
+            throw new Error(`Erro do Servidor (${res.status}): ${res.statusText}`);
+        }
+
+        const data = await res.json();
+
+        if (data.status === 'ok') {
+            clienteLogado = true;
+            fecharModal('modal-login');
+            abrirMenuCliente(); 
+            // Limpa campos
+            document.getElementById('login-user').value = "";
+            document.getElementById('login-pass').value = "";
+        } else {
+            alert(data.erro || "Senha incorreta ou usuário não encontrado.");
+        }
+
+    } catch (e) {
+        console.error("Falha no login:", e);
+        alert("Falha na comunicação: " + e.message);
+    } finally {
+        // Restaura o botão
+        btn.textContent = textoOriginal;
+        btn.disabled = false;
+    }
+}
+
+
+async function atualizarDadosCliente() {
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/dados_cliente`, {
+                credentials: 'include'
+        });
+        if (res.ok) {
+            const data = await res.json();
+            
+            // Atualiza Topo
+            document.getElementById('user-nick-display').textContent = data.nick;
+            document.getElementById('user-saldo-display').textContent = 
+                data.saldo.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+
+            // Atualiza Extrato
+            const lista = document.getElementById('lista-transacoes');
+            lista.innerHTML = "";
+            if(data.extrato.length === 0) lista.innerHTML = "<p class='text-center text-gray-400'>Sem movimentações</p>";
+            
+            data.extrato.forEach(t => {
+                const cor = t.valor >= 0 ? 'text-green-600' : 'text-red-600';
+                const html = `
+                    <li class="bg-white p-2 rounded shadow-sm flex justify-between items-center">
+                        <div>
+                            <p class="font-bold text-gray-700">${t.desc}</p>
+                            <p class="text-xs text-gray-500">${t.data}</p>
+                        </div>
+                        <span class="font-bold ${cor}">R$ ${t.valor.toFixed(2)}</span>
+                    </li>
+                `;
+                lista.innerHTML += html;
+            });
+        } else {
+            clienteLogado = false; // Sessão caiu
+            fecharModal('modal-carteira');
+            alert("Sessão expirada.");
+        }
+    } catch (e) { console.error(e); }
+}
+
+// Controle de Abas
+function mudarAba(aba) {
+    const areaCompra = document.getElementById('area-compra');
+    const areaExtrato = document.getElementById('area-extrato');
+    const btnCompra = document.getElementById('tab-compra');
+    const btnExtrato = document.getElementById('tab-extrato');
+
+    if (aba === 'compra') {
+        areaCompra.classList.remove('hidden');
+        areaExtrato.classList.add('hidden');
+        btnCompra.classList.add('text-green-700', 'border-b-4', 'border-green-600', 'bg-green-50');
+        btnCompra.classList.remove('text-gray-600');
+        btnExtrato.classList.remove('text-green-700', 'border-b-4', 'border-green-600', 'bg-green-50');
+        btnExtrato.classList.add('text-gray-600');
+
+    } else {
+        areaCompra.classList.add('hidden');
+        areaExtrato.classList.remove('hidden');
+        btnExtrato.classList.add('text-green-700', 'border-b-4', 'border-green-600', 'bg-green-50');
+        btnExtrato.classList.remove('text-gray-600');
+        btnCompra.classList.remove('text-green-700', 'border-b-4', 'border-green-600', 'bg-green-50');
+        btnCompra.classList.add('text-gray-600');
+
+    }
+}
+
+function setQtd(n) {
+    document.getElementById('input-qtd').value = n;
+}
+
+async function realizarCompra() {
+    const qtd = document.getElementById('input-qtd').value;
+    const msg = document.getElementById('msg-compra');
+    
+    const confirmacao = confirm(`Confirma a compra de ${qtd} cartela(s)?`);
+    if (!confirmacao) return;
+
+    msg.classList.remove('hidden');
+    msg.className = "mt-3 text-sm font-bold text-gray-500 animate-pulse";
+    msg.textContent = "Processando compra...";
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/comprar_cartelas`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'include',
+            body: JSON.stringify({quantidade: qtd})
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+            msg.className = "mt-3 text-sm font-bold text-green-600";
+            msg.textContent = `✅ ${data.msg} Cartelas: ${data.cartelas}`;
+            atualizarDadosCliente(); // Atualiza saldo na tela
+        } else {
+            msg.className = "mt-3 text-sm font-bold text-red-500";
+            msg.textContent = `❌ ${data.erro}`;
+        }
+    } catch (e) {
+        msg.textContent = "Erro de comunicação.";
+    }
+}
+
+
+async function fazerLogout() {
+    if(!confirm("Tem certeza que deseja sair da conta?")) return;
+
+    try {
+        // Avisa o servidor para matar a sessão
+        await fetch('/api/logout', {method: 'POST'});
+    } catch (e) {
+        console.log("Erro ao avisar logout, saindo localmente...");
+    }
+
+    // 1. Zera variáveis locais
+    clienteLogado = false;
+    
+    // 2. Fecha modais e menus abertos
+    fecharModal('modal-carteira');
+    
+    // Se você tiver uma função que fecha o menu lateral, chame-a aqui. 
+    // Exemplo: document.getElementById('sidebar').classList.add('-translate-x-full');
+    // Ou simplesmente removemos a classe que deixa o menu visível.
+    const sidebar = document.getElementById('mobile-menu'); // ou o ID do seu menu
+    if (sidebar) sidebar.classList.add('hidden');
+
+    // 3. Atualiza a tela (Recarrega a página para limpar o cache visual do usuário)
+    // Isso é importante para garantir que o próximo usuário não veja o saldo do anterior
+    window.location.reload();
+}
+
+
+function toggleLoginPassword() {
+    const input = document.getElementById('login-pass');
+    const btn = event.currentTarget; // O botão que foi clicado
+    
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = '🙈'; // Muda ícone para olho fechado (ou use outro emoji)
+    } else {
+        input.type = 'password';
+        btn.textContent = '👁️'; // Volta para olho aberto
     }
 }
 

@@ -1,21 +1,24 @@
-const API_BASE_URL = 'https://orca-app-dp256.ondigitalocean.app';
-const WS_URL = 'https://orca-app-dp256.ondigitalocean.app';
-
-// acre
-//const API_BASE_URL = 'http://38.43.105.229:3001';
-//const WS_URL = 'ws://38.43.105.229:3001';
+//const API_BASE_URL = 'https://orca-app-dp256.ondigitalocean.app';
+//const WS_URL = 'https://orca-app-dp256.ondigitalocean.app';
 
 // note 
 //const API_BASE_URL = 'http://192.168.1.147:3001';
 //const WS_URL = 'ws://192.168.1.147:3001';
 
-// outros
-//const API_BASE_URL = 'http://192.168.15.5:3001';
-//const WS_URL = 'ws://192.168.15.5:3001';
-
 // Ativar Localhost para uso da câmera (Contexto Seguro)
-//const API_BASE_URL = 'http://localhost:3001';
-//const WS_URL = 'ws://localhost:3001'; 
+//const API_BASE_URL = window.location.origin; // 'http://localhost:3001';
+//const WS_URL =  window.location.origin; //  'ws://localhost:3001'; 
+
+
+// 1. Pega o endereço atual do navegador (ex: https://orca-app... ou http://192.168...)
+    const API_BASE_URL = window.location.origin; 
+
+    // 2. Define o protocolo do WebSocket (se o site é HTTPS, usa WSS. Se é HTTP, usa WS)
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    
+    // 3. Monta a URL do WebSocket automaticamente
+    const WS_URL = `${protocol}//${window.location.host}`;
+
 
 // Temporizadores (em segundos)
 const secundsCardsoutId = 8;
