@@ -1,6 +1,6 @@
 Flask
 Flask-Cors
-pymongo[srv]
+pymongo
 dnspython
 bcrypt
 gevent
