@@ -1906,7 +1906,7 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
             str_total = f"R$ {val_total_float:.2f}".replace('.', ',')
 
         # Verifica duplicidade antes de inserir
-        if not db.ganhadores.find_one({'cartela': cartela_id, tag_premio}):
+        if not db.ganhadores.find_one({'cartela': cartela_id, 'premio': tag_premio}):
             db.ganhadores.insert_one({
                 'premio': tag_premio,
                 'valor_total_premio': str_total,
