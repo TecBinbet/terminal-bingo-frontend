@@ -705,87 +705,68 @@ function iniciarCompraCartelas(idEvento) {
 
 // Funções de busca de cartelas compradas
 async function carregarCartelasAutomaticas(idEvento) {
-    // Verifica se já carregamos este evento para não ficar piscando a tela
-    // NOTA: Troquei cartelaRanges por myRanges aqui
+    if (!idEvento) return;
+
+    // Se já estiver carregado, não mostra loading nem faz nada
     if (eventoCarregadoAtual === idEvento && typeof cartelaRanges !== 'undefined' && cartelaRanges.length > 0) {
+        console.log("Cartelas já carregadas na memória.");
         return; 
     }
 
-    // Se a variável global estiver vazia, tenta ler da URL novamente
-    if (!clienteLogadoId) {
-        clienteLogadoId = urlParamsGlobal.get('id_cliente') || urlParamsGlobal.get('idcliente');
+    // 1. ATIVA O LOADING (Se já não estiver ativo por outra função)
+    // Verifica se o loader está visível, se não, mostra.
+    if (!loader || loader.style.display === 'none') {
+        showFullLoading("Buscando suas cartelas...");
     }
-    
-    console.log("clienteLogadoId (Final):", clienteLogadoId);
 
-    const headerElement = isMobileDevice() ? document.getElementById('mobile-loaded-cards-header') : 
-                                             document.getElementById('loaded-cards-header');
-    if(headerElement) headerElement.textContent = "Buscando suas cartelas...";
+    console.log(`🔄 Buscando cartelas do evento ${idEvento}...`);
+    
+    let url = `/api/consultar_cartelas_evento?id_evento=${idEvento}`;
+    if (clienteLogadoId) {
+        url += `&id_cliente=${clienteLogadoId}`;
+    }
 
     try {
-        const url = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idEvento}&id_cliente=${clienteLogadoId}`;
-        console.log("🔄 Buscando cartelas do cliente:", url);
-
-        const response = await fetch(url);
+        const response = await fetch(url, { credentials: 'include' });
         const data = await response.json();
 
         if (data.error) {
-            console.error("Erro API Vendas:", data.error);
+            console.warn("⚠️ Aviso:", data.error);
+            const container = document.getElementById('my-cards-list');
+            if(container) container.innerHTML = `<p class="text-center text-gray-500 py-4">${data.error}</p>`;
             return;
         }
 
-        // Se encontrou cartelas
         if (data.cartelas && data.cartelas.length > 0) {
-            console.log(`✅ Cliente possui ${data.quantidade} cartelas. Processando...`);
-            
-            // 1. Converte a lista de IDs em faixas otimizadas
-            const novasFaixas = agruparNumerosEmRanges(data.cartelas);
-            
-            // 2. Atualiza a variável global CORRETA (cartelasRenges)
-            cartelaRanges = novasFaixas;
-          
-            // 3. Atualiza visualização (se houver essa função)
-            if (typeof displayCartelaRanges === 'function') displayCartelaRanges(); 
-            
-            // 4. Dispara o motor principal
-            await fetchAndProcessCards(); 
-            
-            // Atualiza controle
             eventoCarregadoAtual = idEvento;
-
-            // Feedback
-            const msg = `Carregadas ${data.quantidade} cartelas para o Sorteio ${idEvento}!`;
-            if(isMobileDevice()) {
-               const validationMsg = document.getElementById('mobile-validation-message');
-               if (validationMsg) {
-                   validationMsg.textContent = msg;
-                   validationMsg.classList.remove('hidden', 'text-red-500');
-                   validationMsg.classList.add('text-green-500');
-                   setTimeout(() => validationMsg.classList.add('hidden'), 5000);
-               }
-            }
+            
+            // Processa cartelas
+            cartelaRanges = converterListaParaRanges(data.cartelas); 
+            cartelasEmJogo = data.cartelas.length; 
+            renderizarListaMinhasCartelas(data.cartelas);
+            
+            // Baixa a matriz de números
+            await fetchAndProcessCards(); 
 
         } else {
-            console.log("⚠️ Nenhuma cartela encontrada para este evento/cliente.");
-            if (eventoCarregadoAtual !== idEvento) {
-                // Se você tiver uma função clearPanels, ok. Senão comente.
-                // clearPanels(); 
-                eventoCarregadoAtual = idEvento;
-                
-                // Limpa a global para garantir
-                myRanges = [];
-                await fetchAndProcessCards(); // Processa vazio para limpar a tela
-            }
+            const container = document.getElementById('my-cards-list');
+            if(container) container.innerHTML = '<p class="text-center text-gray-500 py-4">Você ainda não tem cartelas nesta rodada.</p>';
+            cartelasEmJogo = 0;
+            loadedCards = [];
+            displayLoadedCards([]);
         }
 
     } catch (error) {
-        console.error("❌ Erro na requisição automática:", error);
+        console.error("Erro ao buscar cartelas:", error);
+    } finally {
+        // 2. DESATIVA O LOADING
+        hideFullLoading();
     }
 }
 
 
 // Função auxiliar para transformar [1, 2, 3, 5, 6] em [{inicial:1, final:3}, {inicial:5, final:6}]
-function agruparNumerosEmRanges(numeros) {
+function agruparNumerosEmRanges2(numeros) {
     if (!Array.isArray(numeros) || numeros.length === 0) return [];
     
     // Garante que são números e ordena
@@ -803,6 +784,89 @@ function agruparNumerosEmRanges(numeros) {
             prev = sorted[i];
         }
     }
+    ranges.push({ inicial: start, final: prev });
+    return ranges;
+}
+
+// --- FUNÇÕES VISUAIS DE CARTELAS ---
+
+var globalMinhasCartelas = [];
+
+function renderizarListaMinhasCartelas(listaCartelas) {
+    if (listaCartelas) {
+        globalMinhasCartelas = listaCartelas;
+    } else {
+        listaCartelas = globalMinhasCartelas;
+    }
+
+    const container = document.getElementById('my-cards-list');
+    if (!container) return;
+
+    container.innerHTML = ''; 
+
+    if (!listaCartelas || listaCartelas.length === 0) {
+        container.innerHTML = '<div class="p-4 text-center text-gray-400">Nenhuma cartela encontrada.</div>';
+        const totalEl = document.getElementById('my-cards-total');
+        if(totalEl) totalEl.textContent = "0";
+        return;
+    }
+
+    const ranges = converterListaParaRanges(listaCartelas);
+    let html = '';
+
+    ranges.forEach(range => {
+        // Agora lemos as propriedades do objeto corretamente
+        const inicio = range.inicial;
+        const fim = range.final;
+        const qtd = fim - inicio + 1;
+        
+        html += `
+        <div class="grid grid-cols-3 border-b border-gray-600 hover:bg-white/5 py-2 text-sm">
+            <div class="text-center font-mono font-bold text-green-400">${inicio}</div>
+            <div class="text-center font-mono font-bold text-red-400">${fim}</div>
+            <div class="text-center">
+                <span class="bg-gray-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">${qtd}</span>
+            </div>
+        </div>`;
+    });
+
+    container.innerHTML = html;
+    
+    const totalEl = document.getElementById('my-cards-total');
+    if(totalEl) totalEl.textContent = listaCartelas.length;
+}
+
+
+// 2. Gatilho para redesenhar ao abrir a aba/menu (VITAL PARA CORRIGIR O BUG DA TELA VAZIA)
+document.addEventListener('click', function(e) {
+    // Se clicou na aba de extrato, no botão de minhas cartelas ou qualquer botão de aba do modal
+    if (e.target && (e.target.id === 'tab-extrato' || e.target.id === 'tab-compra' || e.target.id === 'btn-minhas-cartelas')) {
+        setTimeout(() => renderizarListaMinhasCartelas(), 100);
+    }
+});
+
+
+// --- FUNÇÃO OBRIGATÓRIA (Garanta que ela está no arquivo também) ---
+// Função auxiliar corrigida para retornar OBJETOS {inicial, final}
+function converterListaParaRanges(lista) {
+    if (!lista || lista.length === 0) return [];
+    
+    // Garante que são números e ordena
+    lista = lista.map(n => parseInt(n)).sort((a, b) => a - b);
+    
+    let ranges = [];
+    let start = lista[0];
+    let prev = start;
+    
+    for (let i = 1; i < lista.length; i++) {
+        if (lista[i] !== prev + 1) {
+            // Quebrou a sequência, fecha a faixa anterior
+            ranges.push({ inicial: start, final: prev });
+            start = lista[i];
+        }
+        prev = lista[i];
+    }
+    // Adiciona a última faixa
     ranges.push({ inicial: start, final: prev });
     return ranges;
 }
@@ -3376,7 +3440,23 @@ async function renderMainContent(data) {
 
     // Estado da Rodada
     const rodadaState = rodadaData && rodadaData.length > 0 ? rodadaData[0].estado.trim() : null;
- 
+    
+    if (rodadaData && rodadaData.length > 0) {
+        // Pega o ID do evento vindo do banco e salva na global
+        // Nota: O campo no banco é 'id_evento', mas verificamos ambos por segurança
+        const idVindoDoBanco = rodadaData[0].id_evento || rodadaData[0].rodada;
+        
+        if (idVindoDoBanco) {
+            idRodada = parseInt(idVindoDoBanco);
+            
+            // Força a atualização do número na tela também
+            const elRoundMobile = document.getElementById('mobile-last-round');
+            const elRoundPC = document.getElementById('last-round');
+            if (elRoundMobile) elRoundMobile.textContent = idRodada;
+            if (elRoundPC) elRoundPC.textContent = idRodada;
+        }
+    }
+
     if (rodadaState === 'intervalo' && lastRodadaState !== 'intervalo') {
         clearPanels();
         lastRodadaState = rodadaState; 
@@ -4397,24 +4477,22 @@ function abrirMenuCliente() {
         document.getElementById('modal-carteira').classList.remove('hidden');
     }
 }
+
 function fecharModal(id) {
     document.getElementById(id).classList.add('hidden');
 }
 
 async function fazerLogin() {
-    const user = document.getElementById('login-user').value;
-    const pass = document.getElementById('login-pass').value;
-    const btn = event.target; // Captura o botão clicado
+    const user = document.getElementById('login-user').value.trim();
+    const pass = document.getElementById('login-pass').value.trim();
     
     if (!user || !pass) {
         alert("Por favor, preencha usuário e senha.");
         return;
     }
 
-    // Feedback visual no botão
-    const textoOriginal = btn.textContent;
-    btn.textContent = "Verificando...";
-    btn.disabled = true;
+    // 1. ATIVA O LOADING
+    showFullLoading("Autenticando usuário...");
 
     try {                                    
         const res = await fetch(`${API_BASE_URL}/api/login_cliente`, {
@@ -4424,23 +4502,33 @@ async function fazerLogin() {
             body: JSON.stringify({usuario: user, senha: pass})
         });
 
-        // VERIFICAÇÃO DE ERRO DE REDE/SERVIDOR
-        if (!res.ok) {
-            // Se for erro 404, 500, etc.
-            const textoErro = await res.text(); // Tenta ler o erro como texto
-            console.error("Erro Servidor:", textoErro);
-            throw new Error(`Erro do Servidor (${res.status}): ${res.statusText}`);
-        }
+        if (!res.ok) throw new Error(`Erro do Servidor (${res.status})`);
 
         const data = await res.json();
 
         if (data.status === 'ok') {
             clienteLogado = true;
+            
             fecharModal('modal-login');
             abrirMenuCliente(); 
-            // Limpa campos
+            
             document.getElementById('login-user').value = "";
             document.getElementById('login-pass').value = "";
+            
+            // Tenta carregar as cartelas imediatamente
+            let rodadaParaCarregar = idRodada;
+            if (!rodadaParaCarregar || rodadaParaCarregar === 0) {
+                 const el = document.getElementById('mobile-last-round');
+                 if (el) rodadaParaCarregar = parseInt(el.textContent) || 0;
+            }
+
+            if (rodadaParaCarregar > 0) {
+                // Mantemos o loading ativo, mas mudamos a mensagem
+                showFullLoading("Sincronizando cartelas...");
+                eventoCarregadoAtual = null; 
+                await carregarCartelasAutomaticas(rodadaParaCarregar);
+            }
+
         } else {
             alert(data.erro || "Senha incorreta ou usuário não encontrado.");
         }
@@ -4449,50 +4537,9 @@ async function fazerLogin() {
         console.error("Falha no login:", e);
         alert("Falha na comunicação: " + e.message);
     } finally {
-        // Restaura o botão
-        btn.textContent = textoOriginal;
-        btn.disabled = false;
+        // 2. DESATIVA O LOADING (Sempre, mesmo se der erro)
+        hideFullLoading();
     }
-}
-
-
-async function atualizarDadosCliente() {
-    try {
-        const res = await fetch(`${API_BASE_URL}/api/dados_cliente`, {
-                credentials: 'include'
-        });
-        if (res.ok) {
-            const data = await res.json();
-            
-            // Atualiza Topo
-            document.getElementById('user-nick-display').textContent = data.nick;
-            document.getElementById('user-saldo-display').textContent = 
-                data.saldo.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-
-            // Atualiza Extrato
-            const lista = document.getElementById('lista-transacoes');
-            lista.innerHTML = "";
-            if(data.extrato.length === 0) lista.innerHTML = "<p class='text-center text-gray-400'>Sem movimentações</p>";
-            
-            data.extrato.forEach(t => {
-                const cor = t.valor >= 0 ? 'text-green-600' : 'text-red-600';
-                const html = `
-                    <li class="bg-white p-2 rounded shadow-sm flex justify-between items-center">
-                        <div>
-                            <p class="font-bold text-gray-700">${t.desc}</p>
-                            <p class="text-xs text-gray-500">${t.data}</p>
-                        </div>
-                        <span class="font-bold ${cor}">R$ ${t.valor.toFixed(2)}</span>
-                    </li>
-                `;
-                lista.innerHTML += html;
-            });
-        } else {
-            clienteLogado = false; // Sessão caiu
-            fecharModal('modal-carteira');
-            alert("Sessão expirada.");
-        }
-    } catch (e) { console.error(e); }
 }
 
 // Controle de Abas
@@ -4526,15 +4573,20 @@ function setQtd(n) {
 }
 
 async function realizarCompra() {
-    const qtd = document.getElementById('input-qtd').value;
-    const msg = document.getElementById('msg-compra');
+    const inputQtd = document.getElementById('input-qtd');
+    const qtd = inputQtd.value;
     
-    const confirmacao = confirm(`Confirma a compra de ${qtd} cartela(s)?`);
-    if (!confirmacao) return;
+    const msg = document.getElementById('msg-compra');
 
-    msg.classList.remove('hidden');
-    msg.className = "mt-3 text-sm font-bold text-gray-500 animate-pulse";
-    msg.textContent = "Processando compra...";
+    if(!confirm(`Confirma a compra de ${qtd} cartela(s)?`)) return;
+
+    if(msg) {
+        msg.textContent = '';
+        msg.classList.add('hidden');
+    }
+
+    // 1. BLOQUEIA A TELA COM LOADING
+    showFullLoading("Processando pagamento...");
 
     try {
         const res = await fetch(`${API_BASE_URL}/api/comprar_cartelas`, {
@@ -4546,15 +4598,124 @@ async function realizarCompra() {
         const data = await res.json();
 
         if (res.ok) {
-            msg.className = "mt-3 text-sm font-bold text-green-600";
-            msg.textContent = `✅ ${data.msg} Cartelas: ${data.cartelas}`;
-            atualizarDadosCliente(); // Atualiza saldo na tela
+            if(msg) {
+                msg.classList.remove('hidden');
+                msg.className = "mt-3 text-sm font-bold text-green-600 block"; // Garante que aparece
+                // Mostra: "Sucesso! Cartelas: 100 a 110"
+                msg.textContent = `✅ ${data.msg} Cartelas: ${data.cartelas}`;
+            }
+
+            // Sucesso! Mantemos o loading enquanto recarregamos as cartelas
+            // A função carregarCartelasAutomaticas vai gerenciar o hideFullLoading depois
+            showFullLoading("Pagamento aprovado! Atualizando...");
+            
+            atualizarDadosCliente(); 
+
+            let eventoParaSincronizar = idRodada; 
+            if (!eventoParaSincronizar || eventoParaSincronizar === 0) {
+                 const el = document.getElementById('mobile-last-round');
+                 if (el) eventoParaSincronizar = parseInt(el.textContent) || 0;
+            }
+
+            if (eventoParaSincronizar > 0) {
+                eventoCarregadoAtual = null; 
+                await carregarCartelasAutomaticas(eventoParaSincronizar);
+            }
+            
+            if (inputQtd) inputQtd.value = '';
+            
+            // Alerta de sucesso (opcional, pois as cartelas vão aparecer)
+            // alert(data.msg); 
+
         } else {
-            msg.className = "mt-3 text-sm font-bold text-red-500";
-            msg.textContent = `❌ ${data.erro}`;
+            // Erro na compra
+            hideFullLoading(); // Remove o loading para mostrar o alerta
+            if(msg) {
+                msg.classList.remove('hidden');
+                msg.className = "mt-3 text-sm font-bold text-red-600 block";
+                msg.textContent = `❌ ${data.erro}`;
+            } else {
+                alert(`❌ Erro: ${data.erro}`);
+            }
         }
     } catch (e) {
-        msg.textContent = "Erro de comunicação.";
+        hideFullLoading();
+        console.error(e);
+        if(msg) {
+            msg.textContent = "Erro de comunicação.";
+            msg.className = "mt-3 text-sm font-bold text-red-600 block";
+        }
+    }
+    // Nota: O 'finally' hideFullLoading não está aqui porque se der sucesso, 
+    // queremos que o loading continue até as cartelas carregarem.
+}
+
+
+async function atualizarDadosCliente() {
+    // 1. Se não estiver logado, sai.
+    if (!clienteLogado) return;
+
+    try {
+        const response = await fetch('/api/dados_cliente', { 
+            method: 'GET',
+            credentials: 'include' 
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                console.warn("Sessão expirada. Fazendo logout.");
+                fazerLogout();
+            }
+            return;
+        }
+
+        const data = await response.json();
+
+        // 2. Formata os dados
+        const saldoFormatado = `R$ ${parseFloat(data.saldo).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        const nick = data.nick || "Cliente";
+        // 3. ATUALIZAÇÃO SIMPLIFICADA (Foca apenas na Carteira)
+        const elSaldo = document.getElementById('user-saldo-display');
+        const elNick = document.getElementById('user-nick-display');
+
+        if (elSaldo) elSaldo.textContent = saldoFormatado;
+        if (elNick) elNick.textContent = nick;
+
+        // 4. Preenche a Tabela de Extrato
+        // 2. Preenche a LISTA DE EXTRATO (Adaptação para UL > LI)
+        const lista = document.getElementById('lista-transacoes');
+        
+        if (lista && data.extrato) {
+            lista.innerHTML = ''; // Limpa a lista antiga
+
+            if (data.extrato.length === 0) {
+                lista.innerHTML = '<li class="text-center text-gray-500 py-4 italic">Nenhuma movimentação.</li>';
+            } else {
+                data.extrato.forEach(item => {
+                    // Define cores
+                    const isSaida = item.tipo === 'compra';
+                    const corValor = isSaida ? "text-red-600" : "text-green-600";
+                    const sinal = isSaida ? "- " : "+ ";
+
+                    // Cria o item da lista (LI) parecendo um "Card" simples
+                    const li = `
+                        <li class="flex justify-between items-center bg-white p-1 rounded border border-gray-200 shadow-sm">
+                            <div class="flex flex-col text-left">
+                                <span class="font-bold text-gray-700 text-xs sm:text-sm uppercase">${item.desc}</span>
+                                <span class="text-[10px] text-gray-500">${item.data}</span>
+                            </div>
+                            <span class="font-bold text-sm ${corValor}">
+                                ${sinal}R$ ${parseFloat(item.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                            </span>
+                        </li>
+                    `;
+                    lista.innerHTML += li;
+                });
+            }
+        }
+
+    } catch (error) {
+        console.error("Erro ao atualizar cliente:", error);
     }
 }
 
@@ -4597,6 +4758,28 @@ function toggleLoginPassword() {
     } else {
         input.type = 'password';
         btn.textContent = '👁️'; // Volta para olho aberto
+    }
+}
+
+// --- FUNÇÕES DE LOADING ---
+
+function showFullLoading(mensagem) {
+    if (!loader) return;
+    
+    // Cria um visual bonito com Spinner + Texto
+    loader.innerHTML = `
+        <div class="flex flex-col items-center justify-center bg-gray-900/80 p-6 rounded-xl border border-gray-700 shadow-2xl">
+            <div class="animate-spin rounded-full h-10 w-10 border-t-4 border-b-4 border-green-500 mb-4"></div>
+            <span class="text-white text-lg font-bold tracking-wide">${mensagem}</span>
+        </div>
+    `;
+    loader.style.display = 'flex';
+}
+
+function hideFullLoading() {
+    if (loader) {
+        loader.style.display = 'none';
+        loader.innerHTML = ''; // Limpa para não deixar lixo
     }
 }
 

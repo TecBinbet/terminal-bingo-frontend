@@ -1297,31 +1297,42 @@ def api_consultar_cartelas():
         id_evt = request.args.get('id_evento')
         id_cli = request.args.get('id_cliente')
         
-        if not id_evt or not id_cli: 
-            return jsonify({'error': 'Faltam parâmetros'}), 400
+        # --- BLINDAGEM DE SESSÃO (AQUI ESTÁ A CORREÇÃO) ---
+        # Se o Javascript não mandou o ID na URL (porque é acesso seguro),
+        # nós pegamos o ID de dentro do Cookie de Sessão.
+        if not id_cli or id_cli == 'null' or id_cli == 'undefined':
+            if 'id_cliente' in session:
+                id_cli = session['id_cliente']
+            else:
+                return jsonify({'error': 'Cliente não identificado (Faça login)'}), 401
+        # --------------------------------------------------
+        
+        if not id_evt: 
+            return jsonify({'error': 'Faltam parâmetros (Evento)'}), 400
         
         s_db = get_sales_db_connection()
-        
-        # --- CORREÇÃO DO ERRO FATAL AQUI ---
         if s_db is None: 
             return jsonify({'error': 'DB Vendas Offline'}), 500
-        # -----------------------------------
         
         col = f"vendas{id_evt}"
         cartelas = []
         
-        # Verifica se a tabela de vendas existe
         if col in s_db.list_collection_names():
             # Converte ID cliente para int com segurança
             try:
                 id_cli_int = int(id_cli)
             except:
-                id_cli_int = id_cli # Tenta buscar como string se falhar
-                
-            cursor = s_db[col].find({'id_cliente': id_cli_int})
+                id_cli_int = str(id_cli)
+            
+            # Busca Híbrida: Procura tanto como Número quanto como Texto
+            cursor = s_db[col].find({
+                '$or': [
+                    {'id_cliente': id_cli_int}, 
+                    {'id_cliente': str(id_cli_int)}
+                ]
+            })
             
             for v in cursor:
-                # BLINDAGEM: Garante que os valores sejam inteiros antes de usar range()
                 try:
                     # Faixa 1
                     n_ini = int(v.get('numero_inicial') or 0)
@@ -1338,7 +1349,6 @@ def api_consultar_cartelas():
                         cartelas.extend(range(n_ini2, n_fim2 + 1))
                         
                 except Exception as e_row:
-                    print(f"⚠️ Erro ao processar linha de venda: {e_row}")
                     continue
 
         return jsonify({'id_evento': id_evt, 'cartelas': cartelas, 'quantidade': len(cartelas)})
@@ -1896,7 +1906,7 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
             str_total = f"R$ {val_total_float:.2f}".replace('.', ',')
 
         # Verifica duplicidade antes de inserir
-        if not db.ganhadores.find_one({'cartela': cartela_id, 'premio': tag_premio}):
+        if not db.ganhadores.find_one({'cartela': cartela_id, tag_premio}):
             db.ganhadores.insert_one({
                 'premio': tag_premio,
                 'valor_total_premio': str_total,
