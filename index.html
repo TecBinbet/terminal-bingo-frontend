@@ -43,7 +43,7 @@
         </div>
     </div>
 
-    <header class="flex justify-between items-center mb-0.5 -mt-3 border-b-2 border-gray-700 pb-1 pl-2 pr-2 pt-1">
+    <header class="flex justify-between items-center mb-0.5 -mt-3 border-b-2 border-gray-700 pb-1 pl-0 pr-1 pt-1">
         <div class="flex items-center gap-3">
             <button id="btn-open-menu" class="text-gray-300 hover:text-white focus:outline-none">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -56,7 +56,7 @@
         <div class="text-sm text-gray-400">
             <p class="hidden">Backend: <span id="backend-version">...</span></p>
         </div>
-        <div id ="quadro-premio-acumulado" class="hidden text-[9px] font-bold text-yellow-300 border-2 border-yellow-400 rounded-lg px-3 mt-2">
+        <div id ="quadro-premio-acumulado" class="hidden text-[10px] font-bold text-yellow-300 border-2 border-yellow-400 rounded-lg px-3 mt-2">
             <p >Acum.: <span id ="premio-acumulado" >R$ 0,00</span></p>
         </div>
 
@@ -568,6 +568,13 @@
                 </div>
             </div>
 
+            <div class="bg-yellow-50 border-b border-yellow-100 p-1 text-center">
+                <p class="text-xs text-gray-500 uppercase">Você está comprando para:</p>
+                <p id="lbl-evento-compra" class="text-sm font-bold text-gray-800 uppercase">
+                    Carregando...
+                </button>
+            </div>
+
             <div class="flex border-b border-gray-200">
                 <button onclick="mudarAba('compra')" id="tab-compra" class="flex-1 py-2 font-bold text-green-700 border-b-4 border-green-600 bg-green-50">🛒 Comprar</button>
                 <button onclick="mudarAba('extrato')" id="tab-extrato" class="flex-1 py-2 font-bold text-gray-600 hover:bg-gray-50">📄 Extrato</button>
@@ -581,10 +588,10 @@
                     <button onclick="setQtd(5)" class="btn-qtd w-12 h-12 rounded-full border-2 border-gray-300 font-bold text-gray-600 focus:border-green-500 focus:bg-green-100">5</button>
                     <button onclick="setQtd(10)" class="btn-qtd w-12 h-12 rounded-full border-2 border-gray-300 font-bold text-gray-600 focus:border-green-500 focus:bg-green-100">10</button>
                     <button onclick="setQtd(20)" class="btn-qtd w-12 h-12 rounded-full border-2 border-gray-300 font-bold text-gray-600 focus:border-green-500 focus:bg-green-100">20</button>
-                    <input type="number" id="input-qtd" value="1" min="1" class="w-16 h-12 text-center text-gray-900 border-2 border-gray-300 rounded-lg font-bold text-lg">
+                    <input type="number" id="input-qtd" value="5" min="1" class="w-16 h-12 text-center text-gray-900 border-2 border-gray-300 rounded-lg font-bold text-lg">
                 </div>
 
-                <button onclick="realizarCompra()" class="w-full bg-green-600 text-white font-semibold py-2 -mt-2 rounded-xl text-xl shadow-lg hover:bg-green-700 active:scale-95 transition-all">
+                <button id="btn-confirma-compra" onclick="realizarCompra()" class="w-full bg-green-600 text-white font-semibold py-2 -mt-2 rounded-xl text-xl shadow-lg hover:bg-green-700 active:scale-95 transition-all">
                     CONFIRMAR COMPRA ✅
                 </button>
                 <p id="msg-compra" class="mt-2 text-sm font-bold text-red-500 hidden"></p>
@@ -596,7 +603,7 @@
             </div>
 
             <div class="p-2 bg-gray-200 text-center -mt-2 border-t">
-                    <button onclick="fecharModal('modal-carteira')" 
+                    <button id="btn-fechar-carteira" onclick="fecharModal('modal-carteira')" 
                                   class="text-gray-600 font-bold bg-gray-300 px-12 py-2 hover:bg-green-200 focus:bg-green-200 hover:text-green-800 rounded-lg transition-colors duration-200">
                           Fechar
                     </button>

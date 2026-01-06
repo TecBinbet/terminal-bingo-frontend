@@ -70,6 +70,8 @@ let corTextoNumeros = "text-gray-200";
 
 //let clienteLogado = false;
 
+let eventoSelecionadoParaCompra = null;
+
 let lastPrizeJson = "";
 let lastBuscandoJson = "";
 
@@ -320,6 +322,10 @@ function agruparNumerosEmRanges(numeros) {
 async function openEventsPanel() {
     if (!eventsPanelContainer || !eventsListContent) return;
     
+    if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') {
+       goFullscreen(); 
+    } 
+
     // 1. Exibe o Loader Global
     if (loader) loader.style.display = 'flex';
 
@@ -674,16 +680,18 @@ function closeEventsPanel() {
 
 function iniciarCompraCartelas(idEvento) {
     // 1. Fecha o painel de listagem de eventos para limpar a tela
-    closeEventsPanel();
+    if (typeof closeEventsPanel === 'function') {
+        closeEventsPanel();
+    }
 
     // 2. Se não estiver logado, abre o modal (que deve cair na tela de login)
     if (!clienteLogado) {
-        abrirMenuCliente(); 
+        abrirMenuCliente(idEvento); // <<<<< aquix
         return;
     }
 
     // 3. Abre o Modal "Minha Carteira"
-    abrirMenuCliente();
+    abrirMenuCliente(idEvento); // <<<<< aquix
 
     // 4. AUTOMATIZAÇÃO: Clica na aba "Comprar" automaticamente
     setTimeout(() => {
@@ -879,7 +887,7 @@ function isMobileDevice() {
 // MENU
 function openSideMenu() {
     if (!menuOverlay) return;
-    if (!telaFull) { 
+    if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
        goFullscreen(); 
     } 
 
@@ -1055,7 +1063,7 @@ async function updatePromocionalPanelPosition() {
         // --- CENÁRIO 1: VÍDEO ATIVO (usa top e bottom para esticar) ---
         let topText = 180;        
         let fonteText = 24;
-        if (!telaFull) { 
+        if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
             topText = 108;
             fonteText = 16;
         }
@@ -1077,7 +1085,7 @@ async function updatePromocionalPanelPosition() {
         let percento = 0.92;
         let topText = 250;    
 
-        if (!telaFull) { 
+        if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
             topMargin = 55;
             topText = 200;
         }    
@@ -1243,12 +1251,13 @@ function openMyCardsPanel() {
         return;
     }
 
+
     // 1. Exibe o Loader
     if (loader) loader.style.display = 'flex';
 
     // 2. Usa setTimeout para dar tempo do loader renderizar e simular processamento
     setTimeout(() => {
-        if (!telaFull) { 
+        if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
            goFullscreen(); 
         } 
      
@@ -4051,6 +4060,11 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- CONTROLE DE TEMA (BOTÃO MOBILE) ---
 if (btnToggleTemaMobile) {
     btnToggleTemaMobile.addEventListener('click', () => {
+
+        if (!telaFull) { 
+            goFullscreen(); 
+        } 
+
         // 1. Inverte o estado do tema
         isDarkMode = !isDarkMode;
         
@@ -4449,11 +4463,11 @@ function atualizarVisualizacaoAcumulado(valorAcumulado, bolaTope, bolasCantadas)
     if (quantidadeBolas <= bolaTope) {
         // --- ESTILO ATIVO (VÁLIDO) ---
         // Aplica o estilo amarelo com borda
-        container.className = "text-[8px] font-bold text-yellow-300 border-2 border-yellow-700 rounded-lg px-3";
+        container.className = "text-[10px] font-bold text-yellow-300 border-2 border-yellow-700 rounded-lg px-3";
     } else {
         // --- ESTILO INATIVO (ULTRAPASSADO) ---
         // Aplica o estilo cinza sem borda
-        container.className = "text-[9px] font-semibold text-gray-500 border-0 px-0";
+        container.className = "text-[10px] font-semibold text-gray-500 border-0 px-0";
     }
 }
 
@@ -4461,22 +4475,52 @@ function atualizarVisualizacaoAcumulado(valorAcumulado, bolaTope, bolasCantadas)
 
 let clienteLogado = false;
 
-// Função chamada pelos botões do menu principal
-function abrirMenuCliente() {
+// CORREÇÃO: Adicionei (idEventoEspecifico = null) nos parênteses
+function abrirMenuCliente(idEventoEspecifico = null) {
+    
     // Verifica se os modais existem no HTML antes de tentar abrir
+    if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
+        goFullscreen(); 
+    } 
+
     const modalLogin = document.getElementById('modal-login');
-    if (!modalLogin) {
-        alert("Erro: Modais não encontrados. Verifique se copiou o HTML corretamente.");
+    const modalCarteira = document.getElementById('modal-carteira');
+
+    if (!modalLogin || !modalCarteira) {
+        alert("Erro: Modais não encontrados. Verifique o HTML.");
         return;
     }
 
     if (!clienteLogado) {
         modalLogin.classList.remove('hidden');
+        if(idEventoEspecifico) window.eventoPendenteLogin = idEventoEspecifico;
+
     } else {
-        atualizarDadosCliente();
-        document.getElementById('modal-carteira').classList.remove('hidden');
+        atualizarDadosCliente(); 
+
+        const lblEvento = document.getElementById('lbl-evento-compra');
+        
+        // LÓGICA CORRETA DE SELEÇÃO:
+        if (idEventoEspecifico) {
+            eventoSelecionadoParaCompra = idEventoEspecifico;
+            if (lblEvento) {
+                lblEvento.textContent = `EVENTO ID: ${idEventoEspecifico}`;
+                lblEvento.className = "text-sm font-black text-red-600 uppercase blink-anim"; // Destaque em vermelho
+            }
+        } else {
+            // Se veio do botão genérico "Minha Carteira", usa a rodada atual
+            eventoSelecionadoParaCompra = idRodada; 
+            if (lblEvento) {
+                lblEvento.textContent = "RODADA ATUAL (AO VIVO)";
+                lblEvento.className = "text-sm font-bold text-blue-700 uppercase"; // Destaque em verde
+            }
+        }
+        
+        console.log("Evento definido para compra:", eventoSelecionadoParaCompra);
+        modalCarteira.classList.remove('hidden');
     }
 }
+
 
 function fecharModal(id) {
     document.getElementById(id).classList.add('hidden');
@@ -4564,7 +4608,6 @@ function mudarAba(aba) {
         btnExtrato.classList.remove('text-gray-600');
         btnCompra.classList.remove('text-green-700', 'border-b-4', 'border-green-600', 'bg-green-50');
         btnCompra.classList.add('text-gray-600');
-
     }
 }
 
@@ -4578,12 +4621,18 @@ async function realizarCompra() {
     
     const msg = document.getElementById('msg-compra');
 
+    const btnConfirmar = document.getElementById('btn-confirma-compra');
+    const btnFechar = document.getElementById('btn-fechar-carteira');
+
     if(!confirm(`Confirma a compra de ${qtd} cartela(s)?`)) return;
 
     if(msg) {
         msg.textContent = '';
         msg.classList.add('hidden');
     }
+
+    if (btnConfirmar) btnConfirmar.style.display = 'none';
+    if (btnFechar) btnFechar.style.display = 'none';
 
     // 1. BLOQUEIA A TELA COM LOADING
     showFullLoading("Processando pagamento...");
@@ -4593,7 +4642,10 @@ async function realizarCompra() {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             credentials: 'include',
-            body: JSON.stringify({quantidade: qtd})
+            body: JSON.stringify({
+                quantidade: qtd, 
+                id_evento: eventoSelecionadoParaCompra 
+            })
         });
         const data = await res.json();
 
@@ -4645,6 +4697,10 @@ async function realizarCompra() {
             msg.textContent = "Erro de comunicação.";
             msg.className = "mt-3 text-sm font-bold text-red-600 block";
         }
+    } finally {
+        // 3. MOSTRA OS BOTÕES NOVAMENTE (Sempre, seja sucesso ou erro)
+        if (btnConfirmar) btnConfirmar.style.display = 'block'; // ou 'inline-block' dependendo do seu layout, mas block funciona bem com w-full
+        if (btnFechar) btnFechar.style.display = 'inline-block';
     }
     // Nota: O 'finally' hideFullLoading não está aqui porque se der sucesso, 
     // queremos que o loading continue até as cartelas carregarem.
@@ -4736,11 +4792,14 @@ async function fazerLogout() {
     // 2. Fecha modais e menus abertos
     fecharModal('modal-carteira');
     
+
+    closeSideMenu();
+
     // Se você tiver uma função que fecha o menu lateral, chame-a aqui. 
     // Exemplo: document.getElementById('sidebar').classList.add('-translate-x-full');
     // Ou simplesmente removemos a classe que deixa o menu visível.
-    const sidebar = document.getElementById('mobile-menu'); // ou o ID do seu menu
-    if (sidebar) sidebar.classList.add('hidden');
+    //const sidebar = document.getElementById('mobile-menu'); // ou o ID do seu menu
+    //if (sidebar) sidebar.classList.add('hidden');
 
     // 3. Atualiza a tela (Recarrega a página para limpar o cache visual do usuário)
     // Isso é importante para garantir que o próximo usuário não veja o saldo do anterior
