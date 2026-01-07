@@ -16,6 +16,11 @@ const estatisticasPanel = document.getElementById('estatisticas-panel');
 
 const loadingStats = document.getElementById('loading-stats');
 
+const customModal = document.getElementById('custom-modal-global');
+const modalTitle = document.getElementById('modal-title');
+const modalMsg = document.getElementById('modal-message');
+const modalIcon = document.getElementById('modal-icon');
+
 const myCardsPanel = document.getElementById('my-cards-panel-container');
 const myCardsTotal = document.getElementById('my-cards-total');
 const myCardsList = document.getElementById('my-cards-list');
@@ -320,57 +325,49 @@ function agruparNumerosEmRanges(numeros) {
  * Abre o painel de Próximos Eventos e carrega os dados do servidor.
  */
 async function openEventsPanel() {
-    if (!eventsPanelContainer || !eventsListContent) return;
-    
-    if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') {
-       goFullscreen(); 
-    } 
+    // 1. Abre o modal primeiro
+    const modal = document.getElementById('events-panel-container');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
 
-    // 1. Exibe o Loader Global
-    if (loader) loader.style.display = 'flex';
+    // 2. ATIVA O LOADING (Bloqueia a tela enquanto busca)
+    showFullLoading("Carregando agenda...");
 
     try {
-        // 2. Busca dados atualizados da API (Com Timestamp para evitar Cache)
-        const response = await fetch(`${API_BASE_URL}/api/proximos_eventos?_t=${Date.now()}`);
+        // 3. Busca os dados no servidor
+        const response = await fetch(`${API_BASE_URL}/api/proximos_eventos`);
         
         if (!response.ok) {
-            throw new Error(`Erro na API: ${response.status}`);
+             throw new Error('Falha na comunicação com o servidor');
         }
-        
+
         const eventos = await response.json();
-        // 3. Renderiza os cartões
-        renderEventsList(eventos);
         
-        // 4. Mostra o painel apenas com os dados prontos
-        eventsPanelContainer.classList.remove('hidden');
-        eventsPanelContainer.classList.add('flex');
+        // 4. Renderiza a lista (agora com a premiação corrigida)
+        renderEventsList(eventos);
 
     } catch (error) {
         console.error("Erro ao carregar eventos:", error);
         
-        // Se der erro, mostra o painel com mensagem de erro
-        eventsPanelContainer.classList.remove('hidden');
-        eventsPanelContainer.classList.add('flex');
-        
-        eventsListContent.innerHTML = `
-            <div class="flex flex-col items-center justify-center h-full text-red-500 p-4 text-center">
-                <span class="text-2xl mb-2">⚠️</span>
-                <p class="font-bold">Não foi possível carregar a agenda.</p>
-                <p class="text-xs text-gray-500 mt-1">${error.message}</p>
-                <button onclick="openEventsPanel()" class="mt-4 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm">
-                    Tentar Novamente
-                </button>
-            </div>
-        `;
+        // Exibe mensagem de erro amigável dentro do modal se falhar
+        const listContent = document.getElementById('events-list-content');
+        if (listContent) {
+            listContent.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-40 text-red-400">
+                    <span class="text-3xl mb-2">⚠️</span>
+                    <p>Não foi possível atualizar a agenda.</p>
+                </div>
+            `;
+        }
     } finally {
-        // 5. Esconde o Loader (Sempre)
-        if (loader) loader.style.display = 'none';
+        // 5. DESATIVA O LOADING (Sempre executa, dando erro ou não)
+        hideFullLoading();
     }
 }
 
 
-// --- FUNÇÃO: EXIBIR AVISO DO SISTEMA ---
-// --- FUNÇÃO: EXIBIR AVISO DO SISTEMA (COM VALIDAÇÃO DE TEMPO) ---
 // --- FUNÇÃO CORRIGIDA: EXIBIR AVISO DO SISTEMA ---
 function renderAvisoPanel(avisosData) {
     // 1. Validação básica
@@ -608,7 +605,7 @@ function renderEventsList(eventos) {
             btnComprarHtml = `
                 <div class="-mt-1 border-t border-gray-700 pt-1">
                     <button onclick="iniciarCompraCartelas('${evt.id_evento}')" 
-                            class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg shadow-md flex items-center justify-center gap-2 transition-colors active:scale-95">
+                            class="w-full bg-green-900 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md flex items-center justify-center gap-2 transition-colors active:scale-95">
                         <span>🛒</span> COMPRAR CARTELAS
                     </button>
                 </div>
@@ -623,7 +620,16 @@ function renderEventsList(eventos) {
         // Formatação de Moeda
         const preco = parseFloat(evt.valor_cartela).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-        const listaPremios = Array.isArray(evt.premios_desc) ? evt.premios_desc : [];
+        let rawPremios = evt.premios_desc || evt.premios || [];
+        let listaPremios = [];
+
+        if (Array.isArray(rawPremios)) {
+            // Se já for array, usa direto
+            listaPremios = rawPremios;
+        } else if (typeof rawPremios === 'string') {
+            // Se for string (ex: "Carro, Moto"), transforma em array
+            listaPremios = rawPremios.split(',').map(p => p.trim()).filter(p => p !== "");
+        }
 
         // Renderiza a lista de prêmios
        const premiosHtml = listaPremios.map(p =>
@@ -637,16 +643,17 @@ function renderEventsList(eventos) {
             ${statusBadge}
             
             <div class="pr-2 mt-3">
-                <h3 class="text-[15px] font-bold text-white leading-tight drop-shadow-sm -mb-1">${evt.descricao}</h3>
-                <p class="text-[15px] font-semibold text-blue-300 font-mono -mb-0.5 flex items-center gap-1">
+                <h3 class="text-[13px] font-bold text-white leading-tight drop-shadow-sm -mb-1">${evt.descricao}</h3>
+                <p class="text-[13px] font-semibold text-blue-300 font-mono -mb-0.5 flex items-center gap-1">
                      ${evt.data} <span class="mx-1">|</span> <span>⏰</span> ${evt.hora}
                 </p>
             </div>
 
             <!-- Área de Prêmios -->
             <div class="bg-black/40 rounded-lg p-1 border border-gray-700/50">
-                <p class="text-[10px] text-green-300 font-bold uppercase mb-0 tracking-wider">Premiação Prevista:</p>
-                <ul class="text-[15px] text-yellow-300 space-y-0 font-medium">
+                <p class="text-[10px]  text-center text-green-300 font-bold uppercase -mb-1 -mt-1 tracking-wider">Premiação Prevista:</p>
+                
+                <ul class="grid grid-cols-2 gap-x-2 text-[11px] text-yellow-300 font-medium leading-tight mt-0.5">
                     ${premiosHtml}
                 </ul>
             </div>
@@ -669,6 +676,7 @@ function renderEventsList(eventos) {
         eventsListContent.appendChild(card);
     });
 }
+
 
 function closeEventsPanel() {
     if (eventsPanelContainer) {
@@ -769,6 +777,57 @@ async function carregarCartelasAutomaticas(idEvento) {
     } finally {
         // 2. DESATIVA O LOADING
         hideFullLoading();
+    }
+}
+
+// --- FUNÇÃO: Sincronia de Compras Externas (COM REGRA DE BLOQUEIO) ---
+async function verificarNovasCompras() {
+    // 1. Verificações básicas de login e IDs
+    if (!clienteLogado || !clienteLogadoId || !idRodada) return;
+
+    // 2. Evita sobreposição de chamadas
+    if (isFetchingCards) return;
+
+    // --- NOVA REGRA: BLOQUEIO DURANTE SORTEIO ---
+    // Se o estado atual não for de vendas (ex: está em 'andamento' ou 'finalizada'),
+    // nós abortamos a verificação imediatamente.
+    // (Ajuste 'aberta' e 'intervalo' conforme os nomes exatos que você usa no banco)
+    if (lastRodadaState !== 'aberta' && lastRodadaState !== 'intervalo') {
+        // console.log("Sorteio em andamento. Verificação de vendas pausada.");
+        return; 
+    }
+    // ---------------------------------------------
+
+    try {
+        // 3. Consulta Silenciosa
+        const url = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idRodada}&id_cliente=${clienteLogadoId}`;
+        const response = await fetch(url, { credentials: 'include' });
+        
+        if (!response.ok) return;
+
+        const data = await response.json();
+        
+        if (data.cartelas) {
+            const qtdNoServidor = data.cartelas.length;
+            // Garante que a variável local existe, senão assume 0
+            const qtdLocal = (typeof globalMinhasCartelas !== 'undefined') ? globalMinhasCartelas.length : 0;
+
+            // 4. Comparação
+            if (qtdNoServidor !== qtdLocal) {
+                console.log(`♻️ Sincronia: Mudança de ${qtdLocal} para ${qtdNoServidor} cartelas.`);
+                
+                // Se aumentou, mostra aviso (Opcional)
+                if (qtdNoServidor > qtdLocal) {
+                    showCustomAlert(`Você recebeu novas cartelas!`, "Nova Compra", "🎟️");
+                }
+
+                // 5. Atualização
+                // Passa 'true' se quiser indicar reload forçado, ou chama normal
+                await carregarCartelasAutomaticas(idRodada);
+            }
+        }
+    } catch (e) {
+        console.warn("Erro na verificação silenciosa:", e);
     }
 }
 
@@ -3764,7 +3823,15 @@ async function init() {
         renderMainContent(initialData); 
         
         connectWebSocket();
-        
+        setInterval(() => {
+            // Só verifica se o cliente estiver logado e o jogo já tiver começado (não estiver na animação de início)
+            if (typeof clienteLogado !== 'undefined' && clienteLogado && !iniciandoRodada) {
+                if (typeof verificarNovasCompras === 'function') {
+                    verificarNovasCompras();
+                }
+            }
+        }, 30000);
+
     } catch (error) {
         console.error('Erro ao iniciar a aplicação:', error);
         showMessage('Não foi possível conectar ao servidor. Verifique se o backend está em execução.', 'error');
@@ -3954,6 +4021,7 @@ ws.onmessage = (event) => {
             if (melhoresData) {
                 renderMelhores(melhoresData);
             }
+            verificarNovasCompras();
         }
     } catch (e) {
         console.error('Falha ao processar mensagem do WebSocket:', e);
@@ -4531,12 +4599,14 @@ async function fazerLogin() {
     const pass = document.getElementById('login-pass').value.trim();
     
     if (!user || !pass) {
-        alert("Por favor, preencha usuário e senha.");
+        showCustomAlert("Por favor, preencha usuário e senha.", "Erro de Acesso", "❌");
         return;
     }
 
     // 1. ATIVA O LOADING
-    showFullLoading("Autenticando usuário...");
+    if (typeof showFullLoading === 'function') {
+        showFullLoading("Autenticando usuário...");
+    }
 
     try {                                    
         const res = await fetch(`${API_BASE_URL}/api/login_cliente`, {
@@ -4574,12 +4644,14 @@ async function fazerLogin() {
             }
 
         } else {
-            alert(data.erro || "Senha incorreta ou usuário não encontrado.");
+            showCustomAlert("Senha incorreta ou usuário não encontrado.", "Erro de Acesso", "❌");
+            //alert(data.erro || "Senha incorreta ou usuário não encontrado.");
         }
 
     } catch (e) {
         console.error("Falha no login:", e);
-        alert("Falha na comunicação: " + e.message);
+        showCustomAlert("Falha na comunicação: " + e.message, "Erro de Acesso", "❌");
+        //alert("Falha na comunicação: " + e.message);
     } finally {
         // 2. DESATIVA O LOADING (Sempre, mesmo se der erro)
         hideFullLoading();
@@ -4624,7 +4696,8 @@ async function realizarCompra() {
     const btnConfirmar = document.getElementById('btn-confirma-compra');
     const btnFechar = document.getElementById('btn-fechar-carteira');
 
-    if(!confirm(`Confirma a compra de ${qtd} cartela(s)?`)) return;
+    const confirmou = await showCustomConfirm(`Confirma a compra de ${qtd} cartela(s)?`, "Compra Cartelas", "🛒");
+    if(!confirmou) return;
 
     if(msg) {
         msg.textContent = '';
@@ -4687,7 +4760,8 @@ async function realizarCompra() {
                 msg.className = "mt-3 text-sm font-bold text-red-600 block";
                 msg.textContent = `❌ ${data.erro}`;
             } else {
-                alert(`❌ Erro: ${data.erro}`);
+                showCustomAlert(`❌ Erro: ${data.erro}`, "Erro de Acesso", "❌");
+                //alert(`❌ Erro: ${data.erro}`);
             }
         }
     } catch (e) {
@@ -4777,7 +4851,8 @@ async function atualizarDadosCliente() {
 
 
 async function fazerLogout() {
-    if(!confirm("Tem certeza que deseja sair da conta?")) return;
+    const confirmou = await showCustomConfirm("Tem certeza que deseja sair da conta?", "Sair do Sistema", "🚪");
+    if(!confirmou) return;
 
     try {
         // Avisa o servidor para matar a sessão
@@ -4832,14 +4907,117 @@ function showFullLoading(mensagem) {
             <span class="text-white text-lg font-bold tracking-wide">${mensagem}</span>
         </div>
     `;
+
+    // CORREÇÃO CRÍTICA: Remove a classe 'hidden' para vencer o !important do CSS
+    loader.classList.remove('hidden');
     loader.style.display = 'flex';
 }
 
 function hideFullLoading() {
     if (loader) {
+        // CORREÇÃO CRÍTICA: Adiciona a classe 'hidden' novamente
+        loader.classList.add('hidden');
         loader.style.display = 'none';
         loader.innerHTML = ''; // Limpa para não deixar lixo
     }
 }
+
+
+/**
+ * Substituto bonito para o alert()
+ * Uso: showCustomAlert("Sua mensagem aqui", "Título Opcional", "emoji")
+ */
+function showCustomAlert(mensagem, titulo = "Aviso", icone = "ℹ️") {
+    return new Promise((resolve) => {
+        // 1. BUSCA O BOTÃO ATUAL NO DOM (Essencial para evitar o erro de null)
+        const btnConfirm = document.getElementById('btn-modal-confirm');
+        const btnCancel = document.getElementById('btn-modal-cancel');
+
+        // 2. Configura textos
+        if(modalTitle) modalTitle.textContent = titulo;
+        if(modalMsg) modalMsg.innerHTML = mensagem;
+        if(modalIcon) modalIcon.textContent = icone;
+
+        // 3. Configura botões
+        if(btnCancel) btnCancel.classList.add('hidden');
+        
+        if(btnConfirm) {
+            btnConfirm.textContent = "OK";
+            btnConfirm.className = "flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg shadow-lg border border-blue-500";
+            
+            // CLONE E SUBSTITUIÇÃO (Limpa listeners antigos)
+            const newBtn = btnConfirm.cloneNode(true);
+            btnConfirm.parentNode.replaceChild(newBtn, btnConfirm);
+            
+            // Adiciona evento de fechar
+            newBtn.addEventListener('click', () => {
+                closeCustomModal();
+                resolve(true);
+            });
+        }
+
+        // 4. Mostra Modal
+        if(customModal) {
+            customModal.classList.remove('hidden');
+            customModal.classList.add('flex');
+        }
+    });
+}
+
+/**
+ * Substituto bonito para o confirm()
+ */
+function showCustomConfirm(mensagem, titulo = "Confirmação", icone = "❓") {
+    return new Promise((resolve) => {
+        // 1. BUSCA OS BOTÕES ATUAIS NO DOM
+        const btnConfirm = document.getElementById('btn-modal-confirm');
+        const btnCancel = document.getElementById('btn-modal-cancel');
+
+        // 2. Configura textos
+        if(modalTitle) modalTitle.textContent = titulo;
+        if(modalMsg) modalMsg.innerHTML = mensagem;
+        if(modalIcon) modalIcon.textContent = icone;
+
+        // 3. Configura botão CANCELAR
+        if(btnCancel) {
+            btnCancel.classList.remove('hidden');
+            const newBtnCancel = btnCancel.cloneNode(true);
+            btnCancel.parentNode.replaceChild(newBtnCancel, btnCancel);
+            
+            newBtnCancel.addEventListener('click', () => {
+                closeCustomModal();
+                resolve(false); // Retorna FALSE
+            });
+        }
+
+        // 4. Configura botão CONFIRMAR
+        if(btnConfirm) {
+            btnConfirm.textContent = "Sim, confirmar";
+            btnConfirm.className = "flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg shadow-lg border border-green-500";
+            
+            const newBtnConfirm = btnConfirm.cloneNode(true);
+            btnConfirm.parentNode.replaceChild(newBtnConfirm, btnConfirm);
+            
+            newBtnConfirm.addEventListener('click', () => {
+                closeCustomModal();
+                resolve(true); // Retorna TRUE
+            });
+        }
+
+        // 5. Mostra Modal
+        if(customModal) {
+            customModal.classList.remove('hidden');
+            customModal.classList.add('flex');
+        }
+    });
+}
+
+function closeCustomModal() {
+    if(customModal) {
+        customModal.classList.add('hidden');
+        customModal.classList.remove('flex');
+    }
+}
+
 
 // --- FIM DAS NOVAS FUNÇÕES ---

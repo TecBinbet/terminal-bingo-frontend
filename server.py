@@ -1209,15 +1209,62 @@ def proximos_eventos():
             return jsonify([]), 200
 
         lista = []
-        # FILTRO: Só traz ATIVO ou PARALIZADO (Ignora FINALIZADO/FECHADO)
-        # ORDEM: Data e Hora crescentes
+        # FILTRO: Só traz ATIVO ou PARALIZADO
         cursor = sales_db.eventos.find({
             'status': {'$in': ['ativo', 'paralizado', 'ATIVO', 'PARALIZADO']}
-        }).sort([('data_evento', 1), ('hora_evento', 1)]).limit(5) #  5 Limite opcional
+        }).sort([('data_evento', 1), ('hora_evento', 1)]).limit(5)
         
         for evt in cursor:
             try:
+                # --- FUNÇÕES AUXILIARES SEGURAS ---
+                
+                # 1. Converte qualquer coisa (Decimal128, Decimal, String) para float puro
+                def to_float(val):
+                    if val is None: return 0.0
+                    try:
+                        # Se for Decimal128 ou outro objeto complexo, converte para string primeiro
+                        return float(str(val))
+                    except:
+                        return 0.0
+
+                # 2. Formata dinheiro (R$ 1.000,00)
+                def fmt_money(val_float):
+                    return f"R$ {val_float:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                
+                # ----------------------------------
+
                 valor_safe = converter_decimal(evt.get('valor_de_venda'))
+                
+                # CONSTRUÇÃO DA LISTA DE PRÊMIOS (Agora usando to_float)
+                lista_premios_dinamica = []
+
+                # Quadra
+                val = to_float(evt.get('premio_quadra'))
+                if val > 0: lista_premios_dinamica.append(f"Quadra: {fmt_money(val)}")
+
+                # Linha
+                val = to_float(evt.get('premio_linha'))
+                qtd_linhas = int(evt.get('quantidade_de_linhas', 1))
+                if val > 0:
+                    nome = "Linha" if qtd_linhas == 1 else f"{qtd_linhas} Linhas"
+                    lista_premios_dinamica.append(f"{nome}: {fmt_money(val)}")
+
+                # 2º Bingo
+                val = to_float(evt.get('premio_segundobingo'))
+                if val > 0: lista_premios_dinamica.append(f"2º Bingo: {fmt_money(val)}")
+                
+                # Bingo Principal
+                val = to_float(evt.get('premio_bingo'))
+                if val > 0: lista_premios_dinamica.append(f"Bingo: {fmt_money(val)}")
+
+                # Falta Um
+                val = to_float(evt.get('premio_faltaum'))
+                if val > 0: lista_premios_dinamica.append(f"Falta 1: {fmt_money(val)}")
+
+                # Acumulado
+                #val = to_float(evt.get('premio_acumulado'))
+                #if val > 0: lista_premios_dinamica.append(f"Acumulado: {fmt_money(val)}")
+
                 lista.append({
                     'id_evento': str(evt.get('id_evento')),
                     'descricao': evt.get('descricao', 'Sem Descrição'),
@@ -1225,9 +1272,14 @@ def proximos_eventos():
                     'data': evt.get('data_evento'),
                     'hora': evt.get('hora_evento'),
                     'valor_cartela': valor_safe,
-                    'unidade_venda': evt.get('unidade_de_venda', 1)
+                    'unidade_venda': evt.get('unidade_de_venda', 1),
+                    
+                    # Envia a lista gerada dinamicamente
+                    'premios_desc': lista_premios_dinamica 
                 })
-            except: continue
+            except Exception as e: 
+                print(f"Erro ao processar evento na lista: {e}")
+                continue
 
         return jsonify(lista)
 

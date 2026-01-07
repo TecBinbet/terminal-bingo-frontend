@@ -36,7 +36,7 @@
 <body class="bg-gray-800 text-white min-h-screen overflow-hidden">
     <button id="fullscreen-button">Entrar em Tela Cheia</button>    
     
-    <div id="loader" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75 z-50 hidden">
+    <div id="loader" class="fixed inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75 z-[9999] hidden">
         <div class="flex flex-col items-center">
             <div class="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-green-500"></div>
             <p class="mt-4 text-white text-xl" id="loader-message">Carregando dados...</p>
@@ -423,15 +423,15 @@
 
    <div id="events-panel-container" class="hidden fixed inset-0 z-[130] items-center justify-center bg-black/30 backdrop-blur-sm">
         
-        <div class="relative bg-gray-900 p-2 rounded-2xl border-4 border-blue-500 shadow-2xl flex flex-col w-[90%] max-w-[500px] max-h-[90vh]">
+        <div class="relative bg-gray-700 p-2 rounded-2xl border-4 border-blue-500 shadow-2xl flex flex-col w-[90%] max-w-[500px] max-h-[90vh]">
             
             <button id="btn-close-events" class="absolute top-1 right-2 text-gray-400 hover:text-white transition-colors z-10">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
             </button>
 
-            <h2 class="text-center text-sm text-white -mt-1 uppercase tracking-widest border-b-2 border-yellow-500 pb-1 w-full mb-0 flex items-center justify-center gap-2">
+            <h2 class="text-center text-[10px] font-bold text-white -mt-1 uppercase tracking-widest border-b-2 border-yellow-500 pb-1 w-full mb-0 flex items-center justify-center gap-2">
                 📅 Próximos Eventos
             </h2>
             
@@ -610,6 +610,31 @@
              </div>
         </div>
     </div>
+
+<div id="custom-modal-global" class="fixed inset-0 z-[9999] hidden items-center justify-center bg-black/20 backdrop-blur-sm">
+    <div class="bg-gray-900 border-2 border-yellow-500 rounded-2xl p-4 w-[85%] max-w-sm shadow-2xl transform transition-all scale-100">
+        
+        <div class="text-center mb-2">
+            <div id="modal-icon" class="text-4xl mb-1">⚠️</div>
+            <h3 id="modal-title" class="text-xl font-bold text-white uppercase tracking-widest">Atenção</h3>
+        </div>
+
+        <p id="modal-message" class="text-yellow-400 text-center text-lg font-medium mb-4 leading-relaxed">
+            Mensagem aqui...
+        </p>
+
+        <div class="flex gap-3 justify-center">
+            <button id="btn-modal-cancel" class="hidden flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition-colors border border-gray-600">
+                Cancelar
+            </button>
+            
+            <button id="btn-modal-confirm" class="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition-transform active:scale-95 border border-green-500">
+                OK
+            </button>
+        </div>
+    </div>
+</div>
+
 
     <script src="config.js"></script>
     <script src="script.js"></script>
