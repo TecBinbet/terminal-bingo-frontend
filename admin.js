@@ -29,6 +29,10 @@ let localStream = null;
 let vendasTimerInterval = null;
 let MAX_BOLAS = 90;
 
+let bolasProcessadasAdmin = new Set(); 
+let ultimaBolaExibidaAdmin = null;
+let estadoRodadaAtual = null;
+
 let cartelasPendentesAuditoria = [];
 let idsConfirmadosNestaRodada = new Set()
 
@@ -500,6 +504,16 @@ function processarMensagemWS(event) {
                 }
             }
         }
+// new
+        if (payload.rodadaData && payload.rodadaData.length > 0) {
+            const estado = payload.rodadaData[0].estado;
+            
+            // Chama a função de segurança que criamos
+            if (typeof gerenciarEstadoBotoes === 'function') {
+                gerenciarEstadoBotoes(estado);
+            }
+        }
+// new
 
         if (payload.buscandoMesaData && payload.buscandoMesaData.length > 0) {
             const dados = payload.buscandoMesaData[0];
@@ -557,8 +571,8 @@ function processarMensagemWS(event) {
         }
 
 if (payload.melhoresData) {
-    let tipoPremioBuscado = "BINGO";
-    if (payload.buscandoMesaData && payload.buscandoMesaData[0]) tipoPremioBuscado = payload.buscandoMesaData[0].buscando_o_premio;
+   let tipoPremioBuscado = "BINGO";
+   if (payload.buscandoMesaData && payload.buscandoMesaData[0]) tipoPremioBuscado = payload.buscandoMesaData[0].buscando_o_premio;
     
     renderRanking(payload.melhoresData, tipoPremioBuscado);
 
@@ -1344,6 +1358,7 @@ function updateGrid(bolas) {
     renderHistorico(bolas);
 }
 
+
 function renderHistorico(bolas) {
     const c = document.getElementById('historico-bolas'); if(!c) return; c.innerHTML = '';
     if (bolas.length === 0) { c.innerHTML = '<span class="text-gray-600 text-xl italic p-2">Aguardando...</span>'; return; }
@@ -1353,6 +1368,85 @@ function renderHistorico(bolas) {
         div.textContent = num;
         c.appendChild(div);
     });
+}
+
+
+// --- FUNÇÃO DE SEGURANÇA DOS BOTÕES (ROBUSTA) ---
+function gerenciarEstadoBotoes(estadoRaw) {
+    if (!estadoRaw) return;
+
+    // 1. Normalização: Converte para minúsculas e remove espaços extras
+    // Ex: " Ativo " vira "ativo"
+    const estado = String(estadoRaw).toLowerCase().trim();
+    
+    // DEBUG: Mostra no console do navegador (F12) o estado exato
+    console.log(`🔒 Status da Rodada recebido: [${estado}]`);
+
+    // Mapeamento dos botões
+    const btnSortear = document.getElementById('btn-sortear');
+    const btnAutoToggle = document.getElementById('btn-auto-toggle');
+    const btnF1Buscar = document.getElementById('btn-f1-buscar');
+    const btnAutoLegado = document.getElementById('btn-auto'); 
+
+    // === MODO BLOQUEIO (Travado) ===
+    // Se estiver em vendas, intervalo ou finalizada, TRAVA TUDO.
+    if (estado === 'aberta' || estado === 'intervalo' || estado === 'finalizada' || estado === 'fechada') {
+        
+        console.log(" -> 🛑 Modo Bloqueio Ativado");
+
+        if (btnSortear) {
+            btnSortear.disabled = true;
+            btnSortear.classList.add('opacity-50', 'cursor-not-allowed');
+            btnSortear.classList.remove('hover:scale-105', 'active:scale-95');
+        }
+
+        if (btnAutoToggle) {
+            btnAutoToggle.disabled = true;
+            btnAutoToggle.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+        
+        if (btnF1Buscar) {
+            btnF1Buscar.disabled = true;
+            btnF1Buscar.classList.add('opacity-50', 'cursor-not-allowed');
+            btnF1Buscar.classList.remove('hover:scale-105', 'active:scale-95');
+        }
+
+        if (btnAutoLegado) btnAutoLegado.disabled = true;
+
+        // KILL SWITCH: Para o automático se estiver rodando
+        if (typeof autoSorteioAtivo !== 'undefined' && autoSorteioAtivo) {
+            if (typeof toggleAutoSorteio === 'function') {
+                toggleAutoSorteio();
+            }
+        }
+
+    } 
+    // === MODO JOGO (Liberado) ===
+    // ACEITA QUALQUER OUTRO ESTADO COMO "JOGO" (ativo, andamento, iniciado, etc.)
+    // Essa lógica 'else' garante que se iniciar, libera!
+    else {
+        
+        console.log(" -> ✅ Modo Jogo Liberado");
+
+        if (btnSortear) {
+            btnSortear.disabled = false;
+            btnSortear.classList.remove('opacity-50', 'cursor-not-allowed');
+            btnSortear.classList.add('hover:scale-105', 'active:scale-95');
+        }
+
+        if (btnAutoToggle) {
+            btnAutoToggle.disabled = false;
+            btnAutoToggle.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+
+        if (btnF1Buscar) {
+            btnF1Buscar.disabled = false;
+            btnF1Buscar.classList.remove('opacity-50', 'cursor-not-allowed');
+            btnF1Buscar.classList.add('hover:scale-105', 'active:scale-95');
+        }
+        
+        if (btnAutoLegado) btnAutoLegado.disabled = false;
+    }
 }
 
 
@@ -1804,7 +1898,6 @@ async function mudarPremio(tipo) {
         console.error("[DEBUG] Erro ao mudar prêmio:", e);
     }
 }
-
 
 
 // --- FUNÇÃO RESETAR CORRIGIDA (COM LOADING) ---

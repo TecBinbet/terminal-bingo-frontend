@@ -142,7 +142,7 @@ let seePromocoes = true; // Controla se o sistema deve verificar e exibir promo�
 let promocionalTimer = null; // Armazena a referência do temporizador
 
 let globalPromocionalData = [];
-
+// aquix
 let clienteLogadoId = urlParamsGlobal.get('id_cliente') || urlParamsGlobal.get('idcliente') || null;
 
 let vozAtiva = false; 
@@ -698,7 +698,7 @@ function iniciarCompraCartelas(idEvento) {
 
     // 2. Se não estiver logado, abre o modal (que deve cair na tela de login)
     if (!clienteLogado) {
-        abrirMenuCliente(idEvento); // <<<<< aquix
+        abrirMenuCliente(idEvento); 
         return;
     }
 
@@ -4624,6 +4624,160 @@ function fecharModal(id) {
     document.getElementById(id).classList.add('hidden');
 }
 
+
+function autocadastro() {
+    // Fecha o modal de login se estiver aberto
+    fecharModal('modal-login');
+    
+    // Abre o modal de cadastro
+    const modal = document.getElementById('modal-cadastro');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+}
+
+// --- FUNÇÃO 2: Máscara de Celular (Visual) ---
+function mascaraCelular(input) {
+    let v = input.value.replace(/\D/g, ""); // Remove tudo que não é dígito
+    v = v.replace(/^(\d\d)(\d)/g, "($1) $2"); // Coloca parênteses no DDD
+    v = v.replace(/(\d{5})(\d)/, "$1-$2"); // Coloca hífen
+    input.value = v.substring(0, 15); // Limita tamanho
+}
+
+
+// Variável de controle para impedir o cadastro se o nick já existir
+let nickDisponivel = false;
+
+// --- FUNÇÃO: Verifica se o usuário já existe (Chamada no onblur) ---
+async function verificarUsuarioExistente(usuario) {
+    const msgElement = document.getElementById('msg-nick-erro');
+    const inputElement = document.getElementById('cad-usuario');
+    
+    if (!usuario || usuario.length < 3) {
+        nickDisponivel = false;
+        return; 
+    }
+
+    usuario = usuario.trim().toLowerCase();
+
+    try {
+        // Chama o backend para checar apenas o nick (Rota que criaremos a seguir)
+        const response = await fetch(`${API_BASE_URL}/api/checar_nick_disponivel?nick=${usuario}`);
+        const data = await response.json();
+
+        if (data.disponivel === false) {
+            // Se NÃO estiver disponível
+            nickDisponivel = false;
+            msgElement.textContent = "❌ Este usuário já está em uso. Escolha outro.";
+            msgElement.className = "text-[11px] mt-1 text-red-400 font-bold block";
+            inputElement.classList.add('border-red-500');
+            inputElement.classList.remove('border-green-500');
+        } else {
+            // Se estiver livre
+            nickDisponivel = true;
+            msgElement.textContent = "✅ Usuário disponível!";
+            msgElement.className = "text-[11px] mt-1 text-green-400 font-bold block";
+            inputElement.classList.remove('border-red-500');
+            inputElement.classList.add('border-green-500');
+        }
+
+    } catch (e) {
+        console.warn("Não foi possível verificar o nick agora.", e);
+        // Em caso de erro de rede, permitimos tentar enviar, o backend barrará depois
+        nickDisponivel = true; 
+    }
+}
+
+// --- FUNÇÃO: Salvar Novo Usuário (Atualizada) ---
+async function salvarNovoUsuario() {
+    // 1. Coleta os dados
+    const nome = document.getElementById('cad-nome').value.trim();
+    // Sobrenome removido
+    const celular = document.getElementById('cad-celular').value.trim();
+    const cidade = document.getElementById('cad-cidade').value.trim();
+    const pix = document.getElementById('cad-pix').value.trim();
+    const pixConfirma = document.getElementById('cad-pix-confirma').value.trim();
+    const usuario = document.getElementById('cad-usuario').value.trim().toLowerCase();
+    const senha = document.getElementById('cad-senha').value;
+    const confirma = document.getElementById('cad-confirma').value;
+
+    // 2. Validações
+    if (!nome || !celular || !usuario || !senha || !pix  || !cidade) {
+        showCustomAlert("Por favor, preencha todos os campos, incluindo a Chave Pix.", "Dados Incompletos", "⚠️");
+        return;
+    }
+
+    // Validação do Nick (Feita no onblur, mas reforçada aqui)
+    if (nickDisponivel === false && usuario.length > 0) {
+        // Tenta verificar uma última vez caso o usuário tenha digitado rápido e clicado no botão
+        await verificarUsuarioExistente(usuario);
+        if (nickDisponivel === false) {
+            showCustomAlert("O usuário escolhido já existe. Por favor, tente outro.", "Usuário Indisponível", "⛔");
+            document.getElementById('cad-usuario').focus();
+            return;
+        }
+    }
+
+    // Validação Pix
+    if (pix !== pixConfirma) {
+        showCustomAlert("A confirmação da Chave Pix não confere.", "Erro no Pix", "❌");
+        return;
+    }
+
+    // Validação Senha
+    if (senha !== confirma) {
+        showCustomAlert("As senhas não coincidem.", "Erro de Senha", "❌");
+        return;
+    }
+
+    if (senha.length < 4) {
+        showCustomAlert("A senha deve ter pelo menos 4 caracteres.", "Senha Fraca", "⚠️");
+        return;
+    }
+
+    // 3. Envio
+    showFullLoading("Criando sua conta...");
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/cadastrar_cliente`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                nome: nome,
+                celular: celular,
+                pix: pix,        // Enviando Pix
+                cidade: cidade,
+                usuario: usuario,
+                senha: senha
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.status === 'ok') {
+            fecharModal('modal-cadastro');
+            showCustomAlert("Cadastro realizado! Use seu usuário e senha para entrar.", "Bem-vindo!", "🎉");
+            
+            const campoUser = document.getElementById('login-user');
+            if(campoUser) campoUser.value = usuario;
+            
+            setTimeout(() => abrirModalLogin(), 1500);
+            
+        } else {
+            showCustomAlert(data.erro || "Erro ao criar cadastro.", "Erro", "❌");
+        }
+
+    } catch (error) {
+        console.error(error);
+        showCustomAlert("Erro de conexão com o servidor.", "Falha", "❌");
+    } finally {
+        hideFullLoading();
+    }
+}
+
+
+
 async function fazerLogin() {
     const user = document.getElementById('login-user').value.trim();
     const pass = document.getElementById('login-pass').value.trim();
@@ -4652,6 +4806,11 @@ async function fazerLogin() {
 
         if (data.status === 'ok') {
             clienteLogado = true;
+
+            if (data.id || data.id_cliente) {
+                clienteLogadoId = data.id || data.id_cliente;
+                console.log("✅ Login efetuado. ID atualizado para:", clienteLogadoId);
+            }
             
             fecharModal('modal-login');
             abrirMenuCliente(); 
@@ -5049,5 +5208,36 @@ function closeCustomModal() {
     }
 }
 
+
+// --- FUNÇÃO: Alternar Visibilidade da Senha ---
+function toggleVisualizarSenha(inputId, btnElement) {
+    const input = document.getElementById(inputId);
+    
+    if (!input) return;
+
+    if (input.type === "password") {
+        // MOSTRAR SENHA
+        input.type = "text";
+        
+        // Troca o ícone para "Olho Fechado" (indica que clicar vai esconder)
+        // Ou mantém olho aberto com cor diferente. Aqui vou colocar o ícone de "Olho Riscado"
+        btnElement.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-green-400">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+            </svg>
+        `;
+    } else {
+        // ESCONDER SENHA
+        input.type = "password";
+        
+        // Volta para o ícone de "Olho Aberto"
+        btnElement.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+        `;
+    }
+}
 
 // --- FIM DAS NOVAS FUNÇÕES ---

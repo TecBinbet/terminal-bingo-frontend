@@ -2253,8 +2253,7 @@ def admin_validar_cartela():
                             print(f"❌ Erro thread pagto: {e}")
 
                     threading.Thread(target=processar_pagamento_bg, 
-                                   args=(int(id_evento_ativo), cartela_id, raw_val, f"Prêmio {premio_registro} - Evento {id_evento_ativo}")).start()
-                # -------------------------------
+                                   args=(int(id_evento_ativo), cartela_id, raw_val, f"Prêmio {premio_registro} - Ev. {id_evento_ativo}")).star
 
         return jsonify({
             'status_code': status_code,
@@ -2874,7 +2873,8 @@ def api_login_cliente():
                         'status': 'ok', 
                         'msg': 'Logado com sucesso!',
                         'nick': cli['nick'],
-                        'saldo': saldo
+                        'saldo': saldo,
+                        'id': str(cli['id_cliente'])
                     })
                 else:
                     print(f"⛔ Senha incorreta para '{usuario}'")
@@ -3086,6 +3086,122 @@ def api_comprar_cartelas():
 def api_logout():
     session.clear()
     return jsonify({'status': 'ok'})
+
+
+# ==============================================================================
+#  ROTAS DE CADASTRO DE CLIENTE (AUTO-CADASTRO)
+# ==============================================================================
+
+@app.route('/api/checar_nick_disponivel', methods=['GET'])
+def checar_nick():
+    """
+    Verifica se um nome de usuário (nick) já existe no banco.
+    Usado pelo frontend para validação em tempo real (onblur).
+    """
+    try:
+        nick = request.args.get('nick', '').strip()
+        
+        if not nick:
+            return jsonify({'disponivel': False, 'erro': 'Nick vazio'}), 400
+
+        sales_db = get_sales_db_connection()
+        if sales_db is None:
+            return jsonify({'erro': 'Erro de conexão DB'}), 500
+
+        # Busca case-insensitive (joao = Joao = JOAO)
+        # Se encontrar alguém, NÃO está disponível.
+        usuario_existente = sales_db.clientes.find_one({'nick': {'$regex': f'^{nick}$', '$options': 'i'}})
+        
+        if usuario_existente:
+            return jsonify({'disponivel': False})
+        else:
+            return jsonify({'disponivel': True})
+
+    except Exception as e:
+        print(f"❌ Erro ao verificar nick: {e}")
+        return jsonify({'erro': str(e)}), 500
+
+
+# Não esqueça do import no topo: from pymongo import ReturnDocument
+
+@app.route('/api/cadastrar_cliente', methods=['POST'])
+def cadastrar_cliente():
+    """
+    Registra um novo cliente vindo do Auto-Cadastro usando ID Sequencial Numérico (Int32).
+    """
+    try:
+        data = request.json
+        nome = data.get('nome', '').strip().upper() 
+        celular = data.get('celular', '').strip()
+        pix = data.get('pix', '').strip()
+        nick = data.get('usuario', '').strip().lower() 
+        
+        # Formatação de Senha (Capitalize)
+        senha_raw = data.get('senha', '').strip()
+        senha_formatada = senha_raw.capitalize() 
+
+        cidade = data.get('cidade', '').strip().title()
+
+        # 1. Validação Básica
+        if not nome or not celular or not nick or not senha_raw or not pix or not cidade:
+            return jsonify({'erro': 'Todos os campos são obrigatórios.'}), 400
+
+        sales_db = get_sales_db_connection()
+        if sales_db is None:
+            return jsonify({'erro': 'Erro interno: Banco inacessível'}), 500
+
+        # 2. Verificação de Duplicidade
+        if sales_db.clientes.find_one({'nick': {'$regex': f'^{nick}$', '$options': 'i'}}):
+            return jsonify({'erro': 'Este usuário já está sendo usado por outra pessoa.'}), 409
+
+        # 3. Criptografia da Senha
+        senha_hash = bcrypt.hashpw(senha_formatada.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+        # 4. Geração de ID Sequencial (Numérico / Int32)
+        contador = sales_db.contadores.find_one_and_update(
+            {'_id': 'id_clientes_global'},       
+            {'$inc': {'sequence_value': 1}},     
+            return_document=ReturnDocument.AFTER, 
+            upsert=True                          
+        )
+        
+        # --- ALTERAÇÃO AQUI: Mantém como Inteiro ---
+        novo_id_cliente = int(contador['sequence_value'])
+        # -------------------------------------------
+
+        # 5. Montagem do Documento
+        novo_cliente = {
+            'id_cliente': novo_id_cliente, # Salva como Int (ex: 30)
+            'nome_cliente': nome,
+            'telefone': celular,
+            'chave_pix': pix,
+            'nick': nick,
+            'senha': senha_hash,
+            'saldo_atual': 0.0,
+            'data_cadastro': datetime.now().isoformat(),
+            'origem': 'auto_cadastro_site',
+            'cidade': cidade,
+            'id_colaborador': 0
+        }
+
+        # 6. Inserção no Banco
+        sales_db.clientes.insert_one(novo_cliente)
+
+        print(f"✅ Novo cliente cadastrado: {nick} (ID: {novo_id_cliente}) [Int32]")
+
+        return jsonify({
+            'status': 'ok',
+            'msg': 'Cadastro realizado com sucesso!',
+            'id_cliente': novo_id_cliente, # O JSON enviará como número: "id_cliente": 30
+            'nick': nick
+        })
+
+    except Exception as e:
+        print(f"❌ Erro ao cadastrar cliente: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'erro': 'Erro interno ao salvar cadastro.'}), 500
+
 
 
 # --- MAIN ---
