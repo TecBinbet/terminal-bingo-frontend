@@ -73,6 +73,10 @@ let corFundoNumeros23 = "bg-transparent border-2 border-orange-700";
 let corFundoNumero1 = "bg-transparent border-2 border-green-500";
 let corTextoNumeros = "text-gray-200";
 
+// CONTROLE DE ESTADO LOCAL (Para evitar repetição visual)
+let bolasProcessadasLocal = new Set(); // O 'Set' é melhor que Array pois não aceita duplicatas
+let ultimaBolaExibida = null;          // Para controlar a "Bola Grande"
+
 //let clienteLogado = false;
 
 let eventoSelecionadoParaCompra = null;
@@ -2324,6 +2328,9 @@ function clearPanels() {
     ball2.textContent = '';
     ball3.textContent = '';
 
+    bolasProcessadasLocal.clear();
+    ultimaBolaExibida = null;
+
     closeAvisoPanel(); // <--- Adicione 
     lastAvisoTimestamp = 0; // Reseta para permitir novos avisos iguais
 
@@ -2337,10 +2344,9 @@ function clearPanels() {
 
     atualizarVisualizacaoAcumulado(
                premioInfo.premio_acumulado, 
-               topeData[0].bola_tope_ac,  
+               0,  
                globalBolasCantadas          
     );
-
 
     loadedCards = [];
     displayLoadedCards([]);
@@ -3480,6 +3486,11 @@ function temaTope10() {
 }
 
 
+// --- VARIÁVEIS GLOBAIS NECESSÁRIAS (Coloque no topo do arquivo se não tiver) ---
+// let bolasProcessadasLocal = new Set(); 
+// let ultimaBolaExibida = null;
+// -------------------------------------------------------------------------------
+
 async function renderMainContent(data) {
     if (!data) return;
 
@@ -3510,14 +3521,11 @@ async function renderMainContent(data) {
     const rodadaState = rodadaData && rodadaData.length > 0 ? rodadaData[0].estado.trim() : null;
     
     if (rodadaData && rodadaData.length > 0) {
-        // Pega o ID do evento vindo do banco e salva na global
-        // Nota: O campo no banco é 'id_evento', mas verificamos ambos por segurança
         const idVindoDoBanco = rodadaData[0].id_evento || rodadaData[0].rodada;
         
         if (idVindoDoBanco) {
             idRodada = parseInt(idVindoDoBanco);
             
-            // Força a atualização do número na tela também
             const elRoundMobile = document.getElementById('mobile-last-round');
             const elRoundPC = document.getElementById('last-round');
             if (elRoundMobile) elRoundMobile.textContent = idRodada;
@@ -3525,10 +3533,16 @@ async function renderMainContent(data) {
         }
     }
 
+    // --- RESET DA MATRIZ QUANDO MUDA DE RODADA ---
     if (rodadaState === 'intervalo' && lastRodadaState !== 'intervalo') {
         clearPanels();
         lastRodadaState = rodadaState; 
-        window.ultimoEventoProcessado = null; 
+        window.ultimoEventoProcessado = null;
+        
+        // NOVO: Limpa a memória local de bolas já cantadas
+        if (typeof bolasProcessadasLocal !== 'undefined') bolasProcessadasLocal.clear();
+        ultimaBolaExibida = null;
+        
         return; 
     } else if (rodadaState !== null) {
         lastRodadaState = rodadaState;
@@ -3541,9 +3555,8 @@ async function renderMainContent(data) {
     
     // Se veio vazio do servidor, mas nós já tínhamos bolas na memória...
     if (bolasCantadasRaw.length === 0 && globalBolasCantadas.length > 0) {
-        // Verifica se NÃO é um Reset real (se ainda estamos buscando prêmio, o jogo continua)
+        // Verifica se NÃO é um Reset real
         if (buscando_o_premio && buscando_o_premio !== '...' && buscando_o_premio !== 'null') {
-             // console.warn("🛡️ Mantendo bolas anteriores para evitar zerar cartelas.");
              bolasCantadasRaw = globalBolasCantadas; // Ignora o vazio e usa o cache
         }
     }
@@ -3552,9 +3565,29 @@ async function renderMainContent(data) {
     globalBolasCantadas = bolasCantadas; // Atualiza a global
 
     const proximaBola = (bolasData && bolasData.length > 0 && bolasData[0].proxima_bola) ? bolasData[0].proxima_bola : "--";
+    
+    // --- LÓGICA DA MATRIZ (SET) AQUI ---
+    // Pega a última bola da lista do servidor
     const ultimaBolaDaLista = bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : null;
     
-      if (tipoDoSorteio !== 'manual') updateDigitalBola(proximaBola);
+    // Determina se a bola realmente mudou usando TRÊS critérios:
+    // 1. É diferente da última registrada globalmente?
+    // 2. Não é nula?
+    // 3. (NOVO) Ainda não está na nossa matriz local de processados? (Proteção Extra)
+    let bolaMudou = false;
+
+    if (ultimaBolaDaLista !== null && ultimaBolaDaLista !== undefined) {
+        // Verifica se já processamos essa bola nesta rodada
+        const jaProcessada = (typeof bolasProcessadasLocal !== 'undefined') ? bolasProcessadasLocal.has(ultimaBolaDaLista) : false;
+
+        if (ultimaBolaDaLista !== ultimaBolaCantada && !jaProcessada) {
+            bolaMudou = true;
+            // Adiciona na matriz para não processar de novo se o pacote repetir
+            if (typeof bolasProcessadasLocal !== 'undefined') bolasProcessadasLocal.add(ultimaBolaDaLista);
+        }
+    }
+
+    if (tipoDoSorteio !== 'manual') updateDigitalBola(proximaBola);
 
     // =========================================================================
     // >>> PROTEÇÃO ANTI-PISCA NOS DADOS DE PRÊMIO <<<
@@ -3566,7 +3599,6 @@ async function renderMainContent(data) {
     if (buscandoData && buscandoData.length > 0) {
         dadosBuscando = buscandoData[0];
     } else {
-        // Se veio vazio, mas temos bolas sorteadas, é bug do servidor.
         if (bolasCantadas.length > 0 && buscando_o_premio) {
             usarDadosFake = true;
             dadosBuscando = {
@@ -3582,8 +3614,8 @@ async function renderMainContent(data) {
 
     // Detecta mudanças
     const premioMudou = (premioBuscadoDaAPI !== buscando_o_premio.replace(/\s+/g, '').trim() || linhasAtivasDaAPI !== buscando_a_linha);
-    const bolaMudou = (ultimaBolaDaLista !== ultimaBolaCantada);
 
+    // --- AÇÃO QUANDO A BOLA MUDA ---
     if (premioMudou) {
         buscando_o_premio = premioBuscadoDaAPI;
         buscando_a_linha = linhasAtivasDaAPI;
@@ -3591,26 +3623,29 @@ async function renderMainContent(data) {
     }
 
     if (bolaMudou) {
-        if (ultimaBolaDaLista !== null && ultimaBolaDaLista !== undefined) ;
-           falarTexto(`${ultimaBolaDaLista}`) 
-           ultimaBolaCantada = ultimaBolaDaLista;
+        falarTexto(`${ultimaBolaDaLista}`);
+        ultimaBolaCantada = ultimaBolaDaLista;
+        ultimaBolaExibida = ultimaBolaDaLista; // Atualiza controle visual
     }
 
     // --- REPROCESSAMENTO LOCAL ---
-    // Agora que 'bolasCantadas' está protegido, o cálculo será correto (não dará 15)
     if ((premioMudou || bolaMudou) && cachedRawCards.length > 0) {
         const premioNormalizado = premioBuscadoDaAPI.replace(/\s+/g, '').trim();
         processCards(cachedRawCards, bolasCantadas, premioNormalizado, linhasAtivasDaAPI);
     } 
     else if (cartelaRanges && cartelaRanges.length > 0 && cachedRawCards.length === 0 && !isFetchingCards) {
-         fetchAndProcessCards();
+          fetchAndProcessCards();
     }
     
-    // =========================================================================
-
+    // ... (O RESTO DO CÓDIGO PERMANECE IGUAL ATÉ O FIM) ...
+    // ... globalPromocionalData, parametrosInfo, Youtube, etc ...
+    
     globalPromocionalData = promocionalData;
 
-   if (parametrosInfo && Object.keys(parametrosInfo).length > 0) {
+    if (parametrosInfo && Object.keys(parametrosInfo).length > 0) {
+        // ... (Mantive o código original aqui para baixo por brevidade, copie do seu original)
+        // Certifique-se de copiar o resto da função original que lida com YouTube, 
+        // Painel de Avisos, Promoção, Atualização Numérica, etc.
         const nome_da_sala = parametrosInfo.nome_sala; 
         if (nome_da_sala && salaTitleElement) salaTitleElement.textContent = nome_da_sala;
         
@@ -3619,13 +3654,6 @@ async function renderMainContent(data) {
         tempoExibicaoGanhador = parseInt(parametrosInfo.tempo_ganhador);
         
         const tipoSorteio = parametrosInfo.modo_sorteio;
-
-        //if (tipoSorteio === 'manual') {
-        //    vozAtiva = false;
-        //} else {
-        //    vozAtiva = true;
-        //}
-
         updateMenuSoundVisuals();
 
         tipoDoSorteio = tipoSorteio;
@@ -3709,9 +3737,9 @@ async function renderMainContent(data) {
         const formattedPreco = new Intl.NumberFormat('pt-BR', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(preco);
         if(mobilePrecoSerieElement) mobilePrecoSerieElement.textContent = formattedPreco;
         atualizarVisualizacaoAcumulado(
-               premioInfo.premio_acumulado, // Valor do prêmio (ex: 10000 ou "R$ 10.000,00")
-               topeData[0].bola_tope_ac,       // Limite de bolas (ex: 40)
-               globalBolasCantadas             // Array das bolas que já saíram
+                premioInfo.premio_acumulado, // Valor do prêmio (ex: 10000 ou "R$ 10.000,00")
+                topeData[0].bola_tope_ac,        // Limite de bolas (ex: 40)
+                globalBolasCantadas             // Array das bolas que já saíram
         );
 
     }
@@ -3736,6 +3764,8 @@ async function renderMainContent(data) {
         (totalCartelasSpan ? parseInt(totalCartelasSpan.textContent) : 0);
     checkTotalCards(totalAtual);
 }
+
+
 
 //==============
 async function init() {
