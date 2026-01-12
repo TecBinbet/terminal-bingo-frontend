@@ -3369,9 +3369,9 @@ def solicitar_saque():
            'id_cliente': id_sessao, # Usa a variável local
            'status': 'pendente'
         })
-        if ped_pendente:
-            print("DEBUG: Já existe saque pendente.")
-            return jsonify({'erro': 'Você já possui um saque pendente. Aguarde.'}), 400
+        #if ped_pendente:
+        #    print("DEBUG: Já existe saque pendente.")
+        #    return jsonify({'erro': 'Você já possui um saque pendente. Aguarde.'}), 400
 
         # Criação do Registro de Saque
         novo_saque = {
