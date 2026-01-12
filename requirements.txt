@@ -6,3 +6,4 @@ requests
 bcrypt
 gevent
 gevent-websocket
+tzdata

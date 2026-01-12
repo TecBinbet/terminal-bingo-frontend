@@ -564,14 +564,14 @@
         </div>
     </div>
 
-<div id="modal-comprar-cartelas" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
+<div id="modal-comprar-cartelas" class="hidden fixed inset-0 z-50 flex items-start justify-center bg-black/10 backdrop-blur-sm p-4  pt-10">
     <div class="bg-gray-900 w-full max-w-lg rounded-2xl border border-gray-700 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         
         <div class="bg-gray-800 p-2 flex justify-between items-center border-b border-gray-700 shrink-0">
             <h3 class="text-xl font-bold text-green-400 flex items-center gap-2">
                 <span>🛒</span> Comprar Cartelas
             </h3>
-            <button onclick="fecharModal('modal-comprar-cartelas')" class="text-gray-400 hover:text-white text-2xl font-bold">&times;</button>
+            <button onclick="fecharModal('modal-comprar-cartelas')" class="text-gray-400 hover:text-white text-4xl font-bold">&times;</button>
         </div>
 
         <div class="p-4 overflow-y-auto">
@@ -595,7 +595,7 @@
 
                 <div class="flex items-center gap-3">
                     <input type="number" id="qtd-manual" class="w-20 bg-gray-950 border border-gray-700 rounded-lg p-2 text-center text-white text-xl font-bold focus:border-green-500 outline-none" placeholder="Qtd" min="1" oninput="calcularTotalCompra()">
-                    <div class="text-sm text-green-500">ou digite a quantidade</div>
+                    <div class="text-sm text-green-500"> << ou digite a quantidade</div>
                 </div>
             </div>
 
@@ -615,8 +615,8 @@
 </div>
 
 
-<div id="modal-carteira" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-2">
-    <div class="bg-gray-900 w-full max-w-lg rounded-2xl border border-gray-700 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+<div id="modal-carteira" class="hidden fixed inset-0 z-50 flex items-start justify-center bg-black/10 backdrop-blur-sm p-2 pt-10">
+    <div class="bg-gray-900 w-full max-w-lg rounded-2xl border border-gray-700 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
         
         <div class="bg-gray-800 p-2 flex justify-between items-center border-b border-gray-700 shrink-0">
             <h3 class="text-xl font-bold text-yellow-500 flex items-center gap-2">

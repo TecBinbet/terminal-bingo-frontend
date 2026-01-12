@@ -5155,7 +5155,7 @@ async function atualizarDadosCliente() {
             const wrapper = document.getElementById('tabela-extrato-container');
             if (wrapper) {
                 // Se achou o container vazio, cria a lista dentro dele
-                wrapper.innerHTML = '<ul id="lista-transacoes" class="space-y-2 max-h-90 overflow-y-auto"></ul>';
+                wrapper.innerHTML = '<ul id="lista-transacoes" class="space-y-2 max-h-85 overflow-y-auto"></ul>';
                 listaContainer = document.getElementById('lista-transacoes');
             }
         }

@@ -12,6 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory, session # Adicio
 
 from bson.decimal128 import Decimal128
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from flask_cors import CORS
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
@@ -53,6 +54,9 @@ def broadcast_para_clientes(mensagem_dict):
         if morto in clientes_conectados:
             clientes_conectados.remove(morto)
 
+def hora_brasil():
+    """Retorna a data e hora atual no fuso de São Paulo"""
+    return datetime.now(ZoneInfo('America/Sao_Paulo'))
 
 
 def converter_decimal(valor):
@@ -2828,13 +2832,13 @@ def admin_preparar_evento():
 def registrar_transacao_cliente_mesa(db_vendas, id_cliente, valor, tipo, descricao, id_evento):
     """
     Registra movimentação financeira e atualiza saldo.
-    Retorna True se sucesso, False se erro.
+    Retorna True se sucesso, False se erro 
     """
     try:
         # Garante que os valores numéricos estão corretos
         val_decimal = Decimal128(str(valor))
         id_cli = int(id_cliente)
-        
+
         # 1. Tenta atualizar o saldo do cliente (Isso é o mais importante)
         resultado = db_vendas.clientes.update_one(
             {'id_cliente': id_cli},
@@ -2849,18 +2853,18 @@ def registrar_transacao_cliente_mesa(db_vendas, id_cliente, valor, tipo, descric
             # Se não achou o cliente, não podemos registrar a transação, pois o saldo ficaria desincronizado
             return False
 
-        # 2. Se o saldo foi atualizado, grava o histórico (Extrato)
+        # 2. Se o saldo foi atualizado, grava o histórico (Extrato)     # datetime.now() - timedelta(hours=3),
         doc_transacao = {
             'id_transacao': f"TR{int(time.time()*1000)}",
             'id_cliente': id_cli, 
-            'data_hora': datetime.now() - timedelta(hours=3),
+            'data_hora': hora_brasil().strftime('%Y-%m-%d %H:%M:%S'),
             'tipo': tipo,       # 'compra', 'premio', 'deposito'
             'descricao': descricao,
             'valor': val_decimal,
             'id_evento': id_evento,
             'origem': 'WEB_AUTO'
         }
-        
+
         db_vendas.transacoes_clientes.insert_one(doc_transacao)
         return True
 
@@ -2956,36 +2960,71 @@ def api_login_cliente():
 
 @app.route('/api/dados_cliente', methods=['GET'])
 def api_dados_cliente():
-    """Retorna saldo e extrato do cliente logado (Conectando no Banco de Vendas)."""       
+    """Retorna saldo e extrato (Últimas 20 movimentações)."""        
 
     if 'id_cliente' not in session:
         return jsonify({'erro': 'Não logado'}), 401
 
-    # 1. Conecta ao Banco de Vendas (Onde estão os clientes e saldos)
+    # 1. Conecta ao Banco de Vendas
     sales_db = get_sales_db_connection()
 
     if sales_db is None:
         return jsonify({'erro': 'Banco de Vendas desconectado.'}), 500
 
     try:
-        id_cli = int(session['id_cliente'])
-        # 2. Busca Cliente no SALES_DB (IMPORTANTE: sales_db, não db)
-        cli = sales_db.clientes.find_one({'id_cliente': id_cli})
+        id_sessao = session['id_cliente']
+        
+        # --- 2. BUSCA CLIENTE (COM BLINDAGEM DE TIPO INT/STR) ---
+        # Tenta buscar direto
+        cli = sales_db.clientes.find_one({'id_cliente': id_sessao})
+        
+        # Se falhou, tenta inverter o tipo (String <-> Int) para garantir
+        if not cli:
+            try:
+                if isinstance(id_sessao, str):
+                    cli = sales_db.clientes.find_one({'id_cliente': int(id_sessao)})
+                else:
+                    cli = sales_db.clientes.find_one({'id_cliente': str(id_sessao)})
+            except: pass
+            
         if not cli: 
-            # Se não achar, limpamos a sessão para evitar loop de erro
             session.clear()
             return jsonify({'erro': 'Cliente não encontrado na base de vendas.'}), 404
+        
+        # Garante que usamos o ID no formato correto que está no banco para buscar as transações
+        id_cli_correto = cli.get('id_cliente')
         
         # Converte o saldo corretamente
         saldo = converter_decimal(cli.get('saldo_atual', 0.0))
         
-        # 3. Busca Histórico (Extrato) no SALES_DB
+        # --- 3. BUSCA HISTÓRICO (AGORA COM LIMIT 20) ---
         extrato = []
         if 'transacoes_clientes' in sales_db.list_collection_names():
-            cursor = sales_db.transacoes_clientes.find({'id_cliente': id_cli}).sort('data_hora', -1).limit(10)
+           
+            cursor = sales_db.transacoes_clientes.find({'id_cliente': id_cli_correto})\
+                                                 .sort('data_hora', -1)\
+                                                 .limit(20)
+                                                 
             for t in cursor:
                 val_t = converter_decimal(t.get('valor', 0))
-                data_fmt = t['data_hora'].strftime("%d/%m %H:%M") if 'data_hora' in t else "--/--"
+                
+                # Tratamento seguro de data
+                data_raw = t.get('data_hora')
+                if data_raw:
+                    # Se for objeto datetime do python
+                    if hasattr(data_raw, 'strftime'):
+                        data_fmt = data_raw.strftime("%d/%m %H:%M")
+                    # Se for string (ex: ISO format)
+                    else:
+                        data_str = str(data_raw)
+                        # Tenta pegar dia/mes hora:min de uma string ISO "2023-10-25T14:30:00"
+                        # Slice simples: Pega chars 8 a 10 (dia), 5 a 7 (mes), 11 a 16 (hora)
+                        if len(data_str) >= 16:
+                             data_fmt = f"{data_str[8:10]}/{data_str[5:7]} {data_str[11:16]}"
+                        else:
+                             data_fmt = data_str
+                else:
+                    data_fmt = "--/--"
                 
                 extrato.append({
                     'data': data_fmt,
@@ -3240,7 +3279,7 @@ def cadastrar_cliente():
             'nick': nick,
             'senha': senha_hash,
             'saldo_atual': 0.0,
-            'data_cadastro': datetime.now().isoformat(),
+            'data_cadastro': hora_brasil().strftime('%Y-%m-%d %H:%M:%S'),
             'origem': 'auto_cadastro_site',
             'cidade': cidade,
             'id_colaborador': 0
@@ -3379,7 +3418,7 @@ def solicitar_saque():
             'nick': cliente.get('nick', 'Desconhecido'),
             'nome_completo': cliente.get('nome_cliente', ''),
             'chave_pix': cliente.get('chave_pix') or data.get('chave_pix', 'Não informada'),
-            'data_requisicao': datetime.now().isoformat(),
+            'data_requisicao': hora_brasil().strftime('%Y-%m-%d %H:%M:%S'),
             'valor_requerido': valor_solicitado,
             'saldo_no_momento': saldo_atual,
             'status': 'pendente',
