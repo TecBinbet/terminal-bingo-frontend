@@ -79,7 +79,12 @@ let ultimaBolaExibida = null;          // Para controlar a "Bola Grande"
 
 //let clienteLogado = false;
 
-let eventoSelecionadoParaCompra = null;
+let globalIdCliente = null;   // Guarda o ID do usuário logado
+let globalUserNick = null;
+let globalUserSaldo = 0.0;
+var globalPrecoCartela = 0;
+
+let eventoSelecionadoParaCompra = 0;
 
 let lastPrizeJson = "";
 let lastBuscandoJson = "";
@@ -607,8 +612,8 @@ function renderEventsList(eventos) {
             
             // Botão de Compra (Só aparece para eventos ativos/futuros)
             btnComprarHtml = `
-                <div class="-mt-1 border-t border-gray-700 pt-1">
-                    <button onclick="iniciarCompraCartelas('${evt.id_evento}')" 
+                <div class="-mt-1 border-t border-gray-700 pt-1">  
+                    <button onclick="abrirModalCompra('${evt.id_evento}')" 
                             class="w-full bg-green-900 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md flex items-center justify-center gap-2 transition-colors active:scale-95">
                         <span>🛒</span> COMPRAR CARTELAS
                     </button>
@@ -703,7 +708,7 @@ function iniciarCompraCartelas(idEvento) {
     }
 
     // 3. Abre o Modal "Minha Carteira"
-    abrirMenuCliente(idEvento); // <<<<< aquix
+    //abrirMenuCliente(idEvento); // <<<<< aquix
 
     // 4. AUTOMATIZAÇÃO: Clica na aba "Comprar" automaticamente
     setTimeout(() => {
@@ -1308,6 +1313,14 @@ function handleFullscreenChange() {
 
 // --- NOVA FUNÇÃO: Abrir Modal Minhas Cartelas (Com Loading) ---
 function openMyCardsPanel() {
+
+    // TRAVA DE LOGIN:
+    if (!isUsuarioLogado()) {
+        showCustomAlert("Faça login para ver suas cartelas.", "Acesso Negado", "🚫");
+        abrirModalLogin();
+        return;
+    }
+
     // Verifica se os elementos do modal existem no HTML
     if (!myCardsPanel || !myCardsList || !myCardsTotal) {
         console.error("Elementos do modal 'Minhas Cartelas' não encontrados.");
@@ -2279,6 +2292,7 @@ function showMessage(message, type = 'error') {
     loader.innerHTML = `<span class="text-xl font-medium ${colorClass}">${message}</span>`;
     loader.style.display = 'flex';
 }
+
 
 function createNumberPanel() {
     const isMobile = isMobileDevice();
@@ -4575,7 +4589,7 @@ let clienteLogado = false;
 
 // CORREÇÃO: Adicionei (idEventoEspecifico = null) nos parênteses
 function abrirMenuCliente(idEventoEspecifico = null) {
-    
+   // aqui pora 
     // Verifica se os modais existem no HTML antes de tentar abrir
     if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
         goFullscreen(); 
@@ -4619,11 +4633,34 @@ function abrirMenuCliente(idEventoEspecifico = null) {
     }
 }
 
+// =========================================================================
+// FUNÇÕES AUXILIARES DE MODAL (Adicione ao final do arquivo)
+// =========================================================================
 
-function fecharModal(id) {
-    document.getElementById(id).classList.add('hidden');
+
+// --- TOGGLE DO OLHO DA SENHA (CADASTRO) ---
+// Caso você tenha revertido o HTML, verifique se esta função ainda é necessária
+function toggleVisualizarSenha(inputId, btnElement) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    if (input.type === "password") {
+        input.type = "text";
+        // Ícone Olho Fechado/Riscado
+        btnElement.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-green-400">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+            </svg>`;
+    } else {
+        input.type = "password";
+        // Ícone Olho Aberto
+        btnElement.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>`;
+    }
 }
-
 
 function autocadastro() {
     // Fecha o modal de login se estiver aberto
@@ -4778,126 +4815,242 @@ async function salvarNovoUsuario() {
 
 
 
-async function fazerLogin() {
-    const user = document.getElementById('login-user').value.trim();
-    const pass = document.getElementById('login-pass').value.trim();
-    
-    if (!user || !pass) {
-        showCustomAlert("Por favor, preencha usuário e senha.", "Erro de Acesso", "❌");
+// Função auxiliar para verificar se o usuário está logado
+function isUsuarioLogado() {
+    // Se o ID tiver algum valor, retorna VERDADEIRO
+    if (globalIdCliente !== null && globalIdCliente !== undefined && globalIdCliente !== '') {
+        return true;
+    }
+    return false;
+}
+
+
+// =========================================================================
+// ABRIR CARTEIRA (CHAMA ATUALIZAÇÃO DO EXTRATO)
+// =========================================================================
+function abrirModalCarteira() {
+    if (!isUsuarioLogado()) {
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Faça login para ver seu extrato.", "Acesso Restrito", "🔒");
+        }
+        abrirModalLogin();
         return;
     }
 
-    // 1. ATIVA O LOADING
-    if (typeof showFullLoading === 'function') {
-        showFullLoading("Autenticando usuário...");
+    // Fecha outros modais que possam atrapalhar
+    if (typeof fecharModal === 'function') fecharModal('modal-comprar-cartelas');
+
+    const modalCarteira = document.getElementById('modal-carteira');
+    if (modalCarteira) {
+        modalCarteira.classList.remove('hidden');
+        modalCarteira.classList.add('flex');
+        
+        // 1. Atualiza o saldo visual imediatamente (usando o que já temos na memória)
+        const elSaldo = document.getElementById('carteira-saldo-atual');
+        if (elSaldo) {
+            elSaldo.textContent = `R$ ${globalUserSaldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+        }
+        
+        // 2. CHAMA O SERVIDOR PARA BUSCAR O EXTRATO ATUALIZADO
+        atualizarDadosCliente(); 
+        
+        // Reseta aba
+        if (typeof mudarAbaCarteira === 'function') {
+            mudarAbaCarteira('saque');
+        }
+    }
+}
+
+
+// --- FUNÇÃO 2: Gerenciar Abas (Saque vs Extrato) ---
+function mudarAbaCarteira(aba) {
+    const tabSaque = document.getElementById('tab-saque');
+    const tabExtrato = document.getElementById('tab-extrato');
+    const contSaque = document.getElementById('conteudo-saque');
+    const contExtrato = document.getElementById('conteudo-extrato');
+
+    if (aba === 'saque') {
+        // Ativa Saque
+        contSaque.classList.remove('hidden');
+        contExtrato.classList.add('hidden');
+        
+        tabSaque.classList.add('text-white', 'border-green-500', 'bg-gray-700/50');
+        tabSaque.classList.remove('text-gray-400', 'border-transparent');
+        
+        tabExtrato.classList.remove('text-white', 'border-green-500', 'bg-gray-700/50');
+        tabExtrato.classList.add('text-gray-400', 'border-transparent');
+    } else {
+        // Ativa Extrato
+        contSaque.classList.add('hidden');
+        contExtrato.classList.remove('hidden');
+        
+        tabExtrato.classList.add('text-white', 'border-green-500', 'bg-gray-700/50');
+        tabExtrato.classList.remove('text-gray-400', 'border-transparent');
+        
+        tabSaque.classList.remove('text-white', 'border-green-500', 'bg-gray-700/50');
+        tabSaque.classList.add('text-gray-400', 'border-transparent');
+        
+        // Chama a função existente de carregar extrato (se você já tiver ela pronta)
+        if (typeof carregarExtrato === 'function') {
+            carregarExtrato(); // <--- Verifique se o nome da sua função antiga é esse
+        }
+    }
+}
+
+// --- FUNÇÃO 3: Usar Saldo Total ---
+function usarSaldoTotal() {
+    // Pega o texto do saldo (ex: "R$ 1.500,00")
+    const textoSaldo = document.getElementById('carteira-saldo-atual').textContent;
+    
+    // Limpa "R$", pontos e troca vírgula por ponto para o input entender
+    // Ex: "R$ 1.500,50" -> 1500.50
+    let valorLimpo = textoSaldo.replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
+    
+    const input = document.getElementById('valor-saque');
+    input.value = valorLimpo;
+}
+
+
+// --- FUNÇÃO 4: Enviar Pedido ao Servidor (Corrigida) ---
+async function confirmarSaque() {
+    // Verifica IDs (confira se no seu HTML é 'valor-saque' ou 'saque-valor')
+    const inputValor = document.getElementById('valor-saque') || document.getElementById('saque-valor');
+    const inputPix = document.getElementById('chave-pix'); // Se tiver campo de PIX
+    
+    if (!inputValor) {
+        console.error("Campo de valor do saque não encontrado!");
+        return;
     }
 
-    try {                                    
-        const res = await fetch(`${API_BASE_URL}/api/login_cliente`, {
+    // Converte vírgula para ponto (ex: 50,00 -> 50.00)
+    let valorStr = inputValor.value.replace(',', '.');
+    const valor = parseFloat(valorStr);
+
+    if (isNaN(valor) || valor <= 0) {
+        showCustomAlert("Digite um valor válido para saque.", "Atenção", "⚠️");
+        return;
+    }
+
+    showFullLoading("Processando solicitação...");
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/solicitar_saque`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            credentials: 'include',
-            body: JSON.stringify({usuario: user, senha: pass})
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include', // <--- ESSENCIAL: Envia o login junto
+            body: JSON.stringify({ 
+                valor: valor,
+                chave_pix: inputPix ? inputPix.value : '' // Envia PIX se existir campo
+            })
         });
 
-        if (!res.ok) throw new Error(`Erro do Servidor (${res.status})`);
+        const data = await response.json();
 
-        const data = await res.json();
-
-        if (data.status === 'ok') {
-            clienteLogado = true;
-
-            if (data.id || data.id_cliente) {
-                clienteLogadoId = data.id || data.id_cliente;
-                console.log("✅ Login efetuado. ID atualizado para:", clienteLogadoId);
-            }
+        if (response.ok && data.status === 'ok') {
+            // Sucesso
+            showCustomAlert("Sua solicitação foi enviada para análise!", "Sucesso", "✅");
+            inputValor.value = ""; // Limpa campo
             
-            fecharModal('modal-login');
-            abrirMenuCliente(); 
-            
-            document.getElementById('login-user').value = "";
-            document.getElementById('login-pass').value = "";
-            
-            // Tenta carregar as cartelas imediatamente
-            let rodadaParaCarregar = idRodada;
-            if (!rodadaParaCarregar || rodadaParaCarregar === 0) {
-                 const el = document.getElementById('mobile-last-round');
-                 if (el) rodadaParaCarregar = parseInt(el.textContent) || 0;
-            }
+            // Fecha modal (use o ID correto da sua carteira)
+            if (typeof fecharModal === 'function') fecharModal('modal-carteira');
 
-            if (rodadaParaCarregar > 0) {
-                // Mantemos o loading ativo, mas mudamos a mensagem
-                showFullLoading("Sincronizando cartelas...");
-                eventoCarregadoAtual = null; 
-                await carregarCartelasAutomaticas(rodadaParaCarregar);
-            }
-
+            // Atualiza extrato se possível
+            if (typeof atualizarDadosCliente === 'function') atualizarDadosCliente();
+            
         } else {
-            showCustomAlert("Senha incorreta ou usuário não encontrado.", "Erro de Acesso", "❌");
-            //alert(data.erro || "Senha incorreta ou usuário não encontrado.");
+            // Erro do backend
+            showCustomAlert(data.erro || "Erro ao solicitar saque.", "Erro", "❌");
         }
 
     } catch (e) {
-        console.error("Falha no login:", e);
-        showCustomAlert("Falha na comunicação: " + e.message, "Erro de Acesso", "❌");
-        //alert("Falha na comunicação: " + e.message);
+        console.error(e);
+        showCustomAlert("Erro de conexão com o servidor.", "Falha", "❌");
     } finally {
-        // 2. DESATIVA O LOADING (Sempre, mesmo se der erro)
         hideFullLoading();
     }
 }
 
-// Controle de Abas
-function mudarAba(aba) {
-    const areaCompra = document.getElementById('area-compra');
-    const areaExtrato = document.getElementById('area-extrato');
-    const btnCompra = document.getElementById('tab-compra');
-    const btnExtrato = document.getElementById('tab-extrato');
+// --- FUNÇÃO 4: Enviar Pedido ao Servidor ---
+async function confirmarSaque2() {
+    const input = document.getElementById('valor-saque');
+    const valor = parseFloat(input.value);
 
-    if (aba === 'compra') {
-        areaCompra.classList.remove('hidden');
-        areaExtrato.classList.add('hidden');
-        btnCompra.classList.add('text-green-700', 'border-b-4', 'border-green-600', 'bg-green-50');
-        btnCompra.classList.remove('text-gray-600');
-        btnExtrato.classList.remove('text-green-700', 'border-b-4', 'border-green-600', 'bg-green-50');
-        btnExtrato.classList.add('text-gray-600');
+    if (!valor || valor <= 0) {
+        showCustomAlert("Digite um valor válido para saque.", "Atenção", "⚠️");
+        return;
+    }
 
-    } else {
-        areaCompra.classList.add('hidden');
-        areaExtrato.classList.remove('hidden');
-        btnExtrato.classList.add('text-green-700', 'border-b-4', 'border-green-600', 'bg-green-50');
-        btnExtrato.classList.remove('text-gray-600');
-        btnCompra.classList.remove('text-green-700', 'border-b-4', 'border-green-600', 'bg-green-50');
-        btnCompra.classList.add('text-gray-600');
+    showFullLoading("Processando solicitação...");
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/solicitar_saque`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ valor: valor })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.status === 'ok') {
+            showCustomAlert("Sua solicitação foi enviada para análise!", "Sucesso", "✅");
+            input.value = ""; // Limpa campo
+            fecharModal('modal-carteira');
+        } else {
+            showCustomAlert(data.erro || "Erro ao solicitar saque.", "Erro", "❌");
+        }
+
+    } catch (e) {
+        console.error(e);
+        showCustomAlert("Erro de conexão.", "Falha", "❌");
+    } finally {
+        hideFullLoading();
     }
 }
 
-function setQtd(n) {
-    document.getElementById('input-qtd').value = n;
+
+function selecionarQtd(n) {
+    const input = document.getElementById('qtd-manual'); // Seu código usava 'input-qtd'
+    if (input) {
+        input.value = n;
+        // Chama o calculo visual se existir, se não, segue a vida
+        if (typeof calcularTotalCompra === 'function') calcularTotalCompra();
+    }
 }
 
-async function realizarCompra() {
-    const inputQtd = document.getElementById('input-qtd');
-    const qtd = inputQtd.value;
+// Calculo visual do total (Auxiliar)
+function calcularTotalCompra() {
+    const input = document.getElementById('qtd-manual');
+    const display = document.getElementById('total-compra-display');
+    if (input && display) {
+        const total = (parseInt(input.value) || 0) * globalPrecoCartela;
+        display.textContent = `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    }
+}
+
+// =========================================================================
+// CONFIRMAR COMPRA (COM RECARREGAMENTO FORÇADO)
+// =========================================================================
+async function confirmarCompra() {
+    let idEventoFinal = 0;
     
-    const msg = document.getElementById('msg-compra');
-
-    const btnConfirmar = document.getElementById('btn-confirma-compra');
-    const btnFechar = document.getElementById('btn-fechar-carteira');
-
-    const confirmou = await showCustomConfirm(`Confirma a compra de ${qtd} cartela(s)?`, "Compra Cartelas", "🛒");
-    if(!confirmou) return;
-
-    if(msg) {
-        msg.textContent = '';
-        msg.classList.add('hidden');
+    // 1. Descobre o ID do evento
+    if (typeof obterIdEventoAlvo === 'function') {
+        idEventoFinal = obterIdEventoAlvo();
+    } else {
+        const elLastRound = document.getElementById('mobile-last-round');
+        idEventoFinal = parseInt(elLastRound?.textContent) || 0;
     }
 
-    if (btnConfirmar) btnConfirmar.style.display = 'none';
-    if (btnFechar) btnFechar.style.display = 'none';
+    const inputQtd = document.getElementById('qtd-manual');
+    const qtd = inputQtd ? parseInt(inputQtd.value) : 0;
+    
+    if (qtd <= 0) {
+        if (typeof showCustomAlert === 'function') showCustomAlert("Selecione a quantidade.", "Atenção", "⚠️");
+        else alert("Selecione a quantidade.");
+        return;
+    }
 
-    // 1. BLOQUEIA A TELA COM LOADING
-    showFullLoading("Processando pagamento...");
+    if (typeof showFullLoading === 'function') showFullLoading("Processando compra...");
 
     try {
         const res = await fetch(`${API_BASE_URL}/api/comprar_cartelas`, {
@@ -4906,135 +5059,162 @@ async function realizarCompra() {
             credentials: 'include',
             body: JSON.stringify({
                 quantidade: qtd, 
-                id_evento: eventoSelecionadoParaCompra 
+                id_evento: idEventoFinal 
             })
         });
+        
         const data = await res.json();
 
         if (res.ok) {
-            if(msg) {
-                msg.classList.remove('hidden');
-                msg.className = "mt-3 text-sm font-bold text-green-600 block"; // Garante que aparece
-                // Mostra: "Sucesso! Cartelas: 100 a 110"
-                msg.textContent = `✅ ${data.msg} Cartelas: ${data.cartelas}`;
-            }
-
-            // Sucesso! Mantemos o loading enquanto recarregamos as cartelas
-            // A função carregarCartelasAutomaticas vai gerenciar o hideFullLoading depois
-            showFullLoading("Pagamento aprovado! Atualizando...");
+            // SUCESSO
+            if (typeof showCustomAlert === 'function') showCustomAlert(`Sucesso! ${data.msg}`, "Compra Confirmada", "✅");
+            else alert(data.msg);
             
-            atualizarDadosCliente(); 
-
-            let eventoParaSincronizar = idRodada; 
-            if (!eventoParaSincronizar || eventoParaSincronizar === 0) {
-                 const el = document.getElementById('mobile-last-round');
-                 if (el) eventoParaSincronizar = parseInt(el.textContent) || 0;
-            }
-
-            if (eventoParaSincronizar > 0) {
+            // 2. Atualiza Saldo e Extrato
+            if (typeof atualizarDadosCliente === 'function') await atualizarDadosCliente(); 
+            
+            // --- AQUI ESTÁ A CORREÇÃO (O "PULO DO GATO") ---
+            
+            // Passo A: Força o sistema a "esquecer" que já carregou este evento
+            if (typeof eventoCarregadoAtual !== 'undefined') {
                 eventoCarregadoAtual = null; 
-                await carregarCartelasAutomaticas(eventoParaSincronizar);
+                console.log("Memória do evento limpa para forçar atualização.");
             }
-            
+
+            // Passo B: Espera meio segundo para o banco de dados processar (evita trazer lista velha)
+            await new Promise(r => setTimeout(r, 500));
+
+            // Passo C: Chama o carregamento
+            if (typeof carregarCartelasAutomaticas === 'function' && idEventoFinal > 0) {
+                console.log("Recarregando cartelas do evento:", idEventoFinal);
+                await carregarCartelasAutomaticas(idEventoFinal);
+            } 
+            else if (typeof carregarMinhasCartelas === 'function') {
+                await carregarMinhasCartelas();
+            }
+
+            // 3. Fecha modal e limpa
+            if (typeof fecharModal === 'function') fecharModal('modal-comprar-cartelas');
             if (inputQtd) inputQtd.value = '';
-            
-            // Alerta de sucesso (opcional, pois as cartelas vão aparecer)
-            // alert(data.msg); 
 
         } else {
-            // Erro na compra
-            hideFullLoading(); // Remove o loading para mostrar o alerta
-            if(msg) {
-                msg.classList.remove('hidden');
-                msg.className = "mt-3 text-sm font-bold text-red-600 block";
-                msg.textContent = `❌ ${data.erro}`;
-            } else {
-                showCustomAlert(`❌ Erro: ${data.erro}`, "Erro de Acesso", "❌");
-                //alert(`❌ Erro: ${data.erro}`);
-            }
+            // ERRO
+            if (typeof showCustomAlert === 'function') showCustomAlert(data.erro || "Erro desconhecido.", "Erro", "❌");
+            else alert(data.erro);
         }
+
     } catch (e) {
-        hideFullLoading();
         console.error(e);
-        if(msg) {
-            msg.textContent = "Erro de comunicação.";
-            msg.className = "mt-3 text-sm font-bold text-red-600 block";
-        }
+        if (typeof showCustomAlert === 'function') showCustomAlert("Erro de comunicação.", "Falha", "🌐");
     } finally {
-        // 3. MOSTRA OS BOTÕES NOVAMENTE (Sempre, seja sucesso ou erro)
-        if (btnConfirmar) btnConfirmar.style.display = 'block'; // ou 'inline-block' dependendo do seu layout, mas block funciona bem com w-full
-        if (btnFechar) btnFechar.style.display = 'inline-block';
+        if (typeof hideFullLoading === 'function') hideFullLoading();
     }
-    // Nota: O 'finally' hideFullLoading não está aqui porque se der sucesso, 
-    // queremos que o loading continue até as cartelas carregarem.
 }
 
-
+// =========================================================================
+// BUSCAR DADOS DO CLIENTE (SALDO E EXTRATO)
+// =========================================================================
 async function atualizarDadosCliente() {
-    // 1. Se não estiver logado, sai.
-    if (!clienteLogado) return;
+    // Só roda se tiver algum indício de login
+    if (typeof isUsuarioLogado === 'function' && !isUsuarioLogado()) return;
 
     try {
-        const response = await fetch('/api/dados_cliente', { 
+        const response = await fetch(`${API_BASE_URL}/api/dados_cliente`, { 
             method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
             credentials: 'include' 
         });
 
-        if (!response.ok) {
-            if (response.status === 401) {
-                console.warn("Sessão expirada. Fazendo logout.");
-                fazerLogout();
-            }
-            return;
-        }
+        if (!response.ok) return;
 
         const data = await response.json();
 
-        // 2. Formata os dados
-        const saldoFormatado = `R$ ${parseFloat(data.saldo).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-        const nick = data.nick || "Cliente";
-        // 3. ATUALIZAÇÃO SIMPLIFICADA (Foca apenas na Carteira)
-        const elSaldo = document.getElementById('user-saldo-display');
-        const elNick = document.getElementById('user-nick-display');
-
-        if (elSaldo) elSaldo.textContent = saldoFormatado;
-        if (elNick) elNick.textContent = nick;
-
-        // 4. Preenche a Tabela de Extrato
-        // 2. Preenche a LISTA DE EXTRATO (Adaptação para UL > LI)
-        const lista = document.getElementById('lista-transacoes');
+        // 1. ATUALIZA SALDO GLOBAL E NA TELA
+        globalUserSaldo = parseFloat(data.saldo || 0);
         
-        if (lista && data.extrato) {
-            lista.innerHTML = ''; // Limpa a lista antiga
+        // Atualiza todos os lugares que mostram saldo
+        const elementosSaldo = [
+            'sidebar-user-balance', 
+            'mobile-user-balance', 
+            'carteira-saldo-atual', 
+            'saldo-modal-compra'
+        ];
+        
+        const saldoFormatado = `R$ ${globalUserSaldo.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        
+        elementosSaldo.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = saldoFormatado;
+        });
+
+        // 2. ATUALIZA O EXTRATO (AQUI ESTÁ A CORREÇÃO)
+        // Tenta achar a lista (<ul>). Se não achar, tenta achar o container e criar a lista.
+        let listaContainer = document.getElementById('lista-transacoes');
+        
+        if (!listaContainer) {
+            const wrapper = document.getElementById('tabela-extrato-container');
+            if (wrapper) {
+                // Se achou o container vazio, cria a lista dentro dele
+                wrapper.innerHTML = '<ul id="lista-transacoes" class="space-y-2 max-h-90 overflow-y-auto"></ul>';
+                listaContainer = document.getElementById('lista-transacoes');
+            }
+        }
+
+        // Se achou onde desenhar, desenha!
+        if (listaContainer && data.extrato) {
+            listaContainer.innerHTML = ''; // Limpa lista antiga
 
             if (data.extrato.length === 0) {
-                lista.innerHTML = '<li class="text-center text-gray-500 py-4 italic">Nenhuma movimentação.</li>';
+                listaContainer.innerHTML = `
+                    <li class="text-center text-gray-500 py-4 italic flex flex-col items-center">
+                        <span class="text-2xl mb-1">📭</span>
+                        <span>Nenhuma movimentação.</span>
+                    </li>`;
             } else {
                 data.extrato.forEach(item => {
-                    // Define cores
-                    const isSaida = item.tipo === 'compra';
-                    const corValor = isSaida ? "text-red-600" : "text-green-600";
+                    // Define se é Entrada (Verde) ou Saída (Vermelho)
+                    // Tipos comuns: 'compra' (saída), 'saque' (saída), 'ganho' (entrada), 'deposito' (entrada)
+                    const isSaida = ['compra', 'saque'].includes(item.tipo);
+                    
+                    const corValor = isSaida ? "text-red-400" : "text-green-400";
                     const sinal = isSaida ? "- " : "+ ";
+                    
+                    // Ícones bonitinhos
+                    let icone = '💰';
+                    if (item.tipo === 'compra') icone = '🛒';
+                    if (item.tipo === 'ganho') icone = '🏆';
+                    if (item.tipo === 'saque') icone = '💸';
 
-                    // Cria o item da lista (LI) parecendo um "Card" simples
+                    // Converte valor para float seguro
+                    let valorItem = parseFloat(item.valor);
+                    if (isNaN(valorItem)) valorItem = 0;
+
+                    // Cria o HTML do item
                     const li = `
-                        <li class="flex justify-between items-center bg-white p-1 rounded border border-gray-200 shadow-sm">
-                            <div class="flex flex-col text-left">
-                                <span class="font-bold text-gray-700 text-xs sm:text-sm uppercase">${item.desc}</span>
-                                <span class="text-[10px] text-gray-500">${item.data}</span>
+                        <li class="flex justify-between items-center bg-gray-800 p-0 rounded-lg border border-gray-700 shadow-sm hover:bg-gray-750 transition-colors">
+                            <div class="flex items-center gap-3">
+                                <span class="text-xl bg-gray-900 p-1.5 rounded-full">${icone}</span>
+                                <div class="flex flex-col text-left">
+                                    <span class="font-bold text-gray-200 text-xs sm:text-sm uppercase tracking-wide">
+                                        ${item.desc || item.descricao || "Movimentação"}
+                                    </span>
+                                    <span class="text-[12px] text-yellow-500 font-mono">
+                                        ${item.data || ""}
+                                    </span>
+                                </div>
                             </div>
-                            <span class="font-bold text-sm ${corValor}">
-                                ${sinal}R$ ${parseFloat(item.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                            <span class="font-bold text-lg ${corValor} whitespace-nowrap">
+                                ${sinal}R$ ${valorItem.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
                             </span>
                         </li>
                     `;
-                    lista.innerHTML += li;
+                    listaContainer.innerHTML += li;
                 });
             }
         }
 
     } catch (error) {
-        console.error("Erro ao atualizar cliente:", error);
+        console.error("Erro ao atualizar extrato:", error);
     }
 }
 
@@ -5238,6 +5418,353 @@ function toggleVisualizarSenha(inputId, btnElement) {
             </svg>
         `;
     }
+}
+
+
+// =========================================================================
+// FUNÇÃO DE LOGIN ATUALIZADA (Copie e substitua no script.js)
+// =========================================================================
+
+async function fazerLogin() {
+    const user = document.getElementById('login-user').value.trim();
+    const pass = document.getElementById('login-pass').value.trim();
+    
+    if (!user || !pass) {
+        showCustomAlert("Por favor, preencha usuário e senha.", "Erro de Acesso", "❌");
+        return;
+    }
+
+    // 1. ATIVA O LOADING
+    if (typeof showFullLoading === 'function') {
+        showFullLoading("Autenticando usuário...");
+    }
+
+    try {                                    
+        const res = await fetch(`${API_BASE_URL}/api/login_cliente`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'include',
+            body: JSON.stringify({usuario: user, senha: pass})
+        });
+
+        if (!res.ok) throw new Error(`Erro do Servidor (${res.status})`);
+
+        const data = await res.json();
+
+        if (data.status === 'ok') {
+            clienteLogado = true;
+
+            if (data.id || data.id_cliente) {
+                clienteLogadoId = data.id || data.id_cliente;
+                console.log("✅ Login efetuado. ID atualizado para:", clienteLogadoId);
+            }
+            
+            fecharModal('modal-login');
+            abrirMenuCliente(); 
+            
+            document.getElementById('login-user').value = "";
+            document.getElementById('login-pass').value = "";
+            
+            // Tenta carregar as cartelas imediatamente
+            let rodadaParaCarregar = idRodada;
+            if (!rodadaParaCarregar || rodadaParaCarregar === 0) {
+                 const el = document.getElementById('mobile-last-round');
+                 if (el) rodadaParaCarregar = parseInt(el.textContent) || 0;
+            }
+
+            if (rodadaParaCarregar > 0) {
+                // Mantemos o loading ativo, mas mudamos a mensagem
+                showFullLoading("Sincronizando cartelas...");
+                eventoCarregadoAtual = null; 
+                await carregarCartelasAutomaticas(rodadaParaCarregar);
+            }
+
+        } else {
+            showCustomAlert("Senha incorreta ou usuário não encontrado.", "Erro de Acesso", "❌");
+            //alert(data.erro || "Senha incorreta ou usuário não encontrado.");
+        }
+
+    } catch (e) {
+        console.error("Falha no login:", e);
+        showCustomAlert("Falha na comunicação: " + e.message, "Erro de Acesso", "❌");
+        //alert("Falha na comunicação: " + e.message);
+    } finally {
+        // 2. DESATIVA O LOADING (Sempre, mesmo se der erro)
+        hideFullLoading();
+    }
+}
+
+
+// =========================================================================
+// FUNÇÃO DE LOGIN (SEM ABRIR CARTEIRA AUTOMATICAMENTE)
+// =========================================================================
+async function realizarLogin() {
+    const userInput = document.getElementById('login-user');
+    const passInput = document.getElementById('login-pass');
+    
+    if (!userInput || !passInput) return;
+
+    const usuario = userInput.value.trim();
+    const senha = passInput.value.trim();
+
+    if (!usuario || !senha) {
+        if (typeof showCustomAlert === 'function') showCustomAlert("Preencha usuário e senha.", "Atenção", "⚠️");
+        else alert("Preencha usuário e senha.");
+        return;
+    }
+
+    if (typeof showFullLoading === 'function') showFullLoading("Autenticando...");
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/login_cliente`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include', 
+            body: JSON.stringify({ usuario, senha })
+        });
+
+        const data = await response.json();
+
+        // Debug para garantir
+        console.log("Login Resposta:", data);
+
+        if (response.ok && data.status === 'ok') {
+            
+            // 1. GRAVA DADOS
+            const idSeguro = data.id_cliente || data.id || data._id || data.userId;
+            
+            // Atualiza variáveis novas e antigas
+            clienteLogado = true;              
+            clienteLogadoId = idSeguro;        
+            globalIdCliente = idSeguro;        
+            globalUserSaldo = parseFloat(data.saldo_atual || data.saldo || 0);
+
+            // 2. ATUALIZA O VISUAL (Nome e Saldo na barra)
+            if (typeof atualizarInterfaceAposLogin === 'function') {
+                atualizarInterfaceAposLogin(data);
+            }
+            
+            // 3. RECUPERA DADOS EXTRAS (Silenciosamente)
+            if (typeof carregarMinhasCartelas === 'function') carregarMinhasCartelas();
+            
+            // 4. FECHA O MODAL DE LOGIN
+            if (typeof fecharModal === 'function') {
+                fecharModal('modal-login');
+            } else {
+                const modal = document.getElementById('modal-login');
+                if (modal) modal.classList.add('hidden');
+            }
+
+            // === AQUI ESTÁ A MUDANÇA ===
+            // Comentei/Removi a chamada de abrirMenuCliente() pois ela provavelmente 
+            // é quem estava abrindo a carteira ou mudando a tela.
+            // if (typeof abrirMenuCliente === 'function') abrirMenuCliente(); 
+            
+            // Garante que a carteira esteja fechada
+            if (typeof fecharModal === 'function') fecharModal('modal-carteira');
+
+            // Limpa campos
+            userInput.value = '';
+            passInput.value = '';
+
+            // Mensagem discreta
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert(`Bem-vindo de volta, ${data.nick || usuario}!`, "Login Sucesso", "✅");
+            }
+
+        } else {
+            if (typeof showCustomAlert === 'function') showCustomAlert(data.erro || "Dados incorretos.", "Erro", "❌");
+            else alert(data.erro || "Dados incorretos.");
+        }
+    } catch (error) {
+        console.error("Erro no login:", error);
+        if (typeof showCustomAlert === 'function') showCustomAlert("Erro de conexão.", "Falha", "🌐");
+    } finally {
+        if (typeof hideFullLoading === 'function') hideFullLoading();
+    }
+}
+
+
+// =============================================================================
+// 4. ATUALIZAR SALDO NA TELA (Busca os IDs corretos do seu HTML)
+// =============================================================================
+function atualizarInterfaceAposLogin(dados) {
+    const saldoVal = parseFloat(dados.saldo_atual || 0);
+    const saldoTxt = `R$ ${saldoVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+
+    // Atualiza Menu Lateral (PC)
+    const nomePC = document.getElementById('sidebar-user-name');
+    const saldoPC = document.getElementById('sidebar-user-balance');
+    const infoDiv = document.getElementById('user-info-sidebar');
+    const btnLogin = document.getElementById('login-btn-sidebar');
+
+    if (nomePC) nomePC.textContent = dados.nick;
+    if (saldoPC) saldoPC.textContent = saldoTxt;
+    
+    if (infoDiv) {
+        infoDiv.classList.remove('hidden');
+        infoDiv.style.display = 'flex';
+    }
+    if (btnLogin) btnLogin.classList.add('hidden');
+
+    // Atualiza Header (Celular)
+    const saldoMobile = document.getElementById('mobile-user-balance');
+    const divMobile = document.getElementById('mobile-balance-display');
+    if (saldoMobile) saldoMobile.textContent = saldoTxt;
+    if (divMobile) divMobile.classList.remove('hidden');
+}
+
+
+// --- BUSCA O PREÇO E DETALHES DO EVENTO ---
+async function atualizarPrecoDoEvento() {
+    const idAlvo = obterIdEventoAlvo();
+    
+    if (idAlvo === 0) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/dados_evento?id_evento=${idAlvo}`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            
+            // 1. Atualiza Preço Global
+            if (data.preco_cartela) {
+                globalPrecoCartela = parseFloat(data.preco_cartela);
+                
+                // 2. ATUALIZA O TÍTULO DO MODAL (Com 3 linhas)
+                const tituloModal = document.querySelector('#modal-comprar-cartelas h3');
+                
+                if (tituloModal) {
+                    const desc = data.descricao || `Evento #${idAlvo}`;
+                    const dataHora = (data.data_evento && data.hora_evento) 
+                                     ? `${data.data_evento} às ${data.hora_evento}` 
+                                     : '';
+
+                    // Aqui criamos a estrutura com quebras de linha e tamanhos diferentes
+                    tituloModal.innerHTML = `
+                        <div class="flex flex-col items-center leading-tight">
+                            <div class="flex items-center gap-2 text-xl">
+                                <span>🛒</span> Comprar Cartelas
+                            </div>
+                            <span class="text-base text-yellow-500 font-bold mt-1 uppercase">${desc}</span>
+                            ${dataHora ? `<span class="text-xs text-gray-400 mt-0.5">📅 ${dataHora}</span>` : ''}
+                        </div>
+                    `;
+                }
+                
+                // Recalcula total
+                calcularTotalCompra();
+            }
+        }
+    } catch (error) {
+        console.error("Erro ao buscar preço:", error);
+    }
+}
+
+// =========================================================================
+// ABRIR MODAL COMPRA (CORRIGIDA: FECHA O MODAL DE EVENTOS ANTES)
+// =========================================================================
+async function abrirModalCompra(idEventoEspecifico = 0) {
+    // 1. Verifica Login
+    if (!isUsuarioLogado()) {
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Você precisa fazer login para comprar cartelas.", "Login Necessário", "🔒");
+        }
+        abrirModalLogin();
+        return;
+    }
+
+    // 2. Define qual evento será comprado
+    if (idEventoEspecifico > 0) {
+        eventoSelecionadoParaCompra = idEventoEspecifico;
+    } else {
+        eventoSelecionadoParaCompra = 0; 
+    }
+
+    // --- 3. FECHA OUTROS MODAIS (AQUI ESTÁ A CORREÇÃO) ---
+    // Fecha a carteira e tenta fechar o modal de lista de eventos
+    if (typeof fecharModal === 'function') {
+        fecharModal('modal-carteira');
+        
+        // Tenta fechar possíveis nomes do seu modal de eventos
+        // (Verifique no seu HTML qual é o ID correto da div principal da lista de eventos)
+        fecharModal('events-panel-container');
+    }
+
+    // Feedback visual
+    const btnCompra = document.querySelector('a[onclick="abrirModalCompra()"]');
+    if(btnCompra) btnCompra.style.opacity = "0.5";
+
+    // 4. Busca preço
+    await atualizarPrecoDoEvento(); 
+    
+    if(btnCompra) btnCompra.style.opacity = "1";
+
+    // 5. Abre o modal de compra
+    const modal = document.getElementById('modal-comprar-cartelas');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        
+        const saldoModal = document.getElementById('saldo-modal-compra');
+        if (saldoModal) {
+            saldoModal.textContent = `R$ ${globalUserSaldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+        }
+        
+        const input = document.getElementById('qtd-manual');
+        const totalDisplay = document.getElementById('total-compra-display');
+        if(input) input.value = '';
+        if(totalDisplay) totalDisplay.textContent = 'R$ 0,00';
+    }
+}
+
+
+// --- ABRIR MODAL DE LOGIN ---
+// Função genérica para abrir Login
+function abrirModalLogin() {
+    if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
+        goFullscreen(); 
+    } 
+    const modal = document.getElementById('modal-login');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+}
+
+// Função genérica para fechar qualquer modal
+function fecharModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+}
+
+
+// --- FUNÇÃO CÉREBRO: DECIDE QUAL EVENTO USAR ---
+function obterIdEventoAlvo() {
+    // 1º Prioridade: Se o usuário selecionou um evento específico (ex: clicou em "Próximos Eventos")
+    if (typeof eventoSelecionadoParaCompra !== 'undefined' && eventoSelecionadoParaCompra > 0) {
+        return eventoSelecionadoParaCompra;
+    }
+
+    // 2º Prioridade: O evento atual que está rolando na tela
+    // Tenta pegar da variável global 'idRodada' (se existir no seu código antigo)
+    if (typeof idRodada !== 'undefined' && idRodada > 0) {
+        return idRodada;
+    }
+
+    // 3º Tentativa: Pega do HTML (número da rodada no topo)
+    const elLastRound = document.getElementById('mobile-last-round');
+    if (elLastRound) {
+        return parseInt(elLastRound.textContent) || 0;
+    }
+
+    return 0; // Nenhum evento identificado
 }
 
 // --- FIM DAS NOVAS FUNÇÕES ---

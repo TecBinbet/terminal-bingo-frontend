@@ -5,6 +5,7 @@ import json
 import traceback
 import threading
 import time
+import requests
 
 import bcrypt # Necessário para validar a senha
 from flask import Flask, jsonify, request, send_from_directory, session # Adicionar session
@@ -2502,7 +2503,7 @@ def admin_resetar():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-#
+# aquix
 # --- ROTA DE DETALHES (COM SINCRONIZAÇÃO AUTOMÁTICA DE CARTELAS) ---
 @app.route('/api/admin/detalhes_evento', methods=['GET'])
 def get_event_details():
@@ -2663,6 +2664,67 @@ def get_event_details():
         print(f"Erro Detalhes: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+# --- Adicione isto no seu server.py ---
+
+@app.route('/api/dados_evento', methods=['GET'])
+def get_dados_evento():
+    try:
+        # Pega o ID que o Javascript mandou (ex: ?id_evento=9)
+        id_evento_str = request.args.get('id_evento')
+        
+        if not id_evento_str:
+            return jsonify({'erro': 'ID do evento não informado'}), 400
+
+        id_evento = int(id_evento_str)
+        
+        # Conecta no banco (ajuste conforme sua estrutura de conexão)
+        # Se você usa 'sales_db' ou 'mongo.db', ajuste aqui:
+        sales_db = get_sales_db_connection() 
+        
+        # Busca o evento na coleção 'eventos' (ou 'rodadas')
+        # Tenta buscar pelo campo 'id_evento' ou '_id' ou 'numero_rodada'
+        evento = sales_db.eventos.find_one({'id_evento': id_evento})
+        
+        # Se não achar por 'id_evento', tenta 'rodada_atual' (depende do seu banco)
+        if not evento:
+             evento = sales_db.config.find_one({'rodada_atual': id_evento})
+
+        if evento:
+            # 1. Pega o valor bruto do banco
+            val_bruto = evento.get('valor_de_venda', 1.00)
+
+            # 2. CONVERSÃO DE SEGURANÇA (Decimal128 -> Float)
+            try:
+                # Verifica se é um objeto Decimal128 do MongoDB
+                if hasattr(val_bruto, 'to_decimal'):
+                    preco_final = float(val_bruto.to_decimal())
+                else:
+                    # Se já for número ou string, apenas garante float
+                    preco_final = float(val_bruto)
+            except:
+                preco_final = 1.00 # Valor de segurança em caso de erro
+
+            return jsonify({
+                'status': 'ok',
+                'id_evento': evento.get('id_evento'), # aquix
+                'preco_cartela': preco_final, 
+                'descricao': evento.get('descricao', f'Evento {id_evento}'),
+                'data_evento': evento.get('data_evento', ''),
+                'hora_evento': evento.get('hora_evento', '')
+            })
+        else:
+            # Se não achar evento, retorna um padrão para não travar
+            return jsonify({
+                'status': 'ok', 
+                'id_evento': id_evento, 
+                'preco_cartela': 2.00, # PREÇO PADRÃO DE EMERGÊNCIA
+                'obs': 'Evento não encontrado no banco, usando padrão'
+            })
+
+    except Exception as e:
+        print(f"Erro ao buscar evento: {e}")
+        return jsonify({'erro': str(e)}), 500
 
 # --- ROTA FALTANTE: BUSCAR CARTELAS POR FAIXA ---
 @app.route('/api/cartelas', methods=['POST'])
@@ -3201,6 +3263,158 @@ def cadastrar_cliente():
         import traceback
         traceback.print_exc()
         return jsonify({'erro': 'Erro interno ao salvar cadastro.'}), 500
+
+
+# ==============================================================================
+#  FUNÇÃO AUXILIAR: NOTIFICAÇÃO TELEGRAM
+# ==============================================================================
+def enviar_notificacao_telegram(mensagem):
+    # Substitua pelos seus dados reais ou carregue de variáveis de ambiente/banco
+    BOT_TOKEN = "8259951624:AAHWIOmfvS69ZSNVuJrP6HuZowh3Xb6Rddg"         # "SEU_TOKEN_AQUI" 
+    CHAT_ID = "8374012769" # "SEU_CHAT_ID_AQUI"
+    
+    if BOT_TOKEN == "SEU_TOKEN_AQUI":
+        print("⚠️ Telegram não configurado. Pulei o envio.")
+        return
+
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": CHAT_ID,
+            "text": mensagem,
+            "parse_mode": "Markdown"
+        }
+        requests.post(url, json=payload, timeout=5)
+    except Exception as e:
+        print(f"❌ Erro ao enviar Telegram: {e}")
+
+
+# ==============================================================================
+#  ROTA DE SOLICITAÇÃO DE SAQUE (COM LOGS DE DEBUG)
+# ==============================================================================
+@app.route('/api/solicitar_saque', methods=['POST'])
+def solicitar_saque():
+    print("\n--- 🔍 INICIANDO DEBUG DE SAQUE ---") # Log Visual
+    try:
+        # 1. LOG DA SESSÃO
+        print(f"DEBUG: Conteúdo da Session: {list(session.keys())}")
+        
+        if 'id_cliente' not in session:
+             print("DEBUG: ❌ Erro - 'id_cliente' não está na sessão.")
+             return jsonify({'erro': 'Usuário não logado.'}), 401
+
+        id_sessao = session['id_cliente']
+        print(f"DEBUG: ID na Sessão: {id_sessao} | Tipo: {type(id_sessao)}")
+
+        data = request.json
+        valor_solicitado = float(data.get('valor', 0))
+        
+        # Conexão com Banco
+        sales_db = get_sales_db_connection()
+        if sales_db is None: 
+            print("DEBUG: ❌ Erro - Falha na conexão com DB Vendas")
+            return jsonify({'erro': 'Banco de Vendas offline.'}), 500
+        
+        # 2. TENTATIVA DE BUSCA (COM CORREÇÃO DE TIPO)
+        print(f"DEBUG: Buscando cliente na coleção 'clientes'...")
+        
+        # Tenta buscar exato
+        cliente = sales_db.clientes.find_one({'id_cliente': id_sessao})
+        
+        # Se falhou, tenta inverter o tipo (String <-> Int) para garantir
+        if not cliente:
+            print("DEBUG: ⚠️ Busca exata falhou. Tentando conversão de tipo...")
+            try:
+                if isinstance(id_sessao, str):
+                    # Se é string, tenta como int
+                    cliente = sales_db.clientes.find_one({'id_cliente': int(id_sessao)})
+                    print(f"DEBUG: Sucesso buscando como INT: {int(id_sessao)}")
+                else:
+                    # Se é int, tenta como string
+                    cliente = sales_db.clientes.find_one({'id_cliente': str(id_sessao)})
+                    print(f"DEBUG: Sucesso buscando como STRING: {str(id_sessao)}")
+            except Exception as e_conv:
+                print(f"DEBUG: Falha na conversão de tipo: {e_conv}")
+
+        # LOG DO RESULTADO DA BUSCA
+        if not cliente:
+            print(f"DEBUG: ❌ ERRO CRÍTICO - Cliente não encontrado no banco. ID buscado: {id_sessao}")
+            # Dica: Lista um cliente qualquer para ver como os IDs são salvos
+            exemplo = sales_db.clientes.find_one()
+            if exemplo:
+                print(f"DEBUG: Exemplo de cliente no banco (para comparar ID): {exemplo.get('id_cliente')} (Tipo: {type(exemplo.get('id_cliente'))})")
+            return jsonify({'erro': 'Cliente não encontrado.'}), 404
+
+        print(f"DEBUG: ✅ Cliente encontrado: {cliente.get('nick')}")
+        
+        # 2. CORREÇÃO DO DECIMAL128 (AQUI ESTAVA O ERRO)
+        raw_saldo = cliente.get('saldo_atual', 0.0)
+        
+        # Verifica se é Decimal128 do Mongo e converte corretamente
+        if hasattr(raw_saldo, 'to_decimal'):
+            saldo_atual = float(raw_saldo.to_decimal())
+        else:
+            saldo_atual = float(raw_saldo)
+
+        # Validações
+        if valor_solicitado <= 0:
+            return jsonify({'erro': 'Valor inválido.'}), 400
+            
+        if valor_solicitado > saldo_atual:
+            print(f"DEBUG: Saldo insuficiente. Tem: {saldo_atual}, Pediu: {valor_solicitado}")
+            return jsonify({'erro': 'Saldo insuficiente para esta solicitação.'}), 400
+
+        # Verifica Saque Pendente
+        ped_pendente = sales_db.requisao_saque.find_one({
+           'id_cliente': id_sessao, # Usa a variável local
+           'status': 'pendente'
+        })
+        if ped_pendente:
+            print("DEBUG: Já existe saque pendente.")
+            return jsonify({'erro': 'Você já possui um saque pendente. Aguarde.'}), 400
+
+        # Criação do Registro de Saque
+        novo_saque = {
+            'id_cliente': id_sessao,
+            'nick': cliente.get('nick', 'Desconhecido'),
+            'nome_completo': cliente.get('nome_cliente', ''),
+            'chave_pix': cliente.get('chave_pix') or data.get('chave_pix', 'Não informada'),
+            'data_requisicao': datetime.now().isoformat(),
+            'valor_requerido': valor_solicitado,
+            'saldo_no_momento': saldo_atual,
+            'status': 'pendente',
+            'data_pgto': None,
+            'operador_pgto': None,
+            'valor_pgto': 0.0,
+            'saldo_atual_pgto': 0.0
+        }
+
+        sales_db.requisao_saque.insert_one(novo_saque)
+
+        # Envia Notificação
+        try:
+            msg_telegram = (
+                f"💰 *NOVA SOLICITAÇÃO DE SAQUE*\n"
+                f"👤 Usuário: {cliente.get('nick')}\n"
+                f"💲 Valor: R$ {valor_solicitado:.2f}\n"
+                f"🏦 Saldo Atual: R$ {saldo_atual:.2f}\n"
+                f"🔑 PIX: {novo_saque['chave_pix']}"
+            )
+            enviar_notificacao_telegram(msg_telegram)
+
+        except Exception as e_msg:
+            print(f"Erro ao notificar Telegram: {e_msg}")
+
+        print(f"✅ Saque solicitado com sucesso: {cliente.get('nick')} - R$ {valor_solicitado}")
+        print("--- FIM DEBUG ---\n")
+
+        return jsonify({'status': 'ok', 'msg': 'Solicitação enviada para análise!'})
+
+    except Exception as e:
+        print(f"❌ Erro EXCEPTION no saque: {e}")
+        import traceback
+        traceback.print_exc() # Imprime a linha exata do erro
+        return jsonify({'erro': 'Erro interno ao processar saque.'}), 500
 
 
 
