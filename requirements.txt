@@ -2,6 +2,7 @@ Flask
 Flask-Cors
 pymongo
 dnspython
+requests
 bcrypt
 gevent
 gevent-websocket
