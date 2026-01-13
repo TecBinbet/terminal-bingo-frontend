@@ -1220,11 +1220,11 @@ async function pularEsperaVendas() {
 async function executarCarregamentoReal(idEvento) {
     const menu = document.getElementById('admin-side-menu');
     const menuOverlay = document.getElementById('admin-menu-overlay');
+
     if (menu) menu.classList.add('-translate-x-full'); 
     if (menuOverlay) menuOverlay.classList.add('hidden'); 
 
     showLoading("Sincronizando últimas vendas e carregando jogo...");
-
     if (aguardandoVideo > 0 && !modoRoboAtivo) {
         await new Promise(r => setTimeout(r, aguardandoVideo));
     }
@@ -1257,7 +1257,7 @@ async function executarCarregamentoReal(idEvento) {
         }
         
         const labelQuadra = (MAX_BOLAS === 75) ? '4 Cantos' : 'Quadra';
-
+        
         initGrid(); 
 
         document.getElementById('info-descricao').textContent = dados.descricao;
@@ -1472,7 +1472,7 @@ function renderRanking90(lista, tipo) {
         return; 
     }
     
-    lista.slice(0, 10).forEach((item, i) => {
+    lista.slice(0, 15).forEach((item, i) => {
         const status = (item.premio && item.premio !== "null") ? item.premio : "";
         const nums = item.numeros_faltantes || [];
         
@@ -1518,7 +1518,7 @@ function renderRanking75(lista, tipo) {
         return; 
     }
     
-    lista.slice(0, 10).forEach((item, i) => {
+    lista.slice(0, 15).forEach((item, i) => {
         let status = (item.premio && item.premio !== "null") ? item.premio : "";
         let posicao = item.posicao || "";
 
@@ -1810,7 +1810,6 @@ async function processarProximoPremio() {
         }, 500);
     }
 }
-
 
 
 async function processarProximoPremio2() {

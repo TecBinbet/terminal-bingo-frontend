@@ -209,6 +209,8 @@ mongo_data = {}
 stop_flag = threading.Event()
 timeStart = None
 CACHE_MAX_BOLAS = 90
+_CONFIG_ATUAL = None
+valorPremioQuadra = 0
 
 # --- CACHE EM MEMÓRIA (VELOCIDADE MÁXIMA) ---
 CACHE_JOGO = {
@@ -345,6 +347,9 @@ def connect_main_db():
         except Exception as e:
             print(f"❌ Erro fatal ao conectar ao MongoDB: {e}")
             sys.exit(1)
+
+# --- CACHE GLOBAL DE CONFIGURAÇÃO ---
+
 
 
 # --- FUNÇÃO GENÉRICA DE BUSCA DE DADOS ---
@@ -845,7 +850,7 @@ def recalcular_ranking_top10_75():
     """
     Calcula ranking para BINGO 75 (Lógica Rígida de Fluxo).
     """
-    global db, CACHE_JOGO
+    global db, CACHE_JOGO, valorPremioQuadra
     if not CACHE_JOGO['ativo']: return
     
     try:
@@ -867,7 +872,10 @@ def recalcular_ranking_top10_75():
         buscar_linha_agora = False
         buscar_cantos_agora = False
         buscar_bingo_agora = False
-        
+  
+        if valorPremioQuadra == 0: 
+            ganhou_cantos = True
+
         novo_nome_premio = 'BINGO' # Default
 
         if 'BINGO' == premio_buscado_texto or 'ACUMULADO' in premio_buscado_texto:
@@ -989,7 +997,7 @@ def recalcular_ranking_top10_75():
 
         # --- GRAVAÇÃO ---
         resultados.sort(key=lambda x: (x['qtde'], x['cartela']))
-        top_10 = resultados[:10]
+        top_10 = resultados[:10]   # aquix 10
         
         rodada_info = db.rodada.find_one({})
         id_evt = rodada_info.get('id_evento', 0) if rodada_info else 0
@@ -1204,6 +1212,7 @@ def get_sales_db_connection():
 # --- ROTA: LISTAR PRÓXIMOS EVENTOS (FILTRADOS) ---
 @app.route('/api/proximos_eventos', methods=['GET'])
 def proximos_eventos():
+    
     print("🔍 Buscando agenda de eventos...")
     try:
         sales_db = get_sales_db_connection()
@@ -1335,7 +1344,7 @@ def admin_fechar_vendas():
             filtro = {'id_evento': str(id_evt)}
 
         # finalizar as vendas
-        #result = sales_db.eventos.update_one(filtro, {'$set': {'status': 'finalizado'}})
+        result = sales_db.eventos.update_one(filtro, {'$set': {'status': 'finalizado'}})
         
         if result.modified_count > 0:
             print(f"🔒 Evento {id_evt} FINALIZADO. Aviso enviado. Vendas até aprox: {hora_final_str} (BRT)")
@@ -2349,6 +2358,7 @@ def admin_limpar_conferencia():
 # --- SUBSTITUA A FUNÇÃO admin_resetar POR ESTA VERSÃO CORRIGIDA ---
 @app.route('/api/admin/resetar', methods=['POST'])
 def admin_resetar():
+    
     global db, timeStart # <--- IMPORTANTE: Chamar a global timeStart
     if db is None: return jsonify({'error': 'Sem conexão com DB'}), 500
     try:
@@ -2373,10 +2383,11 @@ def admin_resetar():
             hora_inicial = hora_atual 
         # ------------------------------
         # --- 1. PROCESSAMENTO DOS GANHADORES (Igual ao anterior) ---
+        
         ganhadores_ativos = list(db.ganhadores.find({}))
         
         tabela_premios = db.premio.find_one({}) or {}
-
+        #valorPremioQuadra = 0
         lista_osganhadores = []      
         lista_resultados_ganhadores = [] 
         if ganhadores_ativos	:
@@ -2507,7 +2518,7 @@ def admin_resetar():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-# aquix
+
 # --- ROTA DE DETALHES (COM SINCRONIZAÇÃO AUTOMÁTICA DE CARTELAS) ---
 @app.route('/api/admin/detalhes_evento', methods=['GET'])
 def get_event_details():
@@ -2711,7 +2722,7 @@ def get_dados_evento():
 
             return jsonify({
                 'status': 'ok',
-                'id_evento': evento.get('id_evento'), # aquix
+                'id_evento': evento.get('id_evento'), 
                 'preco_cartela': preco_final, 
                 'descricao': evento.get('descricao', f'Evento {id_evento}'),
                 'data_evento': evento.get('data_evento', ''),
@@ -2771,7 +2782,7 @@ def get_cartelas_game():
 
 @app.route('/api/admin/preparar_evento', methods=['POST'])
 def admin_preparar_evento():
-    global db, CACHE_MAX_BOLAS
+    global db, CACHE_MAX_BOLAS, valorPremioQuadra
     """
     Rota chamada ANTES de iniciar o timer.
     Objetivo: Identificar o tipo do evento e trocar a base de cartelas (JSON) imediatamente.
@@ -2800,7 +2811,21 @@ def admin_preparar_evento():
         # Padrão: 72000 cartelas e Tipo 15 (Bingo 90) se não estiver definido
         num_max = evento.get('numero_maximo', 72000)
         tipo_cartela = evento.get('tipo_de_cartela', 15)
-     
+
+        # 3. Sua variável específica (Com tratamento para Decimal128)
+        raw_val = evento.get('premio_quadra', 0)
+        
+        try:
+            # Se for o tipo especial do Mongo (Decimal128)
+            if hasattr(raw_val, 'to_decimal'):
+                valorPremioQuadra = float(raw_val.to_decimal())
+            else:
+                # Se já for número ou string texto ("10.0")
+                valorPremioQuadra = float(raw_val)
+        except:
+            print(f"⚠️ Erro ao converter premio_quadra: {raw_val}")
+            valorPremioQuadra = 0.0
+
         if tipo_cartela == 25:
             CACHE_MAX_BOLAS = 75
         else:
@@ -3046,6 +3071,166 @@ def api_dados_cliente():
 
 @app.route('/api/comprar_cartelas', methods=['POST'])
 def api_comprar_cartelas():
+    """Processa a compra APENAS se o evento estiver 'ativo'."""
+    if 'id_cliente' not in session:
+        return jsonify({'erro': 'Sessão expirada. Faça login novamente.'}), 401
+        
+    data = request.json
+    qtd_desejada = int(data.get('quantidade', 0))
+    id_solicitado = data.get('id_evento') 
+    
+    if qtd_desejada <= 0: return jsonify({'erro': 'Quantidade inválida.'}), 400
+    
+    sales_db = get_sales_db_connection()
+    if sales_db is None: return jsonify({'erro': 'Banco de Vendas offline.'}), 500
+
+    try:
+        id_cli = int(session['id_cliente'])
+        
+        # --- DEFINIÇÃO DO ID DO EVENTO ---
+        if id_solicitado:
+            print(f"🛒 Solicitado Evento ID: {id_solicitado}")
+            try: raw_id = int(id_solicitado)
+            except: raw_id = str(id_solicitado)
+        else:
+            print("⚠️ Nenhum ID recebido. Usando evento da rodada atual.")
+            rodada_info = db.rodada.find_one({})
+            raw_id = rodada_info.get('id_evento') if rodada_info else None
+
+        # Busca o evento (Int ou Str)
+        busca_ids = [raw_id, str(raw_id)]
+        if isinstance(raw_id, str) and raw_id.isdigit():
+            busca_ids.append(int(raw_id))
+            
+        evento = sales_db.eventos.find_one({'id_evento': {'$in': busca_ids}})
+        
+        if not evento:
+            return jsonify({'erro': f'Evento {raw_id} não encontrado.'}), 400
+            
+        # ==================================================================
+        # 🚫 NOVA VALIDAÇÃO DE STATUS
+        # ==================================================================
+        # Converte para minúsculo e remove espaços para evitar erros de digitação
+        status_atual = str(evento.get('status', '')).lower().strip()
+        
+        if status_atual != 'ativo':
+            print(f"⛔ Tentativa de compra bloqueada. Status: {status_atual}")
+            return jsonify({
+                'erro': 'Vendas encerradas!', 
+                'detalhe': f'O evento está {status_atual}. Aguarde o próximo.'
+            }), 400
+        # ==================================================================
+
+        id_evento_oficial = evento.get('id_evento')
+        print(f"✅ Processando compra para Evento ID Oficial: {id_evento_oficial}")
+
+        cliente = sales_db.clientes.find_one({'id_cliente': id_cli})
+        if not cliente: return jsonify({'erro': 'Cliente não encontrado.'}), 400
+
+        nome_do_cliente_db = cliente.get('nome', 'Cliente')
+        id_colaborador_indicacao = cliente.get('id_colaborador', 0)
+  
+        # Verifica Saldo
+        valor_unit = converter_decimal(evento.get('valor_de_venda', 0))
+        custo_total = valor_unit * qtd_desejada
+        limite = int(evento.get('numero_maximo', 72000))
+        
+        saldo_cliente = converter_decimal(cliente.get('saldo_atual', 0))
+        if saldo_cliente < custo_total:
+             return jsonify({'erro': 'Saldo insuficiente para esta compra.'}), 400
+
+        # --- CONTROLE DE NUMERAÇÃO ---
+        retorno_sequencia = sales_db.controle_venda.find_one_and_update(
+            {'id_evento': id_evento_oficial}, 
+            {'$inc': {'inicial_proxima_venda': qtd_desejada}}, 
+            upsert=True, 
+            return_document=ReturnDocument.AFTER
+        )
+        
+        valor_pos_incremento = retorno_sequencia.get('inicial_proxima_venda')
+        num_inicial = valor_pos_incremento - qtd_desejada
+        
+        # Ajuste para não começar do zero se for a primeira venda
+        if num_inicial == 0: 
+            # Se a conta deu 0, significa que o banco estava vazio e somou a qtd.
+            # Então as cartelas são de 1 até qtd.
+            num_inicial = 1
+            # O num_final será recalculado corretamente abaixo?
+            # Ex: comprei 10. Banco virou 10. num_inicial = 0 -> virou 1.
+            # num_final = 1 + 10 - 1 = 10. Correto.
+        
+        # Mas atenção: Se o banco já tinha 10 e eu compro 5.
+        # Banco vira 15. num_inicial = 15 - 5 = 10.
+        # Minhas cartelas: 10, 11, 12, 13, 14. (Isso repetiria a cartela 10 anterior).
+        # AJUSTE FINO DE LÓGICA DE SEQUENCIA:
+        # Geralmente num_inicial deve ser (valor_antigo + 1).
+        # Valor antigo = valor_pos_incremento - qtd_desejada.
+        # Então num_inicial REAL = (valor_pos_incremento - qtd_desejada) + 1.
+        
+        num_inicial_real = (valor_pos_incremento - qtd_desejada) + 1
+        num_final = num_inicial_real + qtd_desejada - 1
+        
+        if num_final > limite:
+            return jsonify({'erro': 'Limite de cartelas esgotado.'}), 400
+
+        # --- CONTADOR GLOBAL DE VENDAS ---
+        retorno_global = sales_db.contadores.find_one_and_update(
+            {'_id': 'global'}, 
+            {'$inc': {'id_vendas_global': 1}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER
+        )
+        id_venda_global = retorno_global.get('id_vendas_global')
+        
+        # Grava na Tabela de Vendas
+        venda_doc = {
+            "id_venda": f"WEB{id_venda_global}", 
+            "id_evento": id_evento_oficial,
+            "id_cliente": id_cli,
+            "nome_cliente": nome_do_cliente_db,                          
+            "nick_colaborador": "AUTO-ATENDIMENTO",
+            "id_colaborador": id_colaborador_indicacao,
+            # Ajustado para usar sua função de hora certa ou ZoneInfo direto
+            "data_venda": datetime.now(ZoneInfo('America/Sao_Paulo')), 
+            "quantidade_unidades": qtd_desejada,
+            "quantidade_cartelas": qtd_desejada, 
+            "numero_inicial": num_inicial_real, # Usando o ajustado
+            "numero_final": num_final,
+            "numero_inicial2": 0,
+            "numero_final2": 0,
+            "valor_total": Decimal128(str(custo_total)),
+            "origem": "terminal_cliente"
+        }
+        
+        col_vendas_nome = f"vendas{id_evento_oficial}"
+        sales_db[col_vendas_nome].insert_one(venda_doc)
+        print(f"💾 Venda gravada em: {col_vendas_nome}")
+        
+        # Debita e finaliza
+        registrar_transacao_cliente_mesa(
+            sales_db, id_cli, -abs(custo_total), 'compra', 
+            f"Compra Web - {qtd_desejada} cartela(s) ({evento.get('descricao')})", id_evento_oficial
+        )
+        
+        # threading.Thread(target=carregar_cache_evento, args=(id_evento_oficial, sales_db)).start()
+        
+        saldo_atual_novo = saldo_cliente - custo_total
+
+        return jsonify({
+            'status': 'ok',
+            'msg': 'Compra realizada!',
+            'novo_saldo': saldo_atual_novo,
+            'cartelas': f"{num_inicial_real} a {num_final}"
+        })
+
+    except Exception as e:
+        print(f"Erro crítico compra: {e}")
+        traceback.print_exc()
+        return jsonify({'erro': 'Erro interno.'}), 500
+
+
+@app.route('/api/comprar_cartelas2', methods=['POST'])   # apagar aquix
+def api_comprar_cartelas2():
     """Processa a compra usando estritamente controle_venda e contadores."""
     if 'id_cliente' not in session:
         return jsonify({'erro': 'Sessão expirada. Faça login novamente.'}), 401

@@ -1947,6 +1947,9 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
     const buscarLinha = !buscarBingo && (premioUpper.includes('LINHA') || premioUpper.includes('4 CANTOS E LINHA'));
     const buscarCantos = !buscarBingo && (premioUpper.includes('CANTOS') || premioUpper.includes('QUADRA'));
 
+    console.error("buscarLinha                           : ",buscarLinha);
+    console.error("buscarCantos                          : ",buscarCantos);
+ 
     cards.forEach(card => {
         let rawList = card.numeros || card.em_ordem || card.lista_75 || [];
         // Normaliza string para array se necessário
@@ -3053,10 +3056,10 @@ function renderMelhores(melhoresData) {
         // Usa template literals (crase `) para injetar a variável   // 23 - 55
         const gridClasses = `grid-cols-[30px_${posicaoWidth}_1fr_100px]`;
         const row = document.createElement('div');
-        row.className = `grid ${gridClasses} text-[8px] leading-none text-white p-0.5 rounded hover:bg-gray-800`;
+        row.className = `grid ${gridClasses} text-[8px] leading-none text-white rounded hover:bg-gray-800`;
         // 1. Cartela
         const cartela = document.createElement('span');
-        cartela.className = 'text-center font-bold text-yellow-600';
+        cartela.className = 'text-[9px] text-center font-bold text-yellow-500';
         cartela.textContent = item.cartela;
         // 2. Posição
         const posicao = document.createElement('span');
@@ -3076,30 +3079,31 @@ function renderMelhores(melhoresData) {
        // 1. Tenta pegar o valor (aceita tanto a chave antiga 'numeros_faltantes' quanto a nova 'numeros')
         const rawNums = item.numeros_faltantes || item.numeros || ""; 
         
-        let numerosComEspaco = "";
+        let listaLimpa = [];
 
-        // 2. Verifica se é Array (Lista) ou String (Texto) para formatar corretamente
         if (Array.isArray(rawNums)) {
-            // Pega apenas os 5 primeiros itens do array
-            numerosComEspaco = rawNums.map(n => n.toString().padStart(2, '0')).join(' . ');
-
+            listaLimpa = rawNums;
         } else if (typeof rawNums === 'string') {
-            // Divide a string, pega os 5 primeiros e formata
-            const lista = rawNums.split(',');
-            numerosComEspaco = lista.map(n => n.trim().padStart(2, '0')).join(' . ');
-
-            //if (lista.length > 5) numerosComEspaco += " ...";
+            listaLimpa = rawNums.split(',').map(n => n.trim()).filter(n => n !== "");
         }
+
+        // 2. CORTE RIGOROSO: Pega apenas os primeiros 24 números
+        // O resto é ignorado completamente.
+        const primeiros24 = listaLimpa.slice(0, 24);
+
+        // 3. Formata e exibe
+        const numerosFormatados = primeiros24.map(n => n.toString().padStart(2, '0')).join(' . ');
         
-        numerosFaltantes.textContent = `${numerosComEspaco} ${winnerPremio}`;
-        numerosFaltantes.className = 'text-green-300';  
+        // Se houver prêmio (winnerPremio), adiciona ao final
+        numerosFaltantes.textContent = `${numerosFormatados} ${winnerPremio || ''}`;
+        numerosFaltantes.className = 'text-[9px] text-green-400';  
 
         // 4. Nome (Player)
         const nome = document.createElement('span');
         if  (haGanhador) {
            nome.className = 'truncate text-[9px] text-yellow-300 font-bold';     
         } else {   
-           nome.className = 'truncate text-gray-300';
+           nome.className = 'truncate  text-[10px]  text-yellow-400 font-semibold';
         }
         nome.textContent = item.nome;
 
@@ -5649,8 +5653,8 @@ async function atualizarPrecoDoEvento() {
                             <div class="flex items-center gap-2 text-xl">
                                 <span>🛒</span> Comprar Cartelas
                             </div>
-                            <span class="text-base text-yellow-500 font-bold mt-1 uppercase">${desc}</span>
-                            ${dataHora ? `<span class="text-xs text-gray-400 mt-0.5">📅 ${dataHora}</span>` : ''}
+                            <span class="text-base text-yellow-500 font-bold -mt-1 uppercase">${desc}</span>
+                            ${dataHora ? `<span class="text-xs text-blue-400 font-semibold -mt-0.5">📅 ${dataHora}</span>` : ''}
                         </div>
                     `;
                 }

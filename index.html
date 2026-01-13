@@ -146,7 +146,7 @@
            </div>
         </section>      
 
-        <section id="estatisticas-panel" class="hidden w-[calc(100%+1rem)] -ml-2 bg-gray-900 p-0 rounded-lg shadow-lg flex-col h-[150px] overflow-x-hidden">     
+        <section id="estatisticas-panel" class="hidden w-[calc(100%+1rem)] -ml-2 bg-gray-900 p-0 rounded-lg shadow-lg flex-col h-[130px] overflow-x-hidden">     
             <h2 class="text-green-400 text-[10px] mb-0 text-center border-b border-gray-700 py-0">Melhores da Rodada</h2>
             <div id="estatisticas-header" class="grid grid-cols-[30px_20px_1fr_100px] text-[9px] font-bold text-blue-400 border-b border-gray-700 pb-0 flex-shrink-0 bg-gray-800">
                 <span class="truncate text-left pl-1">Crt</span> 
@@ -523,7 +523,7 @@
             </button>
             <div class="mb-2 text-4xl animate-bounce">📢</div>
             <h2 id="aviso-titulo" class="text-2xl font-black text-yellow-500 uppercase tracking-widest mb-3 drop-shadow-md">Aviso Importante</h2>
-            <p id="aviso-mensagem" class="text-white text-2xl font-medium leading-relaxed mb-6">...</p>
+            <p id="aviso-mensagem" class="text-white text-xl font-medium leading-relaxed mb-6">...</p>
             <div id="aviso-timer-container" class="hidden flex-col items-center w-full bg-gray-800/50 rounded-xl p-2 border border-gray-700">
                 <span class="text-xl text-blue-400 uppercase tracking-widest mb-1">💸Tempo Restante 💸</span>
                 <span id="aviso-timer" class="text-4xl font-mono font-bold text-green-400">00:00</span>
@@ -533,14 +533,14 @@
 
 
     <div id="modal-login" class="hidden fixed inset-0 z-[300] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-        <div class="bg-gray-200 p-2 rounded-2xl w-[90%] max-w-sm shadow-2xl border-4 border-blue-800">
-            <h2 class="text-xl font-semibold text-yellow-600 mb-2 text-center uppercase">🚪Acesso Cliente</h2>
+        <div class="bg-gray-500 p-2 rounded-2xl w-[90%] max-w-sm shadow-2xl border-4 border-blue-800">
+            <h2 class="text-2xl font-semibold text-yellow-400 mb-0 text-center uppercase">🔒 Acesso Cliente 🔒</h2>
             
-            <label class="block text-gray-600 font-bold">Seu Apelido (Nick)</label>
+            <label class="block text-gray-800 font-bold">Seu Apelido (Nick)</label>
             <input type="text" id="login-user" placeholder="Digite seu apelido..." 
                    class="w-full p-1 mb-3 border-2 border-gray-300 rounded-lg text-lg font-bold text-gray-700 uppercase focus:border-blue-500 outline-none">
             
-            <label class="block text-gray-600 font-bold -mt-2 ">Sua Senha</label>
+            <label class="block text-gray-800 font-bold -mt-2 ">Sua Senha</label>
             <div class="relative w-full mb-3">
                 <input type="password" id="login-pass" placeholder="Digite sua senha..." 
                        class="w-full p-1 pr-12 border-2 border-gray-300 rounded-lg text-lg font-semibold text-gray-900 focus:border-blue-500 outline-none">
@@ -566,7 +566,6 @@
 
 <div id="modal-comprar-cartelas" class="hidden fixed inset-0 z-50 flex items-start justify-center bg-black/10 backdrop-blur-sm p-4  pt-10">
     <div class="bg-gray-900 w-full max-w-lg rounded-2xl border border-gray-700 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        
         <div class="bg-gray-800 p-2 flex justify-between items-center border-b border-gray-700 shrink-0">
             <h3 class="text-xl font-bold text-green-400 flex items-center gap-2">
                 <span>🛒</span> Comprar Cartelas
@@ -637,7 +636,7 @@
         <div class="p-4 overflow-y-auto grow">
             
             <div id="conteudo-saque" class="space-y-4">
-                <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 text-center relative overflow-hidden">
+                <div class="bg-gray-800 p-2 rounded-xl border border-gray-700 text-center relative overflow-hidden">
                     <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-600 to-yellow-400"></div>
                     <p class="text-green-500 text-sm uppercase tracking-wider ">Saldo Disponível</p>
                     <p class="text-2xl font-bold text-white" id="carteira-saldo-atual">R$ 0,00</p>
@@ -647,9 +646,9 @@
                     <label class="block text-gray-400 text-sm mb-1 font-bold">Valor do Saque (R$)</label>
                     <div class="flex gap-2 relative">
                         <span class="absolute left-4 top-3.5 text-gray-500">R$</span>
-                        <input type="number" id="valor-saque" class="w-full bg-gray-950 border border-gray-700 rounded-lg pl-10 pr-20 py-3 text-white text-2xl focus:border-yellow-500 outline-none font-bold" placeholder="0.00">
+                        <input type="number" id="valor-saque" class="w-full bg-gray-950 border border-gray-700 rounded-lg pl-10 pr-20 py-2 text-white text-2xl focus:border-yellow-500 outline-none font-bold" placeholder="0.00">
                         
-                        <button onclick="usarSaldoTotal()" class="absolute right-2 top-2 bg-gray-800 hover:bg-gray-700 text-yellow-500 hover:text-yellow-400 px-3 py-2 rounded text-xs font-bold uppercase tracking-wide border border-gray-600 transition-colors">
+                        <button onclick="usarSaldoTotal()" class="absolute right-2 top-2.5 bg-gray-800 hover:bg-gray-700 text-yellow-500 hover:text-yellow-400 px-5 py-2 rounded text-xs font-bold uppercase tracking-wide border border-gray-600 transition-colors">
                             Total
                         </button>
                     </div>
