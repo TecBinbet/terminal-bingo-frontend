@@ -5047,11 +5047,52 @@ async function confirmarCompra() {
 
     const inputQtd = document.getElementById('qtd-manual');
     const qtd = inputQtd ? parseInt(inputQtd.value) : 0;
-    
+
     if (qtd <= 0) {
         if (typeof showCustomAlert === 'function') showCustomAlert("Selecione a quantidade.", "Atenção", "⚠️");
         else alert("Selecione a quantidade.");
         return;
+    }
+
+    // Função auxiliar para converter "R$ 1.200,50" em 1200.50 (Número puro)
+    function lerDinheiro(idElemento) {
+        const el = document.getElementById(idElemento);
+        if (!el) return 0.0;
+        
+        // Pega o texto (se for span/div) ou valor (se for input)
+        let texto = el.value || el.textContent || "0";
+        
+        // Limpeza: 
+        // 1. Remove "R$" e espaços
+        // 2. Remove pontos de milhar (ex: 1.000 vira 1000)
+        // 3. Troca vírgula decimal por ponto (ex: 50,00 vira 50.00)
+        texto = texto.toString()
+                     .replace('R$', '')
+                     .replace(/\s/g, '')     // Tira espaços
+                     .replace(/\./g, '')     // Tira pontos de milhar
+                     .replace(',', '.');     // Troca virgula por ponto
+        
+        return parseFloat(texto) || 0.0;
+    }
+
+    // 1. Lê o valor TOTAL em Reais (não a quantidade de cartelas)
+    const valorTotalReais = lerDinheiro('total-compra-display');
+    
+    // 2. Lê o SALDO do cliente em Reais
+    const saldoAtualReais = lerDinheiro('saldo-modal-compra');
+
+    // Debug para você conferir no console (F12) se leu certo
+    //console.log(`Validando Compra: Valor R$ ${valorTotalReais} | Saldo R$ ${saldoAtualReais}`);
+
+    // 3. A Comparação
+    // Adicionamos uma margem de segurança pequena (0.01) para evitar erros de arredondamento do JS
+    if (valorTotalReais > saldoAtualReais) {
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Seu saldo é insuficiente para esta compra. Faça uma recarga!", "Saldo Insuficiente", "🚫");
+        } else {
+            alert("Saldo insuficiente para esta compra.");
+        }
+        return; // PARA TUDO AQUI
     }
 
     if (typeof showFullLoading === 'function') showFullLoading("Processando compra...");
@@ -5530,7 +5571,7 @@ async function realizarLogin() {
         const data = await response.json();
 
         // Debug para garantir
-        console.log("Login Resposta:", data);
+        //console.log("Login Resposta:", data);
 
         if (response.ok && data.status === 'ok') {
             
