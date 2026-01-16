@@ -575,7 +575,7 @@ function renderEventsList(eventos) {
         }
 
         // 2. CORREÇÃO DA LÓGICA DE COMPARAÇÃO
-        // Adicionamos uma tolerância de 4 horas para eventos que acabaram de começar não sumirem
+        // Adicionamos uma tolerância de 1 horas para eventos que acabaram de começar não sumirem
         // Clona a data do evento e subtrai horas para manter ele visível um pouco depois de começar
         const toleranceDate = new Date(eventDate.getTime() + (1 * 60 * 60 * 1000)); 
 
@@ -652,7 +652,7 @@ function renderEventsList(eventos) {
             ${statusBadge}
             
             <div class="pr-2 mt-3">
-                <h3 class="text-[13px] font-bold text-white leading-tight drop-shadow-sm -mb-1">${evt.descricao}</h3>
+                <h3 class="text-[15px] font-bold text-yellow-500 leading-tight drop-shadow-sm -mb-0.5">${evt.descricao}</h3>
                 <p class="text-[13px] font-semibold text-blue-300 font-mono -mb-0.5 flex items-center gap-1">
                      ${evt.data} <span class="mx-1">|</span> <span>⏰</span> ${evt.hora}
                 </p>
@@ -660,7 +660,7 @@ function renderEventsList(eventos) {
 
             <!-- Área de Prêmios -->
             <div class="bg-black/40 rounded-lg p-1 border border-gray-700/50">
-                <p class="text-[10px]  text-center text-green-300 font-bold uppercase -mb-1 -mt-1 tracking-wider">Premiação Prevista:</p>
+                <p class="text-[10px]  text-center text-green-00 font-bold uppercase -mb-1 -mt-1 tracking-wider">Premiação Prevista:</p>
                 
                 <ul class="grid grid-cols-2 gap-x-2 text-[11px] text-yellow-300 font-medium leading-tight mt-0.5">
                     ${premiosHtml}
@@ -5275,23 +5275,23 @@ async function fazerLogout() {
         console.log("Erro ao avisar logout, saindo localmente...");
     }
 
+    // === CRÍTICO: LIMPEZA DO AUTO-LOGIN ===
+    // Remove as credenciais salvas para impedir que o sistema logue sozinho após o reload
+    console.log("🧹 Limpando credenciais de auto-login...");
+    localStorage.removeItem('bingo_nick_v2');
+    localStorage.removeItem('bingo_senha_v2');
+    localStorage.removeItem('bingo_lembrar');
+    // ======================================
+
     // 1. Zera variáveis locais
     clienteLogado = false;
     
     // 2. Fecha modais e menus abertos
-    fecharModal('modal-carteira');
+    if (typeof fecharModal === 'function') fecharModal('modal-carteira');
     
-
-    closeSideMenu();
-
-    // Se você tiver uma função que fecha o menu lateral, chame-a aqui. 
-    // Exemplo: document.getElementById('sidebar').classList.add('-translate-x-full');
-    // Ou simplesmente removemos a classe que deixa o menu visível.
-    //const sidebar = document.getElementById('mobile-menu'); // ou o ID do seu menu
-    //if (sidebar) sidebar.classList.add('hidden');
+    if (typeof closeSideMenu === 'function') closeSideMenu();
 
     // 3. Atualiza a tela (Recarrega a página para limpar o cache visual do usuário)
-    // Isso é importante para garantir que o próximo usuário não veja o saldo do anterior
     window.location.reload();
 }
 
@@ -5469,7 +5469,6 @@ function toggleVisualizarSenha(inputId, btnElement) {
 // =========================================================================
 // FUNÇÃO DE LOGIN ATUALIZADA (Copie e substitua no script.js)
 // =========================================================================
-
 async function fazerLogin() {
     const user = document.getElementById('login-user').value.trim();
     const pass = document.getElementById('login-pass').value.trim();
@@ -5544,6 +5543,102 @@ async function fazerLogin() {
 // FUNÇÃO DE LOGIN (SEM ABRIR CARTEIRA AUTOMATICAMENTE)
 // =========================================================================
 async function realizarLogin() {
+    const userInput = document.getElementById('login-user');
+    const passInput = document.getElementById('login-pass');
+    
+    // 1. CAPTURA O CHECKBOX
+    const checkLembrar = document.getElementById('lembrar-dados');
+
+    if (!userInput || !passInput) return;
+
+    const usuario = userInput.value.trim();
+    const senha = passInput.value.trim();
+
+    if (!usuario || !senha) {
+        if (typeof showCustomAlert === 'function') showCustomAlert("Preencha usuário e senha.", "Atenção", "⚠️");
+        else alert("Preencha usuário e senha.");
+        return;
+    }
+
+    if (typeof showFullLoading === 'function') showFullLoading("Autenticando...");
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/login_cliente`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include', 
+            body: JSON.stringify({ usuario, senha })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.status === 'ok') {
+            
+            // === NOVA LÓGICA: SALVAR NO LOCALSTORAGE ===
+            if (checkLembrar && checkLembrar.checked) {
+                console.log("💾 Salvando credenciais...");
+                localStorage.setItem('bingo_nick_v2', usuario);
+                localStorage.setItem('bingo_senha_v2', senha);
+                localStorage.setItem('bingo_lembrar', 'true');
+            } else {
+                console.log("🧹 Limpando credenciais salvas...");
+                localStorage.removeItem('bingo_nick_v2');
+                localStorage.removeItem('bingo_senha_v2');
+                localStorage.removeItem('bingo_lembrar');
+            }
+            // ===========================================
+
+            // 1. GRAVA DADOS
+            const idSeguro = data.id_cliente || data.id || data._id || data.userId;
+            
+            // Atualiza variáveis novas e antigas
+            clienteLogado = true;              
+            clienteLogadoId = idSeguro;        
+            globalIdCliente = idSeguro;        
+            globalUserSaldo = parseFloat(data.saldo_atual || data.saldo || 0);
+
+            // 2. ATUALIZA O VISUAL (Nome e Saldo na barra)
+            if (typeof atualizarInterfaceAposLogin === 'function') {
+                atualizarInterfaceAposLogin(data);
+            }
+            
+            // 3. RECUPERA DADOS EXTRAS (Silenciosamente)
+            if (typeof carregarMinhasCartelas === 'function') carregarMinhasCartelas();
+            
+            // 4. FECHA O MODAL DE LOGIN
+            if (typeof fecharModal === 'function') {
+                fecharModal('modal-login');
+            } else {
+                const modal = document.getElementById('modal-login');
+                if (modal) modal.classList.add('hidden');
+            }
+
+            // Garante que a carteira esteja fechada
+            if (typeof fecharModal === 'function') fecharModal('modal-carteira');
+
+            // Limpa campos visuais (segurança), mas já salvamos no storage
+            userInput.value = '';
+            passInput.value = '';
+
+            // Mensagem discreta
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert(`Bem-vindo de volta, ${data.nick || usuario}!`, "Login Sucesso", "✅");
+            }
+
+        } else {
+            if (typeof showCustomAlert === 'function') showCustomAlert(data.erro || "Dados incorretos.", "Erro", "❌");
+            else alert(data.erro || "Dados incorretos.");
+        }
+    } catch (error) {
+        console.error("Erro no login:", error);
+        if (typeof showCustomAlert === 'function') showCustomAlert("Erro de conexão.", "Falha", "🌐");
+    } finally {
+        if (typeof hideFullLoading === 'function') hideFullLoading();
+    }
+}
+
+
+async function realizarLoginOld() {
     const userInput = document.getElementById('login-user');
     const passInput = document.getElementById('login-pass');
     
@@ -5662,8 +5757,8 @@ function atualizarInterfaceAposLogin(dados) {
 
 // --- BUSCA O PREÇO E DETALHES DO EVENTO ---
 async function atualizarPrecoDoEvento() {
-    const idAlvo = obterIdEventoAlvo();
-    
+    const idAlvo =obterIdEventoAlvo();
+
     if (idAlvo === 0) return;
 
     try {
@@ -5694,8 +5789,8 @@ async function atualizarPrecoDoEvento() {
                             <div class="flex items-center gap-2 text-xl">
                                 <span>🛒</span> Comprar Cartelas
                             </div>
-                            <span class="text-base text-yellow-500 font-bold -mt-1 uppercase">${desc}</span>
-                            ${dataHora ? `<span class="text-xs text-blue-400 font-semibold -mt-0.5">📅 ${dataHora}</span>` : ''}
+                            <span class="text-base text-yellow-500 font-bold  uppercase">${desc}</span>
+                            ${dataHora ? `<span class="text-base' text-blue-400 font-semibold -mt-0.5">📅 ${dataHora}</span>` : ''}
                         </div>
                     `;
                 }
@@ -5811,5 +5906,103 @@ function obterIdEventoAlvo() {
 
     return 0; // Nenhum evento identificado
 }
+
+
+// Função para carregar dados salvos ao abrir a tela (Versão DEBUG)
+function verificarCredenciaisSalvas() {
+    console.log("🔍 [DEBUG] Iniciando verificarCredenciaisSalvas...");
+
+    // 1. Ler do Navegador
+    const nickSalvo = localStorage.getItem('bingo_nick_v2'); 
+    const senhaSalva = localStorage.getItem('bingo_senha_v2');
+    const lembrarSalvo = localStorage.getItem('bingo_lembrar');
+    
+    console.log(`💾 [DEBUG] Dados no Storage: Nick="${nickSalvo}", Senha="${senhaSalva ? '***' : 'null'}", Lembrar="${lembrarSalvo}"`);
+
+    // 2. Buscar Elementos na Tela
+    const inputUser = document.getElementById('login-user');
+    const inputPass = document.getElementById('login-pass');
+    const checkLembrar = document.getElementById('lembrar-dados');
+
+    console.log("🖥️ [DEBUG] Elementos HTML:", {
+        inputUser: inputUser ? "Encontrado" : "NÃO ENCONTRADO (Null)",
+        inputPass: inputPass ? "Encontrado" : "NÃO ENCONTRADO (Null)",
+        checkLembrar: checkLembrar ? "Encontrado" : "NÃO ENCONTRADO (Null)"
+    });
+
+    if (!inputUser || !inputPass) {
+        console.warn("⚠️ [DEBUG] ALERTA: Os inputs de login não foram achados. O script rodou antes do HTML carregar?");
+        return;
+    }
+
+    // 3. Lógica do Checkbox (Padrão TRUE)
+    if (checkLembrar) {
+        if (lembrarSalvo === null || lembrarSalvo === 'true') {
+            checkLembrar.checked = true;
+            console.log("✅ [DEBUG] Checkbox marcado (Padrão ou Salvo).");
+        } else {
+            checkLembrar.checked = false;
+            console.log("❌ [DEBUG] Checkbox desmarcado (Opção do usuário).");
+        }
+    }
+
+    // 4. Preenchimento
+    if (nickSalvo && (lembrarSalvo === null || lembrarSalvo === 'true')) {
+        console.log("✍️ [DEBUG] Tentando preencher campos...");
+        
+        inputUser.value = nickSalvo;
+        inputPass.value = senhaSalva || ''; 
+        
+        // Verificação final
+        if (inputUser.value === nickSalvo) {
+            console.log("✅ [DEBUG] Sucesso! Campo usuário preenchido.");
+        } else {
+            console.error("🚫 [DEBUG] Falha: O valor foi atribuído mas o campo continua vazio.");
+        }
+    } else {
+        console.log("⏭️ [DEBUG] Nada preenchido (Sem dados salvos ou 'Lembrar' desligado).");
+    }
+}
+
+// Tenta rodar em dois momentos para garantir
+
+// --- AUTO-LOGIN NO CARREGAMENTO DA PÁGINA ---
+window.addEventListener('load', () => {
+    // 1. Primeiro, recupera os dados do localStorage e preenche os inputs
+    verificarCredenciaisSalvas();
+
+    // 2. Agora lê os campos já preenchidos
+    const inputUser = document.getElementById('login-user');
+    const inputPass = document.getElementById('login-pass');
+    const checkLembrar = document.getElementById('lembrar-dados');
+
+    const usuario = inputUser ? inputUser.value.trim() : '';
+    const senha = inputPass ? inputPass.value.trim() : '';
+    const lembrar = checkLembrar ? checkLembrar.checked : false;
+
+    // 3. Decisão: Logar sozinho ou só mostrar a tela?
+    if (usuario && senha && lembrar) {
+        console.log("🚀 [AUTO-LOGIN] Credenciais encontradas. Entrando...");
+        
+        // Dica visual: Já mostra o loading imediatamente para não "piscar" a tela de login
+        if (typeof showFullLoading === 'function') {
+            showFullLoading("Conectando automaticamente...");
+        }
+
+        // Chama a função de login que já ajustamos
+        realizarLogin();
+
+    } else {
+        console.log("👤 [LOGIN] Aguardando digitação do usuário.");
+        
+        // Abre o modal para ele digitar
+        if (typeof abrirModal === 'function') {
+            abrirModal('modal-login');
+        } else {
+            const modal = document.getElementById('modal-login');
+            if (modal) modal.classList.remove('hidden');
+        }
+    }
+});
 
 // --- FIM DAS NOVAS FUNÇÕES ---
