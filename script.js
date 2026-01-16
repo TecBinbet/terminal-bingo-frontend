@@ -1946,9 +1946,6 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
     // Se não for Bingo, verifica se é fase de Linha ou Cantos
     const buscarLinha = !buscarBingo && (premioUpper.includes('LINHA') || premioUpper.includes('4 CANTOS E LINHA'));
     const buscarCantos = !buscarBingo && (premioUpper.includes('CANTOS') || premioUpper.includes('QUADRA'));
-
-    console.error("buscarLinha                           : ",buscarLinha);
-    console.error("buscarCantos                          : ",buscarCantos);
  
     cards.forEach(card => {
         let rawList = card.numeros || card.em_ordem || card.lista_75 || [];
@@ -3718,10 +3715,20 @@ async function renderMainContent(data) {
                 } else if (youtubeIframe) {
                     youtubeIframe.src = ''; // Limpa se não tiver ID
                 }
+
+                const videoContainer = document.getElementById('video-container'); // Confirme se o ID é esse
+                
+                // Só clica se estiver FECHADO. Se já estiver aberto, apenas a atualização do .src acima já basta.
+                if (videoContainer && videoContainer.classList.contains('hidden')) {
+                     abrirYoutubeBtn.click();
+                }
             }
         }         // --- FIM se Manual-
 
         if (abrirYoutubeBtn) {
+             if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
+                 goFullscreen(); 
+             } 
              const isLocal = String(video_local).toLowerCase() === 'true'; 
              if (isLocal || tipoSorteio != "manual") {
                  abrirYoutubeBtn.classList.add('hidden');
@@ -3729,7 +3736,7 @@ async function renderMainContent(data) {
                  if (tipoSorteio !== "manual") digitalBolaPanel.classList.remove('hidden');
              } else {
                  if (tipoSorteio === "manual") digitalBolaPanel.classList.add('hidden');
-                 abrirYoutubeBtn.classList.remove('hidden');
+                 abrirYoutubeBtn.classList.remove('hidden');                 
              }
         }
 
@@ -4272,6 +4279,9 @@ if (menuBtnTema) {
 
     if (abrirYoutubeBtn && videoContainer && youtubeIframe) {
         abrirYoutubeBtn.addEventListener('click', () => {
+            if (typeof closeSideMenu === 'function') {
+                closeSideMenu();
+            }
             startPromocionalTimer();
    
             const videoToLoad = currentVideoUrl; 
@@ -4297,14 +4307,14 @@ if (menuBtnTema) {
             const isVideoVisible = !videoContainer.classList.contains('hidden');
             
             if (isVideoVisible) {
-                abrirYoutubeBtn.textContent = 'Fechar YouTube';
+                abrirYoutubeBtn.textContent = '❌ Fechar YouTube';
                 // Define src para tocar
                 youtubeIframe.src = videoUrl;
                  if (!telaFull) { 
                     goFullscreen(); 
                  } 
             } else {
-                abrirYoutubeBtn.textContent = 'Abrir YouTube';
+                abrirYoutubeBtn.textContent = '📺 Abrir   YouTube';
                 // Limpa src para parar o som
                 youtubeIframe.src = ''; 
             }
@@ -4833,6 +4843,8 @@ function isUsuarioLogado() {
 // ABRIR CARTEIRA (CHAMA ATUALIZAÇÃO DO EXTRATO)
 // =========================================================================
 function abrirModalCarteira() {
+   closeSideMenu(); // Fecha o menu lateral se estiver aberto
+
     if (!isUsuarioLogado()) {
         if (typeof showCustomAlert === 'function') {
             showCustomAlert("Faça login para ver seu extrato.", "Acesso Restrito", "🔒");
@@ -5752,6 +5764,7 @@ function atualizarInterfaceAposLogin(dados) {
     const divMobile = document.getElementById('mobile-balance-display');
     if (saldoMobile) saldoMobile.textContent = saldoTxt;
     if (divMobile) divMobile.classList.remove('hidden');
+
 }
 
 

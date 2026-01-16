@@ -62,10 +62,6 @@
 
     </header>
 
-    <button id="abrir-youtube-btn" class="fixed top-0 right-4 bg-red-600 text-white px-2 py-0 rounded-lg shadow-lg z-50">
-         Abrir YouTube
-    </button>
-
     <section id="digital-bola-panel" class="w-full bg-gray-900 mb-1 p-1 rounded-lg shadow-xl h-[133px] hidden flex items-center justify-center">
         <div id="bola-container" class="w-full h-full flex items-center justify-center">        
             <div id="bola-digital" 
@@ -85,7 +81,7 @@
             frameborder="0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowfullscreen>
-        </iframe>
+        </iframe>  
     </div>
     
     <div id="panel-controls" class="flex justify-between items-center gap-1 mb-1 px-1">
@@ -290,7 +286,7 @@
                 </button>
                 
                 <button id="btn-carteira-mobile" onclick="abrirModalCarteira()" class="w-1/3 p-1.5 bg-blue-950 text-xs text-gray-200 font-bold rounded-lg hover:bg-blue-600 shadow-md transition-colors">
-                     💸 Carteira
+                     💸 Saque
                 </button>
 
                 <button id="btn-minhas-cartelas-mobile-view" class="w-1/3 p-1.5 bg-yellow-800 text-xs text-gray-200 font-bold rounded-lg hover:bg-yellow-500 shadow-md transition-colors">
@@ -471,7 +467,7 @@
                         <button id="menu-btn-carteira" onclick="abrirModalCarteira()" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
                             <div class="flex items-center gap-2">
                                 <span class="text-xl">💸</span>
-                                <span class="font-medium">Minha Carteira</span>
+                                <span class="font-medium">Requer Saque</span>
                             </div>
                         </button>
                     </li>
@@ -485,6 +481,11 @@
                         </button>
                     </li>
                     <li><hr class="border-gray-700 my-1"></li>
+                    <li>
+                        <button id="abrir-youtube-btn" class="hidden w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg shadow-md transition-colors mb-2">
+                             📺 Abrir   YouTube
+                        </button>
+                    </li>
                     <li>
                         <button id="menu-btn-som" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
                             <div class="flex items-center gap-2">

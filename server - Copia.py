@@ -2862,59 +2862,32 @@ def registrar_transacao_cliente_mesa(db_vendas, id_cliente, valor, tipo, descric
     try:
         # Garante que os valores numéricos estão corretos
         val_decimal = Decimal128(str(valor))
-
         id_cli = int(id_cliente)
 
-        # CORREÇÃO 1: Busca no db_vendas (não no db global)
-        cliente = db_vendas.clientes.find_one({'id_cliente': id_cli}) 
-        
-        if not cliente:
-            print(f"⚠️ Atenção: Cliente {id_cli} não encontrado no banco de vendas.")
-            return False
-
-        # CORREÇÃO 2: Usa converter_decimal em vez de safe_float
-        saldo_anterior = converter_decimal(cliente.get('saldo_atual', 0.00))
-        saldo_novo = saldo_anterior + float(valor)
-
-        # 1. Tenta atualizar o saldo do cliente
+        # 1. Tenta atualizar o saldo do cliente (Isso é o mais importante)
         resultado = db_vendas.clientes.update_one(
             {'id_cliente': id_cli},
             {
-                '$inc': {'saldo_atual': Decimal128(str(valor))}, # Ajuste: Usa o valor do incremento direto ou define o novo saldo
-                # Se preferir setar o saldo calculado: '$set': {'saldo_atual': Decimal128(str(saldo_novo))},
+                '$inc': {'saldo_atual': val_decimal}, # Soma ou subtrai o valor
                 '$set': {'ultima_movimentacao': datetime.now()}
             }
         )
         
-        # Nota: O código original usava $inc com saldo_novo, o que somaria o saldo total ao saldo existente (erro lógico).
-        # Acima ajustei para usar o valor da transação no $inc, que é o padrão correto, 
-        # ou você pode usar $set com o saldo_novo calculado.
-        
-        # Vou manter a lógica original de update do seu código, mas corrigindo a referência da função:
-        # Se sua intenção era forçar o valor calculado:
-        db_vendas.clientes.update_one(
-            {'id_cliente': id_cli},
-            {
-                '$set': {
-                    'saldo_atual': Decimal128(str(saldo_novo)),
-                    'ultima_movimentacao': datetime.now()
-                }
-            }
-        )
+        if resultado.modified_count == 0:
+            print(f"⚠️ Atenção: Saldo não atualizado para cliente {id_cli} (Cliente não encontrado ou valor zero).")
+            # Se não achou o cliente, não podemos registrar a transação, pois o saldo ficaria desincronizado
+            return False
 
-        # 2. Se o saldo foi atualizado, grava o histórico (Extrato)
+        # 2. Se o saldo foi atualizado, grava o histórico (Extrato)     # datetime.now() - timedelta(hours=3),
         doc_transacao = {
             'id_transacao': f"TR{int(time.time()*1000)}",
-            'id_cliente': id_cli,
-            'data_hora': datetime.now(ZoneInfo('America/Sao_Paulo')),
-            'tipo': tipo,
-            'valor': val_decimal, # Usa a variável corrigida acima
-            'saldo_anterior': Decimal128(str(saldo_anterior)),
-            'saldo_posterior': Decimal128(str(saldo_novo)),
+            'id_cliente': id_cli, 
+            'data_hora': hora_brasil().strftime('%Y-%m-%d %H:%M:%S'),
+            'tipo': tipo,       # 'compra', 'premio', 'deposito'
             'descricao': descricao,
+            'valor': val_decimal,
             'id_evento': id_evento,
-            'origem': 'WEB_AUTO',
-            'registrado_por':  'WEB_AUTO'
+            'origem': 'WEB_AUTO'
         }
 
         db_vendas.transacoes_clientes.insert_one(doc_transacao)
@@ -2922,6 +2895,7 @@ def registrar_transacao_cliente_mesa(db_vendas, id_cliente, valor, tipo, descric
 
     except Exception as e:
         print(f"❌ Erro crítico ao registrar transação: {e}")
+        # Tenta imprimir o erro completo para debug
         import traceback
         traceback.print_exc()
         return False
@@ -3235,7 +3209,7 @@ def api_comprar_cartelas():
         # Debita e finaliza
         registrar_transacao_cliente_mesa(
             sales_db, id_cli, -abs(custo_total), 'compra', 
-            f"Compra Web - {qtd_desejada} kit(s) - {evento.get('descricao')}", id_evento_oficial
+            f"Compra Web - {qtd_desejada} cartela(s) ({evento.get('descricao')})", id_evento_oficial
         )
         
         # threading.Thread(target=carregar_cache_evento, args=(id_evento_oficial, sales_db)).start()
@@ -3374,7 +3348,7 @@ def api_comprar_cartelas2():
         # Debita e finaliza
         registrar_transacao_cliente_mesa(
             sales_db, id_cli, -abs(custo_total), 'compra', 
-            f"Compra Web - {qtd_desejada} Kit(s) - {evento.get('descricao')}", id_evento_oficial
+            f"Compra Web - {qtd_desejada} cartela(s) ({evento.get('descricao')})", id_evento_oficial
         )
         
         threading.Thread(target=carregar_cache_evento, args=(id_evento_oficial, sales_db)).start()
