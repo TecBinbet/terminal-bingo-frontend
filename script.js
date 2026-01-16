@@ -732,6 +732,14 @@ function iniciarCompraCartelas(idEvento) {
 async function carregarCartelasAutomaticas(idEvento) {
     if (!idEvento) return;
 
+    // --- NOVA PROTEÇÃO (ADICIONE ISTO) ---
+    // Verifica se existe um ID de evento principal definido globalmente (currentEventID)
+    // Se o idEvento que estamos tentando carregar NÃO for o atual, paramos aqui.
+    if (typeof currentEventID !== 'undefined' && currentEventID && idEvento !== currentEventID) {
+        console.log(`🛡️ Bloqueado: Tentativa de carregar cartelas do evento ${idEvento} na mesa do evento ${currentEventID}.`);
+        return; 
+    }
+
     // Se já estiver carregado, não mostra loading nem faz nada
     if (eventoCarregadoAtual === idEvento && typeof cartelaRanges !== 'undefined' && cartelaRanges.length > 0) {
         console.log("Cartelas já carregadas na memória.");
@@ -788,6 +796,7 @@ async function carregarCartelasAutomaticas(idEvento) {
         hideFullLoading();
     }
 }
+
 
 // --- FUNÇÃO: Sincronia de Compras Externas (COM REGRA DE BLOQUEIO) ---
 async function verificarNovasCompras() {
@@ -4713,15 +4722,21 @@ async function verificarUsuarioExistente(usuario) {
     usuario = usuario.trim().toLowerCase();
 
     try {
-        // Chama o backend para checar apenas o nick (Rota que criaremos a seguir)
+        // Chama o backend para checar apenas o nick
         const response = await fetch(`${API_BASE_URL}/api/checar_nick_disponivel?nick=${usuario}`);
         const data = await response.json();
 
         if (data.disponivel === false) {
             // Se NÃO estiver disponível
             nickDisponivel = false;
-            msgElement.textContent = "❌ Este usuário já está em uso. Escolha outro.";
+            
+            // --- AQUI ESTÁ A CORREÇÃO ---
+            // Usa a mensagem que veio do Python (data.erro) em vez de texto fixo
+            const mensagemErro = data.erro || "Usuário indisponível.";
+            
+            msgElement.textContent = "❌ " + mensagemErro;
             msgElement.className = "text-[11px] mt-1 text-red-400 font-bold block";
+            
             inputElement.classList.add('border-red-500');
             inputElement.classList.remove('border-green-500');
         } else {
@@ -4739,6 +4754,7 @@ async function verificarUsuarioExistente(usuario) {
         nickDisponivel = true; 
     }
 }
+
 
 // --- FUNÇÃO: Salvar Novo Usuário (Atualizada) ---
 async function salvarNovoUsuario() {
@@ -4764,10 +4780,19 @@ async function salvarNovoUsuario() {
         // Tenta verificar uma última vez caso o usuário tenha digitado rápido e clicado no botão
         await verificarUsuarioExistente(usuario);
         if (nickDisponivel === false) {
-            showCustomAlert("O usuário escolhido já existe. Por favor, tente outro.", "Usuário Indisponível", "⛔");
+           // Em vez de uma frase fixa, pegamos o texto que o Python mandou e que já está na tela
+            const elErro = document.getElementById('msg-nick-erro');
+            
+            // Pega o texto do erro (ex: "❌ Escolha um apelido respeitoso.")
+            // O .replace remove o "❌ " inicial para não ficar estranho no alerta
+            let textoErroReal = elErro ? elErro.textContent.replace('❌ ', '') : "O usuário escolhido não é válido.";
+            
+            // Mostra o alerta com o motivo real (Ofensa, Reservado ou Duplicado)
+            showCustomAlert(textoErroReal, "Atenção", "⛔");
+            
             document.getElementById('cad-usuario').focus();
-            return;
-        }
+            return;  
+      }
     }
 
     // Validação Pix
@@ -5049,7 +5074,7 @@ function calcularTotalCompra() {
 async function confirmarCompra() {
     let idEventoFinal = 0;
     
-    // 1. Descobre o ID do evento
+    // 1. Descobre o ID do evento alvo da compra
     if (typeof obterIdEventoAlvo === 'function') {
         idEventoFinal = obterIdEventoAlvo();
     } else {
@@ -5066,45 +5091,32 @@ async function confirmarCompra() {
         return;
     }
 
-    // Função auxiliar para converter "R$ 1.200,50" em 1200.50 (Número puro)
+    // Função auxiliar para converter "R$ 1.200,50" em 1200.50
     function lerDinheiro(idElemento) {
         const el = document.getElementById(idElemento);
         if (!el) return 0.0;
         
-        // Pega o texto (se for span/div) ou valor (se for input)
         let texto = el.value || el.textContent || "0";
-        
-        // Limpeza: 
-        // 1. Remove "R$" e espaços
-        // 2. Remove pontos de milhar (ex: 1.000 vira 1000)
-        // 3. Troca vírgula decimal por ponto (ex: 50,00 vira 50.00)
         texto = texto.toString()
-                     .replace('R$', '')
-                     .replace(/\s/g, '')     // Tira espaços
-                     .replace(/\./g, '')     // Tira pontos de milhar
-                     .replace(',', '.');     // Troca virgula por ponto
+                      .replace('R$', '')
+                      .replace(/\s/g, '')     
+                      .replace(/\./g, '')     
+                      .replace(',', '.');     
         
         return parseFloat(texto) || 0.0;
     }
 
-    // 1. Lê o valor TOTAL em Reais (não a quantidade de cartelas)
+    // Validação de Saldo (Client-side)
     const valorTotalReais = lerDinheiro('total-compra-display');
-    
-    // 2. Lê o SALDO do cliente em Reais
     const saldoAtualReais = lerDinheiro('saldo-modal-compra');
 
-    // Debug para você conferir no console (F12) se leu certo
-    //console.log(`Validando Compra: Valor R$ ${valorTotalReais} | Saldo R$ ${saldoAtualReais}`);
-
-    // 3. A Comparação
-    // Adicionamos uma margem de segurança pequena (0.01) para evitar erros de arredondamento do JS
     if (valorTotalReais > saldoAtualReais) {
         if (typeof showCustomAlert === 'function') {
             showCustomAlert("Seu saldo é insuficiente para esta compra. Faça uma recarga!", "Saldo Insuficiente", "🚫");
         } else {
             alert("Saldo insuficiente para esta compra.");
         }
-        return; // PARA TUDO AQUI
+        return; 
     }
 
     if (typeof showFullLoading === 'function') showFullLoading("Processando compra...");
@@ -5127,35 +5139,48 @@ async function confirmarCompra() {
             if (typeof showCustomAlert === 'function') showCustomAlert(`Sucesso! ${data.msg}`, "Compra Confirmada", "✅");
             else alert(data.msg);
             
-            // 2. Atualiza Saldo e Extrato
+            // Atualiza Saldo e Extrato (sempre deve acontecer)
             if (typeof atualizarDadosCliente === 'function') await atualizarDadosCliente(); 
             
-            // --- AQUI ESTÁ A CORREÇÃO (O "PULO DO GATO") ---
+            // --- AQUI ESTÁ A CORREÇÃO (O FILTRO INTELIGENTE) ---
             
-            // Passo A: Força o sistema a "esquecer" que já carregou este evento
-            if (typeof eventoCarregadoAtual !== 'undefined') {
-                eventoCarregadoAtual = null; 
-                console.log("Memória do evento limpa para forçar atualização.");
+            // Verificamos: O evento que acabei de comprar (idEventoFinal) 
+            // é o mesmo que está rolando na tela (currentEventID)?
+            
+            // Pega o ID global do evento ativo (se existir)
+            const idEventoNaTela = (typeof currentEventID !== 'undefined') ? currentEventID : null;
+
+            // Compara como STRING para evitar erros (ex: "17" vs 17)
+            if (idEventoNaTela && String(idEventoFinal) === String(idEventoNaTela)) {
+                
+                console.log(`🔄 Compra no evento ATUAL (${idEventoFinal}). Atualizando mesa...`);
+
+                // Só limpa a memória se for realmente recarregar
+                if (typeof eventoCarregadoAtual !== 'undefined') {
+                    eventoCarregadoAtual = null; 
+                }
+
+                // Delay técnico para o banco processar
+                await new Promise(r => setTimeout(r, 500));
+
+                // Recarrega as cartelas na mesa
+                if (typeof carregarCartelasAutomaticas === 'function') {
+                    await carregarCartelasAutomaticas(idEventoFinal);
+                } 
+
+            } else {
+                // Se for diferente, NÃO FAZ NADA na mesa.
+                console.log(`📅 Compra Agendada (Evento ${idEventoFinal}). Mesa mantida no Evento ${idEventoNaTela}.`);
             }
 
-            // Passo B: Espera meio segundo para o banco de dados processar (evita trazer lista velha)
-            await new Promise(r => setTimeout(r, 500));
+            // --- FIM DA CORREÇÃO ---
 
-            // Passo C: Chama o carregamento
-            if (typeof carregarCartelasAutomaticas === 'function' && idEventoFinal > 0) {
-                console.log("Recarregando cartelas do evento:", idEventoFinal);
-                await carregarCartelasAutomaticas(idEventoFinal);
-            } 
-            else if (typeof carregarMinhasCartelas === 'function') {
-                await carregarMinhasCartelas();
-            }
-
-            // 3. Fecha modal e limpa
+            // Fecha modal e limpa inputs
             if (typeof fecharModal === 'function') fecharModal('modal-comprar-cartelas');
             if (inputQtd) inputQtd.value = '';
 
         } else {
-            // ERRO
+            // ERRO DO SERVIDOR
             if (typeof showCustomAlert === 'function') showCustomAlert(data.erro || "Erro desconhecido.", "Erro", "❌");
             else alert(data.erro);
         }
@@ -5167,6 +5192,7 @@ async function confirmarCompra() {
         if (typeof hideFullLoading === 'function') hideFullLoading();
     }
 }
+
 
 // =========================================================================
 // BUSCAR DADOS DO CLIENTE (SALDO E EXTRATO)
@@ -5495,7 +5521,7 @@ async function fazerLogin() {
         showFullLoading("Autenticando usuário...");
     }
 
-    try {                                    
+    try {                                        
         const res = await fetch(`${API_BASE_URL}/api/login_cliente`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -5512,7 +5538,7 @@ async function fazerLogin() {
 
             if (data.id || data.id_cliente) {
                 clienteLogadoId = data.id || data.id_cliente;
-                console.log("✅ Login efetuado. ID atualizado para:", clienteLogadoId);
+                console.log("✅ Login efetuado. ID cliente:", clienteLogadoId);
             }
             
             fecharModal('modal-login');
@@ -5521,35 +5547,52 @@ async function fazerLogin() {
             document.getElementById('login-user').value = "";
             document.getElementById('login-pass').value = "";
             
-            // Tenta carregar as cartelas imediatamente
-            let rodadaParaCarregar = idRodada;
-            if (!rodadaParaCarregar || rodadaParaCarregar === 0) {
-                 const el = document.getElementById('mobile-last-round');
-                 if (el) rodadaParaCarregar = parseInt(el.textContent) || 0;
+            // --- AQUI ESTÁ A MÁGICA (Correção da Sincronização) ---
+            
+            let idEventoDoServidor = null;
+
+            // 1. Verifica se o backend mandou o ID do evento ativo
+            if (data.id_evento_ativo) {
+                console.log(`📡 Servidor indicou evento ativo: ${data.id_evento_ativo}`);
+                idEventoDoServidor = data.id_evento_ativo;
+                
+                // ATUALIZA AS VARIÁVEIS GLOBAIS IMEDIATAMENTE
+                // Isso impede que o sistema tente voltar para o evento 19
+                if (typeof currentEventID !== 'undefined') currentEventID = idEventoDoServidor;
+                if (typeof idRodada !== 'undefined') idRodada = idEventoDoServidor;
+            } 
+            else {
+                // Fallback: Se o servidor não mandou nada (raro), tenta adivinhar pelo HTML (modo antigo)
+                const el = document.getElementById('mobile-last-round');
+                if (el) idEventoDoServidor = el.textContent || 0;
             }
 
-            if (rodadaParaCarregar > 0) {
+            // 2. Carrega as cartelas do evento CORRETO
+            if (idEventoDoServidor) {
                 // Mantemos o loading ativo, mas mudamos a mensagem
                 showFullLoading("Sincronizando cartelas...");
+                
+                // Força limpar cache anterior para garantir download novo
                 eventoCarregadoAtual = null; 
-                await carregarCartelasAutomaticas(rodadaParaCarregar);
+                
+                await carregarCartelasAutomaticas(idEventoDoServidor);
             }
 
         } else {
-            showCustomAlert("Senha incorreta ou usuário não encontrado.", "Erro de Acesso", "❌");
-            //alert(data.erro || "Senha incorreta ou usuário não encontrado.");
+            // Se o login falhar (senha errada, etc), verifica se tem erro específico
+            // Se o backend mandou data.erro (ex: "Senha incorreta"), usamos ele.
+            const msgErro = data.erro || "Senha incorreta ou usuário não encontrado.";
+            showCustomAlert(msgErro, "Acesso Negado", "❌");
         }
 
     } catch (e) {
         console.error("Falha no login:", e);
-        showCustomAlert("Falha na comunicação: " + e.message, "Erro de Acesso", "❌");
-        //alert("Falha na comunicação: " + e.message);
+        showCustomAlert("Falha na comunicação: " + e.message, "Erro de Conexão", "❌");
     } finally {
-        // 2. DESATIVA O LOADING (Sempre, mesmo se der erro)
+        // 2. DESATIVA O LOADING (Sempre, ao final de tudo)
         hideFullLoading();
     }
 }
-
 
 // =========================================================================
 // FUNÇÃO DE LOGIN (SEM ABRIR CARTEIRA AUTOMATICAMENTE)
@@ -5923,25 +5966,17 @@ function obterIdEventoAlvo() {
 
 // Função para carregar dados salvos ao abrir a tela (Versão DEBUG)
 function verificarCredenciaisSalvas() {
-    console.log("🔍 [DEBUG] Iniciando verificarCredenciaisSalvas...");
+  
 
     // 1. Ler do Navegador
     const nickSalvo = localStorage.getItem('bingo_nick_v2'); 
     const senhaSalva = localStorage.getItem('bingo_senha_v2');
     const lembrarSalvo = localStorage.getItem('bingo_lembrar');
     
-    console.log(`💾 [DEBUG] Dados no Storage: Nick="${nickSalvo}", Senha="${senhaSalva ? '***' : 'null'}", Lembrar="${lembrarSalvo}"`);
-
     // 2. Buscar Elementos na Tela
     const inputUser = document.getElementById('login-user');
     const inputPass = document.getElementById('login-pass');
     const checkLembrar = document.getElementById('lembrar-dados');
-
-    console.log("🖥️ [DEBUG] Elementos HTML:", {
-        inputUser: inputUser ? "Encontrado" : "NÃO ENCONTRADO (Null)",
-        inputPass: inputPass ? "Encontrado" : "NÃO ENCONTRADO (Null)",
-        checkLembrar: checkLembrar ? "Encontrado" : "NÃO ENCONTRADO (Null)"
-    });
 
     if (!inputUser || !inputPass) {
         console.warn("⚠️ [DEBUG] ALERTA: Os inputs de login não foram achados. O script rodou antes do HTML carregar?");
@@ -5952,26 +5987,17 @@ function verificarCredenciaisSalvas() {
     if (checkLembrar) {
         if (lembrarSalvo === null || lembrarSalvo === 'true') {
             checkLembrar.checked = true;
-            console.log("✅ [DEBUG] Checkbox marcado (Padrão ou Salvo).");
         } else {
             checkLembrar.checked = false;
-            console.log("❌ [DEBUG] Checkbox desmarcado (Opção do usuário).");
         }
     }
 
     // 4. Preenchimento
     if (nickSalvo && (lembrarSalvo === null || lembrarSalvo === 'true')) {
-        console.log("✍️ [DEBUG] Tentando preencher campos...");
         
         inputUser.value = nickSalvo;
         inputPass.value = senhaSalva || ''; 
         
-        // Verificação final
-        if (inputUser.value === nickSalvo) {
-            console.log("✅ [DEBUG] Sucesso! Campo usuário preenchido.");
-        } else {
-            console.error("🚫 [DEBUG] Falha: O valor foi atribuído mas o campo continua vazio.");
-        }
     } else {
         console.log("⏭️ [DEBUG] Nada preenchido (Sem dados salvos ou 'Lembrar' desligado).");
     }

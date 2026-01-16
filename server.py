@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import os
@@ -10,6 +11,8 @@ import requests
 import bcrypt # Necessário para validar a senha
 from flask import Flask, jsonify, request, send_from_directory, session # Adicionar session
 
+from better_profanity import profanity
+import re
 from bson.decimal128 import Decimal128
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -1356,8 +1359,7 @@ def admin_fechar_vendas():
         print(f"Erro fechar vendas: {e}")
         return jsonify({'error': str(e)}), 500
 
-
-# Rota Consultar Cartelas
+# Rota Consultar Cartelas 
 @app.route('/api/consultar_cartelas_evento')
 def api_consultar_cartelas():
     try:
@@ -2944,7 +2946,6 @@ def buscar_id_cliente_por_cartela(sales_db, id_evento, cartela_id):
         return None
 
 # --- ROTAS DE AUTOATENDIMENTO (LOGIN E COMPRA) ---
-
 @app.route('/api/login_cliente', methods=['POST'])
 def api_login_cliente():
     try:
@@ -2957,15 +2958,14 @@ def api_login_cliente():
         if not usuario or not senha:
             return jsonify({'erro': 'Preencha usuário e senha.'}), 400
 
-        # --- CORREÇÃO FUNDAMENTAL AQUI ---
-        # Não usamos 'db' (Banco do Jogo), usamos o Banco de Vendas onde o cliente se cadastrou
+        # Conexão com Banco de Vendas
         sales_db = get_sales_db_connection()
         
         if sales_db is None:
             print("❌ Erro: Não foi possível conectar ao Banco de Vendas para validar login.")
             return jsonify({'erro': 'Erro interno: Banco de clientes inacessível.'}), 500
 
-        # Busca o Cliente (Case insensitive) no banco de Vendas
+        # Busca o Cliente (Case insensitive)
         cli = sales_db.clientes.find_one({'nick': {'$regex': f'^{usuario}$', '$options': 'i'}})
 
         if not cli:
@@ -2974,24 +2974,38 @@ def api_login_cliente():
 
         # Valida Senha
         if 'senha' in cli:
-            # Força a primeira letra maiúscula conforme sua regra de negócio
+            # Força a primeira letra maiúscula (conforme padrão do cadastro)
             senha_fmt = senha.capitalize()
             
             try:
                 if bcrypt.checkpw(senha_fmt.encode('utf-8'), cli['senha'].encode('utf-8')):
-                    # Sucesso!
+                    # --- SUCESSO NO LOGIN ---
                     session['id_cliente'] = str(cli['id_cliente'])
                     session['nick_cliente'] = cli['nick']
                     
                     saldo = converter_decimal(cli.get('saldo_atual', 0.0))
                     
-                    print(f"✅ Login Sucesso: {cli['nick']} (Saldo: {saldo})")
+                    # --- NOVO TRECHO: BUSCA O EVENTO ATIVO ---
+                    # Isso garante que o front saiba qual evento carregar
+                    id_evento_ativo = None
+                    try:
+                        # Busca evento com status 'ativo' na coleção de eventos
+                        evt_ativo = sales_db.eventos.find_one({'status': 'ativo'})
+                        if evt_ativo:
+                            id_evento_ativo = str(evt_ativo['_id'])
+                    except Exception as e_evt:
+                        print(f"⚠️ Aviso: Não foi possível buscar evento ativo no login: {e_evt}")
+                    # -----------------------------------------
+
+                    print(f"✅ Login Sucesso: {cli['nick']} (Saldo: {saldo}) - Evento Ativo: {id_evento_ativo}")
+                    
                     return jsonify({
                         'status': 'ok', 
                         'msg': 'Logado com sucesso!',
                         'nick': cli['nick'],
                         'saldo': saldo,
-                        'id': str(cli['id_cliente'])
+                        'id': str(cli['id_cliente']),
+                        'id_evento_ativo': id_evento_ativo  # <--- CAMPO ESSENCIAL ADICIONADO
                     })
                 else:
                     print(f"⛔ Senha incorreta para '{usuario}'")
@@ -3255,150 +3269,57 @@ def api_comprar_cartelas():
         return jsonify({'erro': 'Erro interno.'}), 500
 
 
-@app.route('/api/comprar_cartelas2', methods=['POST'])   # apagar aquix
-def api_comprar_cartelas2():
-    """Processa a compra usando estritamente controle_venda e contadores."""
-    if 'id_cliente' not in session:
-        return jsonify({'erro': 'Sessão expirada. Faça login novamente.'}), 401
-        
-    data = request.json
-    qtd_desejada = int(data.get('quantidade', 0))
-    id_solicitado = data.get('id_evento') # O ID que vem do clique no Frontend
-    
-    if qtd_desejada <= 0: return jsonify({'erro': 'Quantidade inválida.'}), 400
-    
-    sales_db = get_sales_db_connection()
-    if sales_db is None: return jsonify({'erro': 'Banco de Vendas offline.'}), 500
-
-    try:
-        id_cli = int(session['id_cliente'])
-        
-        # --- DEFINIÇÃO DO ID DO EVENTO ---
-        # Prioridade total para o ID que veio do Frontend
-        if id_solicitado:
-            print(f"🛒 Solicitado Evento ID: {id_solicitado}")
-            # Tenta converter para int se possível, pois o banco geralmente usa int
-            try: raw_id = int(id_solicitado)
-            except: raw_id = str(id_solicitado)
-        else:
-            # Fallback: Se não veio nada, usa a rodada atual
-            print("⚠️ Nenhum ID recebido. Usando evento da rodada atual.")
-            rodada_info = db.rodada.find_one({})
-            raw_id = rodada_info.get('id_evento') if rodada_info else None
-
-        # Busca o evento no banco para pegar o ID Oficial e Tipado (Int ou Str)
-        busca_ids = [raw_id, str(raw_id)]
-        if isinstance(raw_id, str) and raw_id.isdigit():
-            busca_ids.append(int(raw_id))
-            
-        evento = sales_db.eventos.find_one({'id_evento': {'$in': busca_ids}})
-        
-        if not evento:
-            return jsonify({'erro': f'Evento {raw_id} não encontrado.'}), 400
-            
-        # Este é o ID que vamos usar em TUDO (garante que o tipo está certo)
-        id_evento_oficial = evento.get('id_evento')
-        print(f"✅ Processando compra para Evento ID Oficial: {id_evento_oficial}")
-
-        cliente = sales_db.clientes.find_one({'id_cliente': id_cli})
-        if not cliente: return jsonify({'erro': 'Cliente não encontrado.'}), 400
-
-        nome_do_cliente_db = cliente.get('nome', 'Cliente')
-        id_colaborador_indicacao = cliente.get('id_colaborador', 0)
-  
-        # Verifica Saldo
-        valor_unit = converter_decimal(evento.get('valor_de_venda', 0))
-        custo_total = valor_unit * qtd_desejada
-        limite = int(evento.get('numero_maximo', 72000))
-
-        # --- CORREÇÃO: CONTROLE DE NUMERAÇÃO ---
-        # Tabela: controle_venda
-        # Chave: id_evento
-        # Campo: inicial_proxima_venda
-        retorno_sequencia = sales_db.controle_venda.find_one_and_update(
-            {'id_evento': id_evento_oficial}, # Busca pelo ID correto do evento
-            {'$inc': {'inicial_proxima_venda': qtd_desejada}}, # Incrementa
-            upsert=True, # Cria se não existir (começa do zero + qtd)
-            return_document=ReturnDocument.AFTER
-        )
-        
-        # Lógica matemática para pegar o intervalo reservado
-        valor_pos_incremento = retorno_sequencia.get('inicial_proxima_venda')
-        num_inicial = valor_pos_incremento - qtd_desejada
-        
-        # Se o contador começou agora (era null/zero), ajustamos para começar do 1
-        # Se 'inicial_proxima_venda' for o PRÓXIMO LIVRE, a lógica muda.
-        # Assumindo padrão: Se eu peço 10, o banco soma 10. Se estava 0, vira 10.
-        # Meus numeros são: (10 - 10) + 1 = 1 até 10.
-        if num_inicial == 0: num_inicial = 1 # Ajuste para não começar do zero
-        
-        num_final = num_inicial + qtd_desejada - 1
-        
-        if num_final > limite:
-            return jsonify({'erro': 'Limite de cartelas esgotado.'}), 400
-
-        # --- CORREÇÃO: CONTADOR GLOBAL ---
-        # Tabela: contadores
-        # Chave: _id: 'global' (Padrão mais seguro que id_cliente: global)
-        retorno_global = sales_db.contadores.find_one_and_update(
-            {'_id': 'global'}, 
-            {'$inc': {'id_vendas_global': 1}},
-            upsert=True,
-            return_document=ReturnDocument.AFTER
-        )
-        id_venda_global = retorno_global.get('id_vendas_global')
-        
-        # Grava na Tabela de Vendas Específica do Evento
-        venda_doc = {
-            "id_venda": f"WEB{id_venda_global}", 
-            "id_evento": id_evento_oficial,
-            "id_cliente": id_cli,
-            "nome_cliente": nome_do_cliente_db,                          
-            "nick_colaborador": "AUTO-ATENDIMENTO",
-            "id_colaborador": id_colaborador_indicacao,
-            "data_venda": datetime.now() - timedelta(hours=3),
-            "quantidade_unidades": qtd_desejada,
-            "quantidade_cartelas": qtd_desejada, 
-            "numero_inicial": num_inicial,
-            "numero_final": num_final,
-            "numero_inicial2": 0,
-            "numero_final2": 0,
-            "valor_total": Decimal128(str(custo_total)),
-            "origem": "terminal_cliente"
-        }
-        
-        col_vendas_nome = f"vendas{id_evento_oficial}"
-        sales_db[col_vendas_nome].insert_one(venda_doc)
-        print(f"💾 Venda gravada em: {col_vendas_nome}") # Log para conferir
-        
-        # Debita e finaliza
-        registrar_transacao_cliente_mesa(
-            sales_db, id_cli, -abs(custo_total), 'compra', 
-            f"Compra Web - {qtd_desejada} Kit(s) - {evento.get('descricao')}", id_evento_oficial
-        )
-        
-        threading.Thread(target=carregar_cache_evento, args=(id_evento_oficial, sales_db)).start()
-        
-        saldo_atual_novo = converter_decimal(cliente.get('saldo_atual', 0)) - custo_total
-
-        return jsonify({
-            'status': 'ok',
-            'msg': 'Compra realizada!',
-            'novo_saldo': saldo_atual_novo,
-            'cartelas': f"{num_inicial} a {num_final}"
-        })
-
-    except Exception as e:
-        print(f"Erro crítico compra: {e}")
-        traceback.print_exc()
-        return jsonify({'erro': 'Erro interno.'}), 500
-
-
 @app.route('/api/logout', methods=['POST'])
 def api_logout():
     session.clear()
     return jsonify({'status': 'ok'})
 
+# --- FUNÇÃO AUXILIAR DE VALIDAÇÃO ---
+def nick_eh_valido(nick):
+    """
+    Retorna (True, None) se o nick for seguro.
+    Retorna (False, "Motivo") se for inválido.
+    """
+    nick_lower = nick.strip().lower()
+    
+    # 1. Validação de Tamanho
+    if len(nick) < 3: return False, "Mínimo de 3 caracteres."
+    if len(nick) > 15: return False, "Máximo de 15 caracteres."
+
+    # 2. Termos Reservados (Segurança Crítica)
+    # DICA: Mantenha estes no código. Se alguém apagar o banco por engano,
+    # o sistema ainda impede que criem um usuário "Admin".
+    termos_reservados = [
+        "admin", "suporte", "moderador", "sistema", "bot", 
+        "root", "master", "bingo", "dono", "gerente", "financeiro",
+        "caixa", "atendimento", "operador","tecbin"
+    ]
+    
+    for termo in termos_reservados:
+        if termo in nick_lower:
+            return False, f"O termo '{termo}' é reservado à administração."
+
+    # 3. Carrega Lista de Bloqueio do Banco (Palavrões + Bloqueios de Negócio)
+    lista_proibida_db = []
+    
+    if 'db' in globals() and db is not None:
+        try:
+            config = db.config_bloqueio.find_one({'tipo': 'nicks_proibidos'})
+            if config and 'palavras' in config:
+                lista_proibida_db = config['palavras']
+        except Exception:
+            pass # Se o banco falhar, segue apenas com os reservados
+
+    # 4. Configura a biblioteca e Valida
+    # Junta os reservados (código) com os proibidos (banco)
+    todas_proibidas = set(lista_proibida_db + termos_reservados)
+    
+    profanity.load_censor_words(todas_proibidas)
+
+    if profanity.contains_profanity(nick):
+        return False, "Este nome contém termos não permitidos."
+
+    return True, None
 
 # ==============================================================================
 #  ROTAS DE CADASTRO DE CLIENTE (AUTO-CADASTRO)
@@ -3407,27 +3328,35 @@ def api_logout():
 @app.route('/api/checar_nick_disponivel', methods=['GET'])
 def checar_nick():
     """
-    Verifica se um nome de usuário (nick) já existe no banco.
-    Usado pelo frontend para validação em tempo real (onblur).
+    Verifica se um nome de usuário (nick) é válido e se já existe.
     """
     try:
         nick = request.args.get('nick', '').strip()
         
         if not nick:
-            return jsonify({'disponivel': False, 'erro': 'Nick vazio'}), 400
+            return jsonify({'disponivel': False, 'erro': 'Digite um usuário.'}), 200
+
+        # --- 1. PRIMEIRO FILTRO: Validação de Conteúdo ---
+        # Bloqueia palavrões e nomes reservados antes de ir ao banco
+        valido, motivo = nick_eh_valido(nick)
+        
+        if not valido:
+            # Retorna indisponível e o motivo (ex: "Termo ofensivo")
+            return jsonify({'disponivel': False, 'erro': motivo})
+        # -------------------------------------------------
 
         sales_db = get_sales_db_connection()
         if sales_db is None:
             return jsonify({'erro': 'Erro de conexão DB'}), 500
 
+        # --- 2. SEGUNDO FILTRO: Duplicidade no Banco ---
         # Busca case-insensitive (joao = Joao = JOAO)
-        # Se encontrar alguém, NÃO está disponível.
         usuario_existente = sales_db.clientes.find_one({'nick': {'$regex': f'^{nick}$', '$options': 'i'}})
         
         if usuario_existente:
-            return jsonify({'disponivel': False})
+            return jsonify({'disponivel': False, 'erro': 'Este usuário já está em uso.'})
         else:
-            return jsonify({'disponivel': True})
+            return jsonify({'disponivel': True, 'msg': 'Usuário disponível!'})
 
     except Exception as e:
         print(f"❌ Erro ao verificar nick: {e}")
@@ -3453,6 +3382,13 @@ def cadastrar_cliente():
         senha_formatada = senha_raw.capitalize() 
 
         cidade = data.get('cidade', '').strip().title()
+
+ 
+        # --- NOVO TRECHO DE VALIDAÇÃO --- aquix
+        valido, erro_msg = nick_eh_valido(nick)
+        if not valido:
+            return jsonify({'erro': erro_msg}), 400
+        # -------------------------------
 
         # 1. Validação Básica
         if not nome or not celular or not nick or not senha_raw or not pix or not cidade:

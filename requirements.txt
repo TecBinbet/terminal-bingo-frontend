@@ -7,3 +7,4 @@ bcrypt
 gevent
 gevent-websocket
 tzdata
+better-profanity
