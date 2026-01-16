@@ -2989,10 +2989,13 @@ def api_login_cliente():
                     # Isso garante que o front saiba qual evento carregar
                     id_evento_ativo = None
                     try:
-                        # Busca evento com status 'ativo' na coleção de eventos
                         evt_ativo = sales_db.eventos.find_one({'status': 'ativo'})
                         if evt_ativo:
-                            id_evento_ativo = str(evt_ativo['_id'])
+                            # TENTA PEGAR O NÚMERO SEQUENCIAL (17)
+                            # Verifica qual nome você usa no banco. Geralmente é 'id_evento' ou 'numero'
+                            # Se não achar nenhum campo numérico, aí sim usa o _id
+                            id_evento_ativo = str(evt_ativo.get('id_evento') or evt_ativo.get('numero') or evt_ativo.get('seq') or evt_ativo['_id'])
+
                     except Exception as e_evt:
                         print(f"⚠️ Aviso: Não foi possível buscar evento ativo no login: {e_evt}")
                     # -----------------------------------------
