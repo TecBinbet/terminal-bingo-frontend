@@ -93,11 +93,8 @@
             letter-spacing: 1px;
             animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
-
      </style>
 </head>
-
-
 
 <body class="bg-gray-900 text-white min-h-screen flex flex-col">
 
@@ -238,28 +235,28 @@
                     <h4 class="text-xs font-bold text-yellow-600 uppercase mb-1">🎮 Regras da Mesa</h4>
                     
                     <div>
-    <label class="block text-[10px] font-bold text-gray-400 mb-1 uppercase">Entrada de Bolas (Sorteio)</label>
+                        <label class="block text-[10px] font-bold text-gray-400 mb-1 uppercase">Entrada de Bolas (Sorteio)</label>
     
-    <div class="flex flex-col gap-2">
-        <div class="flex gap-4">
-            <label class="flex items-center gap-1 cursor-pointer">
-                <input type="radio" name="modo_sorteio" value="auto" class="accent-green-500" checked onchange="toggleOpcaoAutomatizado()">
-                <span class="text-xs text-white">Digital (Random)</span>
-            </label>
-            <label class="flex items-center gap-1 cursor-pointer">
-                <input type="radio" name="modo_sorteio" value="manual" class="accent-blue-500" onchange="toggleOpcaoAutomatizado()">
-                <span class="text-xs text-white">Manual (Globo)</span>
-            </label>
-        </div>
+                        <div class="flex flex-col gap-2">
+                            <div class="flex gap-4">
+                                <label class="flex items-center gap-1 cursor-pointer">
+                                    <input type="radio" name="modo_sorteio" value="auto" class="accent-green-500" checked onchange="toggleOpcaoAutomatizado()">
+                                    <span class="text-xs text-white">Digital (Random)</span>
+                                </label>
+                                <label class="flex items-center gap-1 cursor-pointer">
+                                    <input type="radio" name="modo_sorteio" value="manual" class="accent-blue-500" onchange="toggleOpcaoAutomatizado()">
+                                    <span class="text-xs text-white">Manual (Globo)</span>
+                                </label>
+                            </div>
 
-        <div id="container-check-auto" class="hidden pl-1 mt-1 border-l-2 border-green-600">
-            <label class="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" id="config-sorteio-automatizado" class="accent-yellow-500 w-4 h-4">
-                <span class="text-[11px] text-yellow-400 font-bold uppercase tracking-wide">Sorteio Automatizado</span>
-            </label>
-            <p class="text-[9px] text-gray-500 mt-0.5">O sistema sorteará as bolas automaticamente sem clique.</p>
-        </div>
-    </div>
+                            <div id="container-check-auto" class="hidden pl-1 mt-1 border-l-2 border-green-600">
+                                <label class="flex items-center gap-2 cursor-pointer select-none">
+                                    <input type="checkbox" id="config-sorteio-automatizado" class="accent-yellow-500 w-4 h-4">
+                                    <span class="text-[11px] text-yellow-400 font-bold uppercase tracking-wide">Sorteio Automatizado</span>
+                                </label>
+                                <p class="text-[9px] text-gray-500 mt-0.5">O sistema sorteará as bolas automaticamente sem clique.</p>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="flex justify-between items-center bg-gray-700/30 p-1 rounded border border-gray-700">
@@ -292,7 +289,6 @@
                         </div>
                     </div>
                 </div>
-
             </div>
 
             <div class="p-3 bg-gray-900 border-t border-gray-700 rounded-b-xl text-right shrink-0">

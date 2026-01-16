@@ -378,7 +378,6 @@ function renderGridConferencia(data) {
     }
 }
 
-
 function showLoading(mensagem = "Processando...") {
     const overlay = document.getElementById('loading-overlay');
     const msgEl = document.getElementById('loading-message');
@@ -468,12 +467,10 @@ async function carregarDadosIniciaisSilencioso() {
     } catch(e) {}
 }
 
-
 function processarMensagemWS(event) {
     const payload = JSON.parse(event.data);
     
-    if (payload.type === 'UPDATE') {
-        
+    if (payload.type === 'UPDATE') {        
         let dadosBolas = [];
         if (payload.bolasMesaData && payload.bolasMesaData.length > 0) {
             dadosBolas = payload.bolasMesaData;
@@ -504,7 +501,7 @@ function processarMensagemWS(event) {
                 }
             }
         }
-// new
+
         if (payload.rodadaData && payload.rodadaData.length > 0) {
             const estado = payload.rodadaData[0].estado;
             
@@ -513,7 +510,6 @@ function processarMensagemWS(event) {
                 gerenciarEstadoBotoes(estado);
             }
         }
-// new
 
         if (payload.buscandoMesaData && payload.buscandoMesaData.length > 0) {
             const dados = payload.buscandoMesaData[0];
@@ -637,11 +633,9 @@ if (payload.melhoresData) {
 }
 
 
-
 // =========================================================
 // === 3. FUNÇÕES UI E MODAIS ===
 // =========================================================
-
 function customAlert(mensagem, titulo = "⚠️ Atenção", tempo = 0) {
     return new Promise((resolve) => {
         modalTitle.textContent = titulo;
@@ -678,7 +672,6 @@ function customAlert(mensagem, titulo = "⚠️ Atenção", tempo = 0) {
     });
 }
 
-
 function customConfirm(mensagem, titulo = "❓ Confirmação") {
     return new Promise((resolve) => {
         modalTitle.textContent = titulo;
@@ -703,16 +696,15 @@ function abrirCustomModal() {
     modalOverlay.classList.remove('hidden');
     setTimeout(() => { modalOverlay.classList.add('modal-show'); modalBox.classList.add('modal-box-show'); }, 10);
 }
+
 function fecharCustomModal() {
     modalOverlay.classList.remove('modal-show'); modalBox.classList.remove('modal-box-show');
     setTimeout(() => { modalOverlay.classList.add('hidden'); }, 200);
 }
 
-
 // =========================================================
 // === FUNÇÃO DE MENU LATERAL (ADICIONE NO ADMIN.JS) ===
 // =========================================================
-
 function toggleAdminMenu() {
     const menu = document.getElementById('admin-side-menu');
     const overlay = document.getElementById('admin-menu-overlay');
@@ -729,7 +721,6 @@ function toggleAdminMenu() {
         overlay.classList.add('hidden'); 
     }
 }
-
 
 function alternarTelaCheia() {
     const btnText = document.getElementById('btn-fullscreen-text');
@@ -771,7 +762,6 @@ async function abrirModalEventos() {
         container.innerHTML = `<div class="text-center text-red-400 p-4"><p>Erro ao carregar eventos</p><button onclick="abrirModalEventos()" class="mt-2 bg-gray-700 px-3 py-1 rounded text-xs">Tentar Novamente</button></div>`;
     }
 }
-
 
 function renderizarListaEventos(eventos) {
     const container = document.getElementById('lista-eventos-container');
@@ -894,7 +884,6 @@ async function salvarConfiguracoes() {
 // =========================================================
 // === 4. SORTEIO & HARDWARE ===
 // =========================================================
-
 function toggleAutoSorteio(forceStart = false) {
     const btn = document.getElementById('btn-auto-toggle');
     const inputTempo = document.getElementById('input-tempo-auto');
@@ -1051,7 +1040,6 @@ async function inserirBolaManual() {
     }
 }
 
-
 function aplicarVisibilidadeCamera(ativa) {
     const container = document.getElementById('camera-preview-container');
     if (ativa) container.classList.remove('hidden');
@@ -1118,7 +1106,6 @@ function aplicarVisualModoSorteio(modo) {
     else { cd.classList.remove('hidden'); cm.classList.add('hidden'); }
 }
 
-
 async function carregarEvento(idEvento) {
     const confirmou = await customConfirm(`Deseja INICIAR este evento?\n\nIsso irá preparar a base de cartelas e iniciar o timer.`);
     if(!confirmou) return;
@@ -1156,7 +1143,6 @@ async function carregarEvento(idEvento) {
     hideLoading();
     iniciarTimerEspera(idEvento);
 }
-
 
 function iniciarTimerEspera(idEvento) {
     const modal = document.getElementById('modal-timer-vendas');
@@ -1215,7 +1201,6 @@ async function pularEsperaVendas() {
         }
     }
 }
-
 
 async function executarCarregamentoReal(idEvento) {
     const menu = document.getElementById('admin-side-menu');
@@ -1306,7 +1291,6 @@ async function executarCarregamentoReal(idEvento) {
     }
 }
 
-
 async function definirProximoPremioAutomatico() {
     if (!dadosEventoAtual || !dadosEventoAtual.premios) return;
     const ordem = ['quadra', 'linha', 'falta_um', 'bingo', 'segundo_bingo'];
@@ -1343,7 +1327,6 @@ function initGrid() {
     if (contador) contador.textContent = `0 / ${MAX_BOLAS}`;
 }
 
-
 function updateGrid(bolas) {
     document.querySelectorAll('[id^="admin-ball-"]').forEach(el => {
         el.className = 'h-4 w-full flex items-center justify-center bg-gray-900/50 text-gray-700 rounded text-[11px] border border-gray-700';
@@ -1358,7 +1341,6 @@ function updateGrid(bolas) {
     renderHistorico(bolas);
 }
 
-
 function renderHistorico(bolas) {
     const c = document.getElementById('historico-bolas'); if(!c) return; c.innerHTML = '';
     if (bolas.length === 0) { c.innerHTML = '<span class="text-gray-600 text-xl italic p-2">Aguardando...</span>'; return; }
@@ -1369,7 +1351,6 @@ function renderHistorico(bolas) {
         c.appendChild(div);
     });
 }
-
 
 // --- FUNÇÃO DE SEGURANÇA DOS BOTÕES (ROBUSTA) ---
 function gerenciarEstadoBotoes(estadoRaw) {
@@ -1448,7 +1429,6 @@ function gerenciarEstadoBotoes(estadoRaw) {
         if (btnAutoLegado) btnAutoLegado.disabled = false;
     }
 }
-
 
 // --- FUNÇÃO ROTEADORA (DECIDE QUAL VISUAL USAR) ---
 function renderRanking(lista, tipo) {
@@ -1558,7 +1538,6 @@ function renderRanking75(lista, tipo) {
     });
 }
 
-
 function renderListaGanhadores(data) {
     const c = document.getElementById('lista-ganhadores');
     if(!c) return;
@@ -1590,11 +1569,9 @@ function renderListaGanhadores(data) {
     if(count) count.textContent = total;
 }
 
-
 // =========================================================
 // === 5. AUDITORIA & TROCA DE PRÊMIO (Manual e Auto) ===
 // =========================================================
-
 function abrirSessaoAuditoria(modoSilencioso = false) {
     const modal = document.getElementById('modal-conferencia');
     const input = document.getElementById('input-auditoria');
@@ -1696,7 +1673,6 @@ async function validarCartelaAuditoria() {
     }
 }
 
-
 async function confirmarGanhadorAtual() {
     houveGanhadorNaSessao = true; 
     const input = document.getElementById('input-auditoria');
@@ -1735,7 +1711,6 @@ async function confirmarGanhadorAtual() {
         input.focus();
     }
 }
-
 
 async function encerrarSessaoConferencia(modoSilencioso = false) {
     document.getElementById('modal-conferencia').classList.add('hidden');
@@ -1810,7 +1785,6 @@ async function processarProximoPremio() {
         }, 500);
     }
 }
-
 
 async function processarProximoPremio2() {
     let info = null;
@@ -1898,9 +1872,7 @@ async function mudarPremio(tipo) {
     }
 }
 
-
 // --- FUNÇÃO RESETAR CORRIGIDA (COM LOADING) ---
-
 async function resetarJogo(force = false) {
     if(!force && !(await customConfirm("TEM CERTEZA? Isso limpará a tela e encerrará o jogo atual."))) { 
         devolverFocoAoJogo(); return; 
@@ -2035,11 +2007,9 @@ async function resetarJogo2() {
     }
 }
 
-
 // =========================================================
 // === 6. INICIALIZAÇÃO ===
 // =========================================================
-
 document.addEventListener('DOMContentLoaded', () => {
     // 1. Config Local
     const savedMode = localStorage.getItem('admin_draw_mode');

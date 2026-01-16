@@ -1,4 +1,3 @@
-//Criar menu
 const urlParamsGlobal = new URLSearchParams(window.location.search);
 const currentSalaId = urlParamsGlobal.get('idsala') || 'padrao';
 //
@@ -62,7 +61,6 @@ let corNumerosBordaSorte = "border-gray-800";
 let corNumerosBordaNSorte = "border-gray-800"; 
 let corNumerosBordaDest = "border-2 border-yellow-600";
 //
-
 //Dark Faltantes
 let corFundoConteiner = "bg-gray-900/50"
 let corFundoTitulo = "bg-gray-800"
@@ -138,7 +136,6 @@ const btnEventsMenu = document.getElementById('menu-btn-eventos');
 const btnEventsMobile = document.getElementById('btn-proximos-eventos');
 
 // Timer promocionais
-
 let premioInfo = null;
 
 let tempoExibicaoGanhador = 20;
@@ -295,7 +292,6 @@ const releaseWakeLock = () => {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
     }
 };
-
 
 /**
  * Converte uma lista de números [1, 2, 3, 5, 6] em objetos de faixa
@@ -4468,8 +4464,6 @@ function controlarPainelMobileEntrada() {
         painelManual.classList.remove('hidden');
         painelBotoes.classList.add('hidden');
     }
-
-
 }
 
 // --- CONTROLE DE ABAS (NUMÉRICO / INFORMATIVO / ESTATÍSTICAS) ---
@@ -4660,8 +4654,6 @@ function abrirMenuCliente(idEventoEspecifico = null) {
 // FUNÇÕES AUXILIARES DE MODAL (Adicione ao final do arquivo)
 // =========================================================================
 
-
-// --- TOGGLE DO OLHO DA SENHA (CADASTRO) ---
 // Caso você tenha revertido o HTML, verifique se esta função ainda é necessária
 function toggleVisualizarSenha(inputId, btnElement) {
     const input = document.getElementById(inputId);
@@ -4853,7 +4845,6 @@ async function salvarNovoUsuario() {
 }
 
 
-
 // Função auxiliar para verificar se o usuário está logado
 function isUsuarioLogado() {
     // Se o ID tiver algum valor, retorna VERDADEIRO
@@ -4864,9 +4855,7 @@ function isUsuarioLogado() {
 }
 
 
-// =========================================================================
 // ABRIR CARTEIRA (CHAMA ATUALIZAÇÃO DO EXTRATO)
-// =========================================================================
 function abrirModalCarteira() {
    closeSideMenu(); // Fecha o menu lateral se estiver aberto
 
@@ -5068,9 +5057,7 @@ function calcularTotalCompra() {
     }
 }
 
-// =========================================================================
 // CONFIRMAR COMPRA (COM RECARREGAMENTO FORÇADO)
-// =========================================================================
 async function confirmarCompra() {
     let idEventoFinal = 0;
     
@@ -5194,9 +5181,7 @@ async function confirmarCompra() {
 }
 
 
-// =========================================================================
 // BUSCAR DADOS DO CLIENTE (SALDO E EXTRATO)
-// =========================================================================
 async function atualizarDadosCliente() {
     // Só roda se tiver algum indício de login
     if (typeof isUsuarioLogado === 'function' && !isUsuarioLogado()) return;
@@ -5319,7 +5304,7 @@ async function fazerLogout() {
     localStorage.removeItem('bingo_nick_v2');
     localStorage.removeItem('bingo_senha_v2');
     localStorage.removeItem('bingo_lembrar');
-    // ======================================
+    // =========
 
     // 1. Zera variáveis locais
     clienteLogado = false;
@@ -5348,7 +5333,6 @@ function toggleLoginPassword() {
 }
 
 // --- FUNÇÕES DE LOADING ---
-
 function showFullLoading(mensagem) {
     if (!loader) return;
     
@@ -5416,9 +5400,7 @@ function showCustomAlert(mensagem, titulo = "Aviso", icone = "ℹ️") {
     });
 }
 
-/**
- * Substituto bonito para o confirm()
- */
+// Substituto bonito para o confirm()
 function showCustomConfirm(mensagem, titulo = "Confirmação", icone = "❓") {
     return new Promise((resolve) => {
         // 1. BUSCA OS BOTÕES ATUAIS NO DOM
@@ -5504,9 +5486,7 @@ function toggleVisualizarSenha(inputId, btnElement) {
 }
 
 
-// =========================================================================
 // FUNÇÃO DE LOGIN ATUALIZADA (Copie e substitua no script.js)
-// =========================================================================
 async function fazerLogin() {
     const user = document.getElementById('login-user').value.trim();
     const pass = document.getElementById('login-pass').value.trim();
@@ -5594,9 +5574,7 @@ async function fazerLogin() {
     }
 }
 
-// =========================================================================
 // FUNÇÃO DE LOGIN (SEM ABRIR CARTEIRA AUTOMATICAMENTE)
-// =========================================================================
 async function realizarLogin() {
     const userInput = document.getElementById('login-user');
     const passInput = document.getElementById('login-pass');
@@ -5780,9 +5758,7 @@ async function realizarLoginOld() {
 }
 
 
-// =============================================================================
 // 4. ATUALIZAR SALDO NA TELA (Busca os IDs corretos do seu HTML)
-// =============================================================================
 function atualizarInterfaceAposLogin(dados) {
     const saldoVal = parseFloat(dados.saldo_atual || 0);
     const saldoTxt = `R$ ${saldoVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
@@ -5860,9 +5836,7 @@ async function atualizarPrecoDoEvento() {
     }
 }
 
-// =========================================================================
 // ABRIR MODAL COMPRA (CORRIGIDA: FECHA O MODAL DE EVENTOS ANTES)
-// =========================================================================
 async function abrirModalCompra(idEventoEspecifico = 0) {
     // 1. Verifica Login
     if (!isUsuarioLogado()) {
@@ -5966,8 +5940,6 @@ function obterIdEventoAlvo() {
 
 // Função para carregar dados salvos ao abrir a tela (Versão DEBUG)
 function verificarCredenciaisSalvas() {
-  
-
     // 1. Ler do Navegador
     const nickSalvo = localStorage.getItem('bingo_nick_v2'); 
     const senhaSalva = localStorage.getItem('bingo_senha_v2');
@@ -6003,7 +5975,6 @@ function verificarCredenciaisSalvas() {
     }
 }
 
-// Tenta rodar em dois momentos para garantir
 
 // --- AUTO-LOGIN NO CARREGAMENTO DA PÁGINA ---
 window.addEventListener('load', () => {
@@ -6032,8 +6003,7 @@ window.addEventListener('load', () => {
         realizarLogin();
 
     } else {
-        console.log("👤 [LOGIN] Aguardando digitação do usuário.");
-        
+        console.log("👤 [LOGIN] Aguardando digitação do usuário.");        
         // Abre o modal para ele digitar
         if (typeof abrirModal === 'function') {
             abrirModal('modal-login');
@@ -6044,4 +6014,3 @@ window.addEventListener('load', () => {
     }
 });
 
-// --- FIM DAS NOVAS FUNÇÕES ---
