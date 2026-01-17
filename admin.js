@@ -29,6 +29,8 @@ let localStream = null;
 let vendasTimerInterval = null;
 let MAX_BOLAS = 90;
 
+let jogoFoiFinalizadoComSucesso = false;
+
 let bolasProcessadasAdmin = new Set(); 
 let ultimaBolaExibidaAdmin = null;
 let estadoRodadaAtual = null;
@@ -233,6 +235,8 @@ async function decidirProximoPassoRobo() {
         toggleAutoSorteio(true);
     } else {
         console.log("🤖 Fim dos prêmios. Resetando...");
+        alternarBotaoReset('finalizar');
+        await new Promise(r => setTimeout(r, 3000));
         pararModoRobo(); 
         await resetarJogo(true); 
     }
@@ -306,6 +310,7 @@ function renderGridConferencia(data) {
     }
 
     const ultimaBola = bolas.length > 0 ? bolas[0] : null;
+
     console.error("ultimaBola               :",ultimaBola); 
     if (tipoJogo === 75 && numerosDaCartela.length === 25) { 
         grid.className = "grid grid-cols-5 gap-1 bg-black p-2 rounded border border-gray-600 w-full max-w-[300px] mx-auto";
@@ -316,10 +321,9 @@ function renderGridConferencia(data) {
                 const cell = document.createElement('div');
                 const isFree = (index === 12 && num === 0);
                 
-
                 let marcado = bolas.includes(String(num)) || isFree; 
                 
-                const isLast = (String(num) === String(ultimaBola));
+                const isLast = (Number(num) === Number(ultimaBola));  
                 let cssClass = "h-10 w-full flex items-center justify-center font-bold text-sm rounded border ";
                 
                 //if (isFree) {
@@ -1249,7 +1253,7 @@ async function executarCarregamentoReal(idEvento) {
         document.getElementById('info-data-hora').textContent = `${dados.data_evento} ${dados.hora_evento}`;
         document.getElementById('info-inicial').textContent = dados.numero_inicial;
         document.getElementById('info-qtde').textContent = dados.qtde_vendida;
-        document.getElementById('info-ultimo').textContent = dados.ultimo_cartao;
+        document.getElementById('info-ultimo').textContent = dados.ultimo_cartao-1;
         document.getElementById('info-preco-un').textContent = parseFloat(dados.valor_venda||0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
         document.getElementById('info-vendas').textContent = parseFloat(dados.total_vendas_reais||0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
 
@@ -1779,6 +1783,7 @@ async function processarProximoPremio() {
         }, 500);
     } else {
         setTimeout(async () => {
+            alternarBotaoReset('finalizar');
             if (await customConfirm(`⚠️ Fim da sequência de prêmios!\n\nEste foi o último prêmio ativo.\nDeseja FINALIZAR o evento agora?`)) {
                 resetarJogo();
             }
@@ -1786,65 +1791,6 @@ async function processarProximoPremio() {
     }
 }
 
-async function processarProximoPremio2() {
-    let info = null;
-    let dadosEvento = null;
-    try {
-        const resp = await fetch(`${API_BASE_URL}/api/initial-data`);
-        const dados = await resp.json();
-        info = dados.buscandoMesaData[0];
-        if (typeof dadosEventoAtual !== 'undefined' && dadosEventoAtual) dadosEvento = dadosEventoAtual;
-    } catch (e) { return; }
-
-    if (!info) return;
-
-    const qtdeLinhasEvento = parseInt(dadosEvento?.premios?.qtde_linhas || 0);
-
-    if (info.buscando_o_premio === 'LINHA' && qtdeLinhasEvento === 1) {
-        console.log("Sistema 1-Linha: Linha confirmada, forçando avanço para o próximo prêmio.");
-    } else {
-        if (info.buscando_o_premio === 'LINHA' && info.buscando_a_linha && info.buscando_a_linha.length > 0) {
-            return; 
-        }
-    }
-
-    const ordem = ['QUADRA', 'LINHA', 'FALTAUM', 'BINGO', 'DUPLO BINGO'];
-    let atualKey = info.buscando_o_premio;
-    if (atualKey === 'FALTA 1') atualKey = 'FALTAUM';
-    if (atualKey === '3 LINHAS') atualKey = 'LINHA';
-    
-    const indexAtual = ordem.indexOf(atualKey);
-    if (indexAtual === -1) return;
-
-    let proximoKey = null;
-    let dadosPremios = dadosEvento ? dadosEvento.premios : null;
-
-    if (dadosPremios) {
-        for (let i = indexAtual + 1; i < ordem.length; i++) {
-            const keyTeste = ordem[i];
-            let keyDados = keyTeste.toLowerCase();
-            if (keyTeste === 'FALTAUM') keyDados = 'falta_um';
-            if (keyTeste === 'DUPLO BINGO') keyDados = 'segundo_bingo';
-            
-            if (parseFloat(dadosPremios[keyDados] || 0) > 0) {
-                proximoKey = keyTeste;
-                break;
-            }
-        }
-    }
-
-    if (proximoKey) {
-        await customAlert(`Prêmio confirmado.\n\nAvançando prêmio para: ${proximoKey}`, 3); 
-        await mudarPremio(proximoKey);
-
-    } else {
-        setTimeout(async () => {
-            if (await customConfirm(`⚠️ Fim da sequência de prêmios!\n\nEste foi o último prêmio ativo.\nDeseja FINALIZAR o evento agora?`)) {
-                resetarJogo();
-            }
-        }, 500);
-    }
-}
 
 async function mudarPremio(tipo) {
     const elStatus = document.getElementById('status-premio');
@@ -1872,29 +1818,42 @@ async function mudarPremio(tipo) {
     }
 }
 
-// --- FUNÇÃO RESETAR CORRIGIDA (COM LOADING) ---
+// --- ATUALIZE A FUNÇÃO resetarJogo ---
 async function resetarJogo(force = false) {
-    if(!force && !(await customConfirm("TEM CERTEZA? Isso limpará a tela e encerrará o jogo atual."))) { 
+    let msgConfirmacao = "TEM CERTEZA? Isso limpará a tela e encerrará o jogo atual.";
+    
+    // Se o jogo foi finalizado com sucesso (botão verde), muda a mensagem
+    if (jogoFoiFinalizadoComSucesso) {
+        msgConfirmacao = "Deseja FINALIZAR este evento e carregar o PRÓXIMO da agenda?";
+    }
+
+    if(!force && !(await customConfirm(msgConfirmacao))) { 
         devolverFocoAoJogo(); return; 
     } 
     
-    showLoading("Resetando sistema e limpando dados...");
+    showLoading("Processando...");
 
     if (autoSorteioAtivo) pararAutoSorteio();
     if (modoRoboAtivo) pararModoRobo();
 
-    console.log("[DEBUG] Solicitando RESET...");
-
     try {
-        await fetch(`${API_BASE_URL}/api/admin/resetar`, { method: 'POST' });
+        // Envia o flag 'finalizar_sucesso' baseada na nossa variável
+        await fetch(`${API_BASE_URL}/api/admin/resetar`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ finalizar_sucesso: jogoFoiFinalizadoComSucesso }) 
+        });
         
+        // Reset local das variáveis
         bolasCacheLocal = new Set(); 
         bolasSorteadasCache = [];
         matrizEnvio = [];
-         
         idsConfirmadosNestaRodada = new Set();
         ultimoTotalBolasProcessadas = -1; 
         jaAlertouNestaBola = false;
+        
+        // Reseta o estado do botão para o próximo jogo
+        alternarBotaoReset('reiniciar'); 
 
         if(bolaDestaque) bolaDestaque.textContent = "--"; 
         initGrid();
@@ -1916,11 +1875,19 @@ async function resetarJogo(force = false) {
         await new Promise(r => setTimeout(r, 800));
 
         if (!force) {
-            abrirModalEventos();
+            // Se finalizou com sucesso, o backend já mudou a rodada.
+            // Podemos apenas alertar ou abrir o modal para conferir.
+            if (jogoFoiFinalizadoComSucesso) {
+                customAlert("Evento Finalizado! O sistema carregou o próximo evento no painel.");
+                // Opcional: abrirModalEventos(); se quiser conferir
+            } else {
+                abrirModalEventos();
+            }
         } else {
-            customAlert("Evento finalizado pelo Sorteio Automatizado.","Sorteio Automatizado", 3);
+            customAlert("Evento finalizado pelo Sorteio Automatizado.", "Sorteio Automatizado", 3);
             abrirModalEventos();
         }
+
     } catch (e) { 
         console.error("[DEBUG] Erro ao resetar:", e);
         customAlert("Erro ao resetar."); 
@@ -1929,83 +1896,27 @@ async function resetarJogo(force = false) {
     }
 }
 
-async function resetarJogo3(force = false) {
-    if(!force && !(await customConfirm("TEM CERTEZA? Isso limpará a tela e encerrará o jogo atual."))) { 
-        devolverFocoAoJogo(); return; 
-    } 
-    
-    showLoading("Resetando sistema e limpando dados...");
 
-    if (autoSorteioAtivo) pararAutoSorteio();
-    if (modoRoboAtivo) pararModoRobo();
+// --- ATUALIZE A FUNÇÃO alternarBotaoReset ---
+function alternarBotaoReset(modo) {
+    const btn = document.getElementById('resetar_Jogo');
+    if (!btn) return;
 
-    try {
-        await fetch(`${API_BASE_URL}/api/admin/resetar`, { method: 'POST' });
-        bolasCacheLocal = new Set(); 
-        bolasSorteadasCache = [];
-        matrizEnvio = []; 
-        idsConfirmadosNestaRodada = new Set() 
-        bolaDestaque.textContent = "--"; 
-        initGrid();
-        document.getElementById('status-premio').textContent = "Buscando: ...";
-        document.getElementById('contador-bolas').textContent = "0 / 90";
-        renderHistorico([]);
-        renderRanking([], "");
-        document.getElementById('painel-evento-ativo').classList.add('hidden');
-        
-        await new Promise(r => setTimeout(r, 800));
+    if (modo === 'finalizar') {
+        // Marca que completou
+        jogoFoiFinalizadoComSucesso = true; 
 
-        if (!force) {
-            abrirModalEventos();
-        } else {
-            await customAlert("Evento finalizado pelo Sorteio Automatizado.","Sorteio Automatizado",3);
-            abrirModalEventos();
-        }
-    } catch (e) { 
-        customAlert("Erro ao resetar."); 
-    } finally {
-        hideLoading();
+        btn.className = "bg-green-800 hover:bg-green-600 text-white px-4 py-1 rounded font-bold border border-green-500 text-sm flex items-center gap-1 transition-colors duration-300 shadow-lg animate-pulse";
+        btn.innerHTML = "✅ FINALIZAR SORTEIO";
+    } else {
+        // Reseta a variável
+        jogoFoiFinalizadoComSucesso = false; 
+
+        btn.className = "bg-red-900 hover:bg-red-700 text-white px-4 py-1 rounded font-bold border border-red-500 text-sm flex items-center gap-1 transition-colors duration-300";
+        btn.innerHTML = "⚠️ REINICIAR SORTEIO";
     }
 }
 
-async function resetarJogo2() {
-    const confirmou = await customConfirm(`Tem certeza que deseja RESETAR o jogo? Isso apagará tudo!`);    
-    if(!confirmou) return;
-
-    try {
-        const btn = document.getElementById('btn-resetar');
-        if(btn) btn.disabled = true;
-
-        const response = await fetch(`${API_BASE_URL}/api/admin/resetar`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        
-        const data = await response.json();
-        if (data.status) {
-            customAlert("Jogo Resetado com Sucesso!");
-            
-            bolasCacheLocal = new Set(); 
-            bolasSorteadasCache = [];
-            
-            matrizEnvio = []; 
-            
-            if(bolaDestaque) bolaDestaque.textContent = "--";
-            
-            renderListaGanhadores([]);
-            
-        } else {
-            customAlert("Erro ao resetar: " + (data.error || "Desconhecido"));
-        }
-
-    } catch (e) {
-        console.error(e);   
-        customAlert("Erro de conexão ao tentar resetar.");
-    } finally {
-        const btn = document.getElementById('btn-resetar');
-        if(btn) btn.disabled = false;
-    }
-}
 
 // =========================================================
 // === 6. INICIALIZAÇÃO ===

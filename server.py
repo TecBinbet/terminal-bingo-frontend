@@ -1030,6 +1030,116 @@ def recalcular_ranking_top10_75():
         traceback.print_exc()
 
 
+# --- FUNÇÃO AUXILIAR PARA ACHAR O PRÓXIMO EVENTO ---
+# --- FUNÇÃO AUXILIAR PARA ACHAR O PRÓXIMO EVENTO (CORRIGIDA) ---
+def buscar_proximo_evento_automatico(id_evento_atual):
+    """
+    Busca o próximo evento (ativo ou paralizado) baseado na data/hora
+    após o evento atual.
+    """
+    sales_db = get_sales_db_connection()
+    
+    # CORREÇÃO AQUI: Em vez de "if not sales_db:", usamos "is None"
+    if sales_db is None: 
+        return None
+    
+    try:
+        # 1. Pega data/hora do evento atual para referência
+        evento_atual = None
+        if id_evento_atual:
+            evento_atual = sales_db.eventos.find_one({
+                'id_evento': {'$in': [id_evento_atual, str(id_evento_atual), int(id_evento_atual)]}
+            })
+        
+        # Filtro base: Eventos ATIVOS ou PARALIZADOS
+        filtro = {'status': {'$in': ['ativo', 'paralizado', 'ATIVO', 'PARALIZADO']}}
+        
+        # Busca todos ordenados por data e hora
+        todos_eventos = list(sales_db.eventos.find(filtro).sort([('data_evento', 1), ('hora_evento', 1)]))
+        
+        if not todos_eventos: return None
+
+        # Se não temos evento atual, retorna o primeiro da fila
+        if not evento_atual:
+            return todos_eventos[0]
+
+        # Procura o índice do atual e pega o próximo
+        id_atual_str = str(evento_atual.get('id_evento'))
+        
+        for i, evt in enumerate(todos_eventos):
+            if str(evt.get('id_evento')) == id_atual_str:
+                # Achamos o atual! O próximo é i + 1
+                if i + 1 < len(todos_eventos):
+                    print(f"⏭️ Próximo evento encontrado: ID {todos_eventos[i+1].get('id_evento')}")
+                    return todos_eventos[i+1]
+                else:
+                    print("ℹ️ O evento atual é o último da fila.")
+                    return None
+        
+        # Se o evento atual não estava na lista (ex: já foi finalizado), retorna o primeiro da fila
+        print("ℹ️ Evento atual não está na fila (talvez já finalizado). Retornando o 1º disponível.")
+        return todos_eventos[0]
+
+    except Exception as e:
+        print(f"Erro ao buscar próximo evento: {e}")
+        return None
+
+
+# --- FUNÇÃO AUXILIAR PARA ACHAR O PRÓXIMO EVENTO (CORRIGIDA) xxx ---
+def buscar_proximo_evento_automatico(id_evento_atual):
+    """
+    Busca o próximo evento (ativo ou paralizado) baseado na data/hora
+    após o evento atual.
+    """
+    sales_db = get_sales_db_connection()
+    
+    # CORREÇÃO CRÍTICA AQUI: 
+    # O PyMongo proíbe usar "if not sales_db". Tem que ser "is None".
+    if sales_db is None: 
+        return None
+    
+    try:
+        # 1. Pega data/hora do evento atual para referência
+        evento_atual = None
+        if id_evento_atual:
+            evento_atual = sales_db.eventos.find_one({
+                'id_evento': {'$in': [id_evento_atual, str(id_evento_atual), int(id_evento_atual)]}
+            })
+        
+        # Filtro base: Eventos ATIVOS ou PARALIZADOS
+        filtro = {'status': {'$in': ['ativo', 'paralizado', 'ATIVO', 'PARALIZADO']}}
+        
+        # Busca todos ordenados por data e hora
+        todos_eventos = list(sales_db.eventos.find(filtro).sort([('data_evento', 1), ('hora_evento', 1)]))
+        
+        if not todos_eventos: return None
+
+        # Se não temos evento atual, retorna o primeiro da fila
+        if not evento_atual:
+            return todos_eventos[0]
+
+        # Procura o índice do atual e pega o próximo
+        id_atual_str = str(evento_atual.get('id_evento'))
+        
+        for i, evt in enumerate(todos_eventos):
+            if str(evt.get('id_evento')) == id_atual_str:
+                # Achamos o atual! O próximo é i + 1
+                if i + 1 < len(todos_eventos):
+                    print(f"⏭️ Próximo evento encontrado: ID {todos_eventos[i+1].get('id_evento')}")
+                    return todos_eventos[i+1]
+                else:
+                    print("ℹ️ O evento atual é o último da fila.")
+                    return None
+        
+        # Se o evento atual não estava na lista (ex: já foi finalizado), retorna o primeiro da fila
+        print("ℹ️ Evento atual não está na fila (talvez já finalizado). Retornando o 1º disponível.")
+        return todos_eventos[0]
+
+    except Exception as e:
+        print(f"Erro ao buscar próximo evento: {e}")
+        return None
+
+
 def verificar_e_sincronizar_cartelas(evento_num_max, evento_tipo_cartela):
     """
     Verifica se a tabela 'cartelas' está sincronizada com o evento.
@@ -1047,7 +1157,7 @@ def verificar_e_sincronizar_cartelas(evento_num_max, evento_tipo_cartela):
         
         # Pega os valores atuais do banco (convertendo para int para comparação segura)
         atual_arquivo = int(param.get('arquivo_de_cartela', 0))
-        atual_tipo = int(param.get('tipo_cartela', 0))
+        atual_tipo = int(param.get('tipo_sorteio', 0))
         
         # Valores alvo vindos do Evento
         alvo_max = int(evento_num_max)
@@ -1209,6 +1319,49 @@ def get_sales_db_connection():
     except Exception as e:
         print(f"❌ Erro fatal na conexão de vendas: {e}")
         return None
+
+
+@app.route('/api/verificar_status_evento', methods=['GET'])
+def verificar_status_evento():
+    try:
+        # Pega o ID que o Javascript mandou (ex: ?id_evento=17)
+        id_evento_str = request.args.get('id_evento')
+        
+        if not id_evento_str:
+            return jsonify({'erro': 'ID não informado'}), 400
+
+        # Tenta converter para o formato correto (Int ou ObjectId)
+        # Se seu banco usa números inteiros para eventos:
+        try:
+            id_busca = int(id_evento_str)
+        except:
+            id_busca = id_evento_str # Mantém string se falhar
+
+        evento = None
+        
+        # Busca no banco (ajuste 'db' ou 'sales_db' conforme onde fica sua tabela 'eventos')
+        if 'db' in globals() and db is not None:
+             # Tenta achar por ID numérico ou _id
+             evento = db.eventos.find_one({
+                 '$or': [
+                     {'id_evento': id_busca},
+                     {'numero': id_busca}, # Caso use esse nome
+                     {'_id': id_busca}     # Caso use ObjectId
+                 ]
+             })
+
+        if evento:
+            status_real = evento.get('status', 'indefinido')
+            return jsonify({
+                'id': id_evento_str,
+                'status': status_real  # ex: 'ativo', 'finalizado', 'agendado'
+            })
+        else:
+            return jsonify({'status': 'nao_encontrado'}), 404
+
+    except Exception as e:
+        print(f"Erro ao verificar status evento: {e}")
+        return jsonify({'status': 'erro'}), 500
 
 
 # --- ROTA: LISTAR PRÓXIMOS EVENTOS (FILTRADOS) ---
@@ -2359,30 +2512,39 @@ def admin_limpar_conferencia():
 # --- SUBSTITUA A FUNÇÃO admin_resetar POR ESTA VERSÃO CORRIGIDA ---
 @app.route('/api/admin/resetar', methods=['POST'])
 def admin_resetar():
-    
-    global db, timeStart # <--- IMPORTANTE: Chamar a global timeStart
+    global db, timeStart
     if db is None: return jsonify({'error': 'Sem conexão com DB'}), 500
+    
+    data = request.json or {}
+    finalizar_com_sucesso = data.get('finalizar_sucesso', False)
+
     try:
-        # --- 0. PREPARAÇÃO DE DADOS GERAIS ---
+        # --- 0. PREPARAÇÃO (Mantida) ---
         rodada_info = db.rodada.find_one({}) or {}
-        # Proteção contra ID Nulo
         raw_id = rodada_info.get('id_evento')
-        id_evento = int(raw_id) if raw_id else 0
-        # Dados das Bolas
+        id_evento = int(raw_id) if raw_id else 0 
+        
         dados_bolas = db.bolas_mesa.find_one({}) or {}
         bolas_lista = dados_bolas.get('bolas_cantadas', [])
         total_bolas = len(bolas_lista)
-        # Dados de Tempo
-        now = datetime.now()
+        
+        now = datetime.now(ZoneInfo('America/Sao_Paulo'))
         data_hoje = now.strftime("%d/%m/%Y")
         hora_atual = now.strftime("%H:%M")
-        # --- LÓGICA DA HORA INICIAL ---
-        # Se timeStart foi gravado (jogo começou), usa ele. Senão, usa hora atual.
-        if timeStart:
-            hora_inicial = timeStart.strftime("%H:%M")
-        else:
-            hora_inicial = hora_atual 
-        # ------------------------------
+        hora_inicial = timeStart.strftime("%H:%M") if timeStart else hora_atual
+
+        # --- 1. HISTÓRICO E GANHADORES (Mantido igual - Lógica de Rateio) ---
+        # (Estou resumindo aqui para não ficar gigante, mas MANTENHA O CÓDIGO 
+        #  de processamento de ganhadores e salvamento no Sales DB que já estava funcionando)
+        # ... [SEU CÓDIGO DE GANHADORES AQUI] ...
+        
+        # Só para garantir que o contexto do histórico seja salvo antes de limpar:
+        # Se você apagou sem querer ao copiar, pegue do código anterior a parte que grava em 'osganhadores' e 'resultados'.
+
+        # ==============================================================================
+        # === AQUI COMEÇA A CORREÇÃO DO "PULO DO GATO" ===
+        # ==============================================================================
+
         # --- 1. PROCESSAMENTO DOS GANHADORES (Igual ao anterior) ---
         
         ganhadores_ativos = list(db.ganhadores.find({}))
@@ -2498,24 +2660,81 @@ def admin_resetar():
                 print(f"⚠️ Erro não-fatal ao salvar Sales DB: {e_sales}")
         else:
             print(f"ℹ️ Histórico NÃO salvo (Bolas: {total_bolas}, Ganhadores: {len(lista_resultados_ganhadores)}).")
-        # --- 4. LIMPEZA (RESET) ---
-        timeStart = None # <--- RESETA A HORA INICIAL PARA O PRÓXIMO JOGO
+
+
+        # --- ETAPA A: LIMPEZA RADICAL (FORCE RESET) ---
+        timeStart = None 
         
-        db.bolas.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': [],'ordem':0}}, upsert=True)
+        # Limpa as coleções do jogo
+        db.bolas.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': [], 'ordem':0}}, upsert=True)
         db.bolas_mesa.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': []}}, upsert=True)
         db.ganhadores.delete_many({})
         db.melhores.delete_many({})
         db.confere.delete_many({})
-        db.confere.insert_one({
-            "rodada": int(id_evento),
-            "cartao": 0,
-            "numeros": "null",
-            "ganhador": "null"
+        db.confere.insert_one({"rodada": int(id_evento), "cartao": 0, "numeros": "null", "ganhador": "null"})
+
+        # --- ETAPA B: DEFINIR O PRÓXIMO EVENTO ---
+        proximo_id_str = "0"
+        
+        if finalizar_com_sucesso:
+            print(f"✅ Finalizando evento {id_evento} com sucesso. Buscando próximo...")
+            prox_evento = buscar_proximo_evento_automatico(id_evento)
+            
+            if prox_evento:
+                proximo_id_str = str(prox_evento.get('id_evento'))
+                desc_prox = prox_evento.get('descricao', 'Próximo Evento')
+                db.parametros.update_one({}, {'$set': {'nome_sala': desc_prox}}, upsert=True)
+                print(f"🔄 Configurando Rodada para Próximo Evento: {desc_prox} (ID: {proximo_id_str})")
+            else:
+                print("⚠️ Nenhum próximo evento encontrado.")
+                proximo_id_str = "0" 
+        else:
+            # Se for cancelamento, voltamos para o ID atual (para reiniciar)
+            proximo_id_str = str(id_evento)
+            print("⚠️ Reset manual. Mantendo ID atual.")
+
+        db.rodada.update_one({}, {
+            '$set': {
+                'id_evento': proximo_id_str,
+                'estado': 'intervalo',
+                'ordem': 0,
+                'data_sorteio': datetime.now(ZoneInfo('America/Sao_Paulo'))
+            }
+        }, upsert=True)
+
+        print("⏳ Aguardando sincronia dos terminais (5s)a...")
+        time.sleep(5.0) 
+
+        db.rodada.update_one({}, {
+            '$set': {
+                'id_evento': id_evento,  # força o id anterior
+                'estado': 'resetando', # Estado temporário
+                'ordem': 0,
+                'data_sorteio': datetime.now(ZoneInfo('America/Sao_Paulo'))
+            }
+        }, upsert=True)
+
+        print("⏳ Aguardando sincronia dos terminais (5s)b...")
+        time.sleep(3.0) 
+
+        db.rodada.update_one({}, {
+            '$set': {
+                'id_evento': proximo_id_str,
+                'estado': 'intervalo',
+                'ordem': 0,
+                'data_sorteio': datetime.now(ZoneInfo('America/Sao_Paulo'))
+            }
+        }, upsert=True)
+
+
+        return jsonify({
+            'status': 'Reset concluído com sucesso', 
+            'proximo_evento': proximo_id_str,
+            'modo': 'sucesso' if finalizar_com_sucesso else 'cancelamento'
         })
-        db.rodada.update_one({}, {'$set': {'estado': 'intervalo', 'ordem': 0}}, upsert=True)
-        return jsonify({'status': 'Reset concluído com sucesso'})
         
     except Exception as e:
+        import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
@@ -2807,7 +3026,7 @@ def admin_preparar_evento():
         
         if not evento: 
             return jsonify({'error': 'Evento não encontrado'}), 404
-
+       
         # 2. Extrai as configurações de cartela
         # Padrão: 72000 cartelas e Tipo 15 (Bingo 90) se não estiver definido
         num_max = evento.get('numero_maximo', 72000)
@@ -2842,6 +3061,7 @@ def admin_preparar_evento():
         if db is not None:
              db.parametros.update_one({}, {'$set': {
                 'tipo_sorteio': int(tipo_cartela),
+                'tipo_cartela': int(tipo_cartela),
                 'arquivo_de_cartela': int(num_max),
                 # Atualiza também o nome da sala se possível, para já mudar no header do cliente
                 'nome_sala': evento.get('descricao', 'Sorteio')
@@ -3288,13 +3508,11 @@ def nick_eh_valido(nick):
     if len(nick) < 3: return False, "Mínimo de 3 caracteres."
     if len(nick) > 15: return False, "Máximo de 15 caracteres."
 
-    # 2. Termos Reservados (Segurança Crítica)
-    # DICA: Mantenha estes no código. Se alguém apagar o banco por engano,
-    # o sistema ainda impede que criem um usuário "Admin".
+    # 2. Termos Reservados (Segurança Crítica Hardcoded)
     termos_reservados = [
         "admin", "suporte", "moderador", "sistema", "bot", 
         "root", "master", "bingo", "dono", "gerente", "financeiro",
-        "caixa", "atendimento", "operador","tecbin"
+        "caixa", "atendimento", "operador"
     ]
     
     for termo in termos_reservados:
@@ -3304,24 +3522,46 @@ def nick_eh_valido(nick):
     # 3. Carrega Lista de Bloqueio do Banco (Palavrões + Bloqueios de Negócio)
     lista_proibida_db = []
     
-    if 'db' in globals() and db is not None:
-        try:
-            config = db.config_bloqueio.find_one({'tipo': 'nicks_proibidos'})
-            if config and 'palavras' in config:
-                lista_proibida_db = config['palavras']
-        except Exception:
-            pass # Se o banco falhar, segue apenas com os reservados
+    try:
+        # CORREÇÃO AQUI: Usamos a função de conexão direta em vez de confiar no 'globals'
+        # Isso garante que temos uma conexão ativa com o banco correto
+        conexao_db = get_sales_db_connection()
+        
+        if conexao_db is not None:
+            # Busca na coleção 'config_bloqueio'
+            config = conexao_db.config_bloqueio.find_one({'tipo': 'nicks_proibidos'})
+            
+            if config:
+                if 'palavras' in config:
+                    lista_proibida_db = config['palavras']
+                    # print(f"✅ Lista carregada do Banco: {len(lista_proibida_db)} palavras.") # Debug
+                else:
+                    print("⚠️ Documento encontrado, mas campo 'palavras' vazio.")
+            else:
+                print("⚠️ Configuração 'nicks_proibidos' não encontrada no banco.")
+        else:
+            print("⚠️ Sem conexão com o banco para verificar palavrões.")
+
+    except Exception as e:
+        print(f"❌ Erro ao ler lista proibida: {e}")
+        # Não damos 'pass' silencioso, imprimimos o erro para você ver no terminal
 
     # 4. Configura a biblioteca e Valida
     # Junta os reservados (código) com os proibidos (banco)
     todas_proibidas = set(lista_proibida_db + termos_reservados)
     
+    # Se a lista do banco vier vazia, garante pelo menos o básico hardcoded
+    if not lista_proibida_db:
+        palavroes_basicos = ["puta", "merda", "cu", "caralho"] # Fallback de emergência
+        todas_proibidas.update(palavroes_basicos)
+
     profanity.load_censor_words(todas_proibidas)
 
     if profanity.contains_profanity(nick):
         return False, "Este nome contém termos não permitidos."
 
     return True, None
+
 
 # ==============================================================================
 #  ROTAS DE CADASTRO DE CLIENTE (AUTO-CADASTRO)

@@ -212,6 +212,8 @@ let tipoEntradaCartelas = 2; // Variável Global para controle de entrada
 
 let lastRodadaState = null;
 
+let lastStatusEvento = '';
+
 let ValorSerie = 0;
 
 // Variável global para armazenar o ID do temporizador.
@@ -702,9 +704,6 @@ function iniciarCompraCartelas(idEvento) {
         abrirMenuCliente(idEvento); 
         return;
     }
-
-    // 3. Abre o Modal "Minha Carteira"
-    //abrirMenuCliente(idEvento); // <<<<< aquix
 
     // 4. AUTOMATIZAÇÃO: Clica na aba "Comprar" automaticamente
     setTimeout(() => {
@@ -1259,6 +1258,9 @@ function checkDeviceType() {
 
 // Função para ativar o modo de tela cheia
 function goFullscreen() {
+ 
+    return;  /// xxxx
+
     const element = document.documentElement; // Seleciona o elemento <html> para a tela cheia
 
     if (element.requestFullscreen) {
@@ -1662,7 +1664,6 @@ function checkTotalCards(total) {
 async function fetchAndProcessCards() {
     if (isFetchingCards) return;
     isFetchingCards = true;
-
     // 1. Usa a variável global 'cartelaRanges' (que já está sendo preenchida corretamente)
     if (!cartelaRanges || cartelaRanges.length === 0) {
         //loadedCards = [];
@@ -1670,7 +1671,6 @@ async function fetchAndProcessCards() {
         isFetchingCards = false;
         return;
     }
-
     // Feedback visual (Loader)
     if (loader) loader.style.display = 'flex';
 
@@ -1681,11 +1681,9 @@ async function fetchAndProcessCards() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ranges: cartelaRanges })
         });
-
         if (!response.ok) {
             throw new Error(`Falha ao buscar cartelas: ${response.status}`);
         }
-
         const cards = await response.json();
 
         cachedRawCards = cards || [];
@@ -1703,7 +1701,6 @@ async function fetchAndProcessCards() {
             }
             return;
         }
-
         console.log(`✅ Recebidas ${cards.length} cartelas da API.`);
 
         // 4. Prepara os dados para o Processador
@@ -1741,6 +1738,7 @@ async function fetchAndProcessCards() {
         let linhas = buscando_a_linha || "";
 
         // 5. CHAMA O NOVO PROCESSADOR (Que decide entre 90 ou 75)
+
         processCards(cards, bolas, premio, linhas);
         
         // Limpa mensagens de erro
@@ -1934,7 +1932,6 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
 
     const premioUpper = (premioBuscado || "").toUpperCase();
     const bolasSet = new Set(bolasCantadas);
-
     // --- CONFIGURAÇÃO IDÊNTICA AO SERVER.PY ---
     // Índices do Array 0..24 (Colunas no Banco -> Linhas Visuais)
     const linhasIndices = [
@@ -1951,7 +1948,6 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
     // Se não for Bingo, verifica se é fase de Linha ou Cantos
     const buscarLinha = !buscarBingo && (premioUpper.includes('LINHA') || premioUpper.includes('4 CANTOS E LINHA'));
     const buscarCantos = !buscarBingo && (premioUpper.includes('CANTOS') || premioUpper.includes('QUADRA'));
- 
     cards.forEach(card => {
         let rawList = card.numeros || card.em_ordem || card.lista_75 || [];
         // Normaliza string para array se necessário
@@ -1967,7 +1963,6 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
         let melhorLinhaFaltam = 99;
         let numerosFaltantesLinha = [];
         let linhaCompleta = false;
-
         linhasIndices.forEach(indices => {
             // Pega os números desta linha específica
             const faltamNesta = indices
@@ -1994,7 +1989,6 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
         let missingToDisplay = [];
         let qtdeParaRanking = 99;
         let premioEncontrado = null;
-
         if (buscarBingo) {
             // Modo Bingo: Mostra tudo o que falta
             missingToDisplay = faltamGeral;
@@ -2896,18 +2890,20 @@ function ocultarConferencia() {
 // --- FUNÇÃO MOSTRAR GANHADORES (CORRIGIDA) ---
 function displayWinnersPanel(ganhadoresData) {
     // 1. Validação se há dados
+    
     if (!ganhadoresData || ganhadoresData.length === 0 || ultimaBolaCantada !== null) return;
-
+    
     // 2. Gera o Hash (Assinatura) dos dados atuais
     const currentHash = JSON.stringify(ganhadoresData);
 
     // 3. VERIFICAÇÃO CRÍTICA:
     // Se o Hash for igual ao último processado, PARA AQUI.
     // Isso impede que a tela pisque ou recarregue se os dados não mudaram.
+
     if (currentHash === lastGanhadoresHash) {
         return;
     }
-
+    console.error("mostra ganhadores")
     // 4. Se passou, atualiza o hash global para a próxima vez
     lastGanhadoresHash = currentHash;
 
@@ -3567,6 +3563,7 @@ async function renderMainContent(data) {
     } else if (rodadaState !== null) {
         lastRodadaState = rodadaState;
     }
+
     
     // =========================================================================
     // >>> PROTEÇÃO ANTI-PISCA NAS BOLAS (CORREÇÃO DO "FALTAM 15") <<<
@@ -3771,7 +3768,6 @@ async function renderMainContent(data) {
                 topeData[0].bola_tope_ac,        // Limite de bolas (ex: 40)
                 globalBolasCantadas             // Array das bolas que já saíram
         );
-
     }
 
     if (cartelaRanges && cartelaRanges.length > 0) {
@@ -4115,6 +4111,60 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     }   
+
+    // --- LÓGICA BLINDADA DO BOTÃO DE COMPRA MOBILE ---
+    const btnCompraMobile = document.getElementById('btn-comprar-cartelas-mobile');
+    
+    if (btnCompraMobile) {
+        // Transformamos a função em ASYNC para poder esperar o servidor responder
+        btnCompraMobile.onclick = async function(e) {
+            e.preventDefault(); 
+            
+            // 1. Pega o ID do evento que está carregado na tela agora
+            // (Se for nulo ou 0, assume que não tem evento carregado)
+            const idParaChecar = (typeof eventoCarregadoAtual !== 'undefined') ? eventoCarregadoAtual : 0;
+
+            console.log(`🔘 Verificando status do evento ID: ${idParaChecar}...`);
+
+            if (!idParaChecar) {
+                // Se não tem ID, abre a agenda direto
+                openEventsPanel();
+                return;
+            }
+
+            // 2. Feedback visual rápido (opcional, muda o cursor ou opacidade)
+            btnCompraMobile.style.opacity = "0.7";
+            btnCompraMobile.textContent = "⏳ ...";
+
+            try {
+                // 3. Pergunta ao servidor o status ATUAL
+                const response = await fetch(`${API_BASE_URL}/api/verificar_status_evento?id_evento=${idParaChecar}`);
+                const data = await response.json();
+                
+                const statusReal = (data.status || '').toLowerCase().trim();
+                console.log(`📡 Resposta do servidor: O evento ${idParaChecar} está '${statusReal}'`);
+
+                // 4. TOMADA DE DECISÃO
+                if (statusReal === 'ativo') {
+                    // Se está valendo -> Tela de Compra
+                    iniciarCompraCartelas(idParaChecar);
+                } else {
+                    // Se finalizou, agendado ou erro -> Agenda
+                    // (Você pode até mostrar um alerta se quiser: "Este evento já encerrou!")
+                    openEventsPanel();
+                }
+
+            } catch (err) {
+                console.error("Erro ao checar status:", err);
+                // Em caso de erro de rede, por segurança abre a Agenda
+                openEventsPanel();
+            } finally {
+                // 5. Restaura o botão
+                btnCompraMobile.style.opacity = "1";
+                btnCompraMobile.textContent = "🛒 Comprar"; // Ou o ícone que estava antes
+            }
+        };
+    }
 
     // Listeners do Painel de Próximos Eventos
     if (btnEventsMenu) {
