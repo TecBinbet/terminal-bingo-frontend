@@ -1259,8 +1259,6 @@ function checkDeviceType() {
 // Função para ativar o modo de tela cheia
 function goFullscreen() {
  
-    return;  /// xxxx
-
     const element = document.documentElement; // Seleciona o elemento <html> para a tela cheia
 
     if (element.requestFullscreen) {
