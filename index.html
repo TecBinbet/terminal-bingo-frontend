@@ -60,17 +60,35 @@
         </div>
     </header>
 
-    <section id="digital-bola-panel" class="w-full bg-gray-900 mb-1 p-1 rounded-lg shadow-xl h-[133px] hidden flex items-center justify-center">
-        <div id="bola-container" class="w-full h-full flex items-center justify-center">        
+<section id="digital-bola-panel" class="w-full bg-gray-900 mb-1 p-1 rounded-lg shadow-xl h-[133px] hidden flex flex-row overflow-hidden border border-gray-700">
+    
+    <div class="w-[35%] flex items-center justify-center bg-gray-800 border-r border-gray-700 relative">
+        <div id="bola-container" class="flex items-center justify-center">         
             <div id="bola-digital" 
                  class="flex items-center justify-center 
-                    text-white font-black text-6xl 
-                    bg-gray-700 border-4 border-white
-                    rounded-full transition-all duration-300"
-                 style="width: 110px; height: 110px;">
+                    text-white font-black text-5xl md:text-6xl
+                    bg-gray-700 border-4 border-white shadow-lg
+                    rounded-full transition-all duration-300
+                    h-24 w-24 md:h-28 md:w-28"> --
             </div>
         </div>
-    </section>
+    </div>
+
+    <div class="w-[65%] relative bg-black flex items-center justify-center">
+        
+        <img id="img-premio-painel" 
+             src="/static/img/premios/premio_padrao.webp" 
+             alt="Prêmio da Rodada" 
+             class="h-full w-full object-contain p-1 opacity-90 hover:opacity-100 transition-opacity">
+             
+        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1 px-2">
+            <p id="texto-premio-painel" class="text-white text-xs font-bold text-center truncate">
+                VALENDO CARRO 0KM
+            </p>
+        </div>
+    </div>
+
+</section>
 
     <div id="video-container" class="hidden mt-0 mb-1 w-full h-[200px] bg-gray-900 rounded-lg shadow-xl overflow-hidden">
         <iframe id="youtube-iframe" width="100%" height="100%"

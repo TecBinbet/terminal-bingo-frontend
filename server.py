@@ -1357,7 +1357,9 @@ def verificar_status_evento():
             status_real = evento.get('status', 'indefinido')
             return jsonify({
                 'id': id_evento_str,
-                'status': status_real  # ex: 'ativo', 'finalizado', 'agendado'
+                'status': status_real,  # ex: 'ativo', 'finalizado', 'agendado'
+                'imagem_premio': evento.get('imagem_premio', ''),       # Nome do arquivo (ex: carro.webp)
+                'premio_atual': evento.get('premio_atual', 'BINGO')
             })
         else:
             return jsonify({'status': 'nao_encontrado'}), 404

@@ -3562,6 +3562,16 @@ async function renderMainContent(data) {
         lastRodadaState = rodadaState;
     }
 
+
+    // 1. Pega os dados que vieram do Python
+    const imagemDoBanco = data.imagem_premio || ''; 
+    const nomeDoPremio = data.premio_atual || 'PRÊMIO ESPECIAL';
+
+    // 2. Chama a função que troca a foto no painel
+    // (Certifique-se de ter colado a função 'atualizarImagemPremio' no arquivo antes)
+    if (typeof atualizarImagemPremio === 'function') {
+        atualizarImagemPremio(imagemDoBanco, nomeDoPremio);
+    }
     
     // =========================================================================
     // >>> PROTEÇÃO ANTI-PISCA NAS BOLAS (CORREÇÃO DO "FALTAM 15") <<<
@@ -5055,43 +5065,6 @@ async function confirmarSaque() {
     }
 }
 
-// --- FUNÇÃO 4: Enviar Pedido ao Servidor ---
-async function confirmarSaque2() {
-    const input = document.getElementById('valor-saque');
-    const valor = parseFloat(input.value);
-
-    if (!valor || valor <= 0) {
-        showCustomAlert("Digite um valor válido para saque.", "Atenção", "⚠️");
-        return;
-    }
-
-    showFullLoading("Processando solicitação...");
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/solicitar_saque`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ valor: valor })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.status === 'ok') {
-            showCustomAlert("Sua solicitação foi enviada para análise!", "Sucesso", "✅");
-            input.value = ""; // Limpa campo
-            fecharModal('modal-carteira');
-        } else {
-            showCustomAlert(data.erro || "Erro ao solicitar saque.", "Erro", "❌");
-        }
-
-    } catch (e) {
-        console.error(e);
-        showCustomAlert("Erro de conexão.", "Falha", "❌");
-    } finally {
-        hideFullLoading();
-    }
-}
-
 
 function selecionarQtd(n) {
     const input = document.getElementById('qtd-manual'); // Seu código usava 'input-qtd'
@@ -5726,92 +5699,6 @@ async function realizarLogin() {
 }
 
 
-async function realizarLoginOld() {
-    const userInput = document.getElementById('login-user');
-    const passInput = document.getElementById('login-pass');
-    
-    if (!userInput || !passInput) return;
-
-    const usuario = userInput.value.trim();
-    const senha = passInput.value.trim();
-
-    if (!usuario || !senha) {
-        if (typeof showCustomAlert === 'function') showCustomAlert("Preencha usuário e senha.", "Atenção", "⚠️");
-        else alert("Preencha usuário e senha.");
-        return;
-    }
-
-    if (typeof showFullLoading === 'function') showFullLoading("Autenticando...");
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/login_cliente`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include', 
-            body: JSON.stringify({ usuario, senha })
-        });
-
-        const data = await response.json();
-
-        // Debug para garantir
-        //console.log("Login Resposta:", data);
-
-        if (response.ok && data.status === 'ok') {
-            
-            // 1. GRAVA DADOS
-            const idSeguro = data.id_cliente || data.id || data._id || data.userId;
-            
-            // Atualiza variáveis novas e antigas
-            clienteLogado = true;              
-            clienteLogadoId = idSeguro;        
-            globalIdCliente = idSeguro;        
-            globalUserSaldo = parseFloat(data.saldo_atual || data.saldo || 0);
-
-            // 2. ATUALIZA O VISUAL (Nome e Saldo na barra)
-            if (typeof atualizarInterfaceAposLogin === 'function') {
-                atualizarInterfaceAposLogin(data);
-            }
-            
-            // 3. RECUPERA DADOS EXTRAS (Silenciosamente)
-            if (typeof carregarMinhasCartelas === 'function') carregarMinhasCartelas();
-            
-            // 4. FECHA O MODAL DE LOGIN
-            if (typeof fecharModal === 'function') {
-                fecharModal('modal-login');
-            } else {
-                const modal = document.getElementById('modal-login');
-                if (modal) modal.classList.add('hidden');
-            }
-
-            // === AQUI ESTÁ A MUDANÇA ===
-            // Comentei/Removi a chamada de abrirMenuCliente() pois ela provavelmente 
-            // é quem estava abrindo a carteira ou mudando a tela.
-            // if (typeof abrirMenuCliente === 'function') abrirMenuCliente(); 
-            
-            // Garante que a carteira esteja fechada
-            if (typeof fecharModal === 'function') fecharModal('modal-carteira');
-
-            // Limpa campos
-            userInput.value = '';
-            passInput.value = '';
-
-            // Mensagem discreta
-            if (typeof showCustomAlert === 'function') {
-                showCustomAlert(`Bem-vindo de volta, ${data.nick || usuario}!`, "Login Sucesso", "✅");
-            }
-
-        } else {
-            if (typeof showCustomAlert === 'function') showCustomAlert(data.erro || "Dados incorretos.", "Erro", "❌");
-            else alert(data.erro || "Dados incorretos.");
-        }
-    } catch (error) {
-        console.error("Erro no login:", error);
-        if (typeof showCustomAlert === 'function') showCustomAlert("Erro de conexão.", "Falha", "🌐");
-    } finally {
-        if (typeof hideFullLoading === 'function') hideFullLoading();
-    }
-}
-
 
 // 4. ATUALIZAR SALDO NA TELA (Busca os IDs corretos do seu HTML)
 function atualizarInterfaceAposLogin(dados) {
@@ -6184,4 +6071,29 @@ function criarCardHistorico(evento) {
             </div>
         </div>
     `;
+}
+
+// Função para atualizar a imagem do prêmio no painel da bola
+function atualizarImagemPremio(nomeArquivo, descricaoPremio) {
+    const imgElement = document.getElementById('img-premio-painel');
+    const textoElement = document.getElementById('texto-premio-painel');
+    
+    // Caminho base onde você salvou as fotos no passo 1
+    const caminhoBase = '/img/premios/';
+    
+    // 1. Atualiza a imagem
+    if (imgElement) {
+        if (nomeArquivo && nomeArquivo.trim() !== '') {
+            // Se veio nome do banco (ex: "fiat_toro.webp")
+            imgElement.src = caminhoBase + nomeArquivo;
+        } else {
+            // Imagem padrão se o banco estiver vazio
+            imgElement.src = caminhoBase + 'premio_padrao.webp'; 
+        }
+    }
+
+    // 2. Atualiza o texto (Ex: "VALENDO MOTO")
+    if (textoElement) {
+        textoElement.textContent = descricaoPremio || "PRÊMIO ESPECIAL";
+    }
 }
