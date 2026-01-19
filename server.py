@@ -26,6 +26,11 @@ from pymongo import ReturnDocument # Certifique-se de importar isso no topo do a
 
 app = Flask(__name__, static_folder='.')
 
+@app.route('/img/<path:filename>')
+def serve_img(filename):
+    # O parametro 'img' é o nome da PASTA física no seu computador
+    return send_from_directory('img', filename)
+
 app.secret_key = 'sua_chave_secreta_aqui' # Configure uma chave forte
 
 # --- CONFIGURAÇÃO DE SESSÃO PARA IP LOCAL/MOBILE ---
@@ -1032,8 +1037,6 @@ def recalcular_ranking_top10_75():
         import traceback
         traceback.print_exc()
 
-
-# --- FUNÇÃO AUXILIAR PARA ACHAR O PRÓXIMO EVENTO ---
 # --- FUNÇÃO AUXILIAR PARA ACHAR O PRÓXIMO EVENTO (CORRIGIDA) ---
 def buscar_proximo_evento_automatico(id_evento_atual):
     """
@@ -1088,7 +1091,7 @@ def buscar_proximo_evento_automatico(id_evento_atual):
         return None
 
 
-# --- FUNÇÃO AUXILIAR PARA ACHAR O PRÓXIMO EVENTO (CORRIGIDA) xxx ---
+# --- FUNÇÃO AUXILIAR PARA ACHAR O PRÓXIMO EVENTO (CORRIGIDA)  ---
 def buscar_proximo_evento_automatico(id_evento_atual):
     """
     Busca o próximo evento (ativo ou paralizado) baseado na data/hora
@@ -1323,50 +1326,48 @@ def get_sales_db_connection():
         print(f"❌ Erro fatal na conexão de vendas: {e}")
         return None
 
-
+# xxxx
 @app.route('/api/verificar_status_evento', methods=['GET'])
 def verificar_status_evento():
     try:
-        # Pega o ID que o Javascript mandou (ex: ?id_evento=17)
+        # 1. Pega e Valida o ID
         id_evento_str = request.args.get('id_evento')
-        
         if not id_evento_str:
             return jsonify({'erro': 'ID não informado'}), 400
 
-        # Tenta converter para o formato correto (Int ou ObjectId)
-        # Se seu banco usa números inteiros para eventos:
-        try:
-            id_busca = int(id_evento_str)
-        except:
-            id_busca = id_evento_str # Mantém string se falhar
+        id_evento = int(id_evento_str)
 
-        evento = None
+        # 2. Conecta no Banco (Usando sua função robusta)
+        sales_db = get_sales_db_connection()
         
-        # Busca no banco (ajuste 'db' ou 'sales_db' conforme onde fica sua tabela 'eventos')
-        if 'db' in globals() and db is not None:
-             # Tenta achar por ID numérico ou _id
-             evento = db.eventos.find_one({
-                 '$or': [
-                     {'id_evento': id_busca},
-                     {'numero': id_busca}, # Caso use esse nome
-                     {'_id': id_busca}     # Caso use ObjectId
-                 ]
-             })
+        if sales_db is None:
+            print("❌ Erro: A função get_sales_db_connection falhou.")
+            return jsonify({'erro': 'Falha na conexão com vendas'}), 500
 
+        # 3. Busca o Evento
+        # Tenta buscar pelo ID numérico
+        print(f"🔎 Buscando Evento {id_evento} no banco '{sales_db.name}'...")
+        evento = sales_db.eventos.find_one({'id_evento': id_evento})
+
+        # 4. Retorna o Resultado
         if evento:
-            status_real = evento.get('status', 'indefinido')
+            print(f"✅ SUCESSO! Foto encontrada: {evento.get('imagem_premio')}")
             return jsonify({
-                'id': id_evento_str,
-                'status': status_real,  # ex: 'ativo', 'finalizado', 'agendado'
-                'imagem_premio': evento.get('imagem_premio', ''),       # Nome do arquivo (ex: carro.webp)
+                'id': str(id_evento),
+                'status': evento.get('status', 'indefinido'),
+                'imagem_premio': evento.get('imagem_premio', ''),
                 'premio_atual': evento.get('premio_atual', 'BINGO')
             })
         else:
+            print(f"❌ Evento {id_evento} não encontrado em '{sales_db.name}'.")
             return jsonify({'status': 'nao_encontrado'}), 404
 
+    except ValueError:
+        return jsonify({'erro': 'ID deve ser número'}), 400
     except Exception as e:
-        print(f"Erro ao verificar status evento: {e}")
+        print(f"Erro no servidor: {e}")
         return jsonify({'status': 'erro'}), 500
+
 
 
 # --- ROTA: LISTAR PRÓXIMOS EVENTOS (FILTRADOS) ---
@@ -3141,7 +3142,7 @@ def get_dados_evento():
         if not id_evento_str:
             return jsonify({'erro': 'ID do evento não informado'}), 400
 
-        id_evento = int(id_evento_str)
+        id_evento = int(id_evento_str)  // xxx
         
         # Conecta no banco (ajuste conforme sua estrutura de conexão)
         # Se você usa 'sales_db' ou 'mongo.db', ajuste aqui:

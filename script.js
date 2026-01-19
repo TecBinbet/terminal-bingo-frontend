@@ -84,6 +84,10 @@ var globalPrecoCartela = 0;
 
 let eventoSelecionadoParaCompra = 0;
 
+let cacheIdEvento = null; // Para saber se o evento mudou
+let cacheImagem = '';     // A foto do carro
+let cacheTexto = '';      // O texto "Valendo Moto"
+
 let lastPrizeJson = "";
 let lastBuscandoJson = "";
 
@@ -2118,7 +2122,6 @@ function _recalculateAndDisplayCards(bolasCantadas, premioBuscado, linhasAtivas)
             
             if (normalizedPremioBuscado.includes('QUADRA') && count === 4) {
                 premioEncontrado = 'Q U A D R A';
-                console.error("quadra02    :");
                 showPremiadoGif('quadra');
                 playPremiadoSound(quadraSound);                
             } else if (normalizedPremioBuscado.includes('LINHA') && count === 5) {
@@ -2362,7 +2365,27 @@ function clearPanels() {
     loadedCards = [];
     displayLoadedCards([]);
     isFetchingCards = false;
-   
+
+    const tipoSorteio = (typeof globalParametros !== 'undefined' && globalParametros.tipo_sorteio) 
+                        ? globalParametros.tipo_sorteio 
+                        : 'automatico'; // assume automático se não achar
+ 
+    // Lógica: Se NÃO for manual, volta para a imagem padrão
+    if (tipoSorteio !== 'manual') {
+        const imgPainel = document.getElementById('img-premio-painel');
+        const txtPainel = document.getElementById('texto-premio-painel');
+
+        if (imgPainel) {
+            // Caminho da sua imagem padrão (aquela que você definiu no HTML)
+            imgPainel.src = "/img/premios/premio_padrao.webp";
+        }
+
+        if (txtPainel) {
+            // Opcional: Limpa o texto ou coloca uma mensagem de espera
+            txtPainel.innerText = ""; 
+        }
+    }
+  
     bingoWinners.clear();
     ultimaBolaCantada = null;
     buscando_o_premio = '';
@@ -2901,7 +2924,6 @@ function displayWinnersPanel(ganhadoresData) {
     if (currentHash === lastGanhadoresHash) {
         return;
     }
-    console.error("mostra ganhadores")
     // 4. Se passou, atualiza o hash global para a próxima vez
     lastGanhadoresHash = currentHash;
 
@@ -3019,7 +3041,6 @@ async function fetchDataFromCollections() {
                 return null; // Retorna nulo para não atualizar a tela
             }
         }
-        // --- FIM DA BLINDAGEM ---
 
         return data;
 
@@ -3563,14 +3584,11 @@ async function renderMainContent(data) {
     }
 
 
-    // 1. Pega os dados que vieram do Python
-    const imagemDoBanco = data.imagem_premio || ''; 
-    const nomeDoPremio = data.premio_atual || 'PRÊMIO ESPECIAL';
+    const imgFinal = data.imagem_premio || cacheImagem || '';
+    const txtFinal = data.premio_atual || cacheTexto || 'PRÊMIO DA RODADA';
 
-    // 2. Chama a função que troca a foto no painel
-    // (Certifique-se de ter colado a função 'atualizarImagemPremio' no arquivo antes)
     if (typeof atualizarImagemPremio === 'function') {
-        atualizarImagemPremio(imagemDoBanco, nomeDoPremio);
+        atualizarImagemPremio(imgFinal, txtFinal);
     }
     
     // =========================================================================
@@ -4085,6 +4103,29 @@ ws.onmessage = (event) => {
         const mainData = payload.data; 
 
         if (payload.type === 'UPDATE') {
+
+            // --- BUSCA INTELIGENTE DO ID DO EVENTO ---
+            let idSocket = null;
+
+            // 1. Prioridade: Tenta pegar dentro de rodadaData (conforme seu log)
+            // Verifica se existe o array e se tem pelo menos 1 item
+            if (payload.rodadaData && payload.rodadaData.length > 0) {
+                idSocket = payload.rodadaData[0].id_evento;
+            }
+
+            // 2. Plano B: Se falhar, tenta nos parametros (fallback)
+            if (!idSocket) {
+                const params = payload.parametros || payload.parametrosInfo || {};
+                idSocket = payload.id_evento || params.id_evento;
+            }
+
+            // Se achou um ID válido, busca a foto!
+            if (idSocket) {
+                //console.log("🆔 ID encontrado no Socket:", idSocket); // Pode descomentar para testar
+                buscarImagemDoPremio(idSocket);
+            }
+            // -----------------------------------------
+
             // Se o payload for 'UPDATE', renderiza o conteúdo principal
             renderMainContent(payload); 
             
@@ -6080,7 +6121,7 @@ function atualizarImagemPremio(nomeArquivo, descricaoPremio) {
     
     // Caminho base onde você salvou as fotos no passo 1
     const caminhoBase = '/img/premios/';
-    
+
     // 1. Atualiza a imagem
     if (imgElement) {
         if (nomeArquivo && nomeArquivo.trim() !== '') {
@@ -6095,5 +6136,38 @@ function atualizarImagemPremio(nomeArquivo, descricaoPremio) {
     // 2. Atualiza o texto (Ex: "VALENDO MOTO")
     if (textoElement) {
         textoElement.textContent = descricaoPremio || "PRÊMIO ESPECIAL";
+    }
+}
+
+// Função auxiliar para buscar a imagem no banco de vendas
+async function buscarImagemDoPremio(idEvento) {
+
+    if (!idEvento) return;
+
+    // Se já buscamos esse evento antes e temos a imagem, não precisa buscar de novo (economiza rede)
+    if (cacheIdEvento === idEvento && cacheImagem !== '') {
+        return; 
+    }
+
+    try {
+        console.log(`🔍 Buscando foto do prêmio para o evento ${idEvento}...`);
+        
+        // Chama a API que tem os dados corretos (Vendas)
+        const response = await fetch(`${API_BASE_URL}/api/verificar_status_evento?id_evento=${idEvento}`);
+        const data = await response.json();
+
+        if (data && data.imagem_premio) {
+            // SALVA NA MEMÓRIA GLOBAL
+            cacheIdEvento = idEvento;
+            cacheImagem = data.imagem_premio;
+            cacheTexto = data.premio_atual;
+            
+            console.log("✅ Imagem encontrada:", cacheImagem);
+            
+            // Força uma atualização visual imediata
+            atualizarImagemPremio(cacheImagem, cacheTexto);
+        }
+    } catch (error) {
+        console.error("Erro ao buscar imagem do prêmio:", error);
     }
 }
