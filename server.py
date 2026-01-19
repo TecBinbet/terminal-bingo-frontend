@@ -901,7 +901,10 @@ def recalcular_ranking_top10_75():
             buscar_cantos_agora = True
             novo_nome_premio = '4 CANTOS E LINHA'
 
-        # --- ATUALIZA O NOME DO PRÊMIO ---
+        # --- ATUALIZA O NOME DO PRÊMIO ---xxx
+        print(f"novo_nome_premio                                              > {novo_nome_premio}")
+        print(f"dados_premio.get('buscando_o_premio')          > {dados_premio.get('buscando_o_premio')}")
+
         if novo_nome_premio != dados_premio.get('buscando_o_premio'):
              db.buscando.update_one({}, {'$set': {'buscando_o_premio': novo_nome_premio}}, upsert=True)
              db.buscando_mesa.update_one({}, {'$set': {'buscando_o_premio': novo_nome_premio}}, upsert=True)
@@ -2421,7 +2424,7 @@ def admin_validar_cartela():
                             print(f"❌ Erro thread pagto: {e}")
 
                     threading.Thread(target=processar_pagamento_bg, 
-                                   args=(int(id_evento_ativo), cartela_id, raw_val, f"Prêmio {premio_registro} - Ev. {id_evento_ativo}")).star
+                                   args=(int(id_evento_ativo), cartela_id, raw_val, f"Prêmio {premio_registro} - Ev. {id_evento_ativo}")).start()   # aquixxx
 
         return jsonify({
             'status_code': status_code,
@@ -2512,6 +2515,230 @@ def admin_limpar_conferencia():
 # --- SUBSTITUA A FUNÇÃO admin_resetar POR ESTA VERSÃO CORRIGIDA ---
 @app.route('/api/admin/resetar', methods=['POST'])
 def admin_resetar():
+    global db, timeStart
+    if db is None: return jsonify({'error': 'Sem conexão com DB'}), 500
+    
+    data = request.json or {}
+    finalizar_com_sucesso = data.get('finalizar_sucesso', False)
+
+    try:
+        # --- 0. PREPARAÇÃO (Mantida) ---
+        rodada_info = db.rodada.find_one({}) or {}
+        raw_id = rodada_info.get('id_evento')
+        id_evento = int(raw_id) if raw_id else 0 
+
+        descricao = f"Evento {id_evento}" # Valor padrão caso falhe
+        try:
+        # Conecta no banco de vendas para pegar o nome original (ex: "Notebook...")
+            s_db = get_sales_db_connection()
+            if s_db:
+                # Busca o evento (tenta como número ou string para garantir)
+                evt_original = s_db.eventos.find_one({
+                    'id_evento': {'$in': [id_evento, str(id_evento)]}
+                })
+                
+                if evt_original:
+                    descricao = evt_original.get('descricao', descricao)
+                else:
+                    # Fallback: Se não achar no vendas, tenta o nome da sala local
+                    p_local = db.parametros.find_one({}) or {}
+                    descricao = p_local.get('nome_sala', descricao)
+
+        except Exception as e_desc:
+            print(f"⚠️ Erro ao buscar descrição original: {e_desc}")
+            # Fallback em caso de erro de conexão
+            p_local = db.parametros.find_one({}) or {}
+            descricao = p_local.get('nome_sala', descricao)
+        # ======================================================================
+
+        dados_bolas = db.bolas_mesa.find_one({}) or {}
+        bolas_lista = dados_bolas.get('bolas_cantadas', [])
+        total_bolas = len(bolas_lista)
+        
+        now = datetime.now(ZoneInfo('America/Sao_Paulo'))
+        data_hoje = now.strftime("%d/%m/%Y")
+        hora_atual = now.strftime("%H:%M")
+        hora_inicial = timeStart.strftime("%H:%M") if timeStart else hora_atual
+
+        # --- 1. PROCESSAMENTO DOS GANHADORES (CORRIGIDO) ---
+        ganhadores_ativos = list(db.ganhadores.find({}))
+        tabela_premios = db.premio.find_one({}) or {}
+        
+        lista_osganhadores = []      
+        lista_resultados_ganhadores = [] 
+
+        if ganhadores_ativos:
+            grupos_rateio = {}
+            for g in ganhadores_ativos:
+                raw_premio = g.get('premio', '').upper()
+                
+                # --- AGRUPAMENTO INTELIGENTE ---
+                # Aqui está o segredo: Criamos chaves diferentes para cada linha
+                if 'LINHA' in raw_premio:
+                    if 'SUP' in raw_premio or 'SUPERIOR' in raw_premio:
+                        chave_base = "LINHA SUPERIOR"
+                    elif 'CEN' in raw_premio or 'CENTRAL' in raw_premio:
+                        chave_base = "LINHA CENTRAL"
+                    elif 'INF' in raw_premio or 'INFERIOR' in raw_premio:
+                        chave_base = "LINHA INFERIOR"
+                    else:
+                        chave_base = "LINHA" # Caso genérico (jogo de 1 linha só)
+                        
+                elif 'DUPLO' in raw_premio or 'SEGUNDO' in raw_premio: chave_base = "DUPLO BINGO"
+                elif 'BINGO' in raw_premio: chave_base = "BINGO"
+                elif 'QUADRA' in raw_premio: chave_base = "QUADRA"
+                elif 'FALTA' in raw_premio: chave_base = "FALTA UM"
+                elif 'ACUMULADO' in raw_premio: chave_base = "ACUMULADO"
+                else: chave_base = raw_premio # Fallback
+
+                if chave_base not in grupos_rateio: grupos_rateio[chave_base] = []
+                grupos_rateio[chave_base].append(g)
+
+            # Calcula Rateios
+            for chave, lista_vencedores in grupos_rateio.items():
+                qtde_ganhadores = len(lista_vencedores)
+                val_total_float = 0.0
+                
+                # --- SELEÇÃO DE VALORES ---
+                # Usamos "in" para pegar qualquer variação (LINHA SUPERIOR, LINHA CENTRAL, etc)
+                # E atribuímos o valor CHEIO para cada grupo.
+                if "LINHA" in chave:
+                    val_total_float = converter_decimal(tabela_premios.get('premio_linha'))
+                elif chave == "QUADRA":
+                    val_total_float = converter_decimal(tabela_premios.get('premio_quadra'))
+                elif chave == "BINGO":
+                    val_total_float = converter_decimal(tabela_premios.get('premio_bingo'))
+                elif chave == "DUPLO BINGO":
+                    val_total_float = converter_decimal(tabela_premios.get('premio_duplo_bingo'))
+                elif chave == "FALTA UM":
+                    val_total_float = converter_decimal(tabela_premios.get('premio_falta_Um'))
+                elif chave == "ACUMULADO":
+                    val_total_float = converter_decimal(tabela_premios.get('premio_acumulado'))
+                
+                # Fallback de segurança
+                if val_total_float == 0.0 and len(lista_vencedores) > 0:
+                     val_str_temp = lista_vencedores[0].get('valor_total_premio', '0')
+                     val_total_float = parse_brl(val_str_temp)
+
+                # Divisão: Se houver 2 ganhadores da MESMA linha (ex: 2 na Superior), eles dividem.
+                val_rateio_float = val_total_float / qtde_ganhadores if qtde_ganhadores > 0 else 0
+                
+                str_total = f"R$ {format_brl(val_total_float)}"
+                str_rateio = f"R$ {format_brl(val_rateio_float)}"
+
+                # Atualiza no Banco
+                db.ganhadores.update_many(
+                    {'_id': {'$in': [w['_id'] for w in lista_vencedores]}},
+                    {'$set': {'valor_total_premio': str_total, 'valor_rateio': str_rateio}}
+                )
+                
+                # Monta lista final
+                for w in lista_vencedores:
+                    # Normaliza o nome para ficar bonito no histórico
+                    nome_exibicao = chave 
+                    
+                    obj_ganhador = {
+                        "premio": nome_exibicao,
+                        "valor_total_premio": str_total,
+                        "cartela": str(w.get('cartela', '0')),
+                        "nome": str(w.get('nome', '---')),
+                        "valor_rateio": str_rateio
+                    }
+                    
+                    item_local = obj_ganhador.copy()
+                    item_local['rodada'] = id_evento
+                    lista_osganhadores.append(item_local)
+                    lista_resultados_ganhadores.append(obj_ganhador)
+
+        # --- 2. GRAVAÇÃO E LIMPEZA (Mantido igual) ---
+        db.osganhadores.delete_many({})
+        if lista_osganhadores:
+            db.osganhadores.insert_many(lista_osganhadores)
+
+        if total_bolas > 0 and len(lista_resultados_ganhadores) > 0:
+            try:
+                sales_db = get_sales_db_connection()
+                if sales_db is not None:
+                    doc_resultado = {
+                        "id_evento": id_evento,
+                        "descricao" : descricao, 
+                        "data_evento": data_hoje,
+                        "hora_inicial": hora_inicial,
+                        "hora_final": hora_atual,
+                        "total_de_bolas": total_bolas,
+                        "bolas_sorteadas": str(bolas_lista), 
+                        "ganhadores": lista_resultados_ganhadores
+                    }
+                    sales_db.resultados.insert_one(doc_resultado)
+                    print(f"✅ Histórico salvo no Sales DB.")
+            except Exception as e_sales:
+                print(f"⚠️ Erro salvar Sales DB: {e_sales}")
+
+        # ... (RESTANTE DO CÓDIGO DE LIMPEZA E RESET IGUAL AO ANTERIOR) ...
+        # Copie aqui o restante da função admin_resetar que trata a limpeza, 
+        # troca de ID e lógica de próximo evento que fizemos anteriormente.
+        
+        # --- ETAPA A: LIMPEZA RADICAL ---
+        timeStart = None 
+        db.bolas.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': [], 'ordem':0}}, upsert=True)
+        db.bolas_mesa.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': []}}, upsert=True)
+        db.ganhadores.delete_many({})
+        db.melhores.delete_many({})
+        db.confere.delete_many({})
+        db.confere.insert_one({"rodada": int(id_evento), "cartao": 0, "numeros": "null", "ganhador": "null"})
+
+        # --- ETAPA B: FORCE RESET NOS TERMINAIS ---
+        print(f"🔄 Forçando limpeza do evento {id_evento} nos terminais...")
+        db.rodada.update_one({}, {
+            '$set': {
+                'id_evento': str(id_evento),
+                'estado': 'resetando',
+                'ordem': 0,
+                'data_sorteio': datetime.now(ZoneInfo('America/Sao_Paulo'))
+            }
+        }, upsert=True)
+
+        print("⏳ Aguardando limpeza nos terminais (4s)...")
+        time.sleep(4.0)
+
+        # --- ETAPA C: PRÓXIMO EVENTO ---
+        proximo_id_str = "0"
+        if finalizar_com_sucesso:
+            print(f"✅ Finalizando evento {id_evento} com sucesso. Buscando próximo...")
+            prox_evento = buscar_proximo_evento_automatico(id_evento)
+            if prox_evento:
+                proximo_id_str = str(prox_evento.get('id_evento'))
+                desc_prox = prox_evento.get('descricao', 'Próximo Evento')
+                db.parametros.update_one({}, {'$set': {'nome_sala': desc_prox}}, upsert=True)
+                print(f"🔄 Configurando Rodada para Próximo Evento: {desc_prox} (ID: {proximo_id_str})")
+            else:
+                proximo_id_str = str(id_evento) 
+        else:
+            proximo_id_str = str(id_evento)
+
+        db.rodada.update_one({}, {
+            '$set': {
+                'id_evento': proximo_id_str,
+                'estado': 'intervalo',
+                'ordem': 0,
+                'data_sorteio': datetime.now(ZoneInfo('America/Sao_Paulo'))
+            }
+        }, upsert=True)
+
+        return jsonify({
+            'status': 'Reset concluído', 
+            'proximo_evento': proximo_id_str,
+            'modo': 'sucesso' if finalizar_com_sucesso else 'cancelamento'
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/resetar2', methods=['POST'])
+def admin_resetar2():
     global db, timeStart
     if db is None: return jsonify({'error': 'Sem conexão com DB'}), 500
     
@@ -2632,6 +2859,7 @@ def admin_resetar():
                     item_local['rodada'] = id_evento
                     lista_osganhadores.append(item_local)
                     lista_resultados_ganhadores.append(obj_ganhador)
+
         # --- 2. GRAVAÇÃO LOCAL 'osganhadores' ---
         db.osganhadores.delete_many({})
         if lista_osganhadores:
@@ -3844,6 +4072,96 @@ def solicitar_saque():
         traceback.print_exc() # Imprime a linha exata do erro
         return jsonify({'erro': 'Erro interno ao processar saque.'}), 500
 
+
+@app.route('/api/historico_resultados', methods=['GET'])
+def api_historico_resultados():
+    """
+    Retorna JSON com os últimos X eventos finalizados para exibir em cartões.
+    Ordena corretamente Data/Hora e limita conforme tabela 'parametros'.
+    """
+    try:
+        # 1. Conexão com o banco específico de Vendas
+        sales_db = get_sales_db_connection()
+        if sales_db is None:
+            return jsonify({'erro': 'Erro de conexão com banco de vendas'}), 500
+
+        # 2. Busca o Limite na tabela 'parametros'
+        # Padrão: 10 eventos se não encontrar configuração
+        limite_historico = 10
+        try:
+            param_doc = sales_db.parametros.find_one({}) # Pega o primeiro doc de parâmetros
+            if param_doc and 'qtde_de_historicos' in param_doc:
+                limite_historico = int(param_doc['qtde_de_historicos'])
+        except Exception as e_param:            
+            print(f"⚠️ Aviso: Usando limite padrão (10). Erro ao ler parametros: {e_param}")
+
+
+        # 3. Busca TODOS os resultados (para podermos ordenar corretamente no Python)
+        # Nota: Como a data é string "DD/MM/YYYY", o sort do Mongo não funciona cronologicamente.
+        # Trazemos tudo (a lista de resultados não costuma ser gigante) e ordenamos na memória.
+        cursor = sales_db.resultados.find({})
+        lista_bruta = list(cursor)
+
+        # 4. Função auxiliar de Ordenação
+        def extrair_data_hora(item):
+            # Tenta criar um objeto datetime combinando Data + Hora Final
+            try:
+                data_str = item.get('data_evento', '') # ex: "18/01/2026"
+                hora_str = item.get('hora_final', '00:00') # ex: "23:57"
+                
+                # Formato esperado: DD/MM/YYYY HH:MM
+                dt_str = f"{data_str} {hora_str}"
+                return datetime.strptime(dt_str, "%d/%m/%Y %H:%M")
+            except:
+                # Se der erro na data, joga para o final da fila (ano 1900)
+                return datetime(1900, 1, 1)
+
+        # Ordena a lista (Do mais recente para o mais antigo -> reverse=True)
+        lista_bruta.sort(key=extrair_data_hora, reverse=True)
+
+        # 5. Aplica o Limite (Slice)
+        lista_filtrada = lista_bruta[:limite_historico]
+
+        # 6. Monta o JSON de Resposta (Formato Cartão)
+        historico_cards = []
+
+        for evento in lista_filtrada:
+            # Processa Ganhadores (conforme estrutura do seu exemplo)
+            ganhadores_fmt = []
+            raw_ganhadores = evento.get('ganhadores', [])
+            
+            if isinstance(raw_ganhadores, list):
+                for g in raw_ganhadores:
+                    if not isinstance(g, dict): continue
+                    
+                    # Pega apenas o essencial para o card
+                    ganhadores_fmt.append({
+                        'premio': g.get('premio', 'Prêmio'),
+                        'nome': g.get('nome', 'Anônimo'),
+                        'valor': g.get('valor_rateio', g.get('valor_total_premio', 'R$ 0,00')),
+                        'cartela': g.get('cartela', '--')
+                    })
+
+            # Adiciona ao card principal
+            historico_cards.append({
+                'id_evento': evento.get('id_evento'),
+                'descricao': evento.get('descricao'),
+                'data': evento.get('data_evento'),
+                'hora_fim': evento.get('hora_final'),
+                'total_bolas': evento.get('total_de_bolas'),
+                'ganhadores': ganhadores_fmt
+            })
+
+        return jsonify({
+            'status': 'ok',
+            'quantidade': len(historico_cards),
+            'limite_aplicado': limite_historico,
+            'historico': historico_cards
+        })
+
+    except Exception as e:
+        print(f"❌ Erro ao buscar histórico de resultados: {e}")
+        return jsonify({'erro': 'Erro interno ao buscar histórico.'}), 500
 
 
 # --- MAIN ---

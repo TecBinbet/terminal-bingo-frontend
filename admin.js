@@ -77,7 +77,7 @@ async function processarMatrizEnvio() {
 
     const item = matrizEnvio[0]; 
     
-    // Se o modo for 'manual', usa o delay configurado. Senão, é zero.
+    // Se o modo for 'manual', usa o delay configurado. Senão, é zero. aquixx 
     const delay = (modoSorteio === 'manual') ? (aguardandoVideo || 0) : 0;
 
     // Log para verificar se o delay está correto
@@ -360,7 +360,7 @@ function renderGridConferencia(data) {
                 const marcado = bolas.includes(String(num));
                 
                // AQUI TAMBÉM: Verifica última bola no Bingo 90
-                const isLast = (String(num) === String(ultimaBola));
+                const isLast = (Number(num) === Number(ultimaBola));
                 
                 let cssClass = "w-full h-9 flex items-center justify-center font-bold text-lg rounded border ";
 
@@ -1253,7 +1253,7 @@ async function executarCarregamentoReal(idEvento) {
         document.getElementById('info-data-hora').textContent = `${dados.data_evento} ${dados.hora_evento}`;
         document.getElementById('info-inicial').textContent = dados.numero_inicial;
         document.getElementById('info-qtde').textContent = dados.qtde_vendida;
-        document.getElementById('info-ultimo').textContent = dados.ultimo_cartao-1;
+        document.getElementById('info-ultimo').textContent = dados.ultimo_cartao;
         document.getElementById('info-preco-un').textContent = parseFloat(dados.valor_venda||0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
         document.getElementById('info-vendas').textContent = parseFloat(dados.total_vendas_reais||0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
 
@@ -1372,6 +1372,7 @@ function gerenciarEstadoBotoes(estadoRaw) {
     const btnAutoToggle = document.getElementById('btn-auto-toggle');
     const btnF1Buscar = document.getElementById('btn-f1-buscar');
     const btnAutoLegado = document.getElementById('btn-auto'); 
+    const inputManual = document.getElementById('input-bola-manual');
 
     // === MODO BLOQUEIO (Travado) ===
     // Se estiver em vendas, intervalo ou finalizada, TRAVA TUDO.
@@ -1397,6 +1398,13 @@ function gerenciarEstadoBotoes(estadoRaw) {
         }
 
         if (btnAutoLegado) btnAutoLegado.disabled = true;
+
+        if (inputManual) {
+            inputManual.disabled = true;
+            inputManual.classList.add('opacity-50', 'cursor-not-allowed', 'bg-gray-800');
+            inputManual.classList.remove('bg-gray-800', 'focus:ring-2'); // Remove estilos de foco
+            inputManual.value = ""; // Limpa para evitar confusão visual
+        }
 
         // KILL SWITCH: Para o automático se estiver rodando
         if (typeof autoSorteioAtivo !== 'undefined' && autoSorteioAtivo) {
@@ -1431,6 +1439,12 @@ function gerenciarEstadoBotoes(estadoRaw) {
         }
         
         if (btnAutoLegado) btnAutoLegado.disabled = false;
+        
+        if (inputManual) {
+            inputManual.disabled = false;
+            inputManual.classList.remove('opacity-50', 'cursor-not-allowed');
+            inputManual.classList.add('bg-gray-800', 'focus:ring-2'); // Remove estilos de foco
+        }
     }
 }
 
@@ -1938,11 +1952,38 @@ document.addEventListener('DOMContentLoaded', () => {
     // 3. Listeners de Inputs Manuais
     const inputManual = document.getElementById('input-bola-manual');
     if (inputManual) {
+        // Clona para limpar listeners antigos
         const novoInput = inputManual.cloneNode(true);
         inputManual.parentNode.replaceChild(novoInput, inputManual);
+
+        // --- NOVA LÓGICA: LIMITAR A 2 DÍGITOS (SHIFT LEFT) ---
+        novoInput.addEventListener('input', function(e) {
+            // 1. Remove qualquer coisa que não seja número
+            let valorLimpo = this.value.replace(/\D/g, '');
+
+            // 2. Lógica do Buffer Deslizante:
+            // Se tiver mais de 2 dígitos, pega apenas os 2 últimos (corta a esquerda)
+            if (valorLimpo.length > 2) {
+                valorLimpo = valorLimpo.slice(-2);
+            }
+
+            // 3. Atualiza o valor no campo
+            this.value = valorLimpo;
+        });
+        // -----------------------------------------------------
+
+        // Mantém a lógica da tecla ENTER e do atalho '99'
         novoInput.addEventListener('keydown', function(event) {
-            if (this.value === '99') { event.preventDefault(); this.value = ''; abrirSessaoAuditoria(); return; }
-            if (event.key === 'Enter') { event.preventDefault(); inserirBolaManual(); }
+            if (this.value === '99') { 
+                event.preventDefault(); 
+                this.value = ''; 
+                abrirSessaoAuditoria(); 
+                return; 
+            }
+            if (event.key === 'Enter') { 
+                event.preventDefault(); 
+                inserirBolaManual(); 
+            }
         });
     }
 

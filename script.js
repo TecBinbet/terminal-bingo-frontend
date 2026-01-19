@@ -3628,6 +3628,13 @@ async function renderMainContent(data) {
     const linhasAtivasDaAPI = dadosBuscando.buscando_a_linha || '';
 
     // Detecta mudanças
+ 
+console.error("premioBuscadoDaAPI                   :",premioBuscadoDaAPI);
+console.error( "buscando_o_premio                      :",buscando_o_premio.replace(/\s+/g, '').trim()); 
+
+console.error("linhasAtivasDaAPI                           :", linhasAtivasDaAPI );
+console.error("buscando_a_linha                           :",buscando_a_linha); 
+
     const premioMudou = (premioBuscadoDaAPI !== buscando_o_premio.replace(/\s+/g, '').trim() || linhasAtivasDaAPI !== buscando_a_linha);
 
     // --- AÇÃO QUANDO A BOLA MUDA ---
@@ -6062,3 +6069,119 @@ window.addEventListener('load', () => {
     }
 });
 
+
+// --- FUNÇÕES DE HISTÓRICO DE SORTEIOS ---
+
+// 1. Abre o Modal e inicia a busca
+function abrirModalHistorico() {
+    // Fecha o menu principal se estiver aberto
+    if (typeof closeSideMenu === 'function') {
+         closeSideMenu();
+   }
+
+    fecharModal('modal-menu-cliente'); 
+    
+    const modal = document.getElementById('modal-historico');
+    if(modal) {
+        modal.classList.remove('hidden');
+        carregarHistoricoResultados(); // Chama a API
+    }
+}
+
+// 2. Busca e Renderiza os Dados
+async function carregarHistoricoResultados() {
+    const container = document.getElementById('historico-container');
+    const loader = document.getElementById('loader-historico');
+    
+    // Limpa conteúdo anterior (mantendo o loader se quiser, ou recriando)
+    if(container) {
+        container.innerHTML = `
+            <div id="loader-historico" class="flex flex-col items-center justify-center h-48 space-y-3">
+                 <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-yellow-500"></div>
+                 <p class="text-gray-400 text-sm">Buscando resultados...</p>
+             </div>
+        `;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/historico_resultados`);
+        const data = await response.json();
+
+        if(container) container.innerHTML = ''; // Limpa o loader
+
+        if (data.status === 'ok' && data.historico && data.historico.length > 0) {
+            
+            // Loop para criar cada card
+            data.historico.forEach(evento => {
+                const cardHTML = criarCardHistorico(evento);
+                container.insertAdjacentHTML('beforeend', cardHTML);
+            });
+
+        } else {
+            // Caso não tenha histórico
+            if(container) container.innerHTML = `
+                <div class="text-center py-10 opacity-50">
+                    <p class="text-4xl mb-2">📂</p>
+                    <p class="text-gray-400">Nenhum sorteio finalizado encontrado.</p>
+                </div>
+            `;
+        }
+
+    } catch (error) {
+        console.error("Erro ao buscar histórico:", error);
+        if(container) container.innerHTML = `
+            <div class="text-center py-10 text-red-400">
+                <p>❌ Falha ao carregar dados.</p>
+                <button onclick="carregarHistoricoResultados()" class="mt-2 text-sm underline text-gray-300">Tentar novamente</button>
+            </div>
+        `;
+    }
+}
+
+// 3. Monta o HTML de um Card Individual
+function criarCardHistorico(evento) {
+    // Formata a lista de ganhadores
+    let ganhadoresHTML = '';
+    
+    if (evento.ganhadores && evento.ganhadores.length > 0) {
+        ganhadoresHTML = evento.ganhadores.map(g => `
+            <div class="flex justify-between items-center bg-gray-900/50 p-1 rounded border border-gray-700/50 mb-1 last:mb-0">
+                <div class="flex flex-col">
+                    <span class="text-xs text-yellow-500 font-bold uppercase tracking-wider">${g.premio}</span>
+                    <span class="text-sm text-gray-200 font-medium -mt-0.5 truncate max-w-[150px]">👤 ${g.nome}</span>
+                </div>
+                <div class="text-right">
+                    <div class="text-green-400 font-bold text-sm">${g.valor}</div>
+                    <div class="text-[12px] text-gray-150 -mt-0.5">Cartela: ${g.cartela}</div>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        ganhadoresHTML = '<p class="text-xs text-gray-500 italic p-2 text-center">Nenhum ganhador registrado.</p>';
+    }
+
+    // HTML do Card Completo
+    return `
+        <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden shadow-lg animate-fade-in relative">
+            
+            <div class="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-yellow-600 to-yellow-800"></div>
+
+            <div class="p-2 pl-5">
+                <div class="flex justify-between items-start mb-1 border-b border-gray-700 pb-1">
+                    <div>
+                        <h4 class="text-blue-400 font-bold text-lg -mt-2">${evento.id_evento}- ${evento.descricao}</h4>
+                        <p class="text-lg text-gray-300">📅 ${evento.data} às ${evento.hora_fim}</p>
+                    </div>
+                    <div class="bg-gray-700 px-2 py-1 rounded text-center">
+                        <span class="block text-[10px] text-gray-400 uppercase">Bolas</span>
+                        <span class="block text-sm font-bold text-white">${evento.total_bolas}</span>
+                    </div>
+                </div>
+
+                <div class="space-y-1">
+                    ${ganhadoresHTML}
+                </div>
+            </div>
+        </div>
+    `;
+}
