@@ -1547,8 +1547,8 @@ function adicionarFaixaDeCartelas(disparadoPorUsuario = false) {
         (faixa.inicial >= valorInicial && faixa.inicial <= valorFinal)
     );
 
-    if (sobreposicao) {
-        alert('Erro: Esta faixa de cartelas se sobrepõe a uma faixa já adicionada.');
+    if (sobreposicao) { 
+        showCustomAlert("Erro: Esta faixa de cartelas se sobrepõe a uma faixa já adicionada.", "Supreposição", "🎟️");
         return false; // Falhou
     }
 
@@ -3899,8 +3899,9 @@ async function init() {
             mobileCartelaInicialInput.max = maxCardNumber;
             mobileCartelaInicialInput.min = 1;
         }
+
         if(mobileCartelaFinalInput) mobileCartelaFinalInput.max = maxCardNumber;
-        
+
         // PROTEÇÕES PARA PAINÉIS E BOTÕES
         if(mobileCartelasContent) mobileCartelasContent.classList.add('hidden');
         if(mobilePrizesContent) mobilePrizesContent.classList.add('hidden');
@@ -3908,8 +3909,48 @@ async function init() {
         if(togglePrizesButton) togglePrizesButton.textContent = 'Apresentar Prêmios';
 
         if(loader) loader.style.display = 'none';
-        
+
         renderMainContent(initialData); 
+
+// =================================================================
+// 🕵️‍♂️ DETETIVE DE ID (Versão Corrigida para Array)
+// =================================================================
+let idDoEvento = null;
+
+// TENTATIVA 1: Está dentro de 'rodadaData' (que é um Array)?
+// O user confirmou que está aqui: initialData.rodadaData[0].id_evento
+if (initialData.rodadaData && Array.isArray(initialData.rodadaData) && initialData.rodadaData.length > 0) {
+    idDoEvento = initialData.rodadaData[0].id_evento;
+}
+// TENTATIVA 2: Está na raiz?
+else if (initialData.id_evento) {
+    idDoEvento = initialData.id_evento;
+} 
+// TENTATIVA 3: Está dentro de premioInfo?
+else if (initialData.premioInfo && initialData.premioInfo.id_evento) {
+    idDoEvento = initialData.premioInfo.id_evento;
+}
+
+console.log("🔎 ID DETECTADO NO INIT:", idDoEvento); // Agora vai mostrar '22'
+
+// Salva e carrega
+if (idDoEvento) {
+    // 1. Salva na Global
+    if (typeof eventoCarregadoAtual === 'undefined' || !eventoCarregadoAtual) {
+        eventoCarregadoAtual = { id_evento: idDoEvento };
+    } else {
+        eventoCarregadoAtual.id_evento = idDoEvento;
+    }
+    
+    // 2. Chama o Sorte Extra
+    carregarSorteExtra(false, idDoEvento);
+    setTimeout(() => { carregarSorteExtra(false, idDoEvento); }, 1000);
+
+} else {
+    console.error("❌ init: ID não encontrado nem em rodadaData[0].");
+}
+
+
         
         connectWebSocket();
         setInterval(() => {
@@ -4712,7 +4753,6 @@ let clienteLogado = false;
 
 // CORREÇÃO: Adicionei (idEventoEspecifico = null) nos parênteses
 function abrirMenuCliente(idEventoEspecifico = null) {
-   // aqui pora 
     // Verifica se os modais existem no HTML antes de tentar abrir
     if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
         goFullscreen(); 
@@ -5169,9 +5209,7 @@ async function confirmarCompra() {
     if (valorTotalReais > saldoAtualReais) {
         if (typeof showCustomAlert === 'function') {
             showCustomAlert("Seu saldo é insuficiente para esta compra. Faça uma recarga!", "Saldo Insuficiente", "🚫");
-        } else {
-            alert("Saldo insuficiente para esta compra.");
-        }
+        } 
         return; 
     }
 
@@ -6169,5 +6207,464 @@ async function buscarImagemDoPremio(idEvento) {
         }
     } catch (error) {
         console.error("Erro ao buscar imagem do prêmio:", error);
+    }
+}
+
+// =========================================================
+// === MÓDULO SORTE EXTRA (LÓGICA DO CLIENTE) ===
+// =========================================================
+
+// Variáveis de Estado
+let configSorteExtra = {
+    ativo: false,
+    idEvento: null,
+    qtde_dezenas: 3,
+    preco: 5.00,
+    numeros_selecionados: [], // Volante atual
+    carrinho: [] // Cupons prontos para pagar
+};
+
+
+// 1. INICIALIZAR E BUSCAR REGRAS (COM CONTROLE DE ABERTURA)
+async function carregarSorteExtra(abrirTela = true, idOverride = null) {
+    let rawId = idOverride; // 1ª Prioridade: Parâmetro passado manualmente
+
+    // 2ª Prioridade: Sua variável global (A melhor opção)
+    if (!rawId) {
+        if (typeof eventoCarregadoAtual !== 'undefined' && eventoCarregadoAtual && eventoCarregadoAtual.id_evento) {
+            rawId = eventoCarregadoAtual.id_evento;
+            console.log("✅ ID recuperado de 'eventoCarregadoAtual':", rawId);
+        }
+    }
+
+    // 3ª Prioridade: URL (Caso seja um link direto)
+    if (!rawId) {
+        const urlParams = new URLSearchParams(window.location.search);
+        rawId = urlParams.get('idsala');
+    }
+
+    // 4ª Prioridade: Outras variáveis globais (Fallback)
+    if (!rawId || rawId === 'padrao') {
+        if (typeof premioInfo !== 'undefined' && premioInfo && premioInfo.id_evento) {
+            rawId = premioInfo.id_evento;
+        } else if (typeof currentSalaId !== 'undefined' && currentSalaId !== 'padrao') {
+            rawId = currentSalaId;
+        }
+    }
+
+    // --- VALIDAÇÃO FINAL ---
+    const idEvento = parseInt(rawId, 10);
+    
+    if (!idEvento || isNaN(idEvento)) {
+        console.warn(`⚠️ Sorte Extra ignorado: ID inválido (Recebido: ${rawId}). Aguardando carregamento do evento...`);
+        
+        // Esconde os botões para não ficar quebrado na tela
+        const btnMenu = document.getElementById('btn-open-extra');
+        if (btnMenu) btnMenu.classList.add('hidden');
+        const btnFloat = document.getElementById('btn-floating-extra');
+        if (btnFloat) btnFloat.classList.add('hidden');
+        
+        return; // ABORTA A EXECUÇÃO COM SEGURANÇA
+    }
+
+    // Fecha o menu lateral...
+    if (typeof closeSideMenu === 'function') closeSideMenu();
+
+    try {
+        console.log(`🔄 Buscando Sorte Extra para o Evento ID: ${idEvento}`);
+        const res = await fetch(`${API_BASE_URL || ''}/api/cliente/config_sorte_extra/${idEvento}`);
+
+       
+        if (!res.ok) throw new Error("Recurso não configurado ou offline");
+        
+        const dados = await res.json();
+
+        // Salva Configuração Global
+        configSorteExtra = {
+            ...configSorteExtra,
+            ativo: dados.ativo,
+            idEvento: parseInt(dados.id_evento),
+            qtde_dezenas: dados.qtde_dezenas,
+            preco: dados.preco_cupom,
+            // Mantém o carrinho se já existir, senão zera
+            carrinho: configSorteExtra.carrinho || [],           
+            numeros_selecionados: [] 
+        };
+
+        // Atualiza Textos da UI com segurança (verifica se elementos existem)
+        const elPreco = document.getElementById('lbl-preco');
+
+        if (elPreco) elPreco.innerText = `R$ ${dados.preco_cupom.toFixed(2)}`;
+        
+        const elQtde = document.getElementById('lbl-qtde');
+        if (elQtde) elQtde.innerText = dados.qtde_dezenas;
+        
+        const elRegras = document.getElementById('lbl-regras-resumo');
+        const containerBtnHeader = document.getElementById('container-btn-regras-header');
+
+        if (containerBtnHeader) containerBtnHeader.innerHTML = '';
+
+if (elRegras) {
+    // 2. Preenche o rodapé com as informações financeiras
+    elRegras.innerHTML = `
+        <div class="flex flex-col items-center justify-center gap-1">
+            <span class="font-bold text-gray-200">
+                🏆Prêmio Máx: R$ ${dados.premio_maximo.toFixed(2)} | Base: R$ ${dados.premio_base.toFixed(2)}
+            </span>
+            <div id="conteudo-regras-extra" class="hidden mt-2 p-2 bg-gray-900/90 rounded border border-yellow-500/50 shadow-lg w-full max-w-md">
+                 <p class="text-yellow-400 font-medium text-sm animate-pulse text-center">
+                      ${dados.texto_regra_vitoria || ''}
+                 </p>
+            </div>
+        </div>
+    `;
+
+    // 3. Se houver regras, CRIA O BOTÃO lá no Cabeçalho (Header)
+    if (dados.texto_regra_vitoria && dados.texto_regra_vitoria.trim() !== "") {
+        if (containerBtnHeader) {
+            containerBtnHeader.innerHTML = `
+                <button id="btn-ver-regras" onclick="toggleRegrasExtra()" 
+                    class="text-[16px] md:text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-green-300 py-1 px-3 rounded border border-gray-500 transition-all shadow-sm flex items-center gap-1">
+                    <span>📜 Regras</span>
+                </button>
+            `;
+        }
+    }
+}
+        
+        // --- MOSTRAR BOTÕES (Se tiver configuração válida) ---
+        const btnMenu = document.getElementById('btn-open-extra');
+        if (btnMenu) btnMenu.classList.remove('hidden');
+
+        const btnFloat = document.getElementById('btn-floating-extra');
+        if (btnFloat) btnFloat.classList.remove('hidden');
+
+        renderizarGridVolante(); 
+        
+        // Atualiza seleções visuais
+        atualizarDisplaySelecao();
+        atualizarCarrinhoUI();
+        
+        // --- O SEGREDINHO: SÓ ABRE SE FOR SOLICITADO ---
+        if (abrirTela === true) {
+            const modal = document.getElementById('modal-sorte-extra');
+            if (modal) modal.classList.remove('hidden');
+        }
+
+    } catch (e) {
+        // Se der erro, esconde os botões para não confundir o usuário
+        const btnMenu = document.getElementById('btn-open-extra');
+        if (btnMenu) btnMenu.classList.add('hidden');
+        const btnFloat = document.getElementById('btn-floating-extra');
+        if (btnFloat) btnFloat.classList.add('hidden');
+        
+        console.warn("Sorte Extra indisponível:", e.message); 
+    }
+}
+
+
+function abrirTelaSorteExtra() {
+    console.log("👆 Abrindo tela do Sorte Extra...");
+    const modal = document.getElementById('modal-sorte-extra');
+    if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
+       goFullscreen(); 
+    } 
+    
+    if (modal) {
+        closeSideMenu(); 
+        modal.classList.remove('hidden');
+        // Garante que o grid esteja renderizado caso não tenha sido antes
+        if (typeof renderizarGridVolante === 'function') {
+            renderizarGridVolante();
+        }
+    } else {
+        console.error("❌ ERRO: Elemento 'modal-sorte-extra' não existe no HTML.");
+        alert("Erro ao abrir janela: HTML não encontrado.");
+    }
+}
+
+// 2. RENDERIZAR GRID DE NÚMEROS
+function renderizarGridVolante() {
+    // Define o total: Usa a global MAX_BOLAS se existir, senão usa 90 (segurança)
+    const totalBolas = (typeof MAX_BOLAS !== 'undefined') ? MAX_BOLAS : 90;
+
+    const container = document.getElementById('grid-volante');
+    container.innerHTML = ""; // Limpa
+
+    for (let i = 1; i <= totalBolas; i++) {
+        const btn = document.createElement('div');
+        // Estilo das Bolinhas do Grid
+        btn.className = "h-6 w-full bg-gray-700 rounded-lg flex items-center justify-center text-white -mb-0.5 font-bold cursor-pointer hover:bg-gray-600 transition-all select-none border border-gray-600 shadow-sm active:scale-95";
+        btn.innerText = i;
+        btn.onclick = () => toggleNumeroExtra(i, btn);
+        container.appendChild(btn);
+    }
+}
+
+// 3. SELEÇÃO (CLICK NO NÚMERO)
+function toggleNumeroExtra(num, elemento) {
+    const index = configSorteExtra.numeros_selecionados.indexOf(num);
+    fecharRegrasSeEstiveremAbertas();
+    // Se já existe -> Remove
+    if (index > -1) {
+        configSorteExtra.numeros_selecionados.splice(index, 1);
+        styleBola(elemento, false);
+    } 
+    // Se não existe -> Adiciona (com verificação de limite)
+    else {
+        if (configSorteExtra.numeros_selecionados.length < configSorteExtra.qtde_dezenas) {
+            configSorteExtra.numeros_selecionados.push(num);
+            styleBola(elemento, true);
+        } else {
+            // Efeito visual de erro/limite
+            elemento.classList.add('animate-shake');
+            setTimeout(() => elemento.classList.remove('animate-shake'), 300);
+        }
+    }
+    atualizarDisplaySelecao();
+}
+
+// Função auxiliar de estilo
+function styleBola(el, selecionado) {
+    if (selecionado) {
+        el.className = "h-6 w-full bg-yellow-500 text-black font-black rounded-lg flex items-center justify-center -mb-0.5 cursor-pointer transition-all shadow-lg scale-105 border-2 border-white";
+    } else {
+        el.className = "h-6 w-full bg-gray-700 text-white font-bold rounded-lg flex items-center justify-center -mb-0.5 cursor-pointer hover:bg-gray-600 transition-all border border-gray-600";
+    }
+}
+
+// 4. ATUALIZAR DISPLAY (BOLINHAS NO TOPO)
+function atualizarDisplaySelecao() {
+    const container = document.getElementById('display-selecao');
+    container.innerHTML = "";
+    
+    for (let i = 0; i < configSorteExtra.qtde_dezenas; i++) {
+        const num = configSorteExtra.numeros_selecionados[i];
+        const el = document.createElement('div');
+        
+        if (num !== undefined) {
+            el.className = "w-8 h-8 rounded-full bg-yellow-500 text-black font-bold flex items-center justify-center shadow border-2 border-white animate-pop";
+            el.innerText = num;
+        } else {
+            el.className = "w-8 h-8 rounded-full border-2 border-dashed border-gray-600 flex items-center justify-center text-gray-500 text-xs";
+            el.innerText = i+1;
+        }
+        container.appendChild(el);
+    }
+
+    // Botão Adicionar
+    const btnAdd = document.getElementById('btn-add-cupom');
+    const completo = configSorteExtra.numeros_selecionados.length === configSorteExtra.qtde_dezenas;
+    btnAdd.disabled = !completo;
+}
+
+// 5. ADICIONAR CUPOM AO CARRINHO
+function adicionarCupomAoCarrinho() {
+    const cupom = [...configSorteExtra.numeros_selecionados].sort((a, b) => a - b);
+    
+    configSorteExtra.carrinho.push({
+        numeros: cupom,
+        id_temp: Date.now()
+    });
+
+    // Limpa seleção visual e lógica
+    configSorteExtra.numeros_selecionados = [];
+    renderizarGridVolante(); // Redesenha para limpar as cores
+    atualizarDisplaySelecao();
+    atualizarCarrinhoUI();
+}
+
+// 6. GERENCIAR CARRINHO UI
+function atualizarCarrinhoUI() {
+    const lista = document.getElementById('lista-carrinho');
+    const lblTotal = document.getElementById('lbl-total-carrinho');
+    const btnFinalizar = document.getElementById('btn-finalizar-extra');
+
+    // --- BLINDAGEM: Se os elementos não existirem, para aqui e não dá erro ---
+    if (!lista || !lblTotal || !btnFinalizar) return;
+
+    lista.innerHTML = "";
+    let total = 0;
+
+    if (configSorteExtra.carrinho.length === 0) {
+        lista.innerHTML = '<div class="text-center text-gray-500 text-sm mt-8 italic">Nenhum cupom.</div>';
+    } else {
+        configSorteExtra.carrinho.forEach((item, index) => {
+            total += configSorteExtra.preco;
+            
+            const row = document.createElement('div');
+            row.className = "bg-gray-700/50 rounded-lg border border-gray-600 flex justify-between items-center animate-fade-in-left";
+            row.innerHTML = `
+                <div class="flex gap-2">
+                    ${item.numeros.map(n => `<span class="bg-black text-yellow-500 text-[16px] px-3 py-0.5 rounded font-bold">${n < 10 ? '0'+n : n}</span>`).join('')}
+                </div>
+                <button onclick="removerCupom(${index})" class="text-red-400 hover:text-red-200 p-1 hover:bg-red-900/30 rounded">
+                    🗑️
+                </button>
+            `;
+            lista.appendChild(row);
+        });
+    }
+
+    lblTotal.innerText = `R$ ${total.toFixed(2)}`;
+    
+    // Habilita Botão Finalizar
+    if (configSorteExtra.carrinho.length > 0) {
+        btnFinalizar.disabled = false;
+        btnFinalizar.innerHTML = `✅ PAGAR R$ ${total.toFixed(2)}`;
+    } else {
+        btnFinalizar.disabled = true;
+        btnFinalizar.innerHTML = `🛒 CARRINHO VAZIO`;
+    }
+}
+
+function removerCupom(index) {
+    configSorteExtra.carrinho.splice(index, 1);
+    atualizarCarrinhoUI();
+}
+
+// 7. FECHAR MODAL
+function fecharModalSorteExtra() {
+    document.getElementById('modal-sorte-extra').classList.add('hidden');
+}
+
+// 8. FINALIZAR COMPRA REAL (COM TRATAMENTO DE ERRO 401)
+async function finalizarCompraExtra() {
+    // 1. Validações Básicas
+    if (configSorteExtra.carrinho.length === 0) {
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Seu carrinho está vazio!", "Carrinho Vazio", "🚫");
+        }
+        return;
+    }
+    
+    // Verifica login visualmente antes de enviar
+    if (!clienteLogado) {
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Você precisa fazer LOGIN para comprar.", "Realizar Login", "🚫");
+        }
+
+        fecharModalSorteExtra();
+        abrirModalLogin(); 
+        return;
+    }
+
+    // Confirmação Visual
+    const total = configSorteExtra.carrinho.length * configSorteExtra.preco;
+
+    const confirmou = await showCustomConfirm(`Confirmar a compra de ${configSorteExtra.carrinho.length} cupons?\nTotal: R$ ${total.toFixed(2)}`, "Comprar Cupons", "🛒");
+    if(!confirmou) return;
+
+    // 2. Feedback de Loading
+    const btn = document.getElementById('btn-finalizar-extra');
+    const textoOriginal = btn.innerText;
+    btn.disabled = true;
+    btn.innerText = "⏳ Processando...";
+
+    try {
+        // 3. Envia para o Backend
+        const response = await fetch(`${API_BASE_URL || ''}/api/cliente/comprar_sorte_extra`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include', // Envia o cookie da sessão  xxx
+            body: JSON.stringify({
+                id_evento: configSorteExtra.idEvento,
+                carrinho: configSorteExtra.carrinho.map(c => c.numeros)
+            })
+        });
+
+        const data = await response.json();
+
+        // --- TRATAMENTO ESPECIAL PARA ERRO 401 (Sessão Expirada) ---
+        if (response.status === 401) { 
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert("Sua sessão expirou. Por favor, faça login novamente.", "Sessão Expirada", "🚫");
+            }
+         
+            // Força logout visual
+            clienteLogado = false; 
+            
+            // Fecha o modal do sorteio e abre o de login
+            fecharModalSorteExtra();
+            abrirModalLogin();
+            return;
+        }
+
+        if (response.ok && data.status === 'ok') {
+            // === SUCESSO ===
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert(`✅ ${data.msg}\nNovo Saldo: R$ ${data.novo_saldo.toFixed(2)}`, "Saldo Atualizado", "✅");
+            }
+            // Limpa o carrinho
+            configSorteExtra.carrinho = [];
+            configSorteExtra.numeros_selecionados = [];
+            atualizarCarrinhoUI();
+            renderizarGridVolante(); 
+            
+            // Atualiza o saldo na tela principal
+            if (typeof atualizarDadosCliente === 'function') {
+                atualizarDadosCliente();
+            }
+            
+            fecharModalSorteExtra();
+
+        } else {
+            throw new Error(data.erro || "Erro ao processar compra.");
+        }
+
+    } catch (erro) {
+        console.error("Erro na compra:", erro);
+        alert("❌ Falha: " + erro.message);
+    } finally {
+        if(btn) {
+            btn.disabled = false;
+            btn.innerText = textoOriginal;
+        }
+    }
+}
+
+/**
+ * Alterna a visibilidade: O botão está no Header, o texto está no Footer
+ */
+function toggleRegrasExtra() {
+    const conteudo = document.getElementById('conteudo-regras-extra');
+    const btn = document.getElementById('btn-ver-regras');
+
+    if (conteudo) {
+        if (conteudo.classList.contains('hidden')) {
+            // MOSTRAR
+            conteudo.classList.remove('hidden');
+            // Opcional: Rolar suavemente até as regras para garantir que o usuário veja
+            conteudo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            
+            if (btn) {
+                btn.classList.remove('bg-gray-700', 'text-green-300');
+                btn.classList.add('bg-gray-600', 'text-white'); // Muda cor para indicar "Ativo"
+            }
+        } else {
+            // ESCONDER
+            conteudo.classList.add('hidden');
+            
+            if (btn) {
+                btn.classList.remove('bg-gray-600', 'text-white');
+                btn.classList.add('bg-gray-700', 'text-green-300');
+            }
+        }
+    }
+}
+
+/**
+ * Chama esta função ao clicar num número para limpar a tela
+ */
+function fecharRegrasSeEstiveremAbertas() {
+    const conteudo = document.getElementById('conteudo-regras-extra');
+    const btn = document.getElementById('btn-ver-regras');
+
+    if (conteudo && !conteudo.classList.contains('hidden')) {
+        conteudo.classList.add('hidden');
+        if (btn) {
+            btn.classList.remove('bg-gray-600', 'text-white');
+            btn.classList.add('bg-gray-700', 'text-green-300');
+        }
     }
 }

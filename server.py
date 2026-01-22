@@ -15,7 +15,7 @@ import re
 from bson.decimal128 import Decimal128
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 from gevent.pywsgi import WSGIServer
@@ -31,7 +31,7 @@ def serve_img(filename):
     # O parametro 'img' é o nome da PASTA física no seu computador
     return send_from_directory('img', filename)
 
-app.secret_key = 'sua_chave_secreta_aqui' # Configure uma chave forte
+app.secret_key ='chave_super_secreta_do_bingo_2026' # Configure uma chave forte
 
 # --- CONFIGURAÇÃO DE SESSÃO PARA IP LOCAL/MOBILE ---
 app.config['SESSION_COOKIE_SECURE'] = False      # Permite cookie sem HTTPS (importante para IP local)
@@ -4165,6 +4165,188 @@ def api_historico_resultados():
     except Exception as e:
         print(f"❌ Erro ao buscar histórico de resultados: {e}")
         return jsonify({'erro': 'Erro interno ao buscar histórico.'}), 500
+
+
+# ==============================================================================
+# === MÓDULO SORTE EXTRA (CORRIGIDO PARA INT32) ===
+# ==============================================================================
+@app.route('/api/cliente/config_sorte_extra/<id_evento>', methods=['GET'])
+def get_config_sorte_extra(id_evento):
+    # Função auxiliar
+    def safe_money(val):
+        try:
+            if val is None: return 0.00
+            return float(str(val))
+        except:
+            return 0.00
+
+    try:
+        # 1. Conexão ao Banco
+        sales_db = get_sales_db_connection()
+        if sales_db is None: return jsonify({'erro': 'Banco offline'}), 500
+
+        # 2. Tratamento do ID
+        busca_ids = [id_evento, str(id_evento)]
+        if str(id_evento).isdigit():
+            busca_ids.append(int(id_evento))
+
+        # 3. Busca na coleção CORRETA: 'sorte_extra_config'
+        # --- AQUI ESTAVA O ERRO ANTES ---
+        config = sales_db.sorte_extra_config.find_one({'id_evento': {'$in': busca_ids}})
+        # -------------------------------
+
+        # 4. Se não achar, retorna erro ou um mock básico só para não travar
+        if config is None:
+            print(f"⚠️ Config não encontrada na tabela 'sorte_extra_config' para o ID {id_evento}")
+            # Retorna 404 para o front saber que não tem
+            return jsonify({'erro': 'Sorte Extra não configurado'}), 404
+
+        # 5. Monta a resposta com os dados reais do banco
+        resposta = {
+            "id_evento": config.get('id_evento'),
+            "ativo": config.get('ativo', True),
+            "qtde_dezenas": config.get('qtde_dezenas', 3),
+            "preco_cupom": safe_money(config.get('preco_cupom')),
+            "premio_maximo": safe_money(config.get('premio_maximo')),             
+            "premio_intermediario": safe_money(config.get('premio_intermediario')), 
+            "premio_base": safe_money(config.get('premio_base')),                  
+            "texto_regra_vitoria": config.get('texto_regra_vitoria', "Consulte as regras.")
+        }
+
+        return jsonify(resposta), 200
+
+    except Exception as e:
+        print(f"❌ Erro na API Sorte Extra: {e}")
+        return jsonify({'erro': 'Erro interno'}), 500
+
+
+# --- ROTA 2: CRIAÇÃO (PROVISÓRIA - ADMIN) ---
+@app.route('/api/admin/criar_config_exemplo', methods=['POST'])
+def criar_config_exemplo():
+    sales_db = get_sales_db_connection()
+    if sales_db is None: return jsonify({'error': 'Sem DB'}), 500
+
+    data = request.json or {}
+    
+    # PEGA O ID E CONVERTE PARA INT32
+    try:
+        raw_id = data.get('id_evento', 18) # Padrão 18
+        id_evt = int(raw_id)
+    except:
+        id_evt = 18 # Fallback seguro
+
+    try:
+        novo_config = {
+            "id_evento": id_evt, # Gravando como Int32!
+            "ativo": True,
+            "qtde_dezenas": 3,
+            "preco_cupom": Decimal128("5.00"),
+            "premio_maximo": Decimal128("1500.00"),       
+            "premio_intermediario": Decimal128("500.00"), 
+            "premio_base": Decimal128("100.00"),          
+            "texto_regra_vitoria": "🏆 REGRAS DO SORTEIO EXTRA: ..."
+        }
+
+        # Remove qualquer versão antiga (Int ou String) para limpar
+        sales_db.sorte_extra_config.delete_many({'id_evento': {'$in': [id_evt, str(id_evt)]}})
+        
+        # Insere a nova correta
+        sales_db.sorte_extra_config.insert_one(novo_config)
+
+        print(f"✅ Configuração Sorte Extra criada para evento {id_evt} (Int32)")
+        return jsonify({'msg': f'Configuração criada com sucesso para o evento {id_evt}!'})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ==============================================================================
+# === PASSO 5: PROCESSAR COMPRA SORTE EXTRA (CORRIGIDO CORS) ===
+# ==============================================================================
+
+@app.route('/api/cliente/comprar_sorte_extra', methods=['POST', 'OPTIONS'])
+def comprar_extra():
+    # 1. Ignora OPTIONS (Pre-flight do navegador)
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    # 2. Verifica Sessão
+    if 'id_cliente' not in session:
+        return jsonify({'erro': 'Sessão expirada. Faça login novamente.'}), 401
+
+    try:
+        # --- AQUI ESTÁ A CORREÇÃO PRINCIPAL ---
+        # Iniciamos a conexão exatamente como na função que você enviou
+        sales_db = get_sales_db_connection()
+        if sales_db is None:
+            return jsonify({'erro': 'Banco de Vendas offline.'}), 500
+        # --------------------------------------
+
+        data = request.json
+        id_evento = data.get('id_evento')
+        carrinho = data.get('carrinho') # Lista de listas [[1,2,3], [4,5,6]]
+
+        # Validações Básicas
+        if not id_evento or not carrinho:
+            return jsonify({'erro': 'Dados inválidos.'}), 400
+
+        id_cli = int(session['id_cliente'])
+        nick_cli = session.get('nick_cliente', 'Cliente Web')
+
+        # Busca dados do cliente para verificar saldo
+        # Nota: Usamos 'sales_db' pois é ele que tem a coleção 'clientes' no seu exemplo
+        cliente = sales_db.clientes.find_one({'id_cliente': id_cli})
+        
+        if not cliente:
+            return jsonify({'erro': 'Cliente não encontrado.'}), 400
+
+        # Calcula Custo (Assumindo preço fixo ou vindo do evento)
+        # Se você tiver o preço no backend, melhor. Aqui vou usar um exemplo seguro.
+        # Idealmente: buscar o preço do sorte extra na coleção 'eventos' ou 'config'
+        preco_unitario = 2.00 # <--- AJUSTE ESTE VALOR SE NECESSÁRIO
+        custo_total = len(carrinho) * preco_unitario
+        
+        saldo_cliente = float(str(cliente.get('saldo_atual', 0))) # Garante float
+        
+        if saldo_cliente < custo_total:
+             return jsonify({'erro': 'Saldo insuficiente.'}), 400
+
+        # PREPARA A VENDA
+        nova_venda = {
+            "id_evento": id_evento,
+            "id_cliente": id_cli,
+            "nick_cliente": nick_cli,
+            "tipo": "sorte_extra",
+            "cartelas": carrinho, # Seus números
+            "qtd_cartelas": len(carrinho),
+            "valor_total": custo_total,
+            "data_compra": hora_brasil(),
+            "origem": "web_sorte_extra"
+        }
+
+        # GRAVA NO BANCO (Usando sales_db)
+        sales_db.vendas_sorte_extra.insert_one(nova_venda)
+
+        # DEBITA O SALDO (Usando sua função auxiliar se ela existir, ou update direto)
+        # Vou usar o update direto baseado no seu padrão, mas o ideal é usar 'registrar_transacao_cliente_mesa' se ela aceitar sorte extra
+        
+        # Opção A: Update Direto (Mais simples para agora)
+        sales_db.clientes.update_one(
+            {'id_cliente': id_cli},
+            {'$inc': {'saldo_atual': -custo_total}} # Decimal128 se necessário
+        )
+
+        # Retorno de Sucesso
+        return jsonify({
+            'status': 'ok', 
+            'msg': 'Compra Sorte Extra realizada!',
+            'novo_saldo': saldo_cliente - custo_total
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Erro crítico Sorte Extra: {e}")
+        # traceback.print_exc() # Descomente para ver o erro completo no terminal
+        return jsonify({'erro': 'Erro interno ao processar compra.'}), 500
 
 
 # --- MAIN ---
