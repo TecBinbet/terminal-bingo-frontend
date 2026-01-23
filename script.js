@@ -940,10 +940,10 @@ function renderizarListaMinhasCartelas(dados) {
         
         listaExtra.forEach((cupom, index) => {
             if (Array.isArray(cupom)) {
-                const nums = cupom.map(n => n.toString().padStart(2, '0')).join('<span class="text-yellow-600 px-1">-</span>');
+                const nums = cupom.map(n => n.toString().padStart(2, '0')).join('<span class="text-yellow-600 ">-</span>');
                 htmlFinal += `
-                    <div class="bg-black/40 border border-yellow-500/30 rounded px-3 py-1 text-center shadow-md min-w-[100px]">
-                        <div class="text-[10px] text-yellow-500 uppercase tracking-wider">Cupom ${index + 1}</div>
+                    <div class="bg-black/40 border border-yellow-500/30 rounded px-2 py-1 text-center shadow-md min-w-[100px]">
+                        <div class="text-[10px] text-yellow-400 uppercase tracking-wider">Cupom ${index + 1}</div>
                         <div class="font-mono text-yellow-200 font-bold text-base -mt-1 tracking-widest">
                             ${nums}
                         </div>
@@ -1836,7 +1836,7 @@ async function f_etchAndProcessCards() {
             loadedCards = [];
             displayLoadedCards([]);
             isFetchingCards = false;
-            updateDigitalBola("--");
+            updateDigitalBola("--");  // xx
             return;
         }
 
@@ -2379,7 +2379,7 @@ function clearPanels() {
     closeAvisoPanel(); // <--- Adicione 
     lastAvisoTimestamp = 0; // Reseta para permitir novos avisos iguais
 
-    updateDigitalBola("--");
+    updateDigitalBola("--");  // xxx
 
     precoSerie.textContent = '';    
     cartelaRanges = [];
@@ -3171,10 +3171,51 @@ function getBallColorClass(numero) {
     if (numero >= 37 && numero <= 54) return 'bg-purple-600 border-4 border-purple-400';
     if (numero >= 55 && numero <= 72) return 'bg-green-600 border-4 border-green-400';
     if (numero >= 73 && numero <= 90) return 'bg-yellow-600 border-4 border-yellow-400';
-    return 'bg-gray-700 border-4 border-gray-400'; // Cor padrão
+    return 'bg-black border-4 border-green-700'; // Cor padrão
 }
 
+
 function updateDigitalBola(numeroBola) {
+    if (!bolaDigitalElement) return;
+
+    const allBgColors = [
+        'bg-gray-700', 'bg-blue-600', 'bg-red-600', 
+        'bg-purple-600', 'bg-green-600', 'bg-yellow-600'
+    ];
+    
+    const allBorderColors = [
+        'border-gray-400', 'border-blue-400', 'border-red-400', 
+        'border-purple-400', 'border-green-400', 'border-yellow-400'
+    ];
+
+    // Calcula as cores baseadas no número (ou padrão se não for número)
+    const corClasses = getBallColorClass(numeroBola);
+    
+    // Remove todas as cores antigas
+    bolaDigitalElement.classList.remove(...allBgColors);
+    bolaDigitalElement.classList.remove(...allBorderColors);   
+
+    // --- LÓGICA DO TREVO 🍀 (AQUI ESTÁ A ALTERAÇÃO) ---
+    // Tenta converter para inteiro para fazer a comparação matemática
+    const valorNumerico = parseInt(numeroBola);
+
+    // Se NÃO for um número (NaN) OU se o número for menor que 1
+    if (isNaN(valorNumerico) || valorNumerico < 1) {
+        bolaDigitalElement.textContent = "🍀";
+    } else {
+        bolaDigitalElement.textContent = numeroBola;
+    }
+    // ---------------------------------------------------
+
+    // Adiciona as novas classes de cor
+    bolaDigitalElement.classList.add(...corClasses.split(' '));
+    
+    // Opcional: Adicionar uma classe de animação de contorno se necessário
+    bolaDigitalElement.classList.add('animate-pulsing-border'); 
+}
+
+// apagar xxx
+function updateDigitalBola2(numeroBola) {
     if (!bolaDigitalElement) return;
 
     const allBgColors = [
@@ -3196,7 +3237,7 @@ function updateDigitalBola(numeroBola) {
  //   bolaDigitalElement.className = bolaDigitalElement.className.replace(/bg-[\w-]+ border-[\w-]+/g, '');
 
     // Adiciona o novo número e as novas classes de cor
-    bolaDigitalElement.textContent = numeroBola;
+    bolaDigitalElement.textContent = numeroBola;  // < AQUIX
     bolaDigitalElement.classList.add(...corClasses.split(' '));
     
     // Opcional: Adicionar uma classe de animação de contorno se necessário
