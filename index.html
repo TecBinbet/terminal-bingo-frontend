@@ -305,7 +305,7 @@
                 </button>
 
                 <button id="btn-minhas-cartelas-mobile-view" class="w-1/3 p-1.5 bg-yellow-800 text-xs text-gray-200 font-bold rounded-lg hover:bg-yellow-500 shadow-md transition-colors">
-                    Minhas Cartelas
+                    🎟️ Minhas Apostas
                 </button>
             </div>
         </section>
@@ -401,32 +401,27 @@
     </div>
 
     <div id="my-cards-panel-container" class="hidden fixed inset-0 z-[120] items-center justify-center bg-black/30 backdrop-blur-sm">
-        <div class="relative bg-gray-900 p-4 rounded-2xl border-4 border-blue-600 shadow-2xl flex flex-col items-center w-[90%] max-w-[400px]">
+        <div class="relative bg-gray-900 p-2 rounded-2xl border-4 border-blue-600 shadow-2xl flex flex-col items-center w-[90%] max-w-[400px]">
             
-            <button id="btn-close-my-cards" class="absolute top-2 right-2 text-gray-400 hover:text-white transition-colors">
+            <button id="btn-close-my-cards" class="absolute top-1 right-2 text-gray-400 hover:text-white transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
             </button>
  
-            <h2 class="text-center text-xl text-white uppercase tracking-widest border-b-2 border-yellow-400 pb-2 w-full mb-3">
-                🎟️ Minhas Cartelas
+            <h2 class="text-center text-xl text-white -mt-1 uppercase tracking-widest border-b-2 border-yellow-400 w-full mb-2">
+                🎟️ Minhas Apostas
             </h2>
             
-            <div class="w-full bg-gray-800 rounded-lg overflow-hidden border border-gray-700 mb-2">
-                 <div class="grid grid-cols-3 bg-gray-700 p-1 text-sm text-gray-300 text-center border-b border-gray-600">
-                     <span>N° Inicial</span>
-                     <span>N° Final</span>
-                     <span>Cartelas</span>
-                 </div>
+            <div class="w-full bg-gray-800 rounded-lg overflow-hidden border border-gray-700 mb-1">
                  <div id="my-cards-list" class="max-h-[50vh] overflow-y-auto custom-scrollbar">
                      <div class="p-2 text-center text-gray-500 text-lg">Nenhuma cartela.</div>
                  </div>
             </div>
             
-            <div class="w-full bg-blue-900/30 rounded-lg p-3 border border-blue-500/50 flex justify-between items-center">
-                <span class="text-gray-300 text-sm font-bold">TOTAL:</span>
-                <span id="my-cards-total" class="text-xl font-black text-blue-400">R$ 0,00</span>
+            <div class="w-full bg-blue-900/30 rounded-lg py-1 px-3 border border-blue-500/50 flex justify-between items-center">
+                <span class="text-gray-300 text-sm font-bold">TOTAL de APOSTAS:</span>
+                <span id="my-cards-total" class="text-xl font-bold text-blue-400">R$ 0,00</span>
             </div>
 
         </div>
@@ -473,7 +468,7 @@
                         <button id="menu-btn-cartelas" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
                             <div class="flex items-center gap-2">
                                 <span class="text-xl">🎟️</span>
-                                <span class="font-medium">Minhas Cartelas</span>
+                                <span class="font-medium">Minhas Apostas</span>
                             </div>
                         </button>
                     </li>

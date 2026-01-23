@@ -872,53 +872,129 @@ function agruparNumerosEmRanges2(numeros) {
     return ranges;
 }
 
+
 // --- FUNÇÕES VISUAIS DE CARTELAS ---
 
-var globalMinhasCartelas = [];
+// Variável Global Segura
+var globalMinhasCartelas = { cartelas: [], cupons_extra: [] };
 
-function renderizarListaMinhasCartelas(listaCartelas) {
-    if (listaCartelas) {
-        globalMinhasCartelas = listaCartelas;
-    } else {
-        listaCartelas = globalMinhasCartelas;
+function renderizarListaMinhasCartelas(dados) {
+
+    let listaBingo = [];
+    let listaExtra = [];
+
+    // ============================================================
+    // 🧠 INTELIGÊNCIA DE PRESERVAÇÃO
+    // ============================================================
+    
+    // CASO 1: Chegou apenas um Array (Atualização do Bingo Automática)
+    if (Array.isArray(dados)) {
+        console.log("⚠️ Atualização Parcial: Apenas Cartelas Bingo");
+        listaBingo = dados;
+        
+        // O PULO DO GATO: Se já tínhamos cupons na memória, MANTENHA-OS!
+        if (globalMinhasCartelas && Array.isArray(globalMinhasCartelas.cupons_extra) && globalMinhasCartelas.cupons_extra.length > 0) {
+            listaExtra = globalMinhasCartelas.cupons_extra;
+            console.log(`♻️ Mantendo ${listaExtra.length} cupons da memória.`);
+        }
+    } 
+    // CASO 2: Chegou o Objeto Completo (Clicou em 'Meus Jogos')
+    else if (dados && typeof dados === 'object') {
+        console.log("✨ Atualização Completa: Bingo + Extra");
+        if (Array.isArray(dados.cartelas)) listaBingo = dados.cartelas;
+        if (Array.isArray(dados.cupons_extra)) listaExtra = dados.cupons_extra;
     }
 
-    const container = document.getElementById('my-cards-list');
-    if (!container) return;
+    // Atualiza a memória global com O QUE TIVER DE MAIS ATUAL
+    globalMinhasCartelas = { cartelas: listaBingo, cupons_extra: listaExtra };
 
+    console.log(`📊 Resumo Visual: ${listaBingo.length} Cartelas | ${listaExtra.length} Cupons Extra`);
+
+    // ============================================================
+    // RENDERIZAÇÃO
+    // ============================================================
+    const container = document.getElementById('my-cards-list');
+    const totalEl = document.getElementById('my-cards-total');
+    
+    if (!container) return;
+    
     container.innerHTML = ''; 
 
-    if (!listaCartelas || listaCartelas.length === 0) {
-        container.innerHTML = '<div class="p-4 text-center text-gray-400">Nenhuma cartela encontrada.</div>';
-        const totalEl = document.getElementById('my-cards-total');
+    // Verifica vazio
+    if (listaBingo.length === 0 && listaExtra.length === 0) {
+        container.innerHTML = '<div class="p-4 text-center text-gray-400">Nenhum jogo encontrado.</div>';
         if(totalEl) totalEl.textContent = "0";
         return;
     }
 
-    const ranges = converterListaParaRanges(listaCartelas);
-    let html = '';
+    let htmlFinal = '';
 
-    ranges.forEach(range => {
-        // Agora lemos as propriedades do objeto corretamente
-        const inicio = range.inicial;
-        const fim = range.final;
-        const qtd = fim - inicio + 1;
+    // 🅰️ RENDERIZA CUPONS DA SORTE EXTRA
+    if (listaExtra.length > 0) {
+        htmlFinal += `
+        <div class="bg-gray-800 p-2 rounded border -mt-1 border-yellow-600/50">
+            <h3 class="text-yellow-400 font-bold text-sm uppercase mb-2 flex items-center gap-2 border-b border-gray-700 pb-1">
+                🍀 Sorte Extra <span class="bg-yellow-500 text-black text-xs px-2 rounded-full">${listaExtra.length}</span>
+            </h3>
+            <div class="flex flex-wrap gap-2 justify-center">`;
         
-        html += `
-        <div class="grid grid-cols-3 border-b border-gray-600 hover:bg-white/5 py-2 text-sm">
-            <div class="text-center font-mono font-bold text-green-400">${inicio}</div>
-            <div class="text-center font-mono font-bold text-red-400">${fim}</div>
-            <div class="text-center">
-                <span class="bg-gray-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">${qtd}</span>
-            </div>
-        </div>`;
-    });
+        listaExtra.forEach((cupom, index) => {
+            if (Array.isArray(cupom)) {
+                const nums = cupom.map(n => n.toString().padStart(2, '0')).join('<span class="text-yellow-600 px-1">-</span>');
+                htmlFinal += `
+                    <div class="bg-black/40 border border-yellow-500/30 rounded px-3 py-1 text-center shadow-md min-w-[100px]">
+                        <div class="text-[10px] text-yellow-500 uppercase tracking-wider">Cupom ${index + 1}</div>
+                        <div class="font-mono text-yellow-200 font-bold text-base -mt-1 tracking-widest">
+                            ${nums}
+                        </div>
+                    </div>`;
+            }
+        });
+        htmlFinal += `</div></div>`;
+    }
 
-    container.innerHTML = html;
-    
-    const totalEl = document.getElementById('my-cards-total');
-    if(totalEl) totalEl.textContent = listaCartelas.length;
+    // 🅱️ RENDERIZA CARTELAS DO BINGO
+    if (listaBingo.length > 0) {
+        if (listaExtra.length > 0) htmlFinal += `<div class="mt-4 border-t border-gray-700 pt-2">`;
+        else htmlFinal += `<div>`;
+
+        htmlFinal += `<h3 class="text-blue-400 font-bold text-sm uppercase mb-1 px-1">🎱 Cartelas do Bingo (${listaBingo.length})</h3>`;
+
+        let ranges = [];
+        try {
+            if (typeof converterListaParaRanges === 'function') {
+                ranges = converterListaParaRanges(listaBingo);
+            } else {
+                ranges = [{inicial: listaBingo[0], final: listaBingo[listaBingo.length-1]}];
+            }
+        } catch (e) { ranges = []; }
+        
+        htmlFinal += `
+        <div class="grid grid-cols-3 bg-gray-700 text-xs text-gray-300 px-2 rounded-t  border-b border-gray-700">
+            <div class="text-center">N° Inicial</div>
+            <div class="text-center">N° Final</div>
+            <div class="text-center">Cartelas</div>
+        </div>
+        <div class="border border-gray-800 rounded-b overflow-hidden bg-gray-800/30">`;
+
+        ranges.forEach(range => {
+            const qtd = (range.final - range.inicial) + 1;
+            htmlFinal += `
+            <div class="grid grid-cols-3 border-b border-gray-700 hover:bg-white/5 py-1 text-sm text-gray-300">
+                <div class="text-center text-[14px] font-bold text-gray-150">${range.inicial}</div>
+                <div class="text-center text-[14px] font-bold text-gray-150">${range.final}</div>
+                <div class="text-center flex items-center justify-center">
+                    <span class="text-yellow-600 text-[14px] font-bold">${qtd}</span>
+                </div>
+            </div>`;
+        });
+        htmlFinal += `</div></div>`;
+    }
+
+    container.innerHTML = htmlFinal;
+    if(totalEl) totalEl.textContent = listaBingo.length + listaExtra.length;
 }
+
 
 
 // 2. Gatilho para redesenhar ao abrir a aba/menu (VITAL PARA CORRIGIR O BUG DA TELA VAZIA)
@@ -1320,90 +1396,45 @@ function handleFullscreenChange() {
     }
 }
 
-// --- NOVA FUNÇÃO: Abrir Modal Minhas Cartelas (Com Loading) ---
+// --- FUNÇÃO SEGURA: Abrir Minhas Cartelas ---
 function openMyCardsPanel() {
-
-    // TRAVA DE LOGIN:
+    
+    // 1. Trava de Login
     if (!isUsuarioLogado()) {
-        showCustomAlert("Faça login para ver suas cartelas.", "Acesso Negado", "🚫");
+        showCustomAlert("Faça login.", "Ops", "🚫");
         abrirModalLogin();
         return;
     }
-
-    // Verifica se os elementos do modal existem no HTML
-    if (!myCardsPanel || !myCardsList || !myCardsTotal) {
-        console.error("Elementos do modal 'Minhas Cartelas' não encontrados.");
-        return;
-    }
-
-
-    // 1. Exibe o Loader
+    
+    if (!myCardsPanel || !myCardsList) return;
     if (loader) loader.style.display = 'flex';
 
-    // 2. Usa setTimeout para dar tempo do loader renderizar e simular processamento
-    setTimeout(() => {
-        if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
-           goFullscreen(); 
-        } 
-     
-        // Limpa a lista anterior
-        myCardsList.innerHTML = '';
-        let totalCartelasGeral = 0;
+    // =================================================================
+    // ✅ USANDO SUAS VARIÁVEIS GLOBAIS JÁ EXISTENTES
+    // =================================================================
+    // Se eventoCarregadoAtual estiver vazio, usa o 'padrao' por segurança
+    const evtId = eventoCarregadoAtual || 'padrao';
+    const cliId = globalIdCliente || '';
+    
+    console.log(`🚀 Buscando cartelas -> Evento: ${evtId} | Cliente: ${cliId}`);
 
-        // Verifica se há faixas de cartelas carregadas
-        if (!cartelaRanges || cartelaRanges.length === 0) {
-            myCardsList.innerHTML = '<div class="p-2 text-center text-gray-500 text-lg">Nenhuma cartela adquirida.</div>';
-            myCardsTotal.textContent = 'R$ 0,00';
-            
-            // Finaliza exibição
+    // 2. Busca no Servidor
+    fetch(`/api/consultar_cartelas_evento?id_evento=${evtId}&id_cliente=${cliId}`)
+        .then(res => res.json())
+        .then(data => {
+            renderizarListaMinhasCartelas(data);
             mostrarPainelMinhasCartelas();
-            return;
-        }
-
-        // Itera sobre as faixas para criar a lista visual
-        cartelaRanges.forEach(range => {
-            if (range.inicial > 0 && range.final > 0) {
-                // Cálculo da quantidade: (Final - Inicial) + 1
-                const qtd = (range.final - range.inicial) + 1;
-                totalCartelasGeral += qtd;
-
-                // Cria a linha da tabela
-                const row = document.createElement('div');
-                row.className = 'grid grid-cols-3 p-1 text-lg text-center font-bold  border-b border-gray-700 hover:bg-gray-800 text-gray-300 transition-colors';
-                
-                row.innerHTML = `
-                    <span>${range.inicial}</span>
-                    <span>${range.final}</span>
-                    <span class="text-yellow-500 font-bold">${qtd}</span>
-                `;
-                myCardsList.appendChild(row);
-            }
-        });
-
-        // Cálculo Financeiro Total
-        const multiplo = (premioInfo && premioInfo.multiplo > 0) ? premioInfo.multiplo : 6;
-        const preco = (premioInfo && premioInfo.preco) ? premioInfo.preco : 0;
-        
-        let valorTotal = 0;
-        if (multiplo > 0) {
-             const unidades = totalCartelasGeral / multiplo;
-             valorTotal = unidades * preco;
-        }
-
-        // Formatação Monetária
-        const totalFormatado = new Intl.NumberFormat('pt-BR', {
-            style: 'currency',
-            currency: 'BRL'
-        }).format(valorTotal);
-
-        // Atualiza o totalizador na tela
-        myCardsTotal.textContent = totalFormatado;
-
-        // Finaliza exibição
-        mostrarPainelMinhasCartelas();
-
-    }, 500); // Delay de 0.5s para visualização do loading
+            if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
+        })
+        .catch(err => {
+            console.error(err);
+            myCardsList.innerHTML = '<div class="p-4 text-center text-red-400">Erro de conexão.</div>';
+            mostrarPainelMinhasCartelas();
+        })
+        .finally(() => { if (loader) loader.style.display = 'none'; });
 }
+
+
 
 // Função auxiliar para exibir o painel e esconder o loader
 function mostrarPainelMinhasCartelas() {
@@ -3915,39 +3946,45 @@ async function init() {
 // =================================================================
 // 🕵️‍♂️ DETETIVE DE ID (Versão Corrigida para Array)
 // =================================================================
+
 let idDoEvento = null;
 
-// TENTATIVA 1: Está dentro de 'rodadaData' (que é um Array)?
-// O user confirmou que está aqui: initialData.rodadaData[0].id_evento
+// 1. DETETIVE DE ID (Evento)
 if (initialData.rodadaData && Array.isArray(initialData.rodadaData) && initialData.rodadaData.length > 0) {
     idDoEvento = initialData.rodadaData[0].id_evento;
-}
-// TENTATIVA 2: Está na raiz?
-else if (initialData.id_evento) {
+} else if (initialData.id_evento) {
     idDoEvento = initialData.id_evento;
-} 
-// TENTATIVA 3: Está dentro de premioInfo?
-else if (initialData.premioInfo && initialData.premioInfo.id_evento) {
+} else if (initialData.premioInfo && initialData.premioInfo.id_evento) {
     idDoEvento = initialData.premioInfo.id_evento;
 }
 
-console.log("🔎 ID DETECTADO NO INIT:", idDoEvento); // Agora vai mostrar '22'
+console.log("🔎 ID DETECTADO NO INIT:", idDoEvento);
 
-// Salva e carrega
 if (idDoEvento) {
-    // 1. Salva na Global
-    if (typeof eventoCarregadoAtual === 'undefined' || !eventoCarregadoAtual) {
-        eventoCarregadoAtual = { id_evento: idDoEvento };
-    } else {
-        eventoCarregadoAtual.id_evento = idDoEvento;
+    // Atualiza o ID do Evento
+    eventoCarregadoAtual = idDoEvento; 
+
+    // ============================================================
+    // 🛡️ PROTEÇÃO DE LOGIN (AQUI ESTÁ A CORREÇÃO)
+    // ============================================================
+    // Só atualizamos o globalIdCliente se o servidor mandou um ID válido.
+    // Se o servidor mandou null, mas nós JÁ TEMOS um ID (do auto-login), MANTEMOS O NOSSO!
+    
+    if (initialData.id_cliente) {
+        globalIdCliente = initialData.id_cliente; // Servidor confirmou login
+    } else if (window.userId) {
+        globalIdCliente = window.userId;          // Mantém o login local
     }
     
-    // 2. Chama o Sorte Extra
-    carregarSorteExtra(false, idDoEvento);
-    setTimeout(() => { carregarSorteExtra(false, idDoEvento); }, 1000);
+    // Se ambos forem null, aí sim o usuário é anônimo, mas não forçamos logout aqui.
+    
+    console.log(`💾 Estado Estável -> Evento: ${eventoCarregadoAtual}, Cliente: ${globalIdCliente}`);
 
+    // Carrega botão
+    carregarSorteExtra(false, idDoEvento);
+    
 } else {
-    console.error("❌ init: ID não encontrado nem em rodadaData[0].");
+    console.error("❌ init: ID do evento não encontrado.");
 }
 
 

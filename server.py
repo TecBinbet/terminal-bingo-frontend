@@ -62,8 +62,12 @@ def broadcast_para_clientes(mensagem_dict):
             clientes_conectados.remove(morto)
 
 def hora_brasil():
-    """Retorna a data e hora atual no fuso de São Paulo"""
-    return datetime.now(ZoneInfo('America/Sao_Paulo'))
+# 1. Pega a hora exata no fuso de SP
+    agora_sp = datetime.now(ZoneInfo('America/Sao_Paulo'))
+    
+    # 2. Remove a 'etiqueta' de fuso horário (.replace(tzinfo=None))
+    # Assim o banco salva exatamente o que vê, sem tentar converter.
+    return agora_sp.replace(tzinfo=None)
 
 
 def converter_decimal(valor):
@@ -1517,75 +1521,98 @@ def admin_fechar_vendas():
         print(f"Erro fechar vendas: {e}")
         return jsonify({'error': str(e)}), 500
 
-# Rota Consultar Cartelas 
+# Rota Consultar Cartelas e Cupons (Unificada)
 @app.route('/api/consultar_cartelas_evento')
 def api_consultar_cartelas():
     try:
+        # Pega parâmetros
         id_evt = request.args.get('id_evento')
         id_cli = request.args.get('id_cliente')
         
-        # --- BLINDAGEM DE SESSÃO (AQUI ESTÁ A CORREÇÃO) ---
-        # Se o Javascript não mandou o ID na URL (porque é acesso seguro),
-        # nós pegamos o ID de dentro do Cookie de Sessão.
+        # --- BLINDAGEM DE SESSÃO ---
         if not id_cli or id_cli == 'null' or id_cli == 'undefined':
             if 'id_cliente' in session:
                 id_cli = session['id_cliente']
             else:
-                return jsonify({'error': 'Cliente não identificado (Faça login)'}), 401
-        # --------------------------------------------------
+                return jsonify({'error': 'Cliente não identificado'}), 401
         
         if not id_evt: 
-            return jsonify({'error': 'Faltam parâmetros (Evento)'}), 400
+            return jsonify({'error': 'Faltam parâmetros'}), 400
         
         s_db = get_sales_db_connection()
-        if s_db is None: 
-            return jsonify({'error': 'DB Vendas Offline'}), 500
-        
-        col = f"vendas{id_evt}"
-        cartelas = []
-        
-        if col in s_db.list_collection_names():
-            # Converte ID cliente para int com segurança
-            try:
-                id_cli_int = int(id_cli)
-            except:
-                id_cli_int = str(id_cli)
-            
-            # Busca Híbrida: Procura tanto como Número quanto como Texto
-            cursor = s_db[col].find({
-                '$or': [
-                    {'id_cliente': id_cli_int}, 
-                    {'id_cliente': str(id_cli_int)}
-                ]
-            })
-            
-            for v in cursor:
-                try:
-                    # Faixa 1
-                    n_ini = int(v.get('numero_inicial') or 0)
-                    n_fim = int(v.get('numero_final') or 0)
-                    
-                    if n_ini > 0 and n_fim >= n_ini:
-                        cartelas.extend(range(n_ini, n_fim + 1))
-                    
-                    # Faixa 2
-                    n_ini2 = int(v.get('numero_inicial2') or 0)
-                    n_fim2 = int(v.get('numero_final2') or 0)
-                    
-                    if n_ini2 > 0 and n_fim2 >= n_ini2:
-                        cartelas.extend(range(n_ini2, n_fim2 + 1))
-                        
-                except Exception as e_row:
-                    continue
+        if s_db is None: return jsonify({'error': 'DB Offline'}), 500
 
-        return jsonify({'id_evento': id_evt, 'cartelas': cartelas, 'quantidade': len(cartelas)})
+        # Prepara ID Cliente (Híbrido)
+        try:
+            id_cli_int = int(id_cli)
+        except:
+            id_cli_int = str(id_cli)
+
+        # Filtro que aceita tanto número quanto texto
+        filtro_cliente = {
+            '$or': [
+                {'id_cliente': id_cli_int}, 
+                {'id_cliente': str(id_cli_int)}
+            ]
+        }
+
+        # === DEBUG: O QUE ESTAMOS PROCURANDO? ===
+        #print(f"\n🔍 CONSULTA JOGOS | Evento: {id_evt} | Cliente: {id_cli}")
+        
+        # 1. BINGO NORMAL
+        col_bingo = f"vendas{id_evt}"
+        cartelas_bingo = []
+        if col_bingo in s_db.list_collection_names():
+            cursor = s_db[col_bingo].find(filtro_cliente)
+            for v in cursor:
+                # Lógica de faixas (Mantida igual)
+                try:
+                    n_ini, n_fim = int(v.get('numero_inicial') or 0), int(v.get('numero_final') or 0)
+                    if n_ini > 0: cartelas_bingo.extend(range(n_ini, n_fim + 1))
+                    n_ini2, n_fim2 = int(v.get('numero_inicial2') or 0), int(v.get('numero_final2') or 0)
+                    if n_ini2 > 0: cartelas_bingo.extend(range(n_ini2, n_fim2 + 1))
+                except: continue
+        
+        # 2. SORTE EXTRA (O FOCO DO PROBLEMA)
+        # Tenta converter evento para INT para garantir compatibilidade com nome da tabela
+        try:
+            id_evt_limpo = int(id_evt) 
+        except:
+            id_evt_limpo = id_evt
+            
+        col_extra = f"vendas_sorte_extra{id_evt_limpo}"
+        cupons_extra = []
+        
+        #print(f"🧐 Procurando Sorte Extra na tabela: '{col_extra}'")
+        
+        # Removemos a verificação 'if in list_collection_names' para testar direto
+        # Isso evita falso negativo se o Mongo demorar pra atualizar cache de nomes
+        cursor_extra = s_db[col_extra].find(filtro_cliente)
+        count_extra = 0
+        
+        for v in cursor_extra:
+            count_extra += 1
+            # Debug do documento encontrado
+            # print(f"   📄 Achei venda extra: {v.get('_id')}") 
+            
+            meus_jogos = v.get('cartelas', []) # Espera [[1,2,3], [4,5,6]]
+            if isinstance(meus_jogos, list):
+                cupons_extra.extend(meus_jogos)
+                
+        #print(f"✅ Resultado Extra: {count_extra} vendas encontradas | {len(cupons_extra)} cupons extraídos.")
+
+        # Retorno
+        return jsonify({
+            'id_evento': id_evt, 
+            'cartelas': cartelas_bingo,
+            'quantidade': len(cartelas_bingo),
+            'cupons_extra': cupons_extra, 
+            'qtd_extra': len(cupons_extra)
+        }), 200
 
     except Exception as e:
-        print(f"❌ Erro FATAL na API consultar_cartelas: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ ERRO API: {e}")
         return jsonify({'error': str(e)}), 500
-
 
 
 # --- WEBSOCKET CORRIGIDO ---
@@ -2739,7 +2766,7 @@ def admin_resetar():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-
+# apagarxxx
 @app.route('/api/admin/resetar2', methods=['POST'])
 def admin_resetar2():
     global db, timeStart
@@ -4275,12 +4302,9 @@ def comprar_extra():
         return jsonify({'erro': 'Sessão expirada. Faça login novamente.'}), 401
 
     try:
-        # --- AQUI ESTÁ A CORREÇÃO PRINCIPAL ---
-        # Iniciamos a conexão exatamente como na função que você enviou
         sales_db = get_sales_db_connection()
         if sales_db is None:
             return jsonify({'erro': 'Banco de Vendas offline.'}), 500
-        # --------------------------------------
 
         data = request.json
         id_evento = data.get('id_evento')
@@ -4292,61 +4316,74 @@ def comprar_extra():
 
         id_cli = int(session['id_cliente'])
         nick_cli = session.get('nick_cliente', 'Cliente Web')
+        id_evento_int = int(id_evento) # Garante inteiro para o nome da tabela
 
-        # Busca dados do cliente para verificar saldo
-        # Nota: Usamos 'sales_db' pois é ele que tem a coleção 'clientes' no seu exemplo
+        # --- BUSCA DADOS DO CLIENTE (SALDO) ---
         cliente = sales_db.clientes.find_one({'id_cliente': id_cli})
-        
         if not cliente:
             return jsonify({'erro': 'Cliente não encontrado.'}), 400
 
-        # Calcula Custo (Assumindo preço fixo ou vindo do evento)
-        # Se você tiver o preço no backend, melhor. Aqui vou usar um exemplo seguro.
-        # Idealmente: buscar o preço do sorte extra na coleção 'eventos' ou 'config'
-        preco_unitario = 2.00 # <--- AJUSTE ESTE VALOR SE NECESSÁRIO
+        # --- BUSCA PREÇO REAL DA CONFIGURAÇÃO ---
+        config_extra = sales_db.sorte_extra_config.find_one({'id_evento': id_evento_int})
+        
+        if config_extra:
+            preco_unitario = float(str(config_extra.get('preco_cupom', 2.00)))
+        else:
+            preco_unitario = 2.00 # Fallback de segurança
+
         custo_total = len(carrinho) * preco_unitario
         
-        saldo_cliente = float(str(cliente.get('saldo_atual', 0))) # Garante float
-        
+        # Verifica Saldo
+        saldo_cliente = float(str(cliente.get('saldo_atual', 0)))
         if saldo_cliente < custo_total:
              return jsonify({'erro': 'Saldo insuficiente.'}), 400
 
-        # PREPARA A VENDA
+        # --- PREPARA A VENDA ---
         nova_venda = {
-            "id_evento": id_evento,
+            "id_evento": id_evento_int,
             "id_cliente": id_cli,
             "nick_cliente": nick_cli,
             "tipo": "sorte_extra",
-            "cartelas": carrinho, # Seus números
+            "cartelas": carrinho, 
             "qtd_cartelas": len(carrinho),
             "valor_total": custo_total,
             "data_compra": hora_brasil(),
             "origem": "web_sorte_extra"
         }
 
-        # GRAVA NO BANCO (Usando sales_db)
-        sales_db.vendas_sorte_extra.insert_one(nova_venda)
+        # 🐰 COELHO 1: GRAVA NA TABELA DINÂMICA (vendas_sorte_extraXXX)
+        nome_colecao_vendas = f"vendas_sorte_extra{id_evento_int}"
+        sales_db[nome_colecao_vendas].insert_one(nova_venda)
 
-        # DEBITA O SALDO (Usando sua função auxiliar se ela existir, ou update direto)
-        # Vou usar o update direto baseado no seu padrão, mas o ideal é usar 'registrar_transacao_cliente_mesa' se ela aceitar sorte extra
-        
-        # Opção A: Update Direto (Mais simples para agora)
+        # --- DEBITA O SALDO DO CLIENTE ---
         sales_db.clientes.update_one(
             {'id_cliente': id_cli},
-            {'$inc': {'saldo_atual': -custo_total}} # Decimal128 se necessário
+            {'$inc': {'saldo_atual': -custo_total}}
         )
+
+        # 🐰 COELHO 2: REGISTRA NA TABELA DE TRANSAÇÕES (Extrato)
+        nova_transacao = {
+            "id_cliente": id_cli,
+            "data_hora": hora_brasil(),
+            "tipo": "compra",  
+            "valor": -abs(custo_total),
+            "descricao": f"Sorte Extra - Ev. {id_evento_int} ({len(carrinho)} cupons)",
+            "id_evento": id_evento_int,
+            "origem": "sorte_extra"
+        }
+        sales_db.transacoes_clientes.insert_one(nova_transacao)
 
         # Retorno de Sucesso
         return jsonify({
             'status': 'ok', 
-            'msg': 'Compra Sorte Extra realizada!',
+            'msg': 'Compra realizada com sucesso!',
             'novo_saldo': saldo_cliente - custo_total
         }), 200
 
     except Exception as e:
         print(f"❌ Erro crítico Sorte Extra: {e}")
-        # traceback.print_exc() # Descomente para ver o erro completo no terminal
         return jsonify({'erro': 'Erro interno ao processar compra.'}), 500
+
 
 
 # --- MAIN ---
