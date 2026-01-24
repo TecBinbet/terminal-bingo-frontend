@@ -29,6 +29,11 @@ let localStream = null;
 let vendasTimerInterval = null;
 let MAX_BOLAS = 90;
 
+// --- CONTROLE SORTE EXTRA ---
+let sorteioExtraConfigAtivo = false;    // Se o evento atual tem Sorte Extra
+let qtdeDezenasSorteExtra = 3;          // Padrão (será atualizado pela config)
+let jaValidouSorteExtraNestaRodada = false; // Trava para não abrir o modal 20x
+
 let jogoFoiFinalizadoComSucesso = false;
 
 let bolasProcessadasAdmin = new Set(); 
@@ -452,6 +457,30 @@ async function carregarDadosIniciaisSilencioso() {
             document.getElementById('config-atraso-video').value =aguardandoVideo; 
             vozAtiva = data.parametrosInfo.voz_ativa !== undefined ? data.parametrosInfo.voz_ativa : true;
         }
+
+
+        // =============================================================
+        // 🛠️ CORREÇÃO: PREENCHER O ID DO EVENTO PARA O SORTE EXTRA
+        // =============================================================
+        // Se a variável global estiver vazia, tentamos preencher com os dados da rodada
+        if (!dadosEventoAtual && data.rodadaData && data.rodadaData.length > 0) {
+            const rodada = data.rodadaData[0];
+            if (rodada.id_evento && rodada.id_evento !== "0") {
+                console.log(`♻️ [RECUPERAÇÃO] Restaurando ID do evento após F5: ${rodada.id_evento}`);
+                
+                // Cria o objeto global apenas com o ID (o suficiente para o Sorte Extra funcionar)
+                dadosEventoAtual = { 
+                    id_evento: rodada.id_evento,
+                    descricao: 'Evento Recuperado' 
+                };
+            }
+        }
+        // =============================================================
+
+        // Agora sim chamamos a função, pois dadosEventoAtual já existe
+        if (dadosEventoAtual && dadosEventoAtual.id_evento) {
+             carregarConfigSorteExtraAdmin();
+        }
         
         if (data.evento && parseInt(data.evento.tipo_cartela) === 25) {
             MAX_BOLAS = 75;
@@ -464,8 +493,16 @@ async function carregarDadosIniciaisSilencioso() {
             initGrid(); 
         }
 
-        if(data.bolasData && data.bolasData[0]) {
-             bolasSorteadasCache = data.bolasData[0].bolas_cantadas || [];
+        // Tenta pegar primeiro da Mesa, depois do Público
+        let listaBolasInit = [];
+        if (data.bolasMesaData && data.bolasMesaData.length > 0) {
+            listaBolasInit = data.bolasMesaData[0].bolas_cantadas || [];
+        } else if (data.bolasData && data.bolasData.length > 0) {
+            listaBolasInit = data.bolasData[0].bolas_cantadas || [];
+        }
+
+        if(listaBolasInit.length > 0) {
+             bolasSorteadasCache = listaBolasInit;
              updateGrid(bolasSorteadasCache);
         }
     } catch(e) {}
@@ -504,6 +541,18 @@ function processarMensagemWS(event) {
                     bolaDestaque.textContent = listaDeNumeros[listaDeNumeros.length - 1];
                 }
             }
+
+            // O Alerta
+            if (sorteioExtraConfigAtivo && 
+               listaDeNumeros.length === qtdeDezenasSorteExtra && 
+               !jaValidouSorteExtraNestaRodada) {
+        
+               console.log("🚨 [DEBUG] CONDIÇÃO ATINGIDA! ABRINDO MODAL...");
+               jaValidouSorteExtraNestaRodada = true; 
+               abrirModalValidacaoSorteExtra();
+           }
+        } else {
+           jaValidouSorteExtraNestaRodada = false; 
         }
 
         if (payload.rodadaData && payload.rodadaData.length > 0) {
@@ -593,6 +642,30 @@ if (payload.melhoresData) {
         const status = (item.premio && item.premio !== "null") ? item.premio.toUpperCase() : "";
         return termosVitoria.some(termo => status.includes(termo));              
     });
+
+    // Buscar Sorte Extra
+    const bolasMesa = bolasSorteadasCache; // Array das bolas [15, 42, 63...]
+    
+    // Verificamos se atingiu a quantidade X
+    if (sorteioExtraConfigAtivo && bolasMesa.length === qtdeDezenasSorteExtra) {
+        
+        if (!jaValidouSorteExtraNestaRodada) {
+            jaValidouSorteExtraNestaRodada = true; // Trava para não abrir 1000 vezes
+            
+            // TOCA UM SOM DE ALERTA (Opcional)
+            const audio = new Audio('/sons/alert.mp3'); // Se tiver
+            audio.play().catch(e=>{});
+
+            // ABRE O MODAL AUTOMATICAMENTE
+            abrirModalValidacaoSorteExtra();
+        }
+    }
+    
+    // Se resetar o jogo (0 bolas), reseta a trava
+    if (bolasMesa.length === 0) {
+        jaValidouSorteExtraNestaRodada = false;
+    }
+// sorte extra
 
     if (!modoRoboAtivo) {
         novosContemplados.forEach(novo => {
@@ -1929,6 +2002,252 @@ function alternarBotaoReset(modo) {
         btn.className = "bg-red-900 hover:bg-red-700 text-white px-4 py-1 rounded font-bold border border-red-500 text-sm flex items-center gap-1 transition-colors duration-300";
         btn.innerHTML = "⚠️ REINICIAR SORTEIO";
     }
+}
+
+
+// Adicione esta chamada no seu 'carregarDadosIniciaisSilencioso' ou quando carregar evento
+async function carregarConfigSorteExtraAdmin() {
+    // Pega ID do evento atual (precisa estar disponível no scopo global ou DOM)
+    if(!dadosEventoAtual || !dadosEventoAtual.id) return;
+    
+    try {
+        const resp = await fetch(`${API_BASE_URL}/api/cliente/config_sorte_extra/${dadosEventoAtual.id}`);
+        if(resp.ok) {
+            const cfg = await resp.json();
+            if(cfg.ativo) {
+                sorteioExtraConfigAtivo = true;
+                qtdeDezenasSorteExtra = cfg.qtde_dezenas || 3;
+                console.log(`🍀 Sorte Extra Ativo: Alerta na bola ${qtdeDezenasSorteExtra}`);
+                
+                // Atualiza UI se quiser mostrar um label "Sorte Extra: ON"
+            }
+        }
+    } catch(e) { console.error("Erro config extra", e); }
+}
+
+async function carregarConfigSorteExtraAdmin() {
+    console.log("🐛 [DEBUG] Tentando carregar config Sorte Extra...");
+
+    if (!dadosEventoAtual || !dadosEventoAtual.id_evento) {
+        console.log("🐛 [DEBUG] Abortado: Sem dadosEventoAtual ou ID.");
+        return;
+    }
+    
+    try {
+        const url = `${API_BASE_URL}/api/cliente/config_sorte_extra/${dadosEventoAtual.id_evento}`;
+        //console.log(`🐛 [DEBUG] Fetch URL: ${url}`);
+
+        const resp = await fetch(url);
+        if (resp.ok) {
+            const cfg = await resp.json();
+            console.log("🐛 [DEBUG] Config Recebida:", cfg);
+
+            if (cfg.ativo) {
+                sorteioExtraConfigAtivo = true;
+                qtdeDezenasSorteExtra = cfg.qtde_dezenas || 3;
+                //console.log(`✅ [DEBUG] Sorte Extra ATIVADO. Alerta na bola: ${qtdeDezenasSorteExtra}`);
+                
+                // Atualiza visualmente (opcional)
+                const elInfo = document.getElementById('info-extra-status');
+                if(elInfo) elInfo.innerHTML = `<span class="bg-yellow-600 text-white text-xs px-2 py-1 rounded">Sorte Extra ON (${qtdeDezenasSorteExtra})</span>`;
+            } else {
+                //console.log("⛔ [DEBUG] Sorte Extra está DESATIVADO nesta config.");
+                sorteioExtraConfigAtivo = false;
+            }
+        } else {
+            //console.log("🐛 [DEBUG] Erro no fetch (status):", resp.status);
+            sorteioExtraConfigAtivo = false;
+        }
+    } catch (e) {
+        //console.warn("🐛 [DEBUG] Erro Exception:", e);
+        sorteioExtraConfigAtivo = false;
+    }
+}
+
+
+// Função para abrir o modal (Com o espaço para o contador)
+function abrirModalValidacaoSorteExtra() {
+    // 1. Injeta o HTML do modal se não existir
+    if (!document.getElementById('modal-sorte-extra')) {
+        const modalHTML = `
+        <div id="modal-sorte-extra" class="fixed inset-0 bg-black/90 z-[60] hidden flex items-center justify-center backdrop-blur-sm">
+            <div class="bg-gray-900 border-2 border-yellow-500/50 rounded-xl w-full max-w-5xl p-4 shadow-2xl relative flex flex-col max-h-[90vh]">
+                
+                <div class="flex justify-between items-center mb-1 border-b border-gray-700 pb-4">
+                    <div>
+                        <h2 class="text-1xl font-black text-yellow-500 flex items-center gap-2">
+                            🍀 CONFERÊNCIA SORTE EXTRA
+                        </h2>
+                        <div class="flex items-center gap-3 -mb-2">
+                            <p class="text-gray-400 text-sm">Validando ganhadores...</p>
+                            <span id="badge-total-cupons" class="bg-gray-700 text-white text-xs px-4 py-1 rounded border border-gray-600">
+                                Carregando...
+                            </span>
+                        </div>
+                    </div>
+                    <button onclick="document.getElementById('modal-sorte-extra').classList.add('hidden')" class="text-gray-500 hover:text-white transition-colors">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+
+                <div id="loading-extra" class="flex-1 flex flex-col items-center justify-center py-10 hidden">
+                    <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-yellow-500 mb-4"></div>
+                    <p class="text-yellow-500 animate-pulse font-bold">Auditando Cupons...</p>
+                </div>
+
+                <div id="resultados-extra" class="grid grid-cols-1 md:grid-cols-3 gap-4 overflow-y-auto custom-scrollbar p-2">
+                    
+                    <div class="bg-gray-800/50 rounded-lg border border-green-500/30 flex flex-col h-96">
+                        <div class="bg-green-900/30 p-1 border-b border-green-500/30">
+                            <h3 class="font-bold text-green-400 text-center uppercase tracking-wider">🏆 Sequência Exata</h3>
+                            <div class="text-[12px] text-center text-gray-300">Prêmio Máximo</div>
+                        </div>
+                        <div id="lista-seq" class="flex-1 overflow-y-auto p-2 space-y-2"></div>
+                    </div>
+
+                    <div class="bg-gray-800/50 rounded-lg border border-blue-500/30 flex flex-col h-96">
+                        <div class="bg-blue-900/30 p-1 border-b border-blue-500/30">
+                            <h3 class="font-bold text-blue-400 text-center uppercase tracking-wider">🎲 Ordem Aleatória</h3>
+                            <div class="text-[12px] text-center text-gray-300">Prêmio Intermediário</div>
+                        </div>
+                        <div id="lista-ale" class="flex-1 overflow-y-auto p-2 space-y-2"></div>
+                    </div>
+
+                    <div class="bg-gray-800/50 rounded-lg border border-orange-500/30 flex flex-col h-96">
+                        <div class="bg-orange-900/30 p-1 border-b border-orange-500/30">
+                            <h3 class="font-bold text-orange-400 text-center uppercase tracking-wider">🎱 Acertou 1ª Bola</h3>
+                            <div class="text-[12px] text-center text-gray-300">Prêmio Base</div>
+                        </div>
+                        <div id="lista-prim" class="flex-1 overflow-y-auto p-2 space-y-2"></div>
+                    </div>
+                </div>
+
+                <div class="mt-2 pt-2 border-t border-gray-700 flex justify-between items-center bg-gray-900">
+                    <div class="text-xs text-gray-500">
+                        * Clique no cartão do ganhador para enviá-lo para a TV.
+                    </div>
+                    <div class="flex gap-3">
+                         <button onclick="limparTelaPublicaExtra()" class="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded font-bold border border-gray-500 shadow-lg flex items-center gap-2">
+                            🧹 Limpar TV
+                         </button>
+                         <button onclick="document.getElementById('modal-sorte-extra').classList.add('hidden')" class="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded font-bold shadow-lg">
+                            Fechar
+                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+
+    // Abre o modal
+    const modal = document.getElementById('modal-sorte-extra');
+    if(modal) modal.classList.remove('hidden');
+    
+    // Busca os dados
+    buscarGanhadoresExtra();
+}
+
+// Função de Busca (Atualiza o contador)
+async function buscarGanhadoresExtra() {
+    const loading = document.getElementById('loading-extra');
+    const content = document.getElementById('resultados-extra');
+    const badgeTotal = document.getElementById('badge-total-cupons'); // Elemento do contador
+    
+    if(loading) loading.classList.remove('hidden');
+    if(content) content.classList.add('hidden');
+    if(badgeTotal) badgeTotal.textContent = "Auditando...";
+    
+    try {
+        const resp = await fetch(`${API_BASE_URL}/api/admin/validar_sorte_extra`, { method: 'POST' });
+        const data = await resp.json();
+        
+        if (data.status === 'sucesso') {
+            // ATUALIZA O CONTADOR VISUALMENTE
+            if(badgeTotal) {
+                badgeTotal.textContent = `${data.total_analisado || 0} cupons analisados`;
+                badgeTotal.classList.remove('bg-gray-700');
+                badgeTotal.classList.add('bg-blue-900', 'text-blue-100', 'border-blue-500','text-[14px]');
+            }
+
+            renderizarListaExtra('lista-seq', data.ganhadores.sequencia, 'seq');
+            renderizarListaExtra('lista-ale', data.ganhadores.aleatorio, 'ale');
+            renderizarListaExtra('lista-prim', data.ganhadores.primeira, 'prim');
+
+        } else if (data.status === 'aguardando') {
+            alert(data.msg);
+            document.getElementById('modal-sorte-extra').classList.add('hidden');
+        }
+    } catch(e) {
+        console.error(e);
+        alert("Erro ao conectar com servidor de validação.");
+    } finally {
+        if(loading) loading.classList.add('hidden');
+        if(content) content.classList.remove('hidden');
+    }
+}
+
+
+function renderizarListaExtra(elementId, lista, tipo) {
+    const container = document.getElementById(elementId);
+    container.innerHTML = '';
+    
+    if (lista.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 italic text-sm text-center mt-4">Nenhum ganhador.</p>';
+        return;
+    }
+
+    lista.forEach(g => {
+        const div = document.createElement('div');
+        div.className = "p-1 bg-gray-900 rounded border border-gray-700 hover:bg-gray-700 cursor-pointer flex justify-between items-center transition-colors";
+        div.innerHTML = `
+            <div>
+                <span class="text-sm block font-bold text-gray-400">Cupom: ${g.id}</span>
+                <span class="text-lg text-white -mt-2" >${g.nick}</span>
+            </div>
+            <div class="text-right">
+                <span class="text-lg font-mono font-bold text-yellow-500">${g.nums.join('-')}</span>
+            </div>
+        `;
+        // Ao clicar, envia para o terminal
+        div.onclick = () => publicarGanhadorExtra(g, tipo);
+        container.appendChild(div);
+    });
+}
+
+async function publicarGanhadorExtra(dados, tipo) {
+    const labelPremios = {
+        'seq': 'PRÊMIO MÁXIMO (SEQUÊNCIA)',
+        'ale': 'PRÊMIO INTERMEDIÁRIO',
+        'prim': 'PRÊMIO BASE (1ª BOLA)'
+    };
+
+    const payload = {
+        id: dados.id,
+        nick: dados.nick,
+        nums: dados.nums,
+        premio_titulo: labelPremios[tipo],
+        tipo_codigo: tipo
+    };
+
+    try {
+        await fetch(`${API_BASE_URL}/api/admin/publicar_cupom_terminal`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ cupom: payload })
+        });
+        
+        // Feedback visual
+        customAlert(`Cupom #${dados.id} enviado para o telão!`);
+    } catch(e) { console.error(e); }
+}
+
+async function limparTelaPublicaExtra() {
+    await fetch(`${API_BASE_URL}/api/admin/publicar_cupom_terminal`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ cupom: null }) // Null limpa
+    });
 }
 
 

@@ -929,22 +929,34 @@ function renderizarListaMinhasCartelas(dados) {
 
     let htmlFinal = '';
 
-    // 🅰️ RENDERIZA CUPONS DA SORTE EXTRA
+// 🅰️ RENDERIZA CUPONS DA SORTE EXTRA
     if (listaExtra.length > 0) {
         htmlFinal += `
         <div class="bg-gray-800 p-2 rounded border -mt-1 border-yellow-600/50">
             <h3 class="text-yellow-400 font-bold text-sm uppercase mb-2 flex items-center gap-2 border-b border-gray-700 pb-1">
                 🍀 Sorte Extra <span class="bg-yellow-500 text-black text-xs px-2 rounded-full">${listaExtra.length}</span>
             </h3>
-            <div class="flex flex-wrap gap-2 justify-center">`;
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">`;
         
         listaExtra.forEach((cupom, index) => {
-            if (Array.isArray(cupom)) {
-                const nums = cupom.map(n => n.toString().padStart(2, '0')).join('<span class="text-yellow-600 ">-</span>');
+            // --- Lógica Híbrida (ID Novo vs Array Antigo) ---
+            let idExibicao = index + 1; 
+            let listaNumeros = [];
+
+            if (cupom && cupom.numeros && Array.isArray(cupom.numeros)) {
+                idExibicao = cupom.id_cupom; // Usa o ID real do banco
+                listaNumeros = cupom.numeros;
+            } else if (Array.isArray(cupom)) {
+                listaNumeros = cupom; // Compatibilidade legado
+            }
+
+            if (listaNumeros.length > 0) {
+                const nums = listaNumeros.map(n => n.toString().padStart(2, '0')).join('<span class="text-yellow-600 ">-</span>');
+                
                 htmlFinal += `
-                    <div class="bg-black/40 border border-yellow-500/30 rounded px-2 py-1 text-center shadow-md min-w-[100px]">
-                        <div class="text-[10px] text-yellow-400 uppercase tracking-wider">Cupom ${index + 1}</div>
-                        <div class="font-mono text-yellow-200 font-bold text-base -mt-1 tracking-widest">
+                    <div class="bg-black/40 border border-yellow-500/30 rounded px-2 py-1 text-center shadow-md">
+                        <div class="text-[10px] text-yellow-400 uppercase tracking-wider">Cupom: ${idExibicao}</div>
+                        <div class="font-mono text-yellow-200 font-bold text-base -mt-1 tracking-widest whitespace-nowrap">
                             ${nums}
                         </div>
                     </div>`;
@@ -952,6 +964,7 @@ function renderizarListaMinhasCartelas(dados) {
         });
         htmlFinal += `</div></div>`;
     }
+
 
     // 🅱️ RENDERIZA CARTELAS DO BINGO
     if (listaBingo.length > 0) {
@@ -1396,7 +1409,7 @@ function handleFullscreenChange() {
     }
 }
 
-// --- FUNÇÃO SEGURA: Abrir Minhas Cartelas ---
+// --- FUNÇÃO SEGURA: Abrir Minhas Cartelas --- xxx
 function openMyCardsPanel() {
     
     // 1. Trava de Login
@@ -1407,7 +1420,14 @@ function openMyCardsPanel() {
     }
     
     if (!myCardsPanel || !myCardsList) return;
-    if (loader) loader.style.display = 'flex';
+
+    const loaderEl = document.getElementById('loader'); 
+    
+    if (loaderEl) {
+        // Remove 'hidden' (caso use Tailwind) e força o display flex
+        loaderEl.classList.remove('hidden');
+        loaderEl.style.display = 'flex';
+    }
 
     // =================================================================
     // ✅ USANDO SUAS VARIÁVEIS GLOBAIS JÁ EXISTENTES
@@ -2104,104 +2124,6 @@ function finalizeProcessing(processedCards, premioBuscado) {
 }
 
 
-// apagarx
-function _recalculateAndDisplayCards(bolasCantadas, premioBuscado, linhasAtivas) {
-    if (!loadedCards || loadedCards.length === 0) {
-        return;
-    }
-    const normalizedPremioBuscado = premioBuscado.replace(/\s+/g, '').trim();
-
-    const isMultiLinePrize = normalizedPremioBuscado.includes('LINHA') && linhasAtivas;
-    const activeLinesArray = isMultiLinePrize ? linhasAtivas.split(',') : [];
-
-    loadedCards.forEach(card => {
-        let premioEncontrado = null;
-        let sourceNumbers = [];
-        let missingNumbers = [];
-        
-        if (isMultiLinePrize) {
-            if (activeLinesArray.includes(card.linhaId)) {
-                let count = 0;
-                card.originalData.linha.forEach(num => {
-                    if (bolasCantadas.includes(num)) {
-                        count++;
-                    }
-                });
-                card.counts.linha = count;
-                card.counts.geral = bolasCantadas.filter(bola => card.originalData.geral.includes(bola)).length;
-                sourceNumbers = card.originalData.linha;
-                missingNumbers = sourceNumbers.filter(num => !bolasCantadas.includes(num));
-
-                if (count === 5) {
-                    premioEncontrado = 'LINHA';
-                    showPremiadoGif('linha');   
-                    playPremiadoSound(linhaSound);                    
-                }
-            }
-        }
-        else if (normalizedPremioBuscado.includes('QUADRA') || normalizedPremioBuscado.includes('LINHA')) {
-            let count = 0;
-            card.originalData.linha.forEach(num => {
-                if (bolasCantadas.includes(num)) {
-                    count++;
-                }
-            });
-            card.counts.linha = count;
-            card.counts.geral = bolasCantadas.filter(bola => card.originalData.geral.includes(bola)).length;
-            sourceNumbers = card.originalData.linha;
-            missingNumbers = sourceNumbers.filter(num => !bolasCantadas.includes(num));
-            
-            if (normalizedPremioBuscado.includes('QUADRA') && count === 4) {
-                premioEncontrado = 'Q U A D R A';
-                showPremiadoGif('quadra');
-                playPremiadoSound(quadraSound);                
-            } else if (normalizedPremioBuscado.includes('LINHA') && count === 5) {
-                premioEncontrado = 'L I N H A';
-                showPremiadoGif('linha');
-                playPremiadoSound(linhaSound);                 
-            }
-        } else {
-            let count = 0;
-            card.originalData.geral.forEach(num => {
-                if (bolasCantadas.includes(num)) {
-                    count++;
-                }
-            });
-            card.counts.geral = count;
-            sourceNumbers = card.originalData.geral;
-            missingNumbers = sourceNumbers.filter(num => !bolasCantadas.includes(num));
-            const xBolasCantadas =  bolasCantadas.length; 
-            if (normalizedPremioBuscado.includes('DUPLOBINGO') && count === 15 && xBolasCantadas !== bolaBuscandoPremio) {
-                premioEncontrado = 'DUPLO BINGO';
-                showPremiadoGif('duplobingo');
-                playPremiadoSound(duplobingoSound);               
-            } else if (normalizedPremioBuscado.includes('TRIPLO BINGO') && count === 15 && xBolasCantadas !== bolaBuscandoPremio) {
-                premioEncontrado = 'TRIPLO BINGO';
-                showPremiadoGif('triplobingo');
-                playPremiadoSound(triplobingoSound);                
-            } else if (normalizedPremioBuscado.includes('BINGO') && count === 15 && xBolasCantadas !== bolaBuscandoPremio) {
-                premioEncontrado = 'B I N G O';
-                showPremiadoGif('bingo');
-                playPremiadoSound(bingoSound);
-            } else if (normalizedPremioBuscado.includes('FALTAUM') && count === 14) {
-                premioEncontrado = 'FALTA UM';
-                showPremiadoGif('faltaum');
-                playPremiadoSound(faltaumSound);
-            }
-        }
-
-        card.premioEncontrado = premioEncontrado;
-        card.missingNumbers = missingNumbers;
-    });
-
-    if (normalizedPremioBuscado.includes('QUADRA') || normalizedPremioBuscado.includes('LINHA')) {
-        loadedCards.sort((a, b) => b.counts.linha - a.counts.linha);
-    } else {
-        loadedCards.sort((a, b) => b.counts.geral - a.counts.geral);
-    }
-    
-    displayLoadedCards(bolasCantadas);
-}
 
 function displayLoadedCards(bolasCantadas) {
     loader.style.display = 'none';
@@ -2379,7 +2301,7 @@ function clearPanels() {
     closeAvisoPanel(); // <--- Adicione 
     lastAvisoTimestamp = 0; // Reseta para permitir novos avisos iguais
 
-    updateDigitalBola("--");  // xxx
+    updateDigitalBola("--");  
 
     precoSerie.textContent = '';    
     cartelaRanges = [];
@@ -3214,35 +3136,6 @@ function updateDigitalBola(numeroBola) {
     bolaDigitalElement.classList.add('animate-pulsing-border'); 
 }
 
-// apagar xxx
-function updateDigitalBola2(numeroBola) {
-    if (!bolaDigitalElement) return;
-
-    const allBgColors = [
-        'bg-gray-700', 'bg-blue-600', 'bg-red-600', 
-        'bg-purple-600', 'bg-green-600', 'bg-yellow-600'
-    ];
-    
-    const allBorderColors = [
-        'border-gray-400', 'border-blue-400', 'border-red-400', 
-        'border-purple-400', 'border-green-400', 'border-yellow-400'
-    ];
-
-    const corClasses = getBallColorClass(numeroBola);
-    
-    // Remove todas as cores antigas (necessário para a mudança de cor)
-
-    bolaDigitalElement.classList.remove(...allBgColors);
-    bolaDigitalElement.classList.remove(...allBorderColors);   
- //   bolaDigitalElement.className = bolaDigitalElement.className.replace(/bg-[\w-]+ border-[\w-]+/g, '');
-
-    // Adiciona o novo número e as novas classes de cor
-    bolaDigitalElement.textContent = numeroBola;  // < AQUIX
-    bolaDigitalElement.classList.add(...corClasses.split(' '));
-    
-    // Opcional: Adicionar uma classe de animação de contorno se necessário
-    bolaDigitalElement.classList.add('animate-pulsing-border'); 
-}
 
 function renderOscartoes(bolasCantadas) {
     if (MAX_BOLAS === 75) {
@@ -6303,6 +6196,38 @@ let configSorteExtra = {
 };
 
 
+function gerarBadgeStatusEvento(config) {
+    if (!config.ativo) return '';
+
+    // CENÁRIO 1: É EVENTO FUTURO (Aviso Amarelo com Fundo Vermelho)
+    if (config.is_evento_futuro) {
+        return `
+        <div class="w-full bg-red-600 border-2 border-yellow-400 p-2 rounded-lg mb-2 shadow-lg animate-pulse">
+            <div class="flex items-center justify-center gap-2 text-yellow-300 font-black text-sm uppercase tracking-wider">
+                ⚠️ ATENÇÃO: PRÓXIMO EVENTO
+            </div>
+            <div class="text-center text-white font-bold text-xs">
+                Vendas abertas para: <span class="text-yellow-300 block text-sm">${config.data_hora_evento}</span>
+            </div>
+        </div>
+        `;
+    } 
+    
+    // CENÁRIO 2: É O EVENTO ATUAL (Verde)
+    else {
+        return `
+        <div class="w-full bg-green-900/50 border border-green-500 p-1 rounded mb-2 flex justify-center items-center gap-2 shadow-md">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+            </span>
+            <span class="text-green-400 font-bold uppercase tracking-widest text-[10px]">Evento Atual</span>
+        </div>
+        `;
+    }
+}
+//
+
 // 1. INICIALIZAR E BUSCAR REGRAS (COM CONTROLE DE ABERTURA)
 async function carregarSorteExtra(abrirTela = true, idOverride = null) {
     let rawId = idOverride; // 1ª Prioridade: Parâmetro passado manualmente
@@ -6368,6 +6293,19 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
             carrinho: configSorteExtra.carrinho || [],           
             numeros_selecionados: [] 
         };
+
+        const htmlBadge = gerarBadgeStatusEvento(dados);
+        
+        // Você precisa ter um <div id="container-aviso-extra"></div> no seu HTML do modal
+        const containerBadge = document.getElementById('container-aviso-extra');
+        
+        if (containerBadge) {
+            containerBadge.innerHTML = htmlBadge;
+        } else {
+            // Fallback: Se não criou a div, tenta injetar antes do título ou preço
+            // (Opcional, mas ajuda a não dar erro se esqueceu o HTML)
+            console.log("⚠️ Nota: Crie a <div id='container-aviso-extra'></div> no modal para ver o aviso.");
+        }
 
         // Atualiza Textos da UI com segurança (verifica se elementos existem)
         const elPreco = document.getElementById('lbl-preco');
@@ -6644,7 +6582,7 @@ async function finalizarCompraExtra() {
         const response = await fetch(`${API_BASE_URL || ''}/api/cliente/comprar_sorte_extra`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include', // Envia o cookie da sessão  xxx
+            credentials: 'include', // Envia o cookie da sessão 
             body: JSON.stringify({
                 id_evento: configSorteExtra.idEvento,
                 carrinho: configSorteExtra.carrinho.map(c => c.numeros)

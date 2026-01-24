@@ -1512,14 +1512,16 @@ def admin_fechar_vendas():
         result = sales_db.eventos.update_one(filtro, {'$set': {'status': 'finalizado'}})
         
         if result.modified_count > 0:
+            atualizar_ponteiro_sorte_extra(int(id_evt))
             print(f"🔒 Evento {id_evt} FINALIZADO. Aviso enviado. Vendas até aprox: {hora_final_str} (BRT)")
             return jsonify({'status': 'ok', 'msg': 'Vendas encerradas e aviso enviado.'})
         else:
-            return jsonify({'status': 'warning', 'msg': 'Evento já finalizado (Aviso atualizado).'})
+            return jsonify({'status': 'warning', 'msg': 'Evento já finalizado (Aviso atualizado).'})     
 
     except Exception as e:
         print(f"Erro fechar vendas: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 # Rota Consultar Cartelas e Cupons (Unificada)
 @app.route('/api/consultar_cartelas_evento')
@@ -4197,53 +4199,55 @@ def api_historico_resultados():
 # ==============================================================================
 # === MÓDULO SORTE EXTRA (CORRIGIDO PARA INT32) ===
 # ==============================================================================
-@app.route('/api/cliente/config_sorte_extra/<id_evento>', methods=['GET'])
-def get_config_sorte_extra(id_evento):
-    # Função auxiliar
+@app.route('/api/cliente/config_sorte_extra/<id_evento_solicitado>', methods=['GET'])
+def get_config_sorte_extra(id_evento_solicitado):
     def safe_money(val):
         try:
-            if val is None: return 0.00
-            return float(str(val))
-        except:
-            return 0.00
+            return float(str(val)) if val is not None else 0.00
+        except: return 0.00
 
     try:
-        # 1. Conexão ao Banco
         sales_db = get_sales_db_connection()
         if sales_db is None: return jsonify({'erro': 'Banco offline'}), 500
+        
+        # 1. Busca a Configuração Global (sem filtro de ID, pega a ativa)
+        config = sales_db.sorte_extra_config.find_one({}) 
 
-        # 2. Tratamento do ID
-        busca_ids = [id_evento, str(id_evento)]
-        if str(id_evento).isdigit():
-            busca_ids.append(int(id_evento))
-
-        # 3. Busca na coleção CORRETA: 'sorte_extra_config'
-        # --- AQUI ESTAVA O ERRO ANTES ---
-        config = sales_db.sorte_extra_config.find_one({'id_evento': {'$in': busca_ids}})
-        # -------------------------------
-
-        # 4. Se não achar, retorna erro ou um mock básico só para não travar
         if config is None:
-            print(f"⚠️ Config não encontrada na tabela 'sorte_extra_config' para o ID {id_evento}")
-            # Retorna 404 para o front saber que não tem
             return jsonify({'erro': 'Sorte Extra não configurado'}), 404
 
-        # 5. Monta a resposta com os dados reais do banco
+        # 2. Lógica Simplificada de "Evento Futuro"
+        id_evento_venda = int(config.get('id_evento', 0))
+        id_evento_tela = 0
+        try: id_evento_tela = int(id_evento_solicitado)
+        except: pass
+
+        # Se o ID da venda for diferente do ID da tela, é futuro
+        is_futuro = (id_evento_venda != id_evento_tela)
+
+        # 3. LÊ DIRETO DO BANCO (Sem buscas extras)
+        # Se não tiver gravado ainda, usa um fallback genérico
+        info_evento = config.get('data_hora_evento', 'Próximo Evento')
+
         resposta = {
-            "id_evento": config.get('id_evento'),
+            "id_evento": id_evento_venda,
             "ativo": config.get('ativo', True),
             "qtde_dezenas": config.get('qtde_dezenas', 3),
             "preco_cupom": safe_money(config.get('preco_cupom')),
             "premio_maximo": safe_money(config.get('premio_maximo')),             
             "premio_intermediario": safe_money(config.get('premio_intermediario')), 
-            "premio_base": safe_money(config.get('premio_base')),                  
-            "texto_regra_vitoria": config.get('texto_regra_vitoria', "Consulte as regras.")
+            "premio_base": safe_money(config.get('premio_base')),                   
+            "texto_regra_vitoria": config.get('texto_regra_vitoria', "Consulte as regras."),
+            
+            # --- CAMPOS VISUAIS ---
+            "is_evento_futuro": is_futuro,
+            "data_hora_evento": info_evento # <--- LIDO DIRETO DA TABELA CONFIG
         }
 
         return jsonify(resposta), 200
 
     except Exception as e:
-        print(f"❌ Erro na API Sorte Extra: {e}")
+        print(f"❌ Erro API: {e}")
         return jsonify({'erro': 'Erro interno'}), 500
 
 
@@ -4290,99 +4294,359 @@ def criar_config_exemplo():
 # ==============================================================================
 # === PASSO 5: PROCESSAR COMPRA SORTE EXTRA (CORRIGIDO CORS) ===
 # ==============================================================================
-
+# --- SUBSTITUA A ROTA DE COMPRA SORTE EXTRA POR ESTA ---
 @app.route('/api/cliente/comprar_sorte_extra', methods=['POST', 'OPTIONS'])
 def comprar_extra():
-    # 1. Ignora OPTIONS (Pre-flight do navegador)
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
-
-    # 2. Verifica Sessão
-    if 'id_cliente' not in session:
-        return jsonify({'erro': 'Sessão expirada. Faça login novamente.'}), 401
+    if request.method == 'OPTIONS': return jsonify({'status': 'ok'}), 200
+    if 'id_cliente' not in session: return jsonify({'erro': 'Sessão expirada.'}), 401
 
     try:
         sales_db = get_sales_db_connection()
-        if sales_db is None:
-            return jsonify({'erro': 'Banco de Vendas offline.'}), 500
+        if sales_db is None: return jsonify({'erro': 'Banco offline.'}), 500
 
         data = request.json
         id_evento = data.get('id_evento')
-        carrinho = data.get('carrinho') # Lista de listas [[1,2,3], [4,5,6]]
+        carrinho = data.get('carrinho') # Lista de listas: [[1,2,3], [10,20,30]]
 
-        # Validações Básicas
-        if not id_evento or not carrinho:
-            return jsonify({'erro': 'Dados inválidos.'}), 400
+        if not id_evento or not carrinho: return jsonify({'erro': 'Dados inválidos.'}), 400
 
         id_cli = int(session['id_cliente'])
         nick_cli = session.get('nick_cliente', 'Cliente Web')
-        id_evento_int = int(id_evento) # Garante inteiro para o nome da tabela
+        id_evento_int = int(id_evento)
+        qtd_cupons = len(carrinho)
 
-        # --- BUSCA DADOS DO CLIENTE (SALDO) ---
+        # 1. Busca Cliente e Configuração
         cliente = sales_db.clientes.find_one({'id_cliente': id_cli})
-        if not cliente:
-            return jsonify({'erro': 'Cliente não encontrado.'}), 400
-
-        # --- BUSCA PREÇO REAL DA CONFIGURAÇÃO ---
         config_extra = sales_db.sorte_extra_config.find_one({'id_evento': id_evento_int})
         
-        if config_extra:
-            preco_unitario = float(str(config_extra.get('preco_cupom', 2.00)))
-        else:
-            preco_unitario = 2.00 # Fallback de segurança
-
-        custo_total = len(carrinho) * preco_unitario
+        preco_unitario = float(str(config_extra.get('preco_cupom', 2.00))) if config_extra else 2.00
+        custo_total = qtd_cupons * preco_unitario
         
-        # Verifica Saldo
         saldo_cliente = float(str(cliente.get('saldo_atual', 0)))
-        if saldo_cliente < custo_total:
-             return jsonify({'erro': 'Saldo insuficiente.'}), 400
+        if saldo_cliente < custo_total: return jsonify({'erro': 'Saldo insuficiente.'}), 400
 
-        # --- PREPARA A VENDA ---
+        # =================================================================
+        # 🐰 PULO DO GATO: GERAÇÃO DE ID SEQUENCIAL (CONTROLE_VENDA)
+        # =================================================================
+        # Incrementa o contador global do evento em X unidades (qtd de cupons comprados)
+        retorno_seq = sales_db.controle_venda.find_one_and_update(
+            {'id_evento': id_evento_int},
+            {'$inc': {'cupom_sorte_extra': qtd_cupons}}, # Incrementa o lote todo
+            upsert=True,
+            return_document=ReturnDocument.AFTER
+        )
+        
+        # Se eu comprei 3 cupons e o contador parou em 23:
+        # Meus IDs são: 21, 22, 23.
+        ultimo_id_gerado = retorno_seq.get('cupom_sorte_extra')
+        primeiro_id_lote = ultimo_id_gerado - qtd_cupons + 1
+
+        # Transforma o carrinho simples em carrinho com Objetos Identificados
+        # De: [[1,2,3], [4,5,6]]
+        # Para: [{id: 21, numeros: [1,2,3]}, {id: 22, numeros: [4,5,6]}]
+        cartelas_com_id = []
+        
+        current_id = primeiro_id_lote
+        for nums in carrinho:
+            cartelas_com_id.append({
+                'id_cupom': current_id,
+                'numeros': nums
+            })
+            current_id += 1
+        # =================================================================
+
+        # 2. Grava a Venda
+        nome_colecao_vendas = f"vendas_sorte_extra{id_evento_int}"
         nova_venda = {
             "id_evento": id_evento_int,
             "id_cliente": id_cli,
             "nick_cliente": nick_cli,
             "tipo": "sorte_extra",
-            "cartelas": carrinho, 
-            "qtd_cartelas": len(carrinho),
+            "cartelas": cartelas_com_id, # <--- Agora gravamos com ID!
+            "qtd_cartelas": qtd_cupons,
             "valor_total": custo_total,
             "data_compra": hora_brasil(),
             "origem": "web_sorte_extra"
         }
-
-        # 🐰 COELHO 1: GRAVA NA TABELA DINÂMICA (vendas_sorte_extraXXX)
-        nome_colecao_vendas = f"vendas_sorte_extra{id_evento_int}"
         sales_db[nome_colecao_vendas].insert_one(nova_venda)
 
-        # --- DEBITA O SALDO DO CLIENTE ---
-        sales_db.clientes.update_one(
-            {'id_cliente': id_cli},
-            {'$inc': {'saldo_atual': -custo_total}}
-        )
-
-        # 🐰 COELHO 2: REGISTRA NA TABELA DE TRANSAÇÕES (Extrato)
-        nova_transacao = {
+        # 3. Debita e Registra
+        sales_db.clientes.update_one({'id_cliente': id_cli}, {'$inc': {'saldo_atual': -custo_total}})
+        
+        sales_db.transacoes_clientes.insert_one({
             "id_cliente": id_cli,
             "data_hora": hora_brasil(),
             "tipo": "compra",  
             "valor": -abs(custo_total),
-            "descricao": f"Sorte Extra - Ev. {id_evento_int} ({len(carrinho)} cupons)",
-            "id_evento": id_evento_int,
-            "origem": "sorte_extra"
-        }
-        sales_db.transacoes_clientes.insert_one(nova_transacao)
+            "descricao": f"Sorte Extra - Ev. {id_evento_int} ({qtd_cupons} cupons)",
+            "id_evento": id_evento_int
+        })
 
-        # Retorno de Sucesso
-        return jsonify({
-            'status': 'ok', 
-            'msg': 'Compra realizada com sucesso!',
-            'novo_saldo': saldo_cliente - custo_total
-        }), 200
+        return jsonify({'status': 'ok', 'msg': 'Sucesso!', 'novo_saldo': saldo_cliente - custo_total}), 200
 
     except Exception as e:
-        print(f"❌ Erro crítico Sorte Extra: {e}")
-        return jsonify({'erro': 'Erro interno ao processar compra.'}), 500
+        print(f"❌ Erro Sorte Extra: {e}")
+        return jsonify({'erro': 'Erro interno.'}), 500
+
+
+
+# --- SUBSTITUA A ROTA DE VALIDAÇÃO POR ESTA NO SERVER.PY ---
+@app.route('/api/admin/validar_sorte_extra', methods=['POST'])
+def validar_sorte_extra():
+    if db is None: return jsonify({'error': 'Sem DB'}), 500
+    
+    try:
+        print("\n" + "="*50)
+        print("🕵️ INICIANDO VALIDAÇÃO SORTE EXTRA (MODO DEBUG TOTAL)")
+        
+        # 1. PEGA E NORMALIZA AS BOLAS DA MESA
+        dados_bolas = db.bolas_mesa.find_one({}) or {}
+        todas_bolas_raw = dados_bolas.get('bolas_cantadas', [])
+        
+        # Converte tudo para INTEIRO para evitar erro de "05" vs 5
+        try:
+            todas_bolas_int = [int(b) for b in todas_bolas_raw]
+        except Exception as e:
+            print(f"❌ Erro ao converter bolas sorteadas para int: {e}")
+            return jsonify({'error': 'Dados de bolas inválidos'}), 500
+
+        print(f"🎱 Bolas Sorteadas (Int): {todas_bolas_int}")
+        
+        # 2. CONFIGURAÇÃO
+        rodada_info = db.rodada.find_one({})
+        id_evento_ativo = int(rodada_info.get('id_evento', 0)) if rodada_info else 0
+        
+        sales_db = get_sales_db_connection()
+        config = sales_db.sorte_extra_config.find_one({'id_evento': id_evento_ativo})
+        
+        if not config:
+            print("❌ Configuração Sorte Extra não encontrada.")
+            return jsonify({'error': 'Sorte Extra não configurada.'}), 400
+            
+        X = int(config.get('qtde_dezenas', 3))
+        
+        # 3. VERIFICA QUANTIDADE
+        if len(todas_bolas_int) < X:
+            msg = f'Ainda faltam bolas. Sorteados: {len(todas_bolas_int)}/{X}'
+            print(f"⏳ {msg}")
+            return jsonify({'status': 'aguardando', 'msg': msg})
+
+        # 4. DEFINE OS ALVOS (Tudo Inteiro)
+        primeiras_X_bolas = todas_bolas_int[:X] 
+        primeira_bola = todas_bolas_int[0]
+        set_primeiras_X = set(primeiras_X_bolas)
+        
+        print(f"🎯 ALVO SEQUÊNCIA: {primeiras_X_bolas}")
+        print(f"🎯 ALVO ALEATÓRIO: {set_primeiras_X}")
+        print(f"🎯 ALVO 1ª BOLA: {primeira_bola}")
+
+        # 5. VARREDURA NO BANCO
+        col_name = f"vendas_sorte_extra{id_evento_ativo}"
+        cursor_vendas = sales_db[col_name].find({})
+        
+        ganhadores_seq = []
+        ganhadores_aleat = []
+        ganhadores_primeira = []
+        
+        total_cupons_analisados = 0
+        
+        print(f"🔍 Varrendo coleção: {col_name}...")
+
+        for venda in cursor_vendas:
+            nick = venda.get('nick_cliente', 'Anonimo')
+            cartelas = venda.get('cartelas', [])
+            
+            for cupom in cartelas:
+                if isinstance(cupom, list): continue 
+                
+                cid = cupom.get('id_cupom')
+                numeros_raw = cupom.get('numeros', [])
+                
+                # Normaliza cupom para Inteiro também
+                try:
+                    numeros_int = [int(n) for n in numeros_raw]
+                except:
+                    print(f"⚠️ Cupom #{cid} com dados inválidos: {numeros_raw}")
+                    continue
+
+                if len(numeros_int) != X: 
+                    continue
+
+                total_cupons_analisados += 1
+                
+                # --- LOG DE CADA CUPOM (PEDIDO FEITO) ---
+                print(f"   👉 Checando #{cid}: {numeros_int} | Alvo: {primeiras_X_bolas}")
+
+                # --- LÓGICA DE COMPARAÇÃO (INT vs INT) ---
+                tipo_ganho = None
+                
+                # 1. Sequência
+                if numeros_int == primeiras_X_bolas:
+                    ganhadores_seq.append({'id': cid, 'nick': nick, 'nums': numeros_int})
+                    tipo_ganho = "🏆 SEQUÊNCIA"
+                
+                # 2. Aleatório (só se não ganhou sequencia)
+                elif set(numeros_int) == set_primeiras_X:
+                    ganhadores_aleat.append({'id': cid, 'nick': nick, 'nums': numeros_int})
+                    tipo_ganho = "🎲 ALEATÓRIO"
+                
+                # 3. Primeira Bola (só se não ganhou os outros)
+                elif numeros_int[0] == primeira_bola:
+                    ganhadores_primeira.append({'id': cid, 'nick': nick, 'nums': numeros_int})
+                    tipo_ganho = "🎱 1ª BOLA"
+                
+                if tipo_ganho:
+                    print(f"      ✨ GANHOU: {tipo_ganho}")
+
+        print(f"✅ Análise concluída. Total: {total_cupons_analisados}")
+        print("="*50 + "\n")
+
+        return jsonify({
+            'status': 'sucesso',
+            'total_analisado': total_cupons_analisados,
+            'bolas_analisadas': primeiras_X_bolas,
+            'ganhadores': {
+                'sequencia': ganhadores_seq,
+                'aleatorio': ganhadores_aleat,
+                'primeira': ganhadores_primeira
+            },
+            'totais': {
+                'seq': len(ganhadores_seq),
+                'ale': len(ganhadores_aleat),
+                'prim': len(ganhadores_primeira)
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ ERRO CRÍTICO: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+
+# --- NOVA ROTA: EXIBIR CUPOM NO TERMINAL ---
+@app.route('/api/admin/publicar_cupom_terminal', methods=['POST'])
+def publicar_cupom_terminal():
+    data = request.json
+    cupom = data.get('cupom') # Objeto {id, nick, nums, premio_tipo}
+    
+    if not cupom: 
+        # Se enviar vazio, limpa a tela
+        broadcast_para_clientes({'type': 'LIMPAR_EXTRA'})
+        return jsonify({'status': 'limpo'})
+
+    # Envia para as TVs
+    broadcast_para_clientes({
+        'type': 'EXIBIR_GANHADOR_EXTRA',
+        'cupom': cupom
+    })
+    return jsonify({'status': 'publicado'})
+
+
+# --- FUNÇÃO ATUALIZADA: GRAVAR DATA/HORA NA CONFIG ---
+def atualizar_ponteiro_sorte_extra(id_evento_finalizado):
+    try:
+        print(f"🔄 Iniciando migração do Sorte Extra (Evento Encerrado: {id_evento_finalizado})")
+        
+        sales_db = get_sales_db_connection()
+        if sales_db is None: 
+            print("❌ Erro: Sem conexão com banco de vendas.")
+            return
+
+        # 1. Busca Evento Atual (Lógica Híbrida Int/Str)
+        busca_id = int(id_evento_finalizado)
+        evento_atual = sales_db.eventos.find_one({'id_evento': busca_id})
+        
+        if not evento_atual:
+            evento_atual = sales_db.eventos.find_one({'id_evento': str(busca_id)})
+
+        if not evento_atual:
+            print(f"❌ Evento {id_evento_finalizado} não encontrado. Abortando.")
+            return
+
+        # 2. Tenta ler a data atual para referência
+        raw_data = evento_atual.get('data_evento') or evento_atual.get('data_inicio')
+        raw_hora = evento_atual.get('hora_evento') or evento_atual.get('hora_inicio')
+        
+        try:
+            dt_atual_str = f"{raw_data} {raw_hora}"
+            dt_atual_obj = datetime.strptime(dt_atual_str, "%d/%m/%Y %H:%M")
+        except Exception as e:
+            print(f"⚡ Data inválida no evento atual. Usando AGORA como referência.")
+            dt_atual_obj = datetime.now() - timedelta(hours=3)
+
+        # 3. Busca Próximo Evento
+        candidatos = sales_db.eventos.find({
+            'status': {'$in': ['ativo', 'paralizado']},
+            'id_evento': {'$ne': busca_id}, 
+            'id_evento': {'$ne': str(busca_id)} 
+        })
+
+        proximo_evento = None
+        menor_diferenca = None
+
+        for cand in candidatos:
+            try:
+                d_cand = cand.get('data_evento') or cand.get('data_inicio')
+                h_cand = cand.get('hora_evento') or cand.get('hora_inicio')
+                dt_cand_str = f"{d_cand} {h_cand}"
+                dt_cand_obj = datetime.strptime(dt_cand_str, "%d/%m/%Y %H:%M")
+                
+                if dt_cand_obj > dt_atual_obj:
+                    diferenca = dt_cand_obj - dt_atual_obj
+                    if proximo_evento is None or diferenca < menor_diferenca:
+                        menor_diferenca = diferenca
+                        proximo_evento = cand
+            except: continue
+        
+        # 4. PREPARA OS DADOS PARA GRAVAR NA TABELA DE CONFIG
+        novo_id = 0
+        texto_info_evento = "" # Campo novo
+
+        if proximo_evento:
+            novo_id = int(proximo_evento['id_evento'])
+            
+            # Pega os dados para formatar o texto
+            data_next = proximo_evento.get('data_evento')
+            hora_next = proximo_evento.get('hora_evento')
+            descricao_next = proximo_evento.get('descricao')
+
+            
+            # Cria a string formatada "DD/MM/YYYY às HH:MM"
+            texto_info_evento = f"{descricao_next} - {data_next} às {hora_next}"
+            
+            print(f"✅ PRÓXIMO: {descricao_next} - ID {novo_id} - Info: {texto_info_evento}")
+        else:
+            print("🚫 Nenhum evento futuro. Zerando configuração.")
+            texto_info_evento = "Aguardando agendamento"
+
+        # 5. ATUALIZA A CONFIGURAÇÃO COM O NOVO CAMPO
+        campos_atualizar = {
+            'id_evento': novo_id,
+            'data_hora_evento': texto_info_evento # <--- GRAVANDO DIRETO NO BANCO
+        }
+
+        res = sales_db.sorte_extra_config.update_one(
+            {'id_evento': int(id_evento_finalizado)}, 
+            {'$set': campos_atualizar}
+        )
+        
+        # Fallback se não achar pelo ID int
+        if res.modified_count == 0:
+             sales_db.sorte_extra_config.update_one(
+                {'id_evento': str(id_evento_finalizado)}, 
+                {'$set': campos_atualizar}
+            )
+        
+        # Fallback final: Se não achou pelo ID antigo (pq já mudou?), atualiza QUALQUER config existente
+        # Isso garante que o sistema não trave se o ID já tiver sido trocado manualmente
+        if res.matched_count == 0:
+             sales_db.sorte_extra_config.update_one({}, {'$set': campos_atualizar})
+            
+    except Exception as e:
+        print(f"❌ Erro crítico migração: {e}")
+
 
 
 
