@@ -653,7 +653,7 @@ if (payload.melhoresData) {
             jaValidouSorteExtraNestaRodada = true; // Trava para não abrir 1000 vezes
             
             // TOCA UM SOM DE ALERTA (Opcional)
-            const audio = new Audio('/sons/alert.mp3'); // Se tiver
+            const audio = new Audio('/sons/sorteextra.mp3'); // Se tiver
             audio.play().catch(e=>{});
 
             // ABRE O MODAL AUTOMATICAMENTE
@@ -2127,12 +2127,12 @@ function abrirModalValidacaoSorteExtra() {
                         * Clique no cartão do ganhador para enviá-lo para a TV.
                     </div>
                     <div class="flex gap-3">
-                         <button onclick="limparTelaPublicaExtra()" class="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded font-bold border border-gray-500 shadow-lg flex items-center gap-2">
-                            🧹 Limpar TV
+                         <button id="btn-limpar-tv" onclick="limparTelaPublicaExtra()" class="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded font-bold border border-gray-500 shadow-lg flex items-center gap-2">
+                            🧹📺 Limpar TV
                          </button>
-                         <button onclick="document.getElementById('modal-sorte-extra').classList.add('hidden')" class="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded font-bold shadow-lg">
-                            Fechar
-                         </button>
+                         <button onclick="fecharValidacaoAdmin()" class="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded font-bold shadow-lg                    flex items-center gap-2 transition-all">
+                             ❌ Fechar
+                          </button>
                     </div>
                 </div>
             </div>
@@ -2148,22 +2148,67 @@ function abrirModalValidacaoSorteExtra() {
     buscarGanhadoresExtra();
 }
 
+
+function fecharValidacaoAdmin() {
+    // 1. Dispara a limpeza da tela dos clientes
+    limparTelaPublicaExtra();
+
+    // 2. Fecha o modal do Admin imediatamente
+    const modal = document.getElementById('modal-sorte-extra');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
 // Função de Busca (Atualiza o contador)
 async function buscarGanhadoresExtra() {
     const loading = document.getElementById('loading-extra');
     const content = document.getElementById('resultados-extra');
-    const badgeTotal = document.getElementById('badge-total-cupons'); // Elemento do contador
+    const badgeTotal = document.getElementById('badge-total-cupons');
     
+    // --- TENTATIVA DE RECUPERAR O ID DO EVENTO ---
+    let idParaEnviar = 0;
+
+    // 1. Tenta pegar de variável global (se existir)
+    if (typeof eventoAtual !== 'undefined' && eventoAtual && eventoAtual.id) {
+        idParaEnviar = eventoAtual.id;
+    }
+    // 2. Se falhar, tenta pegar de algum input hidden na tela (fallback comum)
+    else {
+        const inputId = document.getElementById('id_evento_ativo') || document.getElementById('current-event-id');
+        if (inputId) idParaEnviar = inputId.value;
+    }
+
+    // Debug: Veja no console o que está sendo enviado
+    console.log("📤 Enviando pedido de validação para Evento ID:", idParaEnviar);
+
     if(loading) loading.classList.remove('hidden');
     if(content) content.classList.add('hidden');
     if(badgeTotal) badgeTotal.textContent = "Auditando...";
     
     try {
-        const resp = await fetch(`${API_BASE_URL}/api/admin/validar_sorte_extra`, { method: 'POST' });
+        const resp = await fetch(`${API_BASE_URL}/api/admin/validar_sorte_extra`, { 
+            method: 'POST',
+            // OBRIGATÓRIO: Avisar que é JSON
+            headers: { 
+                'Content-Type': 'application/json' 
+            },
+            // OBRIGATÓRIO: Enviar o corpo da mensagem
+            body: JSON.stringify({ 
+                id_evento: parseInt(idParaEnviar) || 0 
+            })
+        });
+
+        // Se o servidor devolver erro (ex: 400 ou 500)
+        if (!resp.ok) {
+            const erroTxt = await resp.text(); // Tenta ler o erro como texto
+            console.error("❌ Erro do Servidor:", erroTxt);
+            throw new Error(`Servidor recusou (Status ${resp.status})`);
+        }
+
         const data = await resp.json();
         
         if (data.status === 'sucesso') {
-            // ATUALIZA O CONTADOR VISUALMENTE
             if(badgeTotal) {
                 badgeTotal.textContent = `${data.total_analisado || 0} cupons analisados`;
                 badgeTotal.classList.remove('bg-gray-700');
@@ -2176,11 +2221,11 @@ async function buscarGanhadoresExtra() {
 
         } else if (data.status === 'aguardando') {
             alert(data.msg);
-            document.getElementById('modal-sorte-extra').classList.add('hidden');
         }
+
     } catch(e) {
-        console.error(e);
-        alert("Erro ao conectar com servidor de validação.");
+        console.error("Erro buscarGanhadoresExtra:", e);
+        alert("Falha na validação. Verifique o console (F12).");
     } finally {
         if(loading) loading.classList.add('hidden');
         if(content) content.classList.remove('hidden');
@@ -2238,18 +2283,45 @@ async function publicarGanhadorExtra(dados, tipo) {
         });
         
         // Feedback visual
-        customAlert(`Cupom #${dados.id} enviado para o telão!`);
+        customAlert(`Cupom: ${dados.id} enviado para conferencia!`);
     } catch(e) { console.error(e); }
 }
 
+// --- FUNÇÃO PARA LIMPAR A TV DOS CLIENTES ---
 async function limparTelaPublicaExtra() {
-    await fetch(`${API_BASE_URL}/api/admin/publicar_cupom_terminal`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ cupom: null }) // Null limpa
-    });
-}
+    // Tenta pegar o botão para dar feedback visual (opcional)
+    const btn = document.getElementById('btn-limpar-tv'); 
+    const textoOriginal = btn ? btn.innerText : "🧹📺 Limpar TV";
 
+    if(btn) {
+        btn.disabled = true;
+        btn.innerText = "⏳ Limpando...";
+    }
+
+    try {
+        const resp = await fetch(`${API_BASE_URL}/api/admin/publicar_cupom_terminal`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ cupom: null }) // ✅ O segredo: enviar NULL
+        });
+
+        if (!resp.ok) throw new Error("Falha na comunicação com o servidor");
+
+        console.log("✅ Comando de limpar enviado com sucesso.");
+        // Opcional: mostrar um toast/aviso rápido
+        // showToast("Tela dos clientes limpa!");
+
+    } catch (e) {
+        console.error("Erro ao limpar TV:", e);
+        alert("Erro ao tentar limpar a tela: " + e.message);
+    } finally {
+        // Restaura o botão
+        if(btn) {
+            btn.disabled = false;
+            btn.innerText = textoOriginal;
+        }
+    }
+}
 
 // =========================================================
 // === 6. INICIALIZAÇÃO ===

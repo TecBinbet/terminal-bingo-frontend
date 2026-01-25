@@ -61,6 +61,7 @@ def broadcast_para_clientes(mensagem_dict):
         if morto in clientes_conectados:
             clientes_conectados.remove(morto)
 
+
 def hora_brasil():
 # 1. Pega a hora exata no fuso de SP
     agora_sp = datetime.now(ZoneInfo('America/Sao_Paulo'))
@@ -2742,6 +2743,8 @@ def admin_resetar():
                 proximo_id_str = str(prox_evento.get('id_evento'))
                 desc_prox = prox_evento.get('descricao', 'Próximo Evento')
                 db.parametros.update_one({}, {'$set': {'nome_sala': desc_prox}}, upsert=True)
+
+                #aqui ajustar a tabela "sorte_extra_config"
                 print(f"🔄 Configurando Rodada para Próximo Evento: {desc_prox} (ID: {proximo_id_str})")
             else:
                 proximo_id_str = str(id_evento) 
@@ -4389,60 +4392,58 @@ def comprar_extra():
         return jsonify({'erro': 'Erro interno.'}), 500
 
 
-
-# --- SUBSTITUA A ROTA DE VALIDAÇÃO POR ESTA NO SERVER.PY ---
+# --- ROTA DE VALIDAÇÃO CORRIGIDA (HIERARQUIA ESTRITA) ---
 @app.route('/api/admin/validar_sorte_extra', methods=['POST'])
 def validar_sorte_extra():
-    if db is None: return jsonify({'error': 'Sem DB'}), 500
+    if db is None: return jsonify({'error': 'Sem conexão com DB Jogo'}), 500
     
     try:
         print("\n" + "="*50)
-        print("🕵️ INICIANDO VALIDAÇÃO SORTE EXTRA (MODO DEBUG TOTAL)")
+        print("🕵️ INICIANDO VALIDAÇÃO SORTE EXTRA (MODO HIERARQUIA ESTRITA)")
         
         # 1. PEGA E NORMALIZA AS BOLAS DA MESA
         dados_bolas = db.bolas_mesa.find_one({}) or {}
         todas_bolas_raw = dados_bolas.get('bolas_cantadas', [])
         
-        # Converte tudo para INTEIRO para evitar erro de "05" vs 5
         try:
             todas_bolas_int = [int(b) for b in todas_bolas_raw]
         except Exception as e:
-            print(f"❌ Erro ao converter bolas sorteadas para int: {e}")
-            return jsonify({'error': 'Dados de bolas inválidos'}), 500
+            return jsonify({'error': 'Dados de bolas inválidos no banco'}), 500
 
-        print(f"🎱 Bolas Sorteadas (Int): {todas_bolas_int}")
+        print(f"🎱 Bolas Sorteadas (Ordem Real): {todas_bolas_int}")
         
-        # 2. CONFIGURAÇÃO
+        # 2. IDENTIFICA O EVENTO E CONFIGURAÇÃO
         rodada_info = db.rodada.find_one({})
         id_evento_ativo = int(rodada_info.get('id_evento', 0)) if rodada_info else 0
         
         sales_db = get_sales_db_connection()
+        if sales_db is None: return jsonify({'error': 'Sem conexão DB Vendas'}), 500
+
         config = sales_db.sorte_extra_config.find_one({'id_evento': id_evento_ativo})
+        X = int(config.get('qtde_dezenas', 3)) if config else 3
         
-        if not config:
-            print("❌ Configuração Sorte Extra não encontrada.")
-            return jsonify({'error': 'Sorte Extra não configurada.'}), 400
-            
-        X = int(config.get('qtde_dezenas', 3))
-        
-        # 3. VERIFICA QUANTIDADE
+        # 3. VERIFICA SE TEM BOLAS SUFICIENTES
         if len(todas_bolas_int) < X:
-            msg = f'Ainda faltam bolas. Sorteados: {len(todas_bolas_int)}/{X}'
+            msg = f'Aguardando mais bolas... Sorteados: {len(todas_bolas_int)}/{X}'
             print(f"⏳ {msg}")
             return jsonify({'status': 'aguardando', 'msg': msg})
 
-        # 4. DEFINE OS ALVOS (Tudo Inteiro)
-        primeiras_X_bolas = todas_bolas_int[:X] 
-        primeira_bola = todas_bolas_int[0]
-        set_primeiras_X = set(primeiras_X_bolas)
+        # 4. DEFINE OS ALVOS (CRITÉRIOS DE VITÓRIA)
+        # Importante: A ordem das bolas sorteadas define a Sequência e a 1ª Bola
+        primeiras_X_bolas = todas_bolas_int[:X]      # Ex: [10, 50, 05] (Ordem exata)
+        set_primeiras_X = set(primeiras_X_bolas)     # Ex: {05, 10, 50} (Sem ordem)
+        primeira_bola_sorteada = todas_bolas_int[0]  # Ex: 10
         
-        print(f"🎯 ALVO SEQUÊNCIA: {primeiras_X_bolas}")
-        print(f"🎯 ALVO ALEATÓRIO: {set_primeiras_X}")
-        print(f"🎯 ALVO 1ª BOLA: {primeira_bola}")
+        #print(f"🎯 ALVO 1 (SEQUÊNCIA): {primeiras_X_bolas}")
+        #print(f"🎯 ALVO 2 (ALEATÓRIO): {set_primeiras_X}")
+        #print(f"🎯 ALVO 3 (1ª BOLA) : {primeira_bola_sorteada}")
 
-        # 5. VARREDURA NO BANCO
+        # 5. BUSCA CUPONS NO BANCO
         col_name = f"vendas_sorte_extra{id_evento_ativo}"
-        cursor_vendas = sales_db[col_name].find({})
+        if col_name not in sales_db.list_collection_names():
+            cursor_vendas = sales_db.vendas_sorte_extra.find({'id_evento': id_evento_ativo})
+        else:
+            cursor_vendas = sales_db[col_name].find({})
         
         ganhadores_seq = []
         ganhadores_aleat = []
@@ -4450,8 +4451,6 @@ def validar_sorte_extra():
         
         total_cupons_analisados = 0
         
-        print(f"🔍 Varrendo coleção: {col_name}...")
-
         for venda in cursor_vendas:
             nick = venda.get('nick_cliente', 'Anonimo')
             cartelas = venda.get('cartelas', [])
@@ -4462,43 +4461,38 @@ def validar_sorte_extra():
                 cid = cupom.get('id_cupom')
                 numeros_raw = cupom.get('numeros', [])
                 
-                # Normaliza cupom para Inteiro também
                 try:
                     numeros_int = [int(n) for n in numeros_raw]
-                except:
-                    print(f"⚠️ Cupom #{cid} com dados inválidos: {numeros_raw}")
-                    continue
+                except: continue
 
-                if len(numeros_int) != X: 
-                    continue
+                if len(numeros_int) != X: continue
 
                 total_cupons_analisados += 1
                 
-                # --- LOG DE CADA CUPOM (PEDIDO FEITO) ---
-                print(f"   👉 Checando #{cid}: {numeros_int} | Alvo: {primeiras_X_bolas}")
+                # ========================================================
+                # 🛑 LÓGICA DE PREMIAÇÃO EXCLUSIVA (HIERARQUIA)
+                # ========================================================
 
-                # --- LÓGICA DE COMPARAÇÃO (INT vs INT) ---
-                tipo_ganho = None
-                
-                # 1. Sequência
+                # 1. CHECA SEQUÊNCIA (Ordem exata importa: [10, 20, 30] != [30, 20, 10])
                 if numeros_int == primeiras_X_bolas:
                     ganhadores_seq.append({'id': cid, 'nick': nick, 'nums': numeros_int})
-                    tipo_ganho = "🏆 SEQUÊNCIA"
-                
-                # 2. Aleatório (só se não ganhou sequencia)
-                elif set(numeros_int) == set_primeiras_X:
-                    ganhadores_aleat.append({'id': cid, 'nick': nick, 'nums': numeros_int})
-                    tipo_ganho = "🎲 ALEATÓRIO"
-                
-                # 3. Primeira Bola (só se não ganhou os outros)
-                elif numeros_int[0] == primeira_bola:
-                    ganhadores_primeira.append({'id': cid, 'nick': nick, 'nums': numeros_int})
-                    tipo_ganho = "🎱 1ª BOLA"
-                
-                if tipo_ganho:
-                    print(f"      ✨ GANHOU: {tipo_ganho}")
+                    #print(f"   🏆 SEQUÊNCIA ENCONTRADA: {nick} (Cupom {cid})")
+                    continue # <--- PARA AQUI! Não checa aleatório nem 1ª bola para este cupom.
 
-        print(f"✅ Análise concluída. Total: {total_cupons_analisados}")
+                # 2. CHECA ALEATÓRIO (Conjunto igual: {10, 20, 30} == {30, 20, 10})
+                if set(numeros_int) == set_primeiras_X:
+                    ganhadores_aleat.append({'id': cid, 'nick': nick, 'nums': numeros_int})
+                    #print(f"   🎲 ALEATÓRIO ENCONTRADO: {nick} (Cupom {cid})")
+                    continue # <--- PARA AQUI! Não checa 1ª bola.
+
+                # 3. CHECA 1ª BOLA (Primeiro número do cupom == Primeira bola sorteada)
+                # numeros_int[0] é o primeiro número que o cliente escolheu/gerou
+                if numeros_int[0] == primeira_bola_sorteada:
+                    ganhadores_primeira.append({'id': cid, 'nick': nick, 'nums': numeros_int})
+                    #print(f"   🎱 1ª BOLA ENCONTRADA: {nick} (Cupom {cid})")
+                    continue # <--- FIM DA LINHA.
+
+        print(f"✅ Análise concluída. Total Cupons: {total_cupons_analisados}")
         print("="*50 + "\n")
 
         return jsonify({
@@ -4518,30 +4512,40 @@ def validar_sorte_extra():
         })
         
     except Exception as e:
-        print(f"❌ ERRO CRÍTICO: {e}")
+        print(f"❌ ERRO CRÍTICO NO SERVIDOR: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
 
-# --- NOVA ROTA: EXIBIR CUPOM NO TERMINAL ---
+# --- ROTA ATUALIZADA: PERMITE LIMPAR A TELA (ENVIA NULL) ---
 @app.route('/api/admin/publicar_cupom_terminal', methods=['POST'])
 def publicar_cupom_terminal():
-    data = request.json
-    cupom = data.get('cupom') # Objeto {id, nick, nums, premio_tipo}
-    
-    if not cupom: 
-        # Se enviar vazio, limpa a tela
-        broadcast_para_clientes({'type': 'LIMPAR_EXTRA'})
-        return jsonify({'status': 'limpo'})
+    try:
+        data = request.json
+        # Pega o cupom (pode ser um Objeto cheio ou None/Null para limpar)
+        cupom_payload = data.get('cupom')
 
-    # Envia para as TVs
-    broadcast_para_clientes({
-        'type': 'EXIBIR_GANHADOR_EXTRA',
-        'cupom': cupom
-    })
-    return jsonify({'status': 'publicado'})
+        # REMOVIDO: if not cupom_payload... (Isso bloqueava o limpar)
+
+        # Monta a mensagem para o WebSocket
+        msg_ws = {
+            'type': 'EXIBIR_CUPOM',
+            'cupom': cupom_payload # Se for None, o JS entende que é pra limpar
+        }
+
+        # Envia para todos
+        broadcast_para_clientes(msg_ws)
+        
+        acao = "Cupom enviado" if cupom_payload else "Tela Limpa"
+        #print(f"📡 Broadcast TV: {acao}")
+        
+        return jsonify({'status': 'ok', 'msg': acao})
+
+    except Exception as e:
+        print(f"Erro broadcast cupom: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 # --- FUNÇÃO ATUALIZADA: GRAVAR DATA/HORA NA CONFIG ---

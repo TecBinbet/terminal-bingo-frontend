@@ -1409,7 +1409,7 @@ function handleFullscreenChange() {
     }
 }
 
-// --- FUNÇÃO SEGURA: Abrir Minhas Cartelas --- xxx
+// --- FUNÇÃO SEGURA: Abrir Minhas Cartelas ---
 function openMyCardsPanel() {
     
     // 1. Trava de Login
@@ -2851,15 +2851,84 @@ function displayConferencePanel(confereData, bolasCantadas) {
     }
 }
 
-// Função auxiliar para esconder e limpar
+
+
+// --- FUNÇÃO PARA EXIBIR O GANHADOR DO SORTE EXTRA NA TV ---
+function exibirConferenciaSorteExtra(dados) {
+    const container = document.getElementById('conference-panel-container');
+    const titleEl = container.querySelector('h2'); // O título "Conferência"
+    const cardNumEl = document.getElementById('card-number');
+    const winnerEl = document.getElementById('winner-name');
+    const gridEl = document.getElementById('card-grid');
+    const btnClose = document.getElementById('btn-close-conference');
+
+    // 1. Preenche os Textos
+    // Se vier título personalizado (ex: PRÊMIO MÁXIMO), usa ele. Senão, padrão.
+    titleEl.textContent = dados.premio_titulo || "🍀 CONFERÊNCIA EXTRA 🍀";
+    // Muda a cor do título para Amarelo para destacar que é Extra
+    titleEl.className = "text-center text-xl text-yellow-400 font-black uppercase tracking-widest border-b-2 border-yellow-500 pb-1 w-full animate-pulse";
+
+    cardNumEl.textContent = dados.id || "---"; // ID do Cupom
+    winnerEl.textContent = dados.nick || "Visitante"; // Nome do Jogador
+
+    // 2. Preenche os Números (Layout Especial Flex)
+    gridEl.innerHTML = '';
+    
+    // Altera o layout do grid para ficar bonito com poucos números (Flex centralizado)
+    // Removemos a classe de grid 5x5 padrão do bingo normal temporariamente
+    gridEl.className = 'flex flex-wrap justify-center items-center gap-3 w-full p-4 bg-gray-800/50 rounded-xl border border-yellow-600/30';
+
+    if (dados.nums && Array.isArray(dados.nums)) {
+        dados.nums.forEach(num => {
+            const el = document.createElement('div');
+            // Bola Amarela com texto Preto (Identidade visual do Sorte Extra)
+            el.className = "w-14 h-14 rounded-full bg-yellow-500 border-4 border-white text-black font-black text-2xl flex items-center justify-center shadow-lg animate-pop";
+            el.innerText = num < 10 ? '0' + num : num;
+            gridEl.appendChild(el);
+        });
+    }
+
+    // 3. Exibe o Painel
+    container.classList.remove('hidden');
+    container.classList.add('flex');
+
+    // Toca um som de sucesso (opcional, se tiver configurado)
+    // if (typeof playPremiadoSound === 'function') { ... }
+}
+
+
+// Função auxiliar para esconder e limpar (ATUALIZADA)
 function ocultarConferencia() {
     const container = document.getElementById('conference-panel-container');
+    
+    // Pega o título para resetar o estilo (volta de Amarelo para Branco)
+    const titleEl = container.querySelector('h2');
+
     container.classList.remove('flex');
     container.classList.add('hidden');
-    cardNumberElement.textContent = '...';
-    winnerNameElement.textContent = '...';
+    
+    // Reseta os textos usando as variáveis globais
+    if (cardNumberElement) cardNumberElement.textContent = '...';
+    if (winnerNameElement) winnerNameElement.textContent = '...';
+    
+    // --- RESETA ESTILOS PARA O BINGO NORMAL ---
+    if (titleEl) {
+        titleEl.textContent = "🎉 Conferência 🎉";
+        // Restaura a classe original do HTML (Branco, sem pulsação)
+        titleEl.className = "text-center text-xl text-white uppercase tracking-widest border-b-2 border-yellow-500 pb-0 w-full";
+    }
+    
+    // --- LIMPA O GRID ---
+    if (cardGridElement) {
+        cardGridElement.innerHTML = '';
+        // Importante: Remove as classes Flex do Sorte Extra para não quebrar o Grid do Bingo Normal
+        cardGridElement.className = ''; 
+    }
+    
+    // Garante que a lógica interna também limpe
     displayCardGrid(null, []);
 }
+
 
 // --- FUNÇÃO MOSTRAR GANHADORES (CORRIGIDA) ---
 function displayWinnersPanel(ganhadoresData) {
@@ -3921,7 +3990,6 @@ if (idDoEvento) {
     console.error("❌ init: ID do evento não encontrado.");
 }
 
-
         
         connectWebSocket();
         setInterval(() => {
@@ -4147,6 +4215,18 @@ ws.onmessage = (event) => {
             }
             verificarNovasCompras();
         }
+        else if (payload.type === 'EXIBIR_CUPOM') {
+                console.log("📨 Recebido comando de conferência:", payload.cupom);
+                
+                if (payload.cupom) {
+                    // Se veio dados, exibe a tela
+                    exibirConferenciaSorteExtra(payload.cupom);
+                } else {
+                    // Se veio null, limpa a tela (fecha o modal)
+                    ocultarConferencia();
+                }
+        }
+
     } catch (e) {
         console.error('Falha ao processar mensagem do WebSocket:', e);
     }
@@ -5776,6 +5856,28 @@ function atualizarInterfaceAposLogin(dados) {
     if (saldoMobile) saldoMobile.textContent = saldoTxt;
     if (divMobile) divMobile.classList.remove('hidden');
 
+   // =========================================================
+    // ✅ NOVO CÓDIGO: EXIBIR NOME NO CENTRO DA TELA
+    // =========================================================
+    const containerUser = document.getElementById('nameUser_container');
+    const labelUser = document.getElementById('nameUser');
+
+    if (containerUser && labelUser) {
+        // Pega o ID (do parametro dados ou da variavel global)
+        const userId = dados.id || dados.id_cliente || globalIdCliente;
+        // Pega o Nick
+        const userNick = dados.nick || dados.usuario || "";
+
+        if (userId && userNick) {
+            // Formato: "154 - ANGÉLICA" (ID - NOME MAIÚSCULO)
+            labelUser.textContent = `${userId} - ${userNick.toUpperCase()}`;
+            
+            // Remove o hidden para mostrar
+            containerUser.classList.remove('hidden');
+        }
+    }
+    // =========================================================
+
 }
 
 
@@ -6255,19 +6357,18 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
         }
     }
 
-    // --- VALIDAÇÃO FINAL ---
+    // --- VALIDAÇÃO FINAL (INPUT) ---
     const idEvento = parseInt(rawId, 10);
     
-    if (!idEvento || isNaN(idEvento)) {
-        console.warn(`⚠️ Sorte Extra ignorado: ID inválido (Recebido: ${rawId}). Aguardando carregamento do evento...`);
+    if (!idEvento || isNaN(idEvento) || idEvento <= 0) { // <--- Adicione idEvento <= 0
+        console.warn(`⚠️ Sorte Extra ignorado: ID inválido (Recebido: ${rawId}).`);
         
-        // Esconde os botões para não ficar quebrado na tela
+        // Esconde botões...
         const btnMenu = document.getElementById('btn-open-extra');
         if (btnMenu) btnMenu.classList.add('hidden');
-        const btnFloat = document.getElementById('btn-floating-extra');
-        if (btnFloat) btnFloat.classList.add('hidden');
+        // ... (resto do código de ocultar)
         
-        return; // ABORTA A EXECUÇÃO COM SEGURANÇA
+        return; // ABORTA ANTES DO FETCH
     }
 
     // Fecha o menu lateral...
@@ -6276,11 +6377,26 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
     try {
         console.log(`🔄 Buscando Sorte Extra para o Evento ID: ${idEvento}`);
         const res = await fetch(`${API_BASE_URL || ''}/api/cliente/config_sorte_extra/${idEvento}`);
-
        
         if (!res.ok) throw new Error("Recurso não configurado ou offline");
         
         const dados = await res.json();
+
+        // =================================================================
+        // 🛑 NOVA VALIDAÇÃO: SE O SERVIDOR RETORNAR ID ZERO, OCULTA TUDO
+        // =================================================================
+        if (!dados.id_evento || parseInt(dados.id_evento) === 0) {
+            console.log("🚫 Sorte Extra está inativo (ID 0) no servidor. Ocultando botões.");
+            
+            const btnMenu = document.getElementById('btn-open-extra');
+            if (btnMenu) btnMenu.classList.add('hidden');
+            
+            const btnFloat = document.getElementById('btn-floating-extra');
+            if (btnFloat) btnFloat.classList.add('hidden');
+
+            return; // SAI DA FUNÇÃO AQUI
+        }
+        // =================================================================
 
         // Salva Configuração Global
         configSorteExtra = {
@@ -6302,14 +6418,11 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
         if (containerBadge) {
             containerBadge.innerHTML = htmlBadge;
         } else {
-            // Fallback: Se não criou a div, tenta injetar antes do título ou preço
-            // (Opcional, mas ajuda a não dar erro se esqueceu o HTML)
             console.log("⚠️ Nota: Crie a <div id='container-aviso-extra'></div> no modal para ver o aviso.");
         }
 
         // Atualiza Textos da UI com segurança (verifica se elementos existem)
         const elPreco = document.getElementById('lbl-preco');
-
         if (elPreco) elPreco.innerText = `R$ ${dados.preco_cupom.toFixed(2)}`;
         
         const elQtde = document.getElementById('lbl-qtde');
@@ -6320,35 +6433,35 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
 
         if (containerBtnHeader) containerBtnHeader.innerHTML = '';
 
-if (elRegras) {
-    // 2. Preenche o rodapé com as informações financeiras
-    elRegras.innerHTML = `
-        <div class="flex flex-col items-center justify-center gap-1">
-            <span class="font-bold text-gray-200">
-                🏆Prêmio Máx: R$ ${dados.premio_maximo.toFixed(2)} | Base: R$ ${dados.premio_base.toFixed(2)}
-            </span>
-            <div id="conteudo-regras-extra" class="hidden mt-2 p-2 bg-gray-900/90 rounded border border-yellow-500/50 shadow-lg w-full max-w-md">
-                 <p class="text-yellow-400 font-medium text-sm animate-pulse text-center">
-                      ${dados.texto_regra_vitoria || ''}
-                 </p>
-            </div>
-        </div>
-    `;
-
-    // 3. Se houver regras, CRIA O BOTÃO lá no Cabeçalho (Header)
-    if (dados.texto_regra_vitoria && dados.texto_regra_vitoria.trim() !== "") {
-        if (containerBtnHeader) {
-            containerBtnHeader.innerHTML = `
-                <button id="btn-ver-regras" onclick="toggleRegrasExtra()" 
-                    class="text-[16px] md:text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-green-300 py-1 px-3 rounded border border-gray-500 transition-all shadow-sm flex items-center gap-1">
-                    <span>📜 Regras</span>
-                </button>
+        if (elRegras) {
+            // 2. Preenche o rodapé com as informações financeiras
+            elRegras.innerHTML = `
+                <div class="flex flex-col items-center justify-center gap-1">
+                    <span class="font-bold text-gray-200">
+                        🏆Prêmio Máx: R$ ${dados.premio_maximo.toFixed(2)} | Base: R$ ${dados.premio_base.toFixed(2)}
+                    </span>
+                    <div id="conteudo-regras-extra" class="hidden mt-2 p-2 bg-gray-900/90 rounded border border-yellow-500/50 shadow-lg w-full max-w-md">
+                         <p class="text-white font-medium text-sm animate-pulse text-center">
+                              ${dados.texto_regra_vitoria || ''}
+                         </p>
+                    </div>
+                </div>
             `;
+
+            // 3. Se houver regras, CRIA O BOTÃO lá no Cabeçalho (Header)
+            if (dados.texto_regra_vitoria && dados.texto_regra_vitoria.trim() !== "") {
+                if (containerBtnHeader) {
+                    containerBtnHeader.innerHTML = `
+                        <button id="btn-ver-regras" onclick="toggleRegrasExtra()" 
+                            class="text-[16px] md:text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-green-300 py-1 px-3 rounded border border-gray-500 transition-all shadow-sm flex items-center gap-1">
+                            <span>📜 Regras</span>
+                        </button>
+                    `;
+                }
+            }
         }
-    }
-}
         
-        // --- MOSTRAR BOTÕES (Se tiver configuração válida) ---
+        // --- MOSTRAR BOTÕES (Só chega aqui se o ID > 0) ---
         const btnMenu = document.getElementById('btn-open-extra');
         if (btnMenu) btnMenu.classList.remove('hidden');
 
@@ -6377,6 +6490,7 @@ if (elRegras) {
         console.warn("Sorte Extra indisponível:", e.message); 
     }
 }
+
 
 
 function abrirTelaSorteExtra() {
@@ -6546,7 +6660,7 @@ function fecharModalSorteExtra() {
 
 // 8. FINALIZAR COMPRA REAL (COM TRATAMENTO DE ERRO 401)
 async function finalizarCompraExtra() {
-    // 1. Validações Básicas
+    // 1. Validações Básicas: Carrinho Vazio
     if (configSorteExtra.carrinho.length === 0) {
         if (typeof showCustomAlert === 'function') {
             showCustomAlert("Seu carrinho está vazio!", "Carrinho Vazio", "🚫");
@@ -6554,31 +6668,47 @@ async function finalizarCompraExtra() {
         return;
     }
     
-    // Verifica login visualmente antes de enviar
+    // 2. Verifica Login
     if (!clienteLogado) {
         if (typeof showCustomAlert === 'function') {
             showCustomAlert("Você precisa fazer LOGIN para comprar.", "Realizar Login", "🚫");
         }
-
         fecharModalSorteExtra();
         abrirModalLogin(); 
         return;
     }
 
-    // Confirmação Visual
-    const total = configSorteExtra.carrinho.length * configSorteExtra.preco;
+    // ============================================================
+    // 🛡️ NOVA PROTEÇÃO: VERIFICA SE O ID DO EVENTO É VÁLIDO
+    // (Isso evita o Erro 400 Bad Request no servidor)
+    // ============================================================
+    if (!configSorteExtra.idEvento || configSorteExtra.idEvento <= 0) {
+        console.error("⛔ Erro Crítico: ID do evento inválido na compra:", configSorteExtra.idEvento);
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Erro técnico: Identificação do evento perdida. Por favor, recarregue a página.", "Erro Interno", "❌");
+        } else {
+            alert("Erro técnico: Identificação do evento perdida. Recarregue a página.");
+        }
+        return; // ABORTA AQUI PARA NÃO QUEBRAR O SERVIDOR
+    }
+    // ============================================================
 
+    // 3. Confirmação Visual
+    const total = configSorteExtra.carrinho.length * configSorteExtra.preco;
     const confirmou = await showCustomConfirm(`Confirmar a compra de ${configSorteExtra.carrinho.length} cupons?\nTotal: R$ ${total.toFixed(2)}`, "Comprar Cupons", "🛒");
     if(!confirmou) return;
 
-    // 2. Feedback de Loading
+    // 4. Feedback de Loading
     const btn = document.getElementById('btn-finalizar-extra');
-    const textoOriginal = btn.innerText;
-    btn.disabled = true;
-    btn.innerText = "⏳ Processando...";
+    let textoOriginal = "FINALIZAR COMPRA";
+    if (btn) {
+        textoOriginal = btn.innerText;
+        btn.disabled = true;
+        btn.innerText = "⏳ Processando...";
+    }
 
     try {
-        // 3. Envia para o Backend
+        // 5. Envia para o Backend
         const response = await fetch(`${API_BASE_URL || ''}/api/cliente/comprar_sorte_extra`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -6596,11 +6726,7 @@ async function finalizarCompraExtra() {
             if (typeof showCustomAlert === 'function') {
                 showCustomAlert("Sua sessão expirou. Por favor, faça login novamente.", "Sessão Expirada", "🚫");
             }
-         
-            // Força logout visual
             clienteLogado = false; 
-            
-            // Fecha o modal do sorteio e abre o de login
             fecharModalSorteExtra();
             abrirModalLogin();
             return;
@@ -6611,7 +6737,8 @@ async function finalizarCompraExtra() {
             if (typeof showCustomAlert === 'function') {
                 showCustomAlert(`✅ ${data.msg}\nNovo Saldo: R$ ${data.novo_saldo.toFixed(2)}`, "Saldo Atualizado", "✅");
             }
-            // Limpa o carrinho
+            
+            // Limpa o carrinho e atualiza UI
             configSorteExtra.carrinho = [];
             configSorteExtra.numeros_selecionados = [];
             atualizarCarrinhoUI();
@@ -6625,19 +6752,26 @@ async function finalizarCompraExtra() {
             fecharModalSorteExtra();
 
         } else {
+            // Erro retornado pela API (mas com status 200 ou outro)
             throw new Error(data.erro || "Erro ao processar compra.");
         }
 
     } catch (erro) {
         console.error("Erro na compra:", erro);
-        alert("❌ Falha: " + erro.message);
+        if (typeof showCustomAlert === 'function') {
+             showCustomAlert("Falha: " + erro.message, "Erro", "❌");
+        } else {
+             alert("❌ Falha: " + erro.message);
+        }
     } finally {
+        // Restaura o botão
         if(btn) {
             btn.disabled = false;
             btn.innerText = textoOriginal;
         }
     }
 }
+
 
 /**
  * Alterna a visibilidade: O botão está no Header, o texto está no Footer
@@ -6684,3 +6818,4 @@ function fecharRegrasSeEstiveremAbertas() {
         }
     }
 }
+
