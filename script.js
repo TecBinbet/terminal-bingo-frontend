@@ -954,9 +954,9 @@ function renderizarListaMinhasCartelas(dados) {
                 const nums = listaNumeros.map(n => n.toString().padStart(2, '0')).join('<span class="text-yellow-600 ">-</span>');
                 
                 htmlFinal += `
-                    <div class="bg-black/40 border border-yellow-500/30 rounded px-2 py-1 text-center shadow-md">
-                        <div class="text-[10px] text-yellow-400 uppercase tracking-wider">Cupom: ${idExibicao}</div>
-                        <div class="font-mono text-yellow-200 font-bold text-base -mt-1 tracking-widest whitespace-nowrap">
+                    <div class="bg-black/40 border border-yellow-500/30 rounded px-1 py-1 text-center shadow-md">
+                        <div class="text-[9px] text-yellow-400 uppercase tracking-wider">Cupom: ${idExibicao}</div>
+                        <div class="text-[12px] font-mono text-yellow-200 font-bold -mt-1 tracking-widest whitespace-nowrap">
                             ${nums}
                         </div>
                     </div>`;

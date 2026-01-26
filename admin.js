@@ -32,6 +32,9 @@ let MAX_BOLAS = 90;
 // --- CONTROLE SORTE EXTRA ---
 let sorteioExtraConfigAtivo = false;    // Se o evento atual tem Sorte Extra
 let qtdeDezenasSorteExtra = 3;          // Padrão (será atualizado pela config)
+let qtdeTopeSorteExtra = 10;          // Padrão (será atualizado pela config)
+let valorPremioMaximoExtra = 0;
+
 let jaValidouSorteExtraNestaRodada = false; // Trava para não abrir o modal 20x
 
 let jogoFoiFinalizadoComSucesso = false;
@@ -454,32 +457,33 @@ async function carregarDadosIniciaisSilencioso() {
 
         if (data.parametrosInfo) {
             aguardandoVideo = parseInt(data.parametrosInfo.aguardandoVideo) || 0;
-            document.getElementById('config-atraso-video').value =aguardandoVideo; 
+            const elDelay = document.getElementById('config-atraso-video');
+            if(elDelay) elDelay.value = aguardandoVideo; // Adicionei verificação de null aqui
             vozAtiva = data.parametrosInfo.voz_ativa !== undefined ? data.parametrosInfo.voz_ativa : true;
         }
 
-
-        // =============================================================
-        // 🛠️ CORREÇÃO: PREENCHER O ID DO EVENTO PARA O SORTE EXTRA
-        // =============================================================
-        // Se a variável global estiver vazia, tentamos preencher com os dados da rodada
         if (!dadosEventoAtual && data.rodadaData && data.rodadaData.length > 0) {
             const rodada = data.rodadaData[0];
             if (rodada.id_evento && rodada.id_evento !== "0") {
                 console.log(`♻️ [RECUPERAÇÃO] Restaurando ID do evento após F5: ${rodada.id_evento}`);
                 
-                // Cria o objeto global apenas com o ID (o suficiente para o Sorte Extra funcionar)
+                // --- CORREÇÃO AQUI ---
+                // Criamos 'id' E 'id_evento' para garantir compatibilidade
                 dadosEventoAtual = { 
-                    id_evento: rodada.id_evento,
+                    id: rodada.id_evento,        // <--- O 'carregarConfig' busca por .id
+                    id_evento: rodada.id_evento, // <--- Mantém para outras partes do sistema
                     descricao: 'Evento Recuperado' 
                 };
             }
         }
-        // =============================================================
 
-        // Agora sim chamamos a função, pois dadosEventoAtual já existe
-        if (dadosEventoAtual && dadosEventoAtual.id_evento) {
-             carregarConfigSorteExtraAdmin();
+        // --- CORREÇÃO AQUI TAMBÉM ---
+        // Agora verificamos se existe id OU id_evento
+        if (dadosEventoAtual && (dadosEventoAtual.id || dadosEventoAtual.id_evento)) {
+             // Garante que o ID esteja setado corretamente caso tenha vindo só com id_evento
+             if(!dadosEventoAtual.id) dadosEventoAtual.id = dadosEventoAtual.id_evento;
+             
+             await carregarConfigSorteExtraAdmin();
         }
         
         if (data.evento && parseInt(data.evento.tipo_cartela) === 25) {
@@ -488,7 +492,10 @@ async function carregarDadosIniciaisSilencioso() {
             MAX_BOLAS = 90;
         }
 
-        const totalBolasNaTela = document.querySelectorAll('[id^="admin-ball-"]').length;
+        // Verifica se o grid existe antes de contar
+        const bolasNaTela = document.querySelectorAll('[id^="admin-ball-"]');
+        const totalBolasNaTela = bolasNaTela.length;
+        
         if (totalBolasNaTela !== MAX_BOLAS) {
             initGrid(); 
         }
@@ -505,8 +512,11 @@ async function carregarDadosIniciaisSilencioso() {
              bolasSorteadasCache = listaBolasInit;
              updateGrid(bolasSorteadasCache);
         }
-    } catch(e) {}
+    } catch(e) {
+        console.error("Erro no carregamento silencioso:", e);
+    }
 }
+
 
 function processarMensagemWS(event) {
     const payload = JSON.parse(event.data);
@@ -544,7 +554,7 @@ function processarMensagemWS(event) {
 
             // O Alerta
             if (sorteioExtraConfigAtivo && 
-               listaDeNumeros.length === qtdeDezenasSorteExtra && 
+               listaDeNumeros.length === qtdeTopeSorteExtra && 
                !jaValidouSorteExtraNestaRodada) {
         
                console.log("🚨 [DEBUG] CONDIÇÃO ATINGIDA! ABRINDO MODAL...");
@@ -647,7 +657,7 @@ if (payload.melhoresData) {
     const bolasMesa = bolasSorteadasCache; // Array das bolas [15, 42, 63...]
     
     // Verificamos se atingiu a quantidade X
-    if (sorteioExtraConfigAtivo && bolasMesa.length === qtdeDezenasSorteExtra) {
+    if (sorteioExtraConfigAtivo && bolasMesa.length === qtdeTopeSorteExtra) {
         
         if (!jaValidouSorteExtraNestaRodada) {
             jaValidouSorteExtraNestaRodada = true; // Trava para não abrir 1000 vezes
@@ -2005,87 +2015,74 @@ function alternarBotaoReset(modo) {
 }
 
 
-// Adicione esta chamada no seu 'carregarDadosIniciaisSilencioso' ou quando carregar evento
+// --- FUNÇÃO CORRIGIDA ---
 async function carregarConfigSorteExtraAdmin() {
-    // Pega ID do evento atual (precisa estar disponível no scopo global ou DOM)
-    if(!dadosEventoAtual || !dadosEventoAtual.id) return;
-    
-    try {
-        const resp = await fetch(`${API_BASE_URL}/api/cliente/config_sorte_extra/${dadosEventoAtual.id}`);
-        if(resp.ok) {
-            const cfg = await resp.json();
-            if(cfg.ativo) {
-                sorteioExtraConfigAtivo = true;
-                qtdeDezenasSorteExtra = cfg.qtde_dezenas || 3;
-                console.log(`🍀 Sorte Extra Ativo: Alerta na bola ${qtdeDezenasSorteExtra}`);
-                
-                // Atualiza UI se quiser mostrar um label "Sorte Extra: ON"
-            }
-        }
-    } catch(e) { console.error("Erro config extra", e); }
-}
+    // [DEBUG 1] Verifica se a função foi chamada
+    console.log("🚀 carregarConfigSorteExtraAdmin CHAMADA!"); 
 
-async function carregarConfigSorteExtraAdmin() {
-    console.log("🐛 [DEBUG] Tentando carregar config Sorte Extra...");
-
-    if (!dadosEventoAtual || !dadosEventoAtual.id_evento) {
-        console.log("🐛 [DEBUG] Abortado: Sem dadosEventoAtual ou ID.");
+    // Pega ID do evento atual
+    if(!dadosEventoAtual || !dadosEventoAtual.id) {
+        // [DEBUG 2] Se entrar aqui, é porque chamou cedo demais (antes do evento carregar)
+        console.warn("⚠️ Sorte Extra Abortado: 'dadosEventoAtual' está vazio ou null.");
         return;
     }
     
     try {
-        const url = `${API_BASE_URL}/api/cliente/config_sorte_extra/${dadosEventoAtual.id_evento}`;
-        //console.log(`🐛 [DEBUG] Fetch URL: ${url}`);
+        console.log(`🍀 Sorte Extra: Iniciando fetch para Evento ${dadosEventoAtual.id}...`);
 
-        const resp = await fetch(url);
-        if (resp.ok) {
+        const resp = await fetch(`${API_BASE_URL}/api/cliente/config_sorte_extra/${dadosEventoAtual.id}`);
+        
+        if(resp.ok) {
             const cfg = await resp.json();
-            console.log("🐛 [DEBUG] Config Recebida:", cfg);
-
-            if (cfg.ativo) {
+            
+            if(cfg.ativo) {
                 sorteioExtraConfigAtivo = true;
-                qtdeDezenasSorteExtra = cfg.qtde_dezenas || 3;
-                //console.log(`✅ [DEBUG] Sorte Extra ATIVADO. Alerta na bola: ${qtdeDezenasSorteExtra}`);
+                qtdeDezenasSorteExtra = cfg.qtde_dezenas || 5;
+                qtdeTopeSorteExtra  = cfg.qtde_tope_sorte_extra || 10; 
+                valorPremioMaximoExtra = parseFloat(cfg.premio_maximo) || 0;
                 
-                // Atualiza visualmente (opcional)
-                const elInfo = document.getElementById('info-extra-status');
-                if(elInfo) elInfo.innerHTML = `<span class="bg-yellow-600 text-white text-xs px-2 py-1 rounded">Sorte Extra ON (${qtdeDezenasSorteExtra})</span>`;
+                // CORREÇÃO NO LOG: Usar a variável 'qtdeTopeSorteExtra'
+                console.log(`✅ Sorte Extra ATIVO! Alerta na bola: ${qtdeTopeSorteExtra}`);
+                
+                // DICA: Atualize algum elemento visual no Admin para saber que carregou
+                const divStatus = document.getElementById('status-sorte-extra');
+                if(divStatus) divStatus.innerText = `EXTRA ON (Top ${qtdeTopeSorteExtra})`;
             } else {
-                //console.log("⛔ [DEBUG] Sorte Extra está DESATIVADO nesta config.");
+                console.log("⚪ Sorte Extra está INATIVO neste evento.");
                 sorteioExtraConfigAtivo = false;
             }
-        } else {
-            //console.log("🐛 [DEBUG] Erro no fetch (status):", resp.status);
-            sorteioExtraConfigAtivo = false;
         }
-    } catch (e) {
-        //console.warn("🐛 [DEBUG] Erro Exception:", e);
-        sorteioExtraConfigAtivo = false;
+    } catch(e) { 
+        console.error("❌ Erro config extra:", e); 
     }
 }
 
 
-// Função para abrir o modal (Com o espaço para o contador)
+// Função para abrir o modal (Atualizada para 4 Faixas de Acertos)
 function abrirModalValidacaoSorteExtra() {
     // 1. Injeta o HTML do modal se não existir
     if (!document.getElementById('modal-sorte-extra')) {
+        const jackpotFormatado = valorPremioMaximoExtra.toLocaleString('pt-BR', { 
+            minimumFractionDigits: 2, 
+            maximumFractionDigits: 2 
+        });
         const modalHTML = `
-        <div id="modal-sorte-extra" class="fixed inset-0 bg-black/90 z-[60] hidden flex items-center justify-center backdrop-blur-sm">
-            <div class="bg-gray-900 border-2 border-yellow-500/50 rounded-xl w-full max-w-5xl p-4 shadow-2xl relative flex flex-col max-h-[90vh]">
+        <div id="modal-sorte-extra" class="fixed inset-0 bg-black/10 z-[60] hidden flex items-center justify-center backdrop-blur-sm">
+            <div class="bg-gray-900 border-2 border-yellow-500/50 rounded-xl w-full max-w-7xl p-2 shadow-2xl relative flex flex-col max-h-[95vh]">
                 
-                <div class="flex justify-between items-center mb-1 border-b border-gray-700 pb-4">
+                <div class="flex justify-between items-center mb-1 border-b border-gray-700 pb-2">
                     <div>
-                        <h2 class="text-1xl font-black text-yellow-500 flex items-center gap-2">
-                            🍀 CONFERÊNCIA SORTE EXTRA
+                        <h2 class="text-xl font-black text-yellow-500 flex items-center gap-2">
+                            🍀 CONFERÊNCIA SORTE EXTRA (TOP ${qtdeTopeSorteExtra || 10})
                         </h2>
                         <div class="flex items-center gap-3 -mb-2">
-                            <p class="text-gray-400 text-sm">Validando ganhadores...</p>
+                            <p class="text-gray-400 text-sm">Validando acertos...</p>
                             <span id="badge-total-cupons" class="bg-gray-700 text-white text-xs px-4 py-1 rounded border border-gray-600">
                                 Carregando...
                             </span>
                         </div>
                     </div>
-                    <button onclick="document.getElementById('modal-sorte-extra').classList.add('hidden')" class="text-gray-500 hover:text-white transition-colors">
+                    <button onclick="fecharValidacaoAdmin()" class="text-gray-500 hover:text-white transition-colors">
                         <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
@@ -2095,42 +2092,53 @@ function abrirModalValidacaoSorteExtra() {
                     <p class="text-yellow-500 animate-pulse font-bold">Auditando Cupons...</p>
                 </div>
 
-                <div id="resultados-extra" class="grid grid-cols-1 md:grid-cols-3 gap-4 overflow-y-auto custom-scrollbar p-2">
+                <div id="resultados-extra" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 overflow-y-auto custom-scrollbar p-1">
                     
-                    <div class="bg-gray-800/50 rounded-lg border border-green-500/30 flex flex-col h-96">
-                        <div class="bg-green-900/30 p-1 border-b border-green-500/30">
-                            <h3 class="font-bold text-green-400 text-center uppercase tracking-wider">🏆 Sequência Exata</h3>
-                            <div class="text-[12px] text-center text-gray-300">Prêmio Máximo</div>
-                        </div>
-                        <div id="lista-seq" class="flex-1 overflow-y-auto p-2 space-y-2"></div>
+                    <div class="bg-gray-800/50 rounded-lg border border-green-500/30 flex flex-col h-[500px]">
+                        <div class="bg-green-900/30 p-2 border-b border-green-500/30">
+                            <h3 class="font-bold text-green-400 text-center uppercase tracking-wider text-sm">🏆 5 Acertos</h3>
+                            <div class="bg-green-800 text-white text-center text-[12px] font-bold px-4 py-1 rounded-full shadow-md border border-green-400 w-fit mx-auto">
+                                   JackPot - R$ ${jackpotFormatado}
+                            </div>
+                        </div> 
+                        <div id="lista-acertos-5" class="flex-1 overflow-y-auto p-2 space-y-2"></div>
                     </div>
 
-                    <div class="bg-gray-800/50 rounded-lg border border-blue-500/30 flex flex-col h-96">
-                        <div class="bg-blue-900/30 p-1 border-b border-blue-500/30">
-                            <h3 class="font-bold text-blue-400 text-center uppercase tracking-wider">🎲 Ordem Aleatória</h3>
-                            <div class="text-[12px] text-center text-gray-300">Prêmio Intermediário</div>
+                    <div class="bg-gray-800/50 rounded-lg border border-blue-500/30 flex flex-col h-[500px]">
+                        <div class="bg-blue-900/30 p-2 border-b border-blue-500/30">
+                            <h3 class="font-bold text-blue-400 text-center uppercase tracking-wider text-sm">🥈 4 Acertos</h3>
+                            <div class="text-[11px] text-center text-gray-300">Prêmio Intermediário</div>
                         </div>
-                        <div id="lista-ale" class="flex-1 overflow-y-auto p-2 space-y-2"></div>
+                        <div id="lista-acertos-4" class="flex-1 overflow-y-auto p-2 space-y-2"></div>
                     </div>
 
-                    <div class="bg-gray-800/50 rounded-lg border border-orange-500/30 flex flex-col h-96">
-                        <div class="bg-orange-900/30 p-1 border-b border-orange-500/30">
-                            <h3 class="font-bold text-orange-400 text-center uppercase tracking-wider">🎱 Acertou 1ª Bola</h3>
-                            <div class="text-[12px] text-center text-gray-300">Prêmio Base</div>
+                    <div class="bg-gray-800/50 rounded-lg border border-orange-500/30 flex flex-col h-[500px]">
+                        <div class="bg-orange-900/30 p-2 border-b border-orange-500/30">
+                            <h3 class="font-bold text-orange-400 text-center uppercase tracking-wider text-sm">🥉 3 Acertos</h3>
+                            <div class="text-[11px] text-center text-gray-300">Prêmio Base</div>
                         </div>
-                        <div id="lista-prim" class="flex-1 overflow-y-auto p-2 space-y-2"></div>
+                        <div id="lista-acertos-3" class="flex-1 overflow-y-auto p-2 space-y-2"></div>
                     </div>
+
+                    <div class="bg-gray-800/50 rounded-lg border border-purple-500/30 flex flex-col h-[500px]">
+                        <div class="bg-purple-900/30 p-2 border-b border-purple-500/30">
+                            <h3 class="font-bold text-purple-400 text-center uppercase tracking-wider text-sm">✨ 2 Acertos</h3>
+                            <div class="text-[11px] text-center text-gray-300">Bônus</div>
+                        </div>
+                        <div id="lista-acertos-2" class="flex-1 overflow-y-auto p-2 space-y-2"></div>
+                    </div>
+
                 </div>
 
                 <div class="mt-2 pt-2 border-t border-gray-700 flex justify-between items-center bg-gray-900">
-                    <div class="text-xs text-gray-500">
-                        * Clique no cartão do ganhador para enviá-lo para a TV.
+                    <div class="text-xs text-gray-500 hidden md:block">
+                        * Clique no cartão para enviar para a TV.
                     </div>
-                    <div class="flex gap-3">
-                         <button id="btn-limpar-tv" onclick="limparTelaPublicaExtra()" class="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded font-bold border border-gray-500 shadow-lg flex items-center gap-2">
-                            🧹📺 Limpar TV
+                    <div class="flex gap-3 w-full md:w-auto justify-end">
+                         <button id="btn-limpar-tv" onclick="limparTelaPublicaExtra()" class="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded font-bold border border-gray-500 shadow-lg flex items-center gap-2 text-sm">
+                            🧹 Limpar TV
                          </button>
-                         <button onclick="fecharValidacaoAdmin()" class="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded font-bold shadow-lg                    flex items-center gap-2 transition-all">
+                         <button onclick="fecharValidacaoAdmin()" class="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded font-bold shadow-lg flex items-center gap-2 transition-all text-sm">
                              ❌ Fechar
                           </button>
                     </div>
@@ -2160,7 +2168,7 @@ function fecharValidacaoAdmin() {
     }
 }
 
-// Função de Busca (Atualiza o contador)
+// Função de Busca (Atualiza o contador xxx)
 async function buscarGanhadoresExtra() {
     const loading = document.getElementById('loading-extra');
     const content = document.getElementById('resultados-extra');
@@ -2209,15 +2217,28 @@ async function buscarGanhadoresExtra() {
         const data = await resp.json();
         
         if (data.status === 'sucesso') {
+            // Atualiza Badge
             if(badgeTotal) {
-                badgeTotal.textContent = `${data.total_analisado || 0} cupons analisados`;
+                badgeTotal.textContent = `${data.total_analisado || 0} checados`;
                 badgeTotal.classList.remove('bg-gray-700');
-                badgeTotal.classList.add('bg-blue-900', 'text-blue-100', 'border-blue-500','text-[14px]');
+                badgeTotal.classList.add('bg-blue-900', 'text-blue-100', 'border-blue-500');
             }
 
-            renderizarListaExtra('lista-seq', data.ganhadores.sequencia, 'seq');
-            renderizarListaExtra('lista-ale', data.ganhadores.aleatorio, 'ale');
-            renderizarListaExtra('lista-prim', data.ganhadores.primeira, 'prim');
+            // =======================================================
+            // ✅ CORREÇÃO DOS IDs (Sincronizado com o novo HTML)
+            // =======================================================
+
+            // 1. Cinco Acertos (Máximo) - ID HTML: lista-acertos-5
+            renderizarListaExtra('lista-acertos-5', data.ganhadores.acertos_5, '5_acertos'); 
+            
+            // 2. Quatro Acertos (Intermediário) - ID HTML: lista-acertos-4
+            renderizarListaExtra('lista-acertos-4', data.ganhadores.acertos_4, '4_acertos');
+            
+            // 3. Três Acertos (Base) - ID HTML: lista-acertos-3
+            renderizarListaExtra('lista-acertos-3', data.ganhadores.acertos_3, '3_acertos');
+
+            // 4. Dois Acertos (Bônus) - ID HTML: lista-acertos-2
+            renderizarListaExtra('lista-acertos-2', data.ganhadores.acertos_2, '2_acertos');
 
         } else if (data.status === 'aguardando') {
             alert(data.msg);
@@ -2233,38 +2254,58 @@ async function buscarGanhadoresExtra() {
 }
 
 
-function renderizarListaExtra(elementId, lista, tipo) {
+function renderizarListaExtra(elementId, lista, tipoCodigo) {
     const container = document.getElementById(elementId);
-    container.innerHTML = '';
     
-    if (lista.length === 0) {
-        container.innerHTML = '<p class="text-gray-500 italic text-sm text-center mt-4">Nenhum ganhador.</p>';
+    // --- PROTEÇÃO CONTRA ERRO (CORREÇÃO DO BUG) ---
+    if (!container) {
+        console.warn(`⚠️ renderizarListaExtra: Elemento HTML '${elementId}' não encontrado na tela.`);
+        return; // Sai da função sem quebrar o sistema
+    }
+    // ---------------------------------------------
+
+    container.innerHTML = ''; // Limpa lista anterior
+
+    if (!lista || lista.length === 0) {
+        container.innerHTML = '<li class="text-gray-500 text-[11px] italic p-2 text-center">Aguardando...</li>';
         return;
     }
 
-    lista.forEach(g => {
+    lista.forEach(ganhador => {
+        // Cria o elemento visual do ganhador
         const div = document.createElement('div');
-        div.className = "p-1 bg-gray-900 rounded border border-gray-700 hover:bg-gray-700 cursor-pointer flex justify-between items-center transition-colors";
+        div.className = "flex justify-between items-center bg-gray-700/50 p-1 mb-1 rounded cursor-pointer hover:bg-gray-600 border border-transparent hover:border-yellow-500 transition-all text-xs";
+        
         div.innerHTML = `
-            <div>
-                <span class="text-sm block font-bold text-gray-400">Cupom: ${g.id}</span>
-                <span class="text-lg text-white -mt-2" >${g.nick}</span>
+            <div class="flex flex-col">
+                <span class="text-[12px] font-bold text-white">Cupom: ${ganhador.id}</span>
+                <span class="text-yellow-400 font-bold truncate max-w-[90px]">${ganhador.nick.toUpperCase()}</span>
             </div>
-            <div class="text-right">
-                <span class="text-lg font-mono font-bold text-yellow-500">${g.nums.join('-')}</span>
+            <div class="text-[14px] text-gray-300 bg-gray-800 px-1 py-0.5 rounded ml-1">
+                ${ganhador.nums.join('-')}
             </div>
         `;
-        // Ao clicar, envia para o terminal
-        div.onclick = () => publicarGanhadorExtra(g, tipo);
+
+        div.onclick = () => {
+            // Chama a função que envia para o telão
+            publicarGanhadorExtra(ganhador, tipoCodigo);
+            
+            // Feedback visual de clique (piscar)
+            div.classList.add('bg-green-700');
+            setTimeout(() => div.classList.remove('bg-green-700'), 200);
+        };
+
         container.appendChild(div);
     });
 }
 
+
 async function publicarGanhadorExtra(dados, tipo) {
-    const labelPremios = {
-        'seq': 'PRÊMIO MÁXIMO (SEQUÊNCIA)',
-        'ale': 'PRÊMIO INTERMEDIÁRIO',
-        'prim': 'PRÊMIO BASE (1ª BOLA)'
+const labelPremios = {
+        '5_acertos': '🏆 JACKPOT 🏆 (5 ACERTOS)',
+        '4_acertos': '🥈 PRÊMIO INTERMEDIÁRIO (4 ACERTOS)',
+        '3_acertos': '🥉 PRÊMIO BASE (3 ACERTOS)',
+        '2_acertos': '✨ BÔNUS (2 ACERTOS)'
     };
 
     const payload = {

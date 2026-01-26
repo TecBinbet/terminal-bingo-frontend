@@ -4235,7 +4235,8 @@ def get_config_sorte_extra(id_evento_solicitado):
         resposta = {
             "id_evento": id_evento_venda,
             "ativo": config.get('ativo', True),
-            "qtde_dezenas": config.get('qtde_dezenas', 3),
+            "qtde_dezenas": config.get('qtde_dezenas', 5),
+            "qtde_tope_sorte_extra": config.get('qtde_tope_sorte_extra', 10),
             "preco_cupom": safe_money(config.get('preco_cupom')),
             "premio_maximo": safe_money(config.get('premio_maximo')),             
             "premio_intermediario": safe_money(config.get('premio_intermediario')), 
@@ -4392,14 +4393,14 @@ def comprar_extra():
         return jsonify({'erro': 'Erro interno.'}), 500
 
 
-# --- ROTA DE VALIDAÇÃO CORRIGIDA (HIERARQUIA ESTRITA) ---
+# --- ROTA DE VALIDAÇÃO: NOVA LÓGICA DE ACERTOS (5, 4, 3, 2) ---
 @app.route('/api/admin/validar_sorte_extra', methods=['POST'])
 def validar_sorte_extra():
     if db is None: return jsonify({'error': 'Sem conexão com DB Jogo'}), 500
     
     try:
         print("\n" + "="*50)
-        print("🕵️ INICIANDO VALIDAÇÃO SORTE EXTRA (MODO HIERARQUIA ESTRITA)")
+        print("🕵️ VALIDAÇÃO SORTE EXTRA (LÓGICA DE ACERTOS NO TOPE)")
         
         # 1. PEGA E NORMALIZA AS BOLAS DA MESA
         dados_bolas = db.bolas_mesa.find_one({}) or {}
@@ -4410,7 +4411,7 @@ def validar_sorte_extra():
         except Exception as e:
             return jsonify({'error': 'Dados de bolas inválidos no banco'}), 500
 
-        print(f"🎱 Bolas Sorteadas (Ordem Real): {todas_bolas_int}")
+        print(f"🎱 Bolas Sorteadas ({len(todas_bolas_int)}): {todas_bolas_int}")
         
         # 2. IDENTIFICA O EVENTO E CONFIGURAÇÃO
         rodada_info = db.rodada.find_one({})
@@ -4420,23 +4421,24 @@ def validar_sorte_extra():
         if sales_db is None: return jsonify({'error': 'Sem conexão DB Vendas'}), 500
 
         config = sales_db.sorte_extra_config.find_one({'id_evento': id_evento_ativo})
-        X = int(config.get('qtde_dezenas', 3)) if config else 3
         
-        # 3. VERIFICA SE TEM BOLAS SUFICIENTES
-        if len(todas_bolas_int) < X:
-            msg = f'Aguardando mais bolas... Sorteados: {len(todas_bolas_int)}/{X}'
+        # Pega a quantidade TOPE (Padrão 10) e o tamanho do cupom (Padrão 5)
+        # Nota: O user mencionou 'Termos x (5 padrão) dezenas possíveis', assumindo cupom de 5.
+        qtde_tope = int(config.get('qtde_tope_sorte_extra', 10)) if config else 10
+        tamanho_cupom = int(config.get('qtde_dezenas', 5)) if config else 5 
+
+        # 3. VERIFICA SE TEM BOLAS SUFICIENTES (O TOPE)
+        if len(todas_bolas_int) < qtde_tope:
+            msg = f'Aguardando {qtde_tope} bolas... Sorteados: {len(todas_bolas_int)}'
             print(f"⏳ {msg}")
             return jsonify({'status': 'aguardando', 'msg': msg})
 
-        # 4. DEFINE OS ALVOS (CRITÉRIOS DE VITÓRIA)
-        # Importante: A ordem das bolas sorteadas define a Sequência e a 1ª Bola
-        primeiras_X_bolas = todas_bolas_int[:X]      # Ex: [10, 50, 05] (Ordem exata)
-        set_primeiras_X = set(primeiras_X_bolas)     # Ex: {05, 10, 50} (Sem ordem)
-        primeira_bola_sorteada = todas_bolas_int[0]  # Ex: 10
+        # 4. DEFINE O UNIVERSO DE ACERTO (As primeiras 'qtde_tope' bolas)
+        # O user disse: "TODAS EM ORDEM ALEATORIA", então usamos SET para comparar
+        bolas_tope_list = todas_bolas_int[:qtde_tope]
+        set_bolas_tope = set(bolas_tope_list)
         
-        #print(f"🎯 ALVO 1 (SEQUÊNCIA): {primeiras_X_bolas}")
-        #print(f"🎯 ALVO 2 (ALEATÓRIO): {set_primeiras_X}")
-        #print(f"🎯 ALVO 3 (1ª BOLA) : {primeira_bola_sorteada}")
+        print(f"🎯 UNIVERSO DE VALIDAÇÃO (TOP {qtde_tope}): {set_bolas_tope}")
 
         # 5. BUSCA CUPONS NO BANCO
         col_name = f"vendas_sorte_extra{id_evento_ativo}"
@@ -4445,9 +4447,13 @@ def validar_sorte_extra():
         else:
             cursor_vendas = sales_db[col_name].find({})
         
-        ganhadores_seq = []
-        ganhadores_aleat = []
-        ganhadores_primeira = []
+        # Listas de ganhadores por quantidade de acertos
+        ganhadores = {
+            'acertos_5': [], # Prêmio Máximo
+            'acertos_4': [], # Prêmio Intermediário
+            'acertos_3': [], # Prêmio Base
+            'acertos_2': []  # Bônus
+        }
         
         total_cupons_analisados = 0
         
@@ -4465,32 +4471,37 @@ def validar_sorte_extra():
                     numeros_int = [int(n) for n in numeros_raw]
                 except: continue
 
-                if len(numeros_int) != X: continue
+                # Validação básica de integridade
+                if len(numeros_int) < 2: continue 
 
                 total_cupons_analisados += 1
                 
                 # ========================================================
-                # 🛑 LÓGICA DE PREMIAÇÃO EXCLUSIVA (HIERARQUIA)
+                # 🧠 LÓGICA MATEMÁTICA (INTERSEÇÃO DE CONJUNTOS)
                 # ========================================================
+                
+                # Transforma cupom em conjunto e compara com o conjunto do TOPE
+                set_cupom = set(numeros_int)
+                
+                # A interseção devolve apenas os números que estão nos dois grupos
+                acertos = len(set_cupom.intersection(set_bolas_tope))
 
-                # 1. CHECA SEQUÊNCIA (Ordem exata importa: [10, 20, 30] != [30, 20, 10])
-                if numeros_int == primeiras_X_bolas:
-                    ganhadores_seq.append({'id': cid, 'nick': nick, 'nums': numeros_int})
-                    #print(f"   🏆 SEQUÊNCIA ENCONTRADA: {nick} (Cupom {cid})")
-                    continue # <--- PARA AQUI! Não checa aleatório nem 1ª bola para este cupom.
-
-                # 2. CHECA ALEATÓRIO (Conjunto igual: {10, 20, 30} == {30, 20, 10})
-                if set(numeros_int) == set_primeiras_X:
-                    ganhadores_aleat.append({'id': cid, 'nick': nick, 'nums': numeros_int})
-                    #print(f"   🎲 ALEATÓRIO ENCONTRADO: {nick} (Cupom {cid})")
-                    continue # <--- PARA AQUI! Não checa 1ª bola.
-
-                # 3. CHECA 1ª BOLA (Primeiro número do cupom == Primeira bola sorteada)
-                # numeros_int[0] é o primeiro número que o cliente escolheu/gerou
-                if numeros_int[0] == primeira_bola_sorteada:
-                    ganhadores_primeira.append({'id': cid, 'nick': nick, 'nums': numeros_int})
-                    #print(f"   🎱 1ª BOLA ENCONTRADA: {nick} (Cupom {cid})")
-                    continue # <--- FIM DA LINHA.
+                # Classificação Hierárquica (elif garante que só entra em um)
+                if acertos == 5:
+                    ganhadores['acertos_5'].append({'id': cid, 'nick': nick, 'nums': numeros_int, 'hits': acertos})
+                    print(f"   🏆 5 ACERTOS: {nick} (#{cid})")
+                    
+                elif acertos == 4:
+                    ganhadores['acertos_4'].append({'id': cid, 'nick': nick, 'nums': numeros_int, 'hits': acertos})
+                    print(f"   🥈 4 ACERTOS: {nick} (#{cid})")
+                    
+                elif acertos == 3:
+                    ganhadores['acertos_3'].append({'id': cid, 'nick': nick, 'nums': numeros_int, 'hits': acertos})
+                    print(f"   🥉 3 ACERTOS: {nick} (#{cid})")
+                    
+                elif acertos == 2:
+                    ganhadores['acertos_2'].append({'id': cid, 'nick': nick, 'nums': numeros_int, 'hits': acertos})
+                    # print(f"   ✨ 2 ACERTOS: {nick} (#{cid})") # Opcional: printar bonus
 
         print(f"✅ Análise concluída. Total Cupons: {total_cupons_analisados}")
         print("="*50 + "\n")
@@ -4498,16 +4509,13 @@ def validar_sorte_extra():
         return jsonify({
             'status': 'sucesso',
             'total_analisado': total_cupons_analisados,
-            'bolas_analisadas': primeiras_X_bolas,
-            'ganhadores': {
-                'sequencia': ganhadores_seq,
-                'aleatorio': ganhadores_aleat,
-                'primeira': ganhadores_primeira
-            },
+            'bolas_base': bolas_tope_list,
+            'ganhadores': ganhadores, # Retorna o objeto com as 4 chaves
             'totais': {
-                'seq': len(ganhadores_seq),
-                'ale': len(ganhadores_aleat),
-                'prim': len(ganhadores_primeira)
+                'a5': len(ganhadores['acertos_5']),
+                'a4': len(ganhadores['acertos_4']),
+                'a3': len(ganhadores['acertos_3']),
+                'a2': len(ganhadores['acertos_2'])
             }
         })
         
