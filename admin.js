@@ -33,15 +33,27 @@ let MAX_BOLAS = 90;
 let sorteioExtraConfigAtivo = false;    // Se o evento atual tem Sorte Extra
 let qtdeDezenasSorteExtra = 3;          // Padrão (será atualizado pela config)
 let qtdeTopeSorteExtra = 10;          // Padrão (será atualizado pela config)
-let valorPremioMaximoExtra = 0;
+let cacheGanhadoresExtraFinal = [];
+let buscarSorteExtra = false;
+
+let filaSorteExtra = [];       // Onde os ganhadores vão esperar a vez
+let processandoFilaExtra = false; // Trava para saber se o timer já está rodando
+
+let premioPrincipalPendente = null;
+
+// Valores Financeiros (Carregados do Banco)
+let valorPremioMaximoExtra = 0;   // 5 Acertos
+let valorPremioIntermediario = 0; // 4 Acertos
+let valorPremioBase = 0;          // 3 Acertos
+let valorBonusExtra = 0;          // 2 Acertos (Preço do Cupom)
 
 let jaValidouSorteExtraNestaRodada = false; // Trava para não abrir o modal 20x
 
 let jogoFoiFinalizadoComSucesso = false;
 
-let bolasProcessadasAdmin = new Set(); 
-let ultimaBolaExibidaAdmin = null;
-let estadoRodadaAtual = null;
+// let bolasProcessadasAdmin = new Set(); 
+// let ultimaBolaExibidaAdmin = null;
+// let estadoRodadaAtual = null;
 
 let cartelasPendentesAuditoria = [];
 let idsConfirmadosNestaRodada = new Set()
@@ -170,13 +182,24 @@ function bloquearInterface(bloquear) {
 }
 
 async function gerenciarVitoriaRobo(ganhadores) {
+    if (autoSorteioAtivo) pararAutoSorteio();
+
+// 2. O SEMÁFORO 🚦 (Prioridade para Sorte Extra)
+    if (filaSorteExtra.length > 0 || processandoFilaExtra) {
+        console.log("✋ [PRIORIDADE] Sorte Extra em andamento. Colocando LINHA/BINGO na fila de espera.");
+        
+        premioPrincipalPendente = ganhadores; 
+        
+        return; // Sai da função e deixa a Sorte Extra brilhar
+    }
+
+
     if (processandoVitoria) return; 
     processandoVitoria = true;
     console.log("🤖 Robô detectou vitória!", ganhadores);
 
-    if (autoSorteioAtivo) pararAutoSorteio();
-
-    let tempoEspera = parseInt(document.getElementById('config-winner-time').value) || 20;
+    // tempo ganhador na tela
+    let tempoEspera = parseInt(document.getElementById('config-winner-time').value) || 5;
     
     for (const g of ganhadores) {
         const cartela = g.cartela;
@@ -316,8 +339,8 @@ function renderGridConferencia(data) {
                             .concat(data.layout?.central || [])
                             .concat(data.layout?.inferior || []);
     }
-
-    const ultimaBola = bolas.length > 0 ? bolas[0] : null;
+    // yyyy
+    const ultimaBola = bolas.length > 0 ? bolas[bolas.length - 1] : null;
 
     console.error("ultimaBola               :",ultimaBola); 
     if (tipoJogo === 75 && numerosDaCartela.length === 25) { 
@@ -460,6 +483,11 @@ async function carregarDadosIniciaisSilencioso() {
             const elDelay = document.getElementById('config-atraso-video');
             if(elDelay) elDelay.value = aguardandoVideo; // Adicionei verificação de null aqui
             vozAtiva = data.parametrosInfo.voz_ativa !== undefined ? data.parametrosInfo.voz_ativa : true;
+            buscarSorteExtra =  data.parametrosInfo.buscar_sorte_extra !== undefined ? data.parametrosInfo.buscar_sorte_extra : true;
+            const chkExtra = document.getElementById('chk-buscar-sorte-extra');
+            if (chkExtra) {
+                chkExtra.checked = buscarSorteExtra;
+            }
         }
 
         if (!dadosEventoAtual && data.rodadaData && data.rodadaData.length > 0) {
@@ -477,7 +505,6 @@ async function carregarDadosIniciaisSilencioso() {
             }
         }
 
-        // --- CORREÇÃO AQUI TAMBÉM ---
         // Agora verificamos se existe id OU id_evento
         if (dadosEventoAtual && (dadosEventoAtual.id || dadosEventoAtual.id_evento)) {
              // Garante que o ID esteja setado corretamente caso tenha vindo só com id_evento
@@ -553,13 +580,24 @@ function processarMensagemWS(event) {
             }
 
             // O Alerta
-            if (sorteioExtraConfigAtivo && 
-               listaDeNumeros.length === qtdeTopeSorteExtra && 
-               !jaValidouSorteExtraNestaRodada) {
+            if (buscarSorteExtra) { 
+                if (sorteioExtraConfigAtivo && 
+                    listaDeNumeros.length === qtdeTopeSorteExtra && 
+                    !jaValidouSorteExtraNestaRodada) {
         
-               console.log("🚨 [DEBUG] CONDIÇÃO ATINGIDA! ABRINDO MODAL...");
-               jaValidouSorteExtraNestaRodada = true; 
-               abrirModalValidacaoSorteExtra();
+                    console.log("🚨 [DEBUG] CONDIÇÃO ATINGIDA! ABRINDO MODAL...");
+                    jaValidouSorteExtraNestaRodada = true; 
+
+                    if (modoRoboAtivo) {
+                        // --- CAMINHO A: ROBÔ 🤖 ---
+                        console.log("🤖 [ROBO] Modo Automático: Solicitando validação silenciosa...");
+                        dispararVerificacaoRobo(); 
+                    } else {
+                        // --- CAMINHO B: HUMANO 👤 ---
+                        console.log("👤 [MANUAL] Modo Operador: Abrindo modal...");
+                        abrirModalValidacaoSorteExtra();
+                    }
+                }
            }
         } else {
            jaValidouSorteExtraNestaRodada = false; 
@@ -698,11 +736,11 @@ if (payload.melhoresData) {
                     if (!processandoVitoria) {
                         if (autoSorteioAtivo) pararAutoSorteio();
                         processandoVitoria = true; 
-                        console.log("⏳ Aguardando sincronização visual dos terminais (3s)...");
+                        console.log("⏳ Aguardando sincronização visual dos terminais (4s)...");
                         setTimeout(() => {
                             processandoVitoria = false; 
                             gerenciarVitoriaRobo(ganhadoresAtuais);
-                        }, 4000); 
+                        }, 4000);   // aqui esta o tempo
                     }
                 } else { 
                     if (autoSorteioAtivo) {
@@ -891,6 +929,10 @@ function preencherModalConfig(params) {
         const radio = document.querySelector(`input[name="modo_sorteio"][value="${params.modo_sorteio}"]`); 
         if (radio) radio.checked = true; 
     }
+    if (params.buscar_sorte_extra !== undefined) {
+        const chkExtra = document.getElementById('chk-buscar-sorte-extra');
+        if (chkExtra) chkExtra.checked = params.buscar_sorte_extra;
+    }
     document.getElementById('config-nome-sala').value = params.nome_sala || 'LIVE THE BET';
     document.getElementById('config-url-padrao').value = params.url_padrao || '';
     document.getElementById('config-url-live').value = params.url_live || '';
@@ -917,6 +959,7 @@ async function salvarConfiguracoes() {
     const isVoz = document.getElementById('config-voz-ativa').checked;
     const isCam = document.getElementById('config-camera-ativa').checked;
     const tempoVendas = document.getElementById('config-aviso-fim-vendas').value; 
+    const buscarExtra = document.getElementById('chk-buscar-sorte-extra').checked;
     let modoSelecionado = 'auto';
     const radios = document.getElementsByName('modo_sorteio');
     for (const radio of radios) { if (radio.checked) { modoSelecionado = radio.value; break; } }
@@ -951,7 +994,8 @@ async function salvarConfiguracoes() {
         tipo_entrada_de_cartelas: parseInt(tipoEntrada) || 1,
         sorteio_automatizado: isSorteioAuto,
         aviso_fim_das_vendas: parseInt(tempoVendas) || 120,
-        aguardandoVideo: valorAtrasoFinal 
+        aguardandoVideo: valorAtrasoFinal,
+        buscar_sorte_extra: buscarExtra 
     };  
 
     try {
@@ -963,6 +1007,9 @@ async function salvarConfiguracoes() {
         aplicarVisualModoSorteio(modoSorteio);
         aplicarVisibilidadeCamera(cameraAtiva);
         aguardandoVideo = valorAtrasoFinal;
+
+        buscarSorteExtra = buscarExtra;
+
         fecharModal('modal-config');
         customAlert("Configurações salvas com sucesso!");
     } catch (e) { console.error(e); customAlert("Erro ao salvar no servidor."); }
@@ -1921,6 +1968,109 @@ async function resetarJogo(force = false) {
     
     // Se o jogo foi finalizado com sucesso (botão verde), muda a mensagem
     if (jogoFoiFinalizadoComSucesso) {
+        msgConfirmacao = "Deseja FINALIZAR este evento, pagar os prêmios e carregar o PRÓXIMO?";
+    }
+
+    if(!force && !(await customConfirm(msgConfirmacao))) { 
+        devolverFocoAoJogo(); return; 
+    } 
+    
+    showLoading("Processando encerramento...");
+
+    if (autoSorteioAtivo) pararAutoSorteio();
+    if (modoRoboAtivo) pararModoRobo();
+
+    try {
+        // =======================================================
+        // 🚀 PREPARAÇÃO DO PAYLOAD (DADOS PARA O SERVIDOR)
+        // =======================================================
+        const payload = {
+            finalizar_sucesso: jogoFoiFinalizadoComSucesso,
+            // Adiciona a lista de ganhadores do Extra (se houver)
+            ganhadores_extra: (typeof cacheGanhadoresExtraFinal !== 'undefined') ? cacheGanhadoresExtraFinal : []
+        };
+
+        console.log("📤 Enviando encerramento:", payload);
+
+        // Envia o payload completo
+        await fetch(`${API_BASE_URL}/api/admin/resetar`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload) 
+        });
+        
+        // =======================================================
+        // 🧹 RESET LOCAL DAS VARIÁVEIS
+        // =======================================================
+        bolasCacheLocal = new Set(); 
+        bolasSorteadasCache = [];
+        matrizEnvio = [];
+        idsConfirmadosNestaRodada = new Set();
+        ultimoTotalBolasProcessadas = -1; 
+        jaAlertouNestaBola = false;
+        
+        // --- RESET ESPECÍFICO DO SORTE EXTRA ---
+        cacheGanhadoresExtraFinal = []; // Limpa o cache para não duplicar no próximo
+        modalExtraJaAberto = false;     // Destrava o modal para o próximo jogo
+        // if(typeof valorPremioMaximoExtra !== 'undefined') valorPremioMaximoExtra = 0;
+        // ---------------------------------------
+        
+        // Reseta o estado do botão para o próximo jogo
+        alternarBotaoReset('reiniciar'); 
+
+        if(bolaDestaque) bolaDestaque.textContent = "--"; 
+        initGrid();
+        
+        const elStatus = document.getElementById('status-premio');
+        if(elStatus) elStatus.textContent = "Aguardando início...";
+        
+        const elContador = document.getElementById('contador-bolas');
+        if(elContador) elContador.textContent = `0 / ${MAX_BOLAS}`;
+        
+        renderHistorico([]);
+        renderRanking([], "");
+        renderListaGanhadores([]); 
+        cartelasPendentesAuditoria = [];
+
+        const painelEvento = document.getElementById('painel-evento-ativo');
+        if(painelEvento) painelEvento.classList.add('hidden');
+        
+        await new Promise(r => setTimeout(r, 800));
+
+        if (!force) {
+            // Se finalizou com sucesso, o backend já mudou a rodada e pagou os prêmios.
+            if (jogoFoiFinalizadoComSucesso) {
+                // Mensagem de sucesso mais detalhada
+                let msgSucesso = "Evento Finalizado com Sucesso!";
+                if(payload.ganhadores_extra.length > 0) {
+                    msgSucesso += `\n\n✅ ${payload.ganhadores_extra.length} Prêmios Extras Processados/Pagos.`;
+                }
+                msgSucesso += "\nO próximo evento foi carregado.";
+                
+                customAlert(msgSucesso, "Sucesso", 5); // 5 segundos
+            } else {
+                abrirModalEventos();
+            }
+        } else {
+            customAlert("Evento finalizado pelo Sorteio Automatizado.", "Sorteio Automatizado", 3);
+            abrirModalEventos();
+        }
+
+    } catch (e) { 
+        console.error("[DEBUG] Erro ao resetar:", e);
+        customAlert("Erro ao resetar: " + e.message); 
+    } finally {
+        hideLoading();
+    }
+}
+
+
+// apagar xxx
+async function resetarJogo2(force = false) {
+    let msgConfirmacao = "TEM CERTEZA? Isso limpará a tela e encerrará o jogo atual.";
+    
+    // Se o jogo foi finalizado com sucesso (botão verde), muda a mensagem
+    if (jogoFoiFinalizadoComSucesso) {
         msgConfirmacao = "Deseja FINALIZAR este evento e carregar o PRÓXIMO da agenda?";
     }
 
@@ -2040,6 +2190,9 @@ async function carregarConfigSorteExtraAdmin() {
                 qtdeDezenasSorteExtra = cfg.qtde_dezenas || 5;
                 qtdeTopeSorteExtra  = cfg.qtde_tope_sorte_extra || 10; 
                 valorPremioMaximoExtra = parseFloat(cfg.premio_maximo) || 0;
+                valorPremioIntermediario = parseFloat(cfg.premio_intermediario) || 0;
+                valorPremioBase          = parseFloat(cfg.premio_base) || 0;
+                valorBonusExtra          = parseFloat(cfg.preco_cupom) || 0;                
                 
                 // CORREÇÃO NO LOG: Usar a variável 'qtdeTopeSorteExtra'
                 console.log(`✅ Sorte Extra ATIVO! Alerta na bola: ${qtdeTopeSorteExtra}`);
@@ -2136,9 +2289,9 @@ function abrirModalValidacaoSorteExtra() {
                     </div>
                     <div class="flex gap-3 w-full md:w-auto justify-end">
                          <button id="btn-limpar-tv" onclick="limparTelaPublicaExtra()" class="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded font-bold border border-gray-500 shadow-lg flex items-center gap-2 text-sm">
-                            🧹 Limpar TV
+                            🧹📺 Limpar TV
                          </button>
-                         <button onclick="fecharValidacaoAdmin()" class="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded font-bold shadow-lg flex items-center gap-2 transition-all text-sm">
+                         <button onclick="confirmarPagamentoSorteExtra()" class="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded font-bold shadow-lg flex items-center gap-2 transition-all text-sm">
                              ❌ Fechar
                           </button>
                     </div>
@@ -2154,6 +2307,52 @@ function abrirModalValidacaoSorteExtra() {
     
     // Busca os dados
     buscarGanhadoresExtra();
+}
+
+
+async function confirmarPagamentoSorteExtra() {
+    // 1. Se não tiver ninguém pra pagar (lista vazia), apenas fecha.
+    if (!cacheGanhadoresExtraFinal || cacheGanhadoresExtraFinal.length === 0) {
+        fecharValidacaoAdmin();
+        return;
+    }
+
+    // Feedback visual rápido no botão (opcional, só para não parecer travado)
+    // Como o evento de clique vem do HTML, podemos tentar pegar o alvo, mas
+    // para ser direto, vamos focar na ação.
+    
+    try {
+        const payload = {
+            id_evento: dadosEventoAtual.id,
+            ganhadores: cacheGanhadoresExtraFinal
+        };
+
+        // 2. Dispara o pagamento (Processo Silencioso)
+        const resp = await fetch(`${API_BASE_URL}/api/admin/pagar_ganhadores_imediato`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        const data = await resp.json();
+
+        if (data.status === 'sucesso') {
+            console.log(`✅ Pagamento Automático: ${data.pagos} ganhadores pagos.`);
+            // Não mostramos alert de sucesso para não interromper o fluxo.
+        } else {
+            // Só avisamos se der ERRO, pois aí o operador precisa saber.
+            console.error("Erro no pagamento automático:", data.error);
+            alert("⚠️ Atenção: Ocorreu um erro ao registrar o pagamento financeiro dos ganhadores extra.\nVerifique o console.");
+        }
+
+    } catch (e) {
+        console.error("Erro de comunicação no pagamento:", e);
+        alert("⚠️ Erro de conexão ao tentar pagar prêmios.");
+    } finally {
+        // 3. INDEPENDENTE DO RESULTADO, FECHA A TELA
+        // A ordem do usuário foi "Fechar", então fechamos.
+        fecharValidacaoAdmin();
+    }
 }
 
 
@@ -2240,6 +2439,71 @@ async function buscarGanhadoresExtra() {
             // 4. Dois Acertos (Bônus) - ID HTML: lista-acertos-2
             renderizarListaExtra('lista-acertos-2', data.ganhadores.acertos_2, '2_acertos');
 
+            // ======================================================== 
+            // 🧠 NOVA LÓGICA: ACUMULAR PARA O FINAL (Tabela Resultados)
+            // ========================================================
+            
+            cacheGanhadoresExtraFinal = []; // Limpa cache anterior para não duplicar
+
+            // Helper atualizado: aceita o parâmetro 'ehValorFixo'
+            const processarFaixa = (listaGanhadores, nomeFaixa, valorBase, ehValorFixo) => {
+                if(!listaGanhadores || listaGanhadores.length === 0) return;
+
+                const qtdGanhadores = listaGanhadores.length;
+                let valorIndividual = 0;
+                let valorTotalFaixaDisplay = 0;
+
+                if (ehValorFixo) {
+                    // CENÁRIO BÔNUS: Cada um ganha o valor cheio (Ex: R$ 5,00)
+                    valorIndividual = valorBase;
+                    valorTotalFaixaDisplay = valorBase * qtdGanhadores; // Apenas para registro total
+                } else {
+                    // CENÁRIO JACKPOT: O valor é dividido entre os ganhadores (Rateio)
+                    valorIndividual = valorBase / qtdGanhadores;
+                    valorTotalFaixaDisplay = valorBase;
+                }
+
+                listaGanhadores.forEach(g => {
+                    // Formatações
+                    const fmtIndividual = valorIndividual.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                    const fmtTotalFaixa = valorTotalFaixaDisplay.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+                    cacheGanhadoresExtraFinal.push({
+                        premio: nomeFaixa.toUpperCase(),
+                        valor_total_premio: fmtTotalFaixa, // Quanto saiu do caixa da banca nessa faixa
+                        cartela: g.id.toString(),
+                        nome: g.nick,
+                        valor_rateio: fmtIndividual, // O que vai aparecer pro cliente (e ser creditado)
+                        valor_numerico: valorIndividual, // Float para o backend somar no saldo
+                        dezenas_cupom: g.nums,
+                        tipo_premiacao: "Sorte Extra"
+                    });
+                });
+            };
+
+            // === DEFINIÇÃO DOS VALORES ===
+            // 1. JackPot (5 Acertos) -> RATEIO (Dividido)
+            const v5 = valorPremioMaximoExtra; 
+            
+            // 2. Prêmios Intermediários -> RATEIO (Geralmente)
+            const v4 = valorPremioIntermediario;
+            const v3 = valorPremioBase;
+
+            // 3. Bônus (2 Acertos) -> VALOR FIXO (Cada um ganha isso)
+            const v2 = valorBonusExtra;
+
+            // === PROCESSAMENTO ===
+            // (Lista, Nome, ValorBase, ehValorFixo?)
+            processarFaixa(data.ganhadores.acertos_5, "5 ACERTOS", v5, false); // false = Rateio
+            processarFaixa(data.ganhadores.acertos_4, "4 ACERTOS", v4, false); // false = Rateio
+            processarFaixa(data.ganhadores.acertos_3, "3 ACERTOS", v3, false); // false = Rateio
+            
+            // AQUI ESTÁ A MUDANÇA:
+            processarFaixa(data.ganhadores.acertos_2, "2 ACERTOS", v2, true);  // true = Valor Fixo por cabeça
+
+            console.log("📦 Cache Sorte Extra pronto para salvar:", cacheGanhadoresExtraFinal);
+
+            
         } else if (data.status === 'aguardando') {
             alert(data.msg);
         }
@@ -2466,3 +2730,135 @@ document.addEventListener('DOMContentLoaded', () => {
     connectAdminWS();
     devolverFocoAoJogo();
 });
+
+
+function obterPesoExtra(nomePremio) {
+    // Garante que é string maiúscula
+    const p = nomePremio ? nomePremio.toUpperCase().trim() : "";
+
+    // 🧠 LÓGICA INTELIGENTE:
+    // Procura por números (\d+) que aparecem antes da palavra "ACERTO"
+    // Ex: "3 ACERTOS" -> acha o 3. "4 ACERTO" -> acha o 4.
+    const encontrouNumero = p.match(/(\d+)\s*ACERTO/);
+
+    if (encontrouNumero) {
+        // Retorna o próprio número como peso (Ex: retorna 3)
+        return parseInt(encontrouNumero[1]);
+    }
+
+    // Se não for prêmio de acerto (ex: Figuras), joga para o final da fila
+    return 100; 
+}
+
+async function processarProximoDaFilaExtra() {
+    // 1. Se a fila acabou, destrava e para.
+    if (filaSorteExtra.length === 0) {
+        processandoFilaExtra = false;
+        console.log("🏁 [EXTRA] Fila de ganhadores finalizada.");
+        if (premioPrincipalPendente) {
+            console.log("🔓 [RETOMADA] Liberando Vitória Principal que estava pendente!");
+            const ganhadoresGuardados = premioPrincipalPendente;
+            premioPrincipalPendente = null; // Limpa a memória
+        
+            // Chama a função principal de novo, agora com o caminho livre!
+            gerenciarVitoriaRobo(ganhadoresGuardados); 
+        }
+        return;
+    }
+
+    // 2. Avisa que está ocupado
+    processandoFilaExtra = true;
+
+    // 3. Pega o primeiro da fila (já ordenado) e remove ele da lista
+    const ganhadorAtual = filaSorteExtra.shift();
+
+    try {
+        console.log(`▶️ [EXTRA] Processando: ${ganhadorAtual.nome} - ${ganhadorAtual.premio}`);
+
+        // --- AQUI ACONTECE A MÁGICA ---
+        // Aqui chamamos a função que valida/comprova no servidor (igual você faz no Bingo)
+        // Isso vai fazer aparecer na TV do cliente.
+        await validarGanhadorExtra(ganhadorAtual); 
+        
+    } catch (e) {
+        console.error("Erro ao processar ganhador extra:", e);
+    }
+
+
+    let tempoEspera = parseInt(document.getElementById('config-winner-time').value) || 5;
+
+    console.log(`⏳ [EXTRA] Aguardando ${tempoEspera} seg para o próximo...`);
+
+    // 5. Agenda o próximo ciclo
+    setTimeout(() => {
+        processarProximoDaFilaExtra();
+    }, tempoEspera * 1000);
+}
+
+
+// --- AÇÃO DO ROBÔ: Efetiva a validação de UM ganhador ---
+async function validarGanhadorExtra(ganhador) {
+    console.log(`🤖 [ROBO] Enviando ordem de exibição para: ${ganhador.nome}`);
+
+    // Monta o pacote igual ao que o botão manual enviaria
+    const payload = {
+        ganhadores: [ganhador], // Envia como lista de um item só
+        id_evento: ganhador.rodada || rodadaAtualId // Garante ter o ID
+    };
+
+    // Chama a rota que REALMENTE faz aparecer na TV e paga
+    // (A mesma rota que usamos para consertar o pagamento antes)
+    try {
+        const response = await fetch('/api/admin/pagar_ganhadores_imediato', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            console.log(`✅ [ROBO] Sucesso! ${ganhador.nome} validado.`);
+        } else {
+            console.error(`❌ [ROBO] Erro ao validar: ${data.erro}`);
+        }
+    } catch (err) {
+        console.error("❌ [ROBO] Erro de conexão:", err);
+    }
+}
+
+
+function dispararVerificacaoRobo() {
+    // Monta o payload necessário (ajuste conforme sua API precisa)
+    const payload = {
+        id_evento: rodadaAtualId, // Certifique-se de ter essa variável disponível
+        bola_gatilho: qtdeTopeSorteExtra
+    };
+
+    console.log("🤖 [ROBO] Consultando API de ganhadores...");
+
+    // Chama a rota que calcula/verifica os ganhadores
+    // IMPORTANTE: Use a mesma rota que o Modal usa para buscar os dados
+    fetch('/api/admin/verificar_ganhadores_extra', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.ganhadores && data.ganhadores.length > 0) {
+            console.log(`🤖 [ROBO] ${data.ganhadores.length} ganhadores encontrados! O Socket vai cuidar do resto.`);
+            // Nota: Não precisamos chamar a fila aqui manualmente.
+            // O servidor (backend), ao processar isso, deve emitir o socket 'b_ganhadores_extra'.
+            // Aquele listener que criamos antes vai pegar o socket e iniciar a fila.
+        } else {
+            console.log("🤖 [ROBO] Nenhum ganhador no Sorte Extra.");
+            // Se não tem ganhador, o robô apenas segue o jogo.
+        }
+    })
+    .catch(err => {
+        console.error("❌ [ROBO] Erro ao verificar ganhadores extra:", err);
+        // Em caso de erro, talvez valha a pena abrir o modal para o humano intervir
+        // abrirModalValidacaoSorteExtra(); 
+    });
+}	

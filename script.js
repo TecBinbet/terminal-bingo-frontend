@@ -2852,37 +2852,50 @@ function displayConferencePanel(confereData, bolasCantadas) {
 }
 
 
-
-// --- FUNÇÃO PARA EXIBIR O GANHADOR DO SORTE EXTRA NA TV ---
+// --- FUNÇÃO PARA EXIBIR O GANHADOR DO SORTE EXTRA NA TV (COM DESTAQUE) ---
 function exibirConferenciaSorteExtra(dados) {
     const container = document.getElementById('conference-panel-container');
-    const titleEl = container.querySelector('h2'); // O título "Conferência"
+    const titleEl = container.querySelector('h2'); 
     const cardNumEl = document.getElementById('card-number');
     const winnerEl = document.getElementById('winner-name');
     const gridEl = document.getElementById('card-grid');
-    const btnClose = document.getElementById('btn-close-conference');
-
+    
     // 1. Preenche os Textos
-    // Se vier título personalizado (ex: PRÊMIO MÁXIMO), usa ele. Senão, padrão.
     titleEl.textContent = dados.premio_titulo || "🍀 CONFERÊNCIA EXTRA 🍀";
-    // Muda a cor do título para Amarelo para destacar que é Extra
     titleEl.className = "text-center text-xl text-yellow-400 font-black uppercase tracking-widest border-b-2 border-yellow-500 pb-1 w-full animate-pulse";
 
-    cardNumEl.textContent = dados.id || "---"; // ID do Cupom
-    winnerEl.textContent = dados.nick || "Visitante"; // Nome do Jogador
+    cardNumEl.textContent = dados.id || "---"; 
+    winnerEl.textContent = dados.nick || "Visitante"; 
 
-    // 2. Preenche os Números (Layout Especial Flex)
+    // 2. Preenche os Números
     gridEl.innerHTML = '';
     
-    // Altera o layout do grid para ficar bonito com poucos números (Flex centralizado)
-    // Removemos a classe de grid 5x5 padrão do bingo normal temporariamente
+    // Layout Flex centralizado
     gridEl.className = 'flex flex-wrap justify-center items-center gap-3 w-full p-4 bg-gray-800/50 rounded-xl border border-yellow-600/30';
+
+    // Recupera as bolas que já saíram no jogo (Garante que é um array)  xxx
+    const bolasDoJogo = (typeof globalBolasCantadas !== 'undefined' && Array.isArray(globalBolasCantadas)) 
+        ? globalBolasCantadas 
+        : [];
 
     if (dados.nums && Array.isArray(dados.nums)) {
         dados.nums.forEach(num => {
             const el = document.createElement('div');
-            // Bola Amarela com texto Preto (Identidade visual do Sorte Extra)
-            el.className = "w-14 h-14 rounded-full bg-yellow-500 border-4 border-white text-black font-black text-2xl flex items-center justify-center shadow-lg animate-pop";
+            
+            // Converte para inteiro para garantir a comparação (ex: "05" == 5)
+            const numInt = parseInt(num);
+            
+            // Verifica se este número está na lista de bolas sorteadas do jogo
+            const foiSorteada = bolasDoJogo.some(b => parseInt(b) === numInt);
+
+            if (foiSorteada) {
+                // ESTILO 1: BOLA SORTEADA (Amarelo Brilhante - DESTAQUE)
+                el.className = "w-14 h-14 rounded-full bg-yellow-500 border-4 border-white text-black font-black text-2xl flex items-center justify-center shadow-[0_0_15px_rgba(234,179,8,0.6)] animate-pop transform scale-110";
+            } else {
+                // ESTILO 2: NÃO SORTEADA (Cinza Escuro / Apagada)
+                el.className = "w-14 h-14 rounded-full bg-gray-700 border-2 border-gray-600 text-gray-500 font-bold text-2xl flex items-center justify-center opacity-60 grayscale";
+            }
+
             el.innerText = num < 10 ? '0' + num : num;
             gridEl.appendChild(el);
         });
@@ -2891,9 +2904,6 @@ function exibirConferenciaSorteExtra(dados) {
     // 3. Exibe o Painel
     container.classList.remove('hidden');
     container.classList.add('flex');
-
-    // Toca um som de sucesso (opcional, se tiver configurado)
-    // if (typeof playPremiadoSound === 'function') { ... }
 }
 
 
