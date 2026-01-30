@@ -1,10 +1,20 @@
-Flask
-Flask-Cors
-pymongo
-dnspython
-requests
-bcrypt
-gevent
-gevent-websocket
-tzdata
-better-profanity
+# --- O KIT 2020 (Compatibilidade Total) ---
+Flask==1.1.4
+Werkzeug==1.0.1
+MarkupSafe==1.1.1
+Jinja2==2.11.3
+itsdangerous==1.1.0
+
+# --- Servidor ---
+gevent==21.1.2
+gevent-websocket==0.10.1
+greenlet==1.1.0
+
+# --- Outros ---
+pymongo==3.12.0
+flask-cors==3.0.10
+requests==2.25.1
+better-profanity==0.7.0
+bcrypt==3.2.0
+dnspython==2.1.0
+click==7.1.2

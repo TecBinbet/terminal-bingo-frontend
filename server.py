@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from gevent import monkey
-monkey.patch_all(dns=False) # <--- O "dns=False" é vital no Windows
+monkey.patch_all() # (dns=False)<--- O "dns=False" é vital no Windows
 import gevent
 
 import os
@@ -26,6 +26,7 @@ from gevent.pywsgi import WSGIServer
 from geventwebsocket.handler import WebSocketHandler
 from geventwebsocket.exceptions import WebSocketError
 import sys
+sys.stdout.reconfigure(line_buffering=True)
 from pymongo import ReturnDocument # Certifique-se de importar isso no topo do arquivo
 from decimal import Decimal
 
@@ -49,22 +50,63 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7) # Mantém logado po
 # 1. Lista Global para guardar as TVs conectadas
 clientes_conectados = []
 
-# 2. A função que envia mensagem para todos
-def broadcast_para_clientes(mensagem_dict):
-   
-    texto = json.dumps(mensagem_dict, default=str)
-    para_remover = []
+# --- FUNÇÃO DE ENVIO ---xx
+def broadcast_para_clientes(data):
+    global clients
     
-    for ws in clientes_conectados:
+    # LOG DECISIVO: Queremos ver esse número!
+    print(f"📢 [BROADCAST] Tentando enviar para {len(clients)} clientes conectados.")
+
+    if not clients:
+        return
+
+    msg = json.dumps({'type': 'UPDATE', **data}, default=str)
+
+    for client in list(clients):
         try:
-            ws.send(texto)
+            client.send(msg)
         except:
-            para_remover.append(ws)
+            clients.discard(client)
+
+
+# --- WATCHER ---
+def watch_collections():
+    global local_data, mongo_data
+    print("👀 Watcher iniciado...")
+    last_data_json = ""
+    
+    while True:
+        try:
+            current_data = fetch_data()
+            if not current_data: 
+                gevent.sleep(1)
+                continue
+
+            current_json = json.dumps(current_data, default=str)
             
-    # Limpa conexões mortas
-    for morto in para_remover:
-        if morto in clientes_conectados:
-            clientes_conectados.remove(morto)
+            if current_json != last_data_json:
+                last_data_json = current_json
+                
+                if is_local_mode: local_data = current_data
+                else: mongo_data = current_data
+                
+                print(f"🔔 Dados mudaram! Chamando broadcast...")
+                broadcast_para_clientes(current_data)
+                
+        except Exception as e:
+            print(f"❌ Erro no Watcher: {e}")
+            
+        gevent.sleep(1)
+
+
+def broadcast(data):
+    msg = json.dumps({'type': 'UPDATE', **data}, default=str)
+    # Copia o set para evitar erro de mudança de tamanho durante iteração
+    for client in list(clients):
+        try:
+            client.send(msg)
+        except:
+            clients.discard(client)
 
 
 def hora_brasil():
@@ -621,62 +663,6 @@ def process_prizes(premios_raw):
             tope_data.append({'bola_tope_sb': p.get('bola_tope_sb'), 'bola_tope_ac': p.get('bola_tope_ac')})
             
     return premio_data, tope_data, card_ranges, premio_info
-
-# --- WATCHER BLINDADO (Substitua a função inteira) ---
-def watch_collections():
-    global local_data, mongo_data
-    print("👀 Watcher iniciado (Loop Protegido)...")
-    
-    last_data_json = ""
-    
-    # Loop Infinito protegido
-    while True:
-        try:
-            # Verifica se o banco está conectado
-            if db is None:
-                print("⚠️ Watcher: Banco desconectado. Tentando reconectar...")
-                gevent.sleep(5)
-                continue
-
-            # Tenta buscar dados
-            current_data = fetch_data()
-            
-            # Se vier vazio, apenas espera
-            if not current_data: 
-                gevent.sleep(1)
-                continue
-
-            current_json = json.dumps(current_data, default=str)
-            
-            if current_json != last_data_json:
-                last_data_json = current_json
-                
-                if is_local_mode: local_data = current_data
-                else: mongo_data = current_data
-                
-                print(f"🔔 Dados atualizados! Enviando broadcast...")
-                
-                # Usa a função de envio correta
-                broadcast_para_clientes({'type': 'UPDATE', **current_data}) 
-                
-        except Exception as e:
-            # Se der erro, mostra no console mas NÃO FECHA O SERVIDOR
-            print(f"❌ Erro recuperável no Watcher: {e}")
-            import traceback
-            traceback.print_exc()
-            
-        # Pausa obrigatória para não travar a CPU
-        gevent.sleep(1)
-
-
-def broadcast(data):
-    msg = json.dumps({'type': 'UPDATE', **data}, default=str)
-    # Copia o set para evitar erro de mudança de tamanho durante iteração
-    for client in list(clients):
-        try:
-            client.send(msg)
-        except:
-            clients.discard(client)
 
 
 # Crie esta nova função no seu código:
@@ -1243,14 +1229,82 @@ def verificar_e_sincronizar_cartelas(evento_num_max, evento_tipo_cartela):
         traceback.print_exc()
 
 
+# =========================================================
+# HELPER: SERIALIZADOR SEGURO (Evita Crash no JSON)
+# =========================================================
+def safe_serializer(obj):
+    """Converte tipos complexos do Mongo/Python para string segura."""
+    try:
+        if isinstance(obj, (datetime,  timedelta)):
+            return obj.isoformat()
+        if isinstance(obj, (Decimal, Decimal128)):
+            return str(obj)
+        if hasattr(obj, '__str__'): # ObjectId e outros
+            return str(obj)
+        return str(obj) # Fallback final
+    except:
+        return ""
+
 # --- ROTAS HTTP ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Lista de clientes conectados (Se já não tiver definida lá em cima)
+connected_clients = set()
+
+
+# =========================================================
+# 1. ROTA DO SITE (Apenas carrega o HTML)
+# =========================================================
 @app.route('/')
-def serve_index(): return send_from_directory(BASE_DIR, 'index.html')
+def serve_index():
+    # Não mistura mais socket aqui. Apenas entrega o site.
+    return send_from_directory('.', 'index.html')
+
+# =========================================================
+# ROTA DE DEBUG EXTREMO (Substitua a /stream atual por esta)
+# =========================================================
+@app.route('/stream')
+def stream():
+    # Verifica se é uma requisição WebSocket
+    if request.environ.get('wsgi.websocket'):
+        ws = request.environ['wsgi.websocket']
+        
+        # 1. ADICIONA NA LISTA GLOBAL
+        clients.add(ws)
+        print(f"📍 [STREAM] Novo cliente conectado! Total agora: {len(clients)}")
+        
+        try:
+            # Loop que mantem a conexão viva
+            while not ws.closed:
+                message = ws.receive()
+                
+                if message:
+                    print(f"📍 [STREAM] Mensagem recebida: {message}")
+                    data = json.loads(message)
+                    
+                    if data.get('action') == 'GET_INITIAL_STATE':
+                        # Retorna estado atual imediatamente
+                        current_data = local_data if is_local_mode else mongo_data
+                        ws.send(json.dumps({'type': 'UPDATE', **current_data}, default=str))
+                        print("✅ [STREAM] Estado inicial enviado.")
+                
+                gevent.sleep(0.1)
+                
+        except Exception as e:
+            print(f"❌ [STREAM] Erro na conexão: {e}")
+            
+        finally:
+            # 2. REMOVE DA LISTA AO SAIR
+            if ws in clients:
+                clients.remove(ws)
+            print(f"👋 [STREAM] Cliente desconectado. Restam: {len(clients)}")
+            
+    return ""
+
 
 @app.route('/<path:path>')
 def serve_static(path): return send_from_directory(BASE_DIR, path)
+
 
 @app.route('/api/initial-data')
 def initial_data():
@@ -1285,7 +1339,106 @@ def get_version(): return jsonify({'version': VERSION})
 
 
 # --- SUBSTITUA A FUNÇÃO get_sales_db_connection POR ESTA ---
+# --- VARIÁVEIS GLOBAIS DE VENDAS ---
+sales_client = None
+current_sales_uri = None
+
 def get_sales_db_connection():
+    """
+    Gerencia a conexão com o Banco de Vendas/Clientes.
+    Lê a URL de 'parametros.json' (local) ou da coleção 'parametros' do MongoDB (nuvem).
+    """
+    global sales_client, current_sales_uri, db
+    
+    # Validação de Segurança: O banco principal (Sorteio) precisa estar conectado
+    if 'db' not in globals() or db is None:
+        print("⚠️ [VENDAS] Tentativa de conexão antes do Banco de Sorteio estar pronto.")
+        return None
+
+    # 1. Busca a URL de conexão (Cascata: Arquivo Local -> Banco Sorteio)
+    new_uri = None
+    
+    # Tenta local primeiro (parametros.json)
+    try:
+        caminho_local = os.path.join(LOCAL_PATH, 'parametros.json')
+        if os.path.exists(caminho_local):
+            with open(caminho_local, 'r') as f:
+                p = json.load(f)
+                if p and len(p) > 0: 
+                    new_uri = p[0].get('url_mongo_vendas')
+    except Exception as e: 
+        print(f"ℹ️ [VENDAS] Ignorando config local: {e}")
+
+    # Se não achou local, busca no Banco de Sorteio (Tabela parametros)
+    if not new_uri:
+        try:
+            # Busca o primeiro documento da coleção parametros
+            param_doc = db.parametros.find_one({})
+            if param_doc: 
+                new_uri = param_doc.get('url_mongo_vendas')
+        except Exception as e:
+            print(f"❌ [VENDAS] Erro ao ler tabela 'parametros' no Mongo: {e}")
+
+    # Validação Final da URL
+    if not new_uri:
+        print("❌ [VENDAS] ERRO CRÍTICO: 'url_mongo_vendas' não encontrada em lugar nenhum.")
+        return None
+
+    # 2. Lógica de Conexão e Reconexão
+    try:
+        # Se mudou a URI ou ainda não conectou
+        if sales_client is None or new_uri != current_sales_uri:
+            
+            # Fecha conexão antiga se existir
+            if sales_client: 
+                print("🔄 [VENDAS] URL mudou. Fechando conexão antiga...")
+                sales_client.close()
+            
+            print(f"🔌 [VENDAS] Iniciando conexão segura...")
+            
+            # --- O PULO DO GATO (CORREÇÃO SSL DOCKER) ---
+            mongo_kwargs = {'server_api': ServerApi('1')}
+            if _TLS_CA_FILE: 
+                mongo_kwargs['tlsCAFile'] = _TLS_CA_FILE
+            # --------------------------------------------
+            
+            sales_client = MongoClient(new_uri, **mongo_kwargs)
+            current_sales_uri = new_uri
+            
+            # Teste de vida (Ping)
+            sales_client.admin.command('ping')
+            print("✅ [VENDAS] Conexão estabelecida com sucesso!")
+            
+        # 3. Retorna o Banco de Dados Específico
+        try:
+            # Tenta pegar o banco padrão definido na string de conexão
+            return sales_client.get_default_database()
+        except Exception as e_db:
+            print(f"⚠️ [VENDAS] Link sem banco definido. Tentando auto-discovery... ({e_db})")
+            
+            # Tenta listar os bancos e pegar o primeiro que não seja de sistema
+            try:
+                bancos = sales_client.list_database_names()
+                validos = [b for b in bancos if b not in ['admin', 'local', 'config']]
+                if validos:
+                    print(f"🔄 [VENDAS] Usando banco detectado: '{validos[0]}'")
+                    return sales_client.get_database(validos[0])
+            except:
+                pass
+
+            # Fallback final se tudo falhar
+            NOME_MANUAL = "dados_do_sorteio" 
+            print(f"⚠️ [VENDAS] Auto-discovery falhou. Forçando banco: '{NOME_MANUAL}'")
+            return sales_client.get_database(NOME_MANUAL)
+
+    except Exception as e:
+        print(f"❌ [VENDAS] Erro fatal na conexão: {e}")
+        return None
+
+
+
+
+def get_sales_db_connection2():
     global sales_client, current_sales_uri, db
     
     # 1. Busca a URL (Lógica mantida da versão anterior)
@@ -3109,7 +3262,7 @@ def admin_resetar2():
 
 
 
-# --- ROTA DE DETALHES (COM SINCRONIZAÇÃO AUTOMÁTICA DE CARTELAS) ---
+# --- ROTA DE DETALHES (COM SINCRONIZAÇÃO AUTOMÁTICA DE CARTELAS) xxx ---
 @app.route('/api/admin/detalhes_evento', methods=['GET'])
 def get_event_details():
     id_evt = request.args.get('id_evento')
@@ -3534,82 +3687,82 @@ def buscar_id_cliente_por_cartela(sales_db, id_evento, cartela_id):
     except:
         return None
 
-# --- ROTAS DE AUTOATENDIMENTO (LOGIN E COMPRA) ---
+
+# --- ROTAS DE AUTOATENDIMENTO (LOGIN E COMPRA) ---xxx
 @app.route('/api/login_cliente', methods=['POST'])
 def api_login_cliente():
+    print("📍 [DEBUG] 999. Requisição recebida na rota de login.")
     try:
         data = request.json
         usuario = data.get('usuario')
         senha = data.get('senha')
         
-        print(f"🔑 Tentativa de login: Usuário='{usuario}'")
+        #print(f"📍 [DEBUG] 02. Dados extraídos. Usuario: {usuario}")
 
         if not usuario or not senha:
             return jsonify({'erro': 'Preencha usuário e senha.'}), 400
 
-        # Conexão com Banco de Vendas
+        # --- PONTO DE TRAVAMENTO 1: CONEXÃO ---
+        #print("📍 [DEBUG] 03. Chamando get_sales_db_connection()...")
         sales_db = get_sales_db_connection()
         
         if sales_db is None:
-            print("❌ Erro: Não foi possível conectar ao Banco de Vendas para validar login.")
+            #print("❌ [DEBUG] Falha: sales_db retornou None.")
             return jsonify({'erro': 'Erro interno: Banco de clientes inacessível.'}), 500
+        #print("📍 [DEBUG] 04. Conexão obtida com sucesso.")
 
-        # Busca o Cliente (Case insensitive)
+        # --- PONTO DE TRAVAMENTO 2: CONSULTA MONGO ---
+        #print("📍 [DEBUG] 05. Executando find_one no Mongo...")
         cli = sales_db.clientes.find_one({'nick': {'$regex': f'^{usuario}$', '$options': 'i'}})
+        #print(f"📍 [DEBUG] 06. Consulta finalizada. Cliente encontrado? {cli is not None}")
 
         if not cli:
-            print(f"⚠️ Usuário '{usuario}' não encontrado no banco de vendas.")
             return jsonify({'erro': 'Usuário não encontrado.'}), 401
 
-        # Valida Senha
+        # --- PONTO DE TRAVAMENTO 3: BCRYPT (PROCESSAMENTO PESADO) ---
         if 'senha' in cli:
-            # Força a primeira letra maiúscula (conforme padrão do cadastro)
             senha_fmt = senha.capitalize()
+            #print("📍 [DEBUG] 07. Iniciando verificação de senha (bcrypt)...")
             
-            try:
-                if bcrypt.checkpw(senha_fmt.encode('utf-8'), cli['senha'].encode('utf-8')):
-                    # --- SUCESSO NO LOGIN ---
-                    session['id_cliente'] = str(cli['id_cliente'])
-                    session['nick_cliente'] = cli['nick']
-                    
-                    saldo = converter_decimal(cli.get('saldo_atual', 0.0))
-                    
-                    # --- NOVO TRECHO: BUSCA O EVENTO ATIVO ---
-                    # Isso garante que o front saiba qual evento carregar
-                    id_evento_ativo = None
-                    try:
-                        evt_ativo = sales_db.eventos.find_one({'status': 'ativo'})
-                        if evt_ativo:
-                            # TENTA PEGAR O NÚMERO SEQUENCIAL (17)
-                            # Verifica qual nome você usa no banco. Geralmente é 'id_evento' ou 'numero'
-                            # Se não achar nenhum campo numérico, aí sim usa o _id
-                            id_evento_ativo = str(evt_ativo.get('id_evento') or evt_ativo.get('numero') or evt_ativo.get('seq') or evt_ativo['_id'])
+            # ATENÇÃO: Se travar aqui, é incompatibilidade do Gevent com C-Extensions
+            senha_valida = bcrypt.checkpw(senha_fmt.encode('utf-8'), cli['senha'].encode('utf-8'))
+            #print(f"📍 [DEBUG] 08. Bcrypt finalizado. Senha válida? {senha_valida}")
 
-                    except Exception as e_evt:
-                        print(f"⚠️ Aviso: Não foi possível buscar evento ativo no login: {e_evt}")
-                    # -----------------------------------------
-
-                    print(f"✅ Login Sucesso: {cli['nick']} (Saldo: {saldo}) - Evento Ativo: {id_evento_ativo}")
-                    
-                    return jsonify({
-                        'status': 'ok', 
-                        'msg': 'Logado com sucesso!',
-                        'nick': cli['nick'],
-                        'saldo': saldo,
-                        'id': str(cli['id_cliente']),
-                        'id_evento_ativo': id_evento_ativo  # <--- CAMPO ESSENCIAL ADICIONADO
-                    })
-                else:
-                    print(f"⛔ Senha incorreta para '{usuario}'")
-                    return jsonify({'erro': 'Senha incorreta.'}), 401
-            except Exception as e_pass:
-                print(f"❌ Erro ao verificar hash da senha: {e_pass}")
-                return jsonify({'erro': 'Erro na validação de segurança da senha.'}), 500
+            if senha_valida:
+                # --- SUCESSO NO LOGIN ---
+                session['id_cliente'] = str(cli['id_cliente'])
+                session['nick_cliente'] = cli['nick']
+                
+                saldo = converter_decimal(cli.get('saldo_atual', 0.0))
+                
+                # Busca Evento Ativo
+                #print("📍 [DEBUG] 09. Buscando evento ativo...")
+                id_evento_ativo = None
+                try:
+                    evt_ativo = sales_db.eventos.find_one({'status': 'ativo'})
+                    if evt_ativo:
+                        id_evento_ativo = str(evt_ativo.get('id_evento') or evt_ativo.get('numero') or evt_ativo.get('seq') or evt_ativo['_id'])
+                except Exception as e_evt:
+                    print(f"⚠️ Aviso no evento: {e_evt}")
+                
+                print(f"✅ [DEBUG] 111. Login concluído! Retornando JSON.")
+                
+                return jsonify({
+                    'status': 'ok', 
+                    'msg': 'Logado com sucesso!',
+                    'nick': cli['nick'],
+                    'saldo': saldo,
+                    'id': str(cli['id_cliente']),
+                    'id_evento_ativo': id_evento_ativo
+                })
+            else:
+                print("⛔ [DEBUG] Senha incorreta.")
+                return jsonify({'erro': 'Senha incorreta.'}), 401
         else:
             return jsonify({'erro': 'Usuário sem senha cadastrada.'}), 401
 
     except Exception as e:
-        print(f"❌ ERRO CRÍTICO NO LOGIN: {e}")
+        print(f"❌ [DEBUG] ERRO CRÍTICO (EXCEPTION): {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'erro': f'Erro no servidor: {str(e)}'}), 500
@@ -4884,48 +5037,55 @@ def pagar_ganhadores_imediato():
         return jsonify({'error': f"Erro interno: {str(e)}"}), 500
 
 
-
-# --- MAIN DE DIAGNÓSTICO (PYTHON 3.13) ---
+# =====================================================
+# --- MAIN DE PRODUÇÃO (PYTHON 3.12 COMPATÍVEL) ---
+# =====================================================
 def main():
-    #print("🚩 [1] Script iniciado.")
-    
-    try:
-        # 1. Banco
-        connect_main_db()
-        #print("🚩 [2] Banco OK.")
-        
-        # 2. Watcher
-        #print("🚩 [3] Iniciando Watcher...")
-        gevent.spawn(watch_collections)
-        
-        # 3. Servidor
-        #print(f"🚩 [4] Preparando servidor na porta {port}...")
-        
-        # TENTA CRIAR O SERVIDOR
-        try:
-            server = WSGIServer(('0.0.0.0', port), websocket_app, handler_class=WebSocketHandler)
-            #print("🚩 [5] Objeto WSGIServer criado com sucesso.")
-        except Exception as e:
-            #print(f"❌ [ERRO AO CRIAR SERVIDOR]: {e}")
-            return
+    print("🚩 [1] Script iniciado. Configurando ambiente...")
 
-        #print("🚩 [6] Tentando iniciar o servidor (BLOCKING MODE)...")
-        #print("⚠️ SE O PROGRAMA FECHAR AGORA, É INCOMPATIBILIDADE DO GEVENT COM PYTHON 3.13")
+    try:
+        # 1. Banco de Dados
+        connect_main_db()
+        print("🚩 [2] Banco Principal: OK")
+
+        # 2. Watcher (Monitoramento em Background)
+        # O gevent.spawn cria uma "Greenlet" (thread leve) que não trava o boot
+        print("🚩 [3] Iniciando Watcher de Coleções...")
+        gevent.spawn(watch_collections)
+
+        # 3. Servidor Web (Gevent + WebSocket)
+        from gevent import pywsgi
+        from geventwebsocket.handler import WebSocketHandler
+
+        print(f"🚩 [4] Iniciando WSGIServer na porta {port}...")
+        print(f"    -> Modo: {'PRODUÇÃO (Docker)' if not is_local_mode else 'LOCAL'}")
         
-        # VAMOS USAR UM TRUQUE: Tentar rodar sem threads de background primeiro
-        # Se isso falhar, o Gevent está quebrado no seu Python.
+        # --- AQUI ESTÁ O SEGREDO DA ESTABILIDADE ---
+        # Usamos o 'app' direto (o objeto Flask).
+        # O handler_class=WebSocketHandler ensina o servidor a lidar com sockets.
+        server = pywsgi.WSGIServer(
+            ('0.0.0.0', port), 
+            app,  # <--- USE 'app' AQUI, NÃO 'websocket_app'
+            handler_class=WebSocketHandler,
+            log=None # Desliga log de acesso padrão para não poluir o debug
+        )
+        
+        print("✅ [5] Servidor PRONTO. Entrando em loop eterno...")
+        print("==================================================")
+        
+        # Inicia o servidor. Se travar aqui sem log, é problema de porta ou memória.
         server.serve_forever()
-        
+
     except KeyboardInterrupt:
-        print("\n🛑 Parado manualmente.")
-    except BaseException as e: # Pega até erros de sistema
-        print(f"\n❌ [ERRO CRÍTICO DE SISTEMA]: {e}")
+        print("\n🛑 Servidor parado manualmente (CTRL+C).")
+    except Exception as e:
+        print(f"\n❌ [ERRO FATAL]: O servidor caiu. Detalhes: {e}")
         import traceback
         traceback.print_exc()
-        
-    print("🚩 [FIM] O script chegou ao fim (Isso não deveria acontecer).")
-    try: input("Pressione ENTER para sair...")
-    except: pass
 
 if __name__ == '__main__':
+    # Garante que o Monkey Patch rodou lá no topo do arquivo
+    if not 'gevent.monkey' in sys.modules:
+        print("⚠️ AVISO CRÍTICO: Monkey Patch não detectado no topo!")
+    
     main()

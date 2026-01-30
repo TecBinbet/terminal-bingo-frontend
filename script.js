@@ -232,6 +232,7 @@ let winnerBingo = false;
 
 let reconnectInterval = null;
 let cartelaRanges = [];
+let cartelasDoJogador = [];
 
 let newRanges = [];
 
@@ -773,6 +774,7 @@ async function carregarCartelasAutomaticas(idEvento) {
             eventoCarregadoAtual = idEvento;
             
             // Processa cartelas
+            cartelasDoJogador = data.cartelas;
             cartelaRanges = converterListaParaRanges(data.cartelas); 
             cartelasEmJogo = data.cartelas.length; 
             renderizarListaMinhasCartelas(data.cartelas);
@@ -1420,7 +1422,6 @@ function openMyCardsPanel() {
     }
     
     if (!myCardsPanel || !myCardsList) return;
-
     const loaderEl = document.getElementById('loader'); 
     
     if (loaderEl) {
@@ -1442,6 +1443,18 @@ function openMyCardsPanel() {
     fetch(`/api/consultar_cartelas_evento?id_evento=${evtId}&id_cliente=${cliId}`)
         .then(res => res.json())
         .then(data => {
+            // 1. Atualiza a memória Global com o que veio do banco
+            if (Array.isArray(data)) {
+                // Caso sua API em algum momento devolva direto o array
+                cartelasDoJogador = data; 
+            } else {
+                // O caso mais provável: devolve objeto com propriedade cartelas
+                cartelasDoJogador = data.cartelas || []; 
+            }
+
+            // 2. Agora sim, com os dados na mão, forçamos o cálculo matemático
+            forcarReprocessamentoVisual();
+
             renderizarListaMinhasCartelas(data);
             mostrarPainelMinhasCartelas();
             if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
@@ -1762,7 +1775,6 @@ async function fetchAndProcessCards() {
         
         let bolas = [];
 
-
         // Verifica se existe dados vindo de variáveis externas (bolasData)
         if (typeof bolasData !== 'undefined' && bolasData && bolasData.length > 0) {
             const novasBolas = bolasData[0].bolas_cantadas;
@@ -1784,7 +1796,6 @@ async function fetchAndProcessCards() {
         else if (typeof bolasSorteadasCache !== 'undefined') { 
             bolas = bolasSorteadasCache; 
         }
-
 
         // Garante valores padrão para prêmio
         let premio = buscando_o_premio || "BINGO";
@@ -2297,7 +2308,7 @@ function clearPanels() {
 
     bolasProcessadasLocal.clear();
     ultimaBolaExibida = null;
-
+    cartelasDoJogador = [];
     closeAvisoPanel(); // <--- Adicione 
     lastAvisoTimestamp = 0; // Reseta para permitir novos avisos iguais
 
@@ -2943,9 +2954,9 @@ function ocultarConferencia() {
 // --- FUNÇÃO MOSTRAR GANHADORES (CORRIGIDA) ---
 function displayWinnersPanel(ganhadoresData) {
     // 1. Validação se há dados
-    
+    console.error("passo_1");
     if (!ganhadoresData || ganhadoresData.length === 0 || ultimaBolaCantada !== null) return;
-    
+    console.error("passo_2");
     // 2. Gera o Hash (Assinatura) dos dados atuais
     const currentHash = JSON.stringify(ganhadoresData);
 
@@ -2956,6 +2967,7 @@ function displayWinnersPanel(ganhadoresData) {
     if (currentHash === lastGanhadoresHash) {
         return;
     }
+    console.error("passo_3");
     // 4. Se passou, atualiza o hash global para a próxima vez
     lastGanhadoresHash = currentHash;
 
@@ -3622,11 +3634,14 @@ async function renderMainContent(data) {
         if (typeof bolasProcessadasLocal !== 'undefined') bolasProcessadasLocal.clear();
         ultimaBolaExibida = null;
         
-        return; 
+        // return; 
     } else if (rodadaState !== null) {
         lastRodadaState = rodadaState;
     }
 
+    if (ganhadoresData && ganhadoresData.length > 0) {
+        displayWinnersPanel(ganhadoresData);
+    }
 
     const imgFinal = data.imagem_premio || cacheImagem || '';
     const txtFinal = data.premio_atual || cacheTexto || 'PRÊMIO DA RODADA';
@@ -3720,6 +3735,12 @@ console.error("buscando_a_linha                           :",buscando_a_linha);
         falarTexto(`${ultimaBolaDaLista}`);
         ultimaBolaCantada = ultimaBolaDaLista;
         ultimaBolaExibida = ultimaBolaDaLista; // Atualiza controle visual
+        setTimeout(() => {
+             if (typeof cartelasDoJogador !== 'undefined' && cartelasDoJogador.length > 0) {
+                 console.log("🎱 Bola nova detectada visualmente. Recalculando cartelas...");
+                 forcarReprocessamentoVisual();
+             }
+        }, 50);
     }
 
     // --- REPROCESSAMENTO LOCAL ---
@@ -3730,9 +3751,6 @@ console.error("buscando_a_linha                           :",buscando_a_linha);
     else if (cartelaRanges && cartelaRanges.length > 0 && cachedRawCards.length === 0 && !isFetchingCards) {
           fetchAndProcessCards();
     }
-    
-    // ... (O RESTO DO CÓDIGO PERMANECE IGUAL ATÉ O FIM) ...
-    // ... globalPromocionalData, parametrosInfo, Youtube, etc ...
     
     globalPromocionalData = promocionalData;
 
@@ -4156,105 +4174,117 @@ function lockScreenOrientation() {
 }
 
 function connectWebSocket() {
+    // Evita abrir conexão duplicada se já estiver conectado
     if (ws && ws.readyState === WebSocket.OPEN) {
         return;
     }
-    //*ws = new WebSocket(WS_URL);
 
-    const separator = WS_URL.includes('?') ? '&' : '?';
-    const wsUrlWithRoom = `${WS_URL}${separator}idsala=${currentSalaId}`;
+    // --- CORREÇÃO VITAL: GARANTIR A ROTA /stream ---
+    // Remove barra final se houver e garante que conecta na rota sem buffer
+    let baseUrl = WS_URL.replace(/\/$/, ""); 
     
+    // Se a URL base ainda não tiver '/stream', nós adicionamos na marra
+    if (!baseUrl.includes('/stream')) {
+        baseUrl += '/stream';
+    }
+
+    // Monta a URL com a Sala
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    const wsUrlWithRoom = `${baseUrl}${separator}idsala=${currentSalaId}`;
+    
+    console.log("🔌 [FRONT] Tentando conectar WebSocket em:", wsUrlWithRoom);
+
     ws = new WebSocket(wsUrlWithRoom);
 
     ws.onopen = () => {
+        console.log("✅ [FRONT] WebSocket Conectado!");
+
         if (reconnectInterval) {
             clearInterval(reconnectInterval);
             reconnectInterval = null;
         }
-        requestWakeLock(); 
+        
+        // Proteção para o erro 'The requesting page is not visible'
+        try { requestWakeLock(); } catch(e) { console.warn("WakeLock ignorado (aba oculta)"); }
+
         const initialRequest = { action: "GET_INITIAL_STATE" };
         ws.send(JSON.stringify(initialRequest));
-        console.log("Conexão aberta. Solicitando estado inicial ao servidor.");
+        console.log("📤 Solicitando estado inicial ao servidor.");
 
-        // --- INÍCIO DA MODIFICAÇÃO (CHAMADA DA FUNÇÃO) ---
-        // Agora que o app está conectado, processamos os parâmetros da URL.
-        // Damos um pequeno atraso para garantir que a primeira mensagem (estado inicial)
-        // seja processada antes de tentarmos carregar as cartelas.
-        setTimeout(processarParametrosURL, 500); // 500ms de atraso
-        // --- FIM DA MODIFICAÇÃO ---
+        // Aguarda um pouco para processar login e parâmetros
+        setTimeout(processarParametrosURL, 500); 
     };
 
-ws.onmessage = (event) => {
-    try {
-        const payload = JSON.parse(event.data);
-        
-        const melhoresData = payload.melhoresData;
-        
-        const mainData = payload.data; 
-
-        if (payload.type === 'UPDATE') {
-
-            // --- BUSCA INTELIGENTE DO ID DO EVENTO ---
-            let idSocket = null;
-
-            // 1. Prioridade: Tenta pegar dentro de rodadaData (conforme seu log)
-            // Verifica se existe o array e se tem pelo menos 1 item
-            if (payload.rodadaData && payload.rodadaData.length > 0) {
-                idSocket = payload.rodadaData[0].id_evento;
-            }
-
-            // 2. Plano B: Se falhar, tenta nos parametros (fallback)
-            if (!idSocket) {
-                const params = payload.parametros || payload.parametrosInfo || {};
-                idSocket = payload.id_evento || params.id_evento;
-            }
-
-            // Se achou um ID válido, busca a foto!
-            if (idSocket) {
-                //console.log("🆔 ID encontrado no Socket:", idSocket); // Pode descomentar para testar
-                buscarImagemDoPremio(idSocket);
-            }
-            // -----------------------------------------
-
-            // Se o payload for 'UPDATE', renderiza o conteúdo principal
-            renderMainContent(payload); 
+    ws.onmessage = (event) => {
+        try {
+            const payload = JSON.parse(event.data);
+            const melhoresData = payload.melhoresData;
             
-            // E se houver dados de melhores, renderiza-os
-            if (melhoresData) {
-                renderMelhores(melhoresData);
-            }
-            verificarNovasCompras();
-        }
-        else if (payload.type === 'EXIBIR_CUPOM') {
-                console.log("📨 Recebido comando de conferência:", payload.cupom);
+            // Verifica o tipo da mensagem (Compatível com seu Python novo)
+            if (payload.type === 'UPDATE') {
+
+                // --- BUSCA INTELIGENTE DO ID DO EVENTO ---
+                let idSocket = null;
+
+                // 1. Tenta pegar dentro de rodadaData
+                if (payload.rodadaData && payload.rodadaData.length > 0) {
+                    idSocket = payload.rodadaData[0].id_evento;
+                }
+
+                // 2. Fallback para parametros
+                if (!idSocket) {
+                    // Tenta achar em varios lugares possiveis do JSON
+                    const params = payload.parametros || payload.parametrosInfo || {};
+                    idSocket = payload.id_evento || params.id_evento;
+                }
+
+                // Se achou ID, busca imagem
+                if (idSocket) {
+                     buscarImagemDoPremio(idSocket);
+                }
+
+                // Renderiza a tela principal
+                renderMainContent(payload); 
                 
+                // Renderiza melhores da rodada
+                if (melhoresData) {
+                    renderMelhores(melhoresData);
+                }
+                
+                // Verifica compras
+                verificarNovasCompras();
+            }
+            else if (payload.type === 'EXIBIR_CUPOM') {
+                console.log("📨 Comando de conferência recebido:", payload.cupom);
                 if (payload.cupom) {
-                    // Se veio dados, exibe a tela
                     exibirConferenciaSorteExtra(payload.cupom);
                 } else {
-                    // Se veio null, limpa a tela (fecha o modal)
                     ocultarConferencia();
                 }
-        }
+            }
 
-    } catch (e) {
-        console.error('Falha ao processar mensagem do WebSocket:', e);
-    }
-};
+        } catch (e) {
+            console.error('❌ [FRONT] Erro ao processar mensagem do WebSocket:', e);
+        }
+    };
 
     ws.onclose = (event) => {
-        releaseWakeLock();
+        console.warn("⚠️ [FRONT] WebSocket caiu. Tentando Reconectar...");
+        try { releaseWakeLock(); } catch(e){}
+        
         if (!reconnectInterval) {
             reconnectInterval = setInterval(() => {
                 connectWebSocket();
             }, 3000);
         }
     };
+
     ws.onerror = (error) => {
-        console.error('Erro no WebSocket:', error);
+        console.error('❌ [FRONT] Erro técnico no WebSocket:', error);
         ws.close();
     };
 }
+
 
 // Adiciona o ouvinte de evento para redimensionamento da janela
 window.addEventListener('resize', checkDeviceType);
@@ -4569,7 +4599,7 @@ async function processarParametrosURL() {
     } else {
         console.log("ℹ️ Nenhum idcliente novo na URL. Mantendo:", clienteLogadoId);
     }
-
+	
     // --- Processa o idrodada ---
     const idRodadaParam = urlParams.get('idrodada');
     if (idRodadaParam) {
@@ -6829,3 +6859,46 @@ function fecharRegrasSeEstiveremAbertas() {
     }
 }
 
+/**
+ * 🛠️ FIX: Função de Reprocessamento Forçado
+ * Recalcula matematicamente os acertos e força a atualização da interface
+ * usando a função centralizadora displayLoadedCards.
+ */
+function forcarReprocessamentoVisual() {
+    // 1. Verificações de segurança
+    // Verifica se temos cartelas E se temos cache de bolas para cruzar
+    if (!cartelasDoJogador || cartelasDoJogador.length === 0) {
+        // Se não tiver cartela, não tem o que reprocessar
+        return; 
+    }
+    
+    // Se bolasSorteadasCache for undefined (início do jogo), assumimos array vazio
+    const bolasParaConferir = globalBolasCantadas || [];
+
+    console.log(`🔄 [FIX] Reprocessando ${cartelasDoJogador.length} cartelas com ${bolasParaConferir.length} bolas.`);
+
+    // 2. Loop Matemático (Recalcula acertos um por um)
+    cartelasDoJogador.forEach(cartela => {
+        let contaAcertos = 0;
+        
+        if (cartela.numeros && Array.isArray(cartela.numeros)) {
+            // Cruza os números da cartela com as bolas do cache
+            contaAcertos = cartela.numeros.filter(num => bolasParaConferir.includes(num)).length;
+        }
+
+        // Atualiza o objeto da cartela na memória
+        cartela.acertos = contaAcertos;
+    });
+
+    // 3. Ordenação (Do maior acerto para o menor para exibir no topo)
+    cartelasDoJogador.sort((a, b) => b.acertos - a.acertos);
+
+    // 4. Força a atualização Visual usando sua função centralizadora
+    if (typeof displayLoadedCards === 'function') {
+        displayLoadedCards(bolasParaConferir);
+    } else {
+        console.warn("⚠️ Função displayLoadedCards não encontrada.");
+    }
+
+    console.log("✅ [FIX] Visual atualizado.");
+}

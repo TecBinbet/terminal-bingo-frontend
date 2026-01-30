@@ -490,16 +490,18 @@ async function carregarDadosIniciaisSilencioso() {
             }
         }
 
+
         if (!dadosEventoAtual && data.rodadaData && data.rodadaData.length > 0) {
             const rodada = data.rodadaData[0];
             if (rodada.id_evento && rodada.id_evento !== "0") {
+                const idEventoInt = parseInt(rodada.id_evento);
                 console.log(`♻️ [RECUPERAÇÃO] Restaurando ID do evento após F5: ${rodada.id_evento}`);
                 
                 // --- CORREÇÃO AQUI ---
                 // Criamos 'id' E 'id_evento' para garantir compatibilidade
                 dadosEventoAtual = { 
-                    id: rodada.id_evento,        // <--- O 'carregarConfig' busca por .id
-                    id_evento: rodada.id_evento, // <--- Mantém para outras partes do sistema
+                    id: idEventoInt,        // <--- O 'carregarConfig' busca por .id
+                    id_evento: idEventoInt, // <--- Mantém para outras partes do sistema
                     descricao: 'Evento Recuperado' 
                 };
             }
@@ -512,7 +514,13 @@ async function carregarDadosIniciaisSilencioso() {
              
              await carregarConfigSorteExtraAdmin();
         }
-        
+       
+        if (dadosEventoAtual && (dadosEventoAtual.id || dadosEventoAtual.id_evento)) {
+             if(!dadosEventoAtual.id) dadosEventoAtual.id = dadosEventoAtual.id_evento;
+             await carregarConfigSorteExtraAdmin();
+        }
+
+ 
         if (data.evento && parseInt(data.evento.tipo_cartela) === 25) {
             MAX_BOLAS = 75;
         } else {
@@ -539,6 +547,21 @@ async function carregarDadosIniciaisSilencioso() {
              bolasSorteadasCache = listaBolasInit;
              updateGrid(bolasSorteadasCache);
         }
+
+        if (dadosEventoAtual && (dadosEventoAtual.id || dadosEventoAtual.id_evento)) {
+            const painel = document.getElementById('painel-evento-ativo');
+            
+            if (painel && painel.classList.contains('hidden')) {
+                console.log("🔓 [FIX] Forçando exibição do Painel de Evento Ativo.");
+                painel.classList.remove('hidden');
+                
+                // Se estivermos em modo "Mesa", talvez seja bom esconder a seleção de eventos
+                const modalSelecao = document.getElementById('painel-selecao-eventos'); // Ajuste conforme seu ID
+                if(modalSelecao) modalSelecao.classList.add('hidden');
+            }
+        }
+
+
     } catch(e) {
         console.error("Erro no carregamento silencioso:", e);
     }
@@ -1336,6 +1359,7 @@ async function pularEsperaVendas() {
     }
 }
 
+
 async function executarCarregamentoReal(idEvento) {
     const menu = document.getElementById('admin-side-menu');
     const menuOverlay = document.getElementById('admin-menu-overlay');
@@ -1351,7 +1375,7 @@ async function executarCarregamentoReal(idEvento) {
     try {
         console.log("[DEBUG] Resetando jogo para novo evento...");
         await fetch(`${API_BASE_URL}/api/admin/resetar`, { method: 'POST' });
-        
+       
         const response = await fetch(`${API_BASE_URL}/api/admin/detalhes_evento?id_evento=${idEvento}`);
         const dados = await response.json();
 
@@ -1362,7 +1386,7 @@ async function executarCarregamentoReal(idEvento) {
             if(modalEventos) modalEventos.classList.remove('hidden');
             return; 
         }
-       
+
         dadosEventoAtual = dados; 
         document.getElementById('painel-evento-ativo').classList.remove('hidden');
 
@@ -1374,9 +1398,9 @@ async function executarCarregamentoReal(idEvento) {
             MAX_BOLAS = 90;
             console.log("🎱 Evento Configurado: BINGO 90");
         }
-        
+
         const labelQuadra = (MAX_BOLAS === 75) ? '4 Cantos' : 'Quadra';
-        
+
         initGrid(); 
 
         document.getElementById('info-descricao').textContent = dados.descricao;
@@ -1409,7 +1433,7 @@ async function executarCarregamentoReal(idEvento) {
             }
         });
         document.getElementById('info-total-premios').textContent = `Total: ${parseFloat(premios.total||0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}`;
-        
+
         definirProximoPremioAutomatico();
         bolaDestaque.textContent = "--";
         
@@ -1424,6 +1448,7 @@ async function executarCarregamentoReal(idEvento) {
         hideLoading();
     }
 }
+
 
 async function definirProximoPremioAutomatico() {
     if (!dadosEventoAtual || !dadosEventoAtual.premios) return;
@@ -2783,7 +2808,6 @@ async function processarProximoDaFilaExtra() {
     } catch (e) {
         console.error("Erro ao processar ganhador extra:", e);
     }
-
 
     let tempoEspera = parseInt(document.getElementById('config-winner-time').value) || 5;
 
