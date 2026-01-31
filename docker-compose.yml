@@ -27,7 +27,8 @@ services:
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       # Mapeie a pasta onde está seu index.html e script.js
-      - ./FrontEnd:/usr/share/nginx/html 
+      #- ./FrontEnd:/usr/share/nginx/html 
+      - .:/usr/share/nginx/html
       # Mapeie as imagens se estiverem fora
       - ./img:/usr/share/nginx/html/img
     depends_on:
