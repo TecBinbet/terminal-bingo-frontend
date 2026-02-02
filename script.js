@@ -1,30 +1,47 @@
+// ==========================================
+// 1. DETECTAR QUAL SALA O USUÁRIO QUER
+// ==========================================
+// Mantivemos "urlParamsGlobal" se você usar em outros lugares, 
+// mas a lógica principal está aqui.
 const urlParamsGlobal = new URLSearchParams(window.location.search);
-// Mantemos essa variável para compatibilidade com o resto do seu código
+const salaParam = urlParamsGlobal.get('sala'); // Pega o '1', '2', '3' ou null
 
-// ======================================================
-// 2. LÓGICA DE CONEXÃO MULTI-SALAS INTELIGENTE
-// ======================================================
-
-function pegarSalaDaUrl() {
-    // Tenta pegar 'sala', se não achar, tenta 'idsala' (para compatibilidade), senão '000'
-    const sala = urlParamsGlobal.get('sala') || urlParamsGlobal.get('idsala');
-    
-    if (!sala) return '000';
-    return sala;
-}
-
-const numeroSala = pegarSalaDaUrl();
-const currentSalaId = numeroSala;
-console.log("🌍 Ambiente detectado: Sala " + numeroSala);
-
+// ==========================================
+// 2. DEFINIR O PREFIXO DO NGINX E ID DA SALA
+// ==========================================
 let API_BASE_URL = "";
+let currentSalaId = "003"; // Valor padrão para compatibilidade
 
-if (numeroSala && numeroSala !== '000') {
-    // O parseInt remove os zeros extras (002 -> 2)
-    API_BASE_URL = `/sala${parseInt(numeroSala)}`;
+if (salaParam === '1') {
+    API_BASE_URL = "/sala1"; 
+    currentSalaId = "001";
+} else if (salaParam === '2') {
+    API_BASE_URL = "/sala2"; 
+    currentSalaId = "002";
+} else if (salaParam === '3') {
+    API_BASE_URL = "/sala3";
+    currentSalaId = "003";
+} else {
+    // Se não passar parâmetro, assume a Sala 3 (antiga padrão)
+    console.log("⚠️ Nenhum parâmetro detectado. Assumindo Sala 3 (Padrão).");
+    API_BASE_URL = "/sala3"; 
+    currentSalaId = "003";
 }
 
-console.log("🔗 API_BASE_URL configurada para: " + (API_BASE_URL || "Raiz"));
+console.log("🚀 Sala Detectada:", currentSalaId);
+console.log("🔗 API_BASE_URL configurada para:", API_BASE_URL);
+
+// ==========================================
+// 3. CONFIGURAR URL DO WEBSOCKET (CRUCIAL!)
+// ==========================================
+// Isso corrige o erro "WS_URL is not defined" e "Mixed Content"
+const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+const host = window.location.host;
+
+// Monta a URL: wss://seusite.com/sala1/stream
+var WS_URL = `${protocol}${host}${API_BASE_URL}/stream`;
+
+console.log("🔌 URL do WebSocket definida para:", WS_URL);
 
 
 // --- CORREÇÃO DA ROTA DO WEBSOCKET ---
