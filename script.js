@@ -1,70 +1,51 @@
-// ==========================================
-// 1. DETECTAR QUAL SALA O USUÁRIO QUER
-// ==========================================
-// Mantivemos "urlParamsGlobal" se você usar em outros lugares, 
-// mas a lógica principal está aqui.
+// ======================================================
+// CONFIGURAÇÃO GLOBAL DO AMBIENTE (Sala e WebSocket)
+// ======================================================
+
+// 1. Detectar Sala
 const urlParamsGlobal = new URLSearchParams(window.location.search);
-const salaParam = urlParamsGlobal.get('sala'); // Pega o '1', '2', '3' ou null
+const salaParam = urlParamsGlobal.get('sala'); 
 
-// ==========================================
-// 2. DEFINIR O PREFIXO DO NGINX E ID DA SALA
-// ==========================================
-let API_BASE_URL = "";
-let currentSalaId = "003"; // Valor padrão para compatibilidade
+// Variáveis GLOBAIS (acessíveis por todo o script)
+var API_BASE_URL = "";
+var currentSalaId = "003"; // Padrão se não tiver parâmetro
+var WS_URL = ""; // Declarada aqui para evitar ReferenceError
 
+// 2. Lógica de Seleção
 if (salaParam === '1') {
-    API_BASE_URL = "/sala1"; 
+    API_BASE_URL = "/sala1";
     currentSalaId = "001";
 } else if (salaParam === '2') {
-    API_BASE_URL = "/sala2"; 
+    API_BASE_URL = "/sala2";
     currentSalaId = "002";
 } else if (salaParam === '3') {
     API_BASE_URL = "/sala3";
     currentSalaId = "003";
 } else {
-    // Se não passar parâmetro, assume a Sala 3 (antiga padrão)
-    console.log("⚠️ Nenhum parâmetro detectado. Assumindo Sala 3 (Padrão).");
-    API_BASE_URL = "/sala3"; 
+    // Se a URL for limpa, joga para Sala 3
+    console.log("⚠️ Sem parâmetro. Usando Sala 3 (Padrão).");
+    API_BASE_URL = "/sala3";
     currentSalaId = "003";
 }
 
-console.log("🚀 Sala Detectada:", currentSalaId);
-console.log("🔗 API_BASE_URL configurada para:", API_BASE_URL);
-
-// ==========================================
-// 3. CONFIGURAR URL DO WEBSOCKET (CRUCIAL!)
-// ==========================================
-// Isso corrige o erro "WS_URL is not defined" e "Mixed Content"
+// 3. Montagem da URL do WebSocket (Obrigatório para HTTPS/WSS)
 const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
 const host = window.location.host;
 
-// Monta a URL: wss://seusite.com/sala1/stream
-var WS_URL = `${protocol}${host}${API_BASE_URL}/stream`;
+// Define a variável global WS_URL
+WS_URL = `${protocol}${host}${API_BASE_URL}/stream`;
 
-console.log("🔌 URL do WebSocket definida para:", WS_URL);
+console.log("🌍 Ambiente:", currentSalaId);
+console.log("🔗 API Base:", API_BASE_URL);
+console.log("🔌 WS URL:", WS_URL);
 
+// Abre a conexão IMEDIATAMENTE usando a variável que acabamos de criar
+// var socket = new WebSocket(WS_URL);
+var ws = null;
 
-// --- CORREÇÃO DA ROTA DO WEBSOCKET ---
-let caminhoSocket = "";
-
-if (API_BASE_URL === "") {
-    // A Sala 000 no Nginx atende pela raiz (/stream), não por /sala000
-    caminhoSocket = "/stream";
-} else {
-    // As outras salas atendem pelo prefixo (/sala1/stream, /sala2/stream)
-    caminhoSocket = API_BASE_URL + "/stream";
-}
-
-const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-var socketUrl = protocol + window.location.host + caminhoSocket;
-
-console.log("🔌 Conectando no WebSocket: " + caminhoSocket);
-
-// Abre a conexão
-//var socket = new WebSocket("ws://" + window.location.host + caminhoSocket);
-var socket = new WebSocket(socketUrl);
 
 // --- FIM DA LÓGICA DE MULTI-SALAS ---
+
 //
 //const backendVersionElement = document.getElementById('backend-version');
 //const frontendVersionElement = document.getElementById('frontend-version');
@@ -4102,7 +4083,6 @@ if (idDoEvento) {
     console.error("❌ init: ID do evento não encontrado.");
 }
 
-        
         connectWebSocket();
         setInterval(() => {
             // Só verifica se o cliente estiver logado e o jogo já tiver começado (não estiver na animação de início)
