@@ -4083,7 +4083,7 @@ if (idDoEvento) {
     console.error("❌ init: ID do evento não encontrado.");
 }
 
-        connectWebSocket();
+        // connectWebSocket();   //  sem par
         setInterval(() => {
             // Só verifica se o cliente estiver logado e o jogo já tiver começado (não estiver na animação de início)
             if (typeof clienteLogado !== 'undefined' && clienteLogado && !iniciandoRodada) {
