@@ -38,10 +38,14 @@ if (API_BASE_URL === "") {
     caminhoSocket = API_BASE_URL + "/stream";
 }
 
+const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+var socketUrl = protocol + window.location.host + caminhoSocket;
+
 console.log("🔌 Conectando no WebSocket: " + caminhoSocket);
 
 // Abre a conexão
-var socket = new WebSocket("ws://" + window.location.host + caminhoSocket);
+//var socket = new WebSocket("ws://" + window.location.host + caminhoSocket);
+var socket = new WebSocket(socketUrl);
 
 // --- FIM DA LÓGICA DE MULTI-SALAS ---
 //
