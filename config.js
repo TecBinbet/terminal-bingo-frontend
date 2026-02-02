@@ -11,13 +11,13 @@
 
 
 // 1. Pega o endereço atual do navegador (ex: https://orca-app... ou http://192.168...)
-    const API_BASE_URL = window.location.origin; 
+    //const API_BASE_URL = window.location.origin; 
 
     // 2. Define o protocolo do WebSocket (se o site é HTTPS, usa WSS. Se é HTTP, usa WS)
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    //const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     
     // 3. Monta a URL do WebSocket automaticamente
-    const WS_URL = `${protocol}//${window.location.host}`;
+    //const WS_URL = `${protocol}//${window.location.host}`;
 
 
 // Temporizadores (em segundos)

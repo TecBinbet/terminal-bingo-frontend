@@ -1,5 +1,49 @@
 const urlParamsGlobal = new URLSearchParams(window.location.search);
-const currentSalaId = urlParamsGlobal.get('idsala') || 'padrao';
+// Mantemos essa variável para compatibilidade com o resto do seu código
+
+// ======================================================
+// 2. LÓGICA DE CONEXÃO MULTI-SALAS INTELIGENTE
+// ======================================================
+
+function pegarSalaDaUrl() {
+    // Tenta pegar 'sala', se não achar, tenta 'idsala' (para compatibilidade), senão '000'
+    const sala = urlParamsGlobal.get('sala') || urlParamsGlobal.get('idsala');
+    
+    if (!sala) return '000';
+    return sala;
+}
+
+const numeroSala = pegarSalaDaUrl();
+const currentSalaId = numeroSala;
+console.log("🌍 Ambiente detectado: Sala " + numeroSala);
+
+let API_BASE_URL = "";
+
+if (numeroSala && numeroSala !== '000') {
+    // O parseInt remove os zeros extras (002 -> 2)
+    API_BASE_URL = `/sala${parseInt(numeroSala)}`;
+}
+
+console.log("🔗 API_BASE_URL configurada para: " + (API_BASE_URL || "Raiz"));
+
+
+// --- CORREÇÃO DA ROTA DO WEBSOCKET ---
+let caminhoSocket = "";
+
+if (API_BASE_URL === "") {
+    // A Sala 000 no Nginx atende pela raiz (/stream), não por /sala000
+    caminhoSocket = "/stream";
+} else {
+    // As outras salas atendem pelo prefixo (/sala1/stream, /sala2/stream)
+    caminhoSocket = API_BASE_URL + "/stream";
+}
+
+console.log("🔌 Conectando no WebSocket: " + caminhoSocket);
+
+// Abre a conexão
+var socket = new WebSocket("ws://" + window.location.host + caminhoSocket);
+
+// --- FIM DA LÓGICA DE MULTI-SALAS ---
 //
 //const backendVersionElement = document.getElementById('backend-version');
 //const frontendVersionElement = document.getElementById('frontend-version');
@@ -300,6 +344,20 @@ const releaseWakeLock = () => {
     }
 };
 
+// xxx
+function pegarSalaDaUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const sala = params.get('sala');
+
+    // Se a sala for nula (não existe), vazia ou indefinida, retorna '000'
+    if (!sala) {
+        return '000';
+    }
+
+    return sala;
+}
+
+
 /**
  * Converte uma lista de números [1, 2, 3, 5, 6] em objetos de faixa
  * [{inicial: 1, final: 3}, {inicial: 5, final: 6}]
@@ -347,7 +405,7 @@ async function openEventsPanel() {
     // 2. ATIVA O LOADING (Bloqueia a tela enquanto busca)
     showFullLoading("Carregando agenda...");
 
-    try {
+    try {   
         // 3. Busca os dados no servidor
         const response = await fetch(`${API_BASE_URL}/api/proximos_eventos`);
         
@@ -1267,6 +1325,9 @@ async function updatePromocionalPanelPosition() {
     }
 }
 
+
+
+
 // NOVO: Função para verificar e exibir a promoção (se houver dados)
 function checkAndDisplayPromocionalContent() {
     // 1. Check A: O sistema está autorizado a mostrar a promoção?
@@ -1353,6 +1414,7 @@ function checkDeviceType() {
 
 // Função para ativar o modo de tela cheia
 function goFullscreen() {
+    return;
  
     const element = document.documentElement; // Seleciona o elemento <html> para a tela cheia
 
@@ -3858,9 +3920,10 @@ console.error("buscando_a_linha                           :",buscando_a_linha);
         ValorSerie = preco;
         const formattedPreco = new Intl.NumberFormat('pt-BR', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(preco);
         if(mobilePrecoSerieElement) mobilePrecoSerieElement.textContent = formattedPreco;
+        const limiteBola = (topeData && topeData.length > 0) ? topeData[0].bola_tope_ac : 0;
         atualizarVisualizacaoAcumulado(
                 premioInfo.premio_acumulado, // Valor do prêmio (ex: 10000 ou "R$ 10.000,00")
-                topeData[0].bola_tope_ac,        // Limite de bolas (ex: 40)
+                limiteBola,        // Limite de bolas (ex: 40)
                 globalBolasCantadas             // Array das bolas que já saíram
         );
     }

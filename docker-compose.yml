@@ -1,35 +1,60 @@
 version: '3.8'
 
 services:
-  backend:
-    container_name: bingo_backend
+  # --- SALA 003 (Antiga Sala 0) ---
+  backend_sala3:
+    container_name: bingo_sala3
     build: .
     restart: always
-    # ports:           <-- COMENTE ISTO (Segurança: Ninguém acessa o Python direto)
-    #   - "3001:3001"  <-- COMENTE ISTO
-    expose:            # <-- ADICIONE ISTO (Só o Nginx vê essa porta)
+    expose:
       - "3001"
-    dns:
-      - 8.8.8.8
     environment:
       - PORT=3001
+      - IDSALA=003  # Mudou de 000 para 003
       - URL_MONGO_SORTEIO=${URL_MONGO_SORTEIO}
-      - IDSALA=${IDSALA}
     volumes:
-      - ./json_data:/app/json
+      - ./json_data_sala3:/app/json # Pasta ajustada para sala3
 
+  # --- SALA 001 ---
+  backend_sala1:
+    container_name: bingo_sala1
+    build: .
+    restart: always
+    expose:
+      - "3001"
+    environment:
+      - PORT=3001
+      - IDSALA=001
+      - URL_MONGO_SORTEIO=${URL_MONGO_SORTEIO}
+    volumes:
+      - ./json_data_sala1:/app/json
+
+  # --- SALA 002 ---
+  backend_sala2:
+    container_name: bingo_sala2
+    build: .
+    restart: always
+    expose:
+      - "3001"
+    environment:
+      - PORT=3001
+      - IDSALA=002
+      - URL_MONGO_SORTEIO=${URL_MONGO_SORTEIO}
+    volumes:
+      - ./json_data_sala2:/app/json
+
+  # --- NGINX (Roteador) ---
   nginx:
     image: nginx:alpine
     container_name: bingo_nginx
     restart: always
     ports:
-      - "80:80"        # <-- A Porta Oficial
+      - "80:80"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
-      # Mapeie a pasta onde está seu index.html e script.js
-      #- ./FrontEnd:/usr/share/nginx/html 
       - .:/usr/share/nginx/html
-      # Mapeie as imagens se estiverem fora
       - ./img:/usr/share/nginx/html/img
     depends_on:
-      - backend
+      - backend_sala3 # Atualizado dependência
+      - backend_sala1
+      - backend_sala2

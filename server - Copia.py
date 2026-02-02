@@ -178,63 +178,71 @@ except Exception:
 
 VERSION = "2.1.0-SingleTenant"
 
-# --- CONFIGURAÇÃO DE ROTEAMENTO DE SALAS --- AQUI
+# --- CONFIGURAÇÃO DE ROTEAMENTO DE SALAS ---
 
-# ==============================================================================
-# 🆕 ADIÇÃO MULTI-SALAS (INÍCIO)
-# ==============================================================================
-
-# Lê o ID da Sala que vem do Docker-Compose (Ex: 001, 002 ou 000)
-PARAM_ID_SALA = os.environ.get("IDSALA", "000")
-print(f"🚀 INICIANDO SERVIDOR PARA SALA: {PARAM_ID_SALA}")
-
-# URLs de Consulta para descobrir o banco de cada sala
+# 1. URI ONDE BUSCAMOS A LISTA DE SALAS (INTEGRAÇÃO CENTRALIZADA)
+# Aqui fica o banco 'db_master_controle' com a tabela 'salas'
 URI_CONSULTA_SALAS = "mongodb+srv://tecbin_db_vendas:TecBin24@cluster0.blwq4du.mongodb.net/?appName=Cluster0"
-# URL de Fallback (Caso a sala não seja achada, cai na sala 000)
-URI_FALLBACK_PADRAO = "mongodb+srv://tecbin_db_vendas:TecBin24@cluster0.blwq4du.mongodb.net/?appName=Cluster0"
+
+# 2. URI PADRÃO / FALLBACK (LEGADO)
+# Se não informar sala, ou se a sala não for encontrada na consulta acima, usa esta:
+URI_FALLBACK_PADRAO = "mongodb+srv://rivaldosp:TecBin24@tecbinon.3zsz7md.mongodb.net/"
+
+# Tenta ler o parâmetro 'IDSALA' do ambiente
+PARAM_ID_SALA = os.environ.get("IDSALA", "000")
 
 def buscar_uri_da_sala(id_sala_alvo):
-    """Descobre qual banco de dados usar baseado no ID da sala."""
-
-    if id_sala_alvo:
-        id_sala_alvo = str(id_sala_alvo).zfill(3)
-
-    if not id_sala_alvo or id_sala_alvo == "000":
+    """
+    1. Conecta no Cluster de Vendas (URI_CONSULTA_SALAS).
+    2. Busca no banco 'db_master_controle', coleção 'salas'.
+    3. Se achar, retorna o link específico.
+    4. Se não achar ou erro, retorna URI_FALLBACK_PADRAO.
+    """
+    
+    # Se ID for nulo ou 0, já retorna o padrão direto sem nem buscar
+    if not id_sala_alvo or id_sala_alvo == "0" or id_sala_alvo == "000":
+        print(f"ℹ️ [ROTEAMENTO] ID Sala não definido. Usando Padrão.")
         return URI_FALLBACK_PADRAO
 
     print(f"🔍 [ROTEAMENTO] Buscando configuração para Sala ID: {id_sala_alvo}...")
-    uri_final = URI_FALLBACK_PADRAO
+    
+    uri_final = URI_FALLBACK_PADRAO # Começamos assumindo o padrão
+
     client_consulta = None
     try:
-        # Tenta conectar no banco mestre para ler a tabela 'salas'
-        # Importante: removemos o certifi aqui se der erro de SSL, mas geralmente ok manter
-        client_consulta = MongoClient(URI_CONSULTA_SALAS)
+        # Configura conexão segura
+        mongo_kwargs = { 'server_api': ServerApi('1') }
+        if _TLS_CA_FILE: mongo_kwargs['tlsCAFile'] = _TLS_CA_FILE
+        
+        # Conecta no Cluster de Consulta (Vendas)
+        client_consulta = MongoClient(URI_CONSULTA_SALAS, **mongo_kwargs)
+        
+        # Acessa o banco específico de controle
         db_controle = client_consulta.get_database("db_master_controle")
         
-        # Procura a sala pelo ID
+        # Busca a sala
         sala_doc = db_controle.salas.find_one({'id_sala': id_sala_alvo})
         
         if sala_doc and 'url_mongo_sorteio' in sala_doc:
             novo_link = sala_doc['url_mongo_sorteio']
+            
             if novo_link and len(novo_link) > 10:
                 uri_final = novo_link
-                print(f"✅ [ROTEAMENTO] Sala {id_sala_alvo} encontrada no banco!")
+                print(f"✅ [ROTEAMENTO] Sala {id_sala_alvo} encontrada! Redirecionando banco.")
             else:
-                print(f"⚠️ [ROTEAMENTO] Sala {id_sala_alvo} achada, mas sem URL válida. Usando padrão.")
+                print(f"⚠️ [ROTEAMENTO] Sala encontrada, mas campo 'url_mongo_sorteio' inválido. Usando Padrão.")
         else:
-             print(f"⚠️ [ROTEAMENTO] Sala {id_sala_alvo} não cadastrada no banco mestre.")
-             
+            print(f"⚠️ [ROTEAMENTO] Sala {id_sala_alvo} não cadastrada no Master Controle. Usando Padrão.")
+
     except Exception as e:
-        print(f"❌ [ROTEAMENTO] Erro ao buscar sala: {e}")
+        print(f"❌ [ROTEAMENTO] Erro ao consultar master de salas: {e}")
+        print("   -> Mantendo URI Padrão por segurança.")
+    
     finally:
-        if client_consulta: client_consulta.close()
-        
+        if client_consulta:
+            client_consulta.close()
+            
     return uri_final
-
-# ==============================================================================
-# 🆕 ADIÇÃO MULTI-SALAS (FIM)
-# ==============================================================================
-
 
 # --- DEFINE A URI REAL DO SISTEMA ---
 MONGO_URI = buscar_uri_da_sala(PARAM_ID_SALA)
@@ -367,25 +375,37 @@ def carregar_cache_evento(id_evento, sales_db):
 
 
 def connect_main_db():
-    """Conecta no banco do JOGO (dados_do_sorteio) usando URI_SORTEIO_FINAL"""
-    global client, db
-    try:
-        print(f"🔌 [GAME DB] Conectando...")
-        
-        # Conecta usando a URL específica de sorteio
-        client = MongoClient(URI_SORTEIO_FINAL, server_api=ServerApi('1'))
-        
-        # FORÇA O USO DO BANCO 'dados_do_sorteio'
-        # Independente do que está escrito na URL, pegamos esse banco.
-        db = client.get_database("dados_do_sorteio")
-        
-        # Teste de vida
-        client.admin.command('ping') 
-        print(f"✅ [GAME DB] Conectado com sucesso em: {db.name}")
-        
-    except Exception as e:
-        print(f"❌ [GAME DB] Erro fatal: {e}")
-        sys.exit(1)
+    global client, db  # <--- CORRIGIDO: "client" em vez de "cliente"
+    
+    if not is_local_mode:
+        try:
+            # Mostra o Cluster para conferência (Oculta senha)
+            cluster_name = MONGO_URI.split('@')[-1].split('/')[0]
+            print(f"🔌 CONECTANDO NO CLUSTER: {cluster_name}")
+            
+            mongo_kwargs = { 'server_api': ServerApi('1') }
+            if _TLS_CA_FILE: mongo_kwargs['tlsCAFile'] = _TLS_CA_FILE
+            
+            # Cria a conexão na variável global 'client'
+            client = MongoClient(MONGO_URI, **mongo_kwargs)
+            
+            # --- LÓGICA DE BANCO PADRONIZADO ---
+            try:
+                db_target = client.get_default_database()
+                print(f"✅ Banco definido no link: '{db_target.name}'")
+                db = db_target
+            except:
+                NOME_PADRAO = "dados_do_sorteio"
+                print(f"⚠️ Link sem nome de banco. Usando padronizado: '{NOME_PADRAO}'")
+                db = client.get_database(NOME_PADRAO)
+            # ------------------------------------
+
+            client.admin.command('ping') 
+            print(f"✅ CONEXÃO BEM SUCEDIDA NO CLUSTER: {cluster_name}")
+            
+        except Exception as e:
+            print(f"❌ Erro fatal ao conectar ao MongoDB: {e}")
+            sys.exit(1)
 
 
 # --- FUNÇÃO GENÉRICA DE BUSCA DE DADOS ---
@@ -1318,133 +1338,12 @@ def get_melhores():
 def get_version(): return jsonify({'version': VERSION})
 
 
+# --- SUBSTITUA A FUNÇÃO get_sales_db_connection POR ESTA ---
 # --- VARIÁVEIS GLOBAIS DE VENDAS ---
 sales_client = None
 current_sales_uri = None
-# ==============================================================================
-# 🆕 CONFIGURAÇÃO DE ROTEAMENTO (PADRÃO MASTER CONTROLE)
-# ==============================================================================
-
-# 1. ID DA SALA (Vem do Docker)
-PARAM_ID_SALA = os.environ.get("IDSALA", "000")
-print(f"🚀 INICIANDO BOOT PARA SALA: {PARAM_ID_SALA}")
-
-# 2. ENDEREÇO DO MASTER CONTROLE (A Lista Telefônica)
-URI_CONSULTA_SALAS = "mongodb+srv://tecbin_db_vendas:TecBin24@cluster0.blwq4du.mongodb.net/?appName=Cluster0"
-
-# 3. VARIÁVEIS GLOBAIS DE CONEXÃO (Serão preenchidas pela função abaixo)
-URI_SORTEIO_FINAL = None  # Vai conectar em: dados_do_sorteio
-URI_VENDAS_FINAL = None   # Vai conectar em: bingo_vendas_db
-
-def buscar_configuracao_master(id_sala_raw):
-    """
-    Acessa db_master_controle -> salas.
-    Retorna as DUAS urls separadas (Sorteio e Vendas).
-    """
-    # 1. Formata para String de 3 dígitos (ex: "1" vira "001")
-    id_sala_fmt = str(id_sala_raw).zfill(3)
-    
-    print(f"🔍 [MASTER] Buscando configuração para ID: '{id_sala_fmt}'...")
-
-    # Padrão de Fallback (Caso falhe o Master, usa um padrão de emergência)
-    config = {
-        'url_sorteio': "mongodb+srv://rivaldosp:TecBin24@tecbinon.3zsz7md.mongodb.net/?appName=TecBinOn",
-        'url_vendas': "mongodb+srv://tecbin_db_vendas:TecBin24@cluster0.blwq4du.mongodb.net/?appName=Cluster0"
-    }
-
-    client_master = None
-    try:
-        client_master = MongoClient(URI_CONSULTA_SALAS)
-        db_master = client_master.get_database("db_master_controle")
-        
-        # Busca exata pelo ID formatado
-        sala_doc = db_master.salas.find_one({'id_sala': id_sala_fmt})
-        
-        if sala_doc:
-            print(f"✅ [MASTER] Sala {id_sala_fmt} localizada!")
-            
-            # REGRA 1: url_mongo_sorteio -> dados_do_sorteio
-            if 'url_mongo_sorteio' in sala_doc and len(sala_doc['url_mongo_sorteio']) > 10:
-                config['url_sorteio'] = sala_doc['url_mongo_sorteio']
-                print("   -> URL Sorteio: Definida pelo Master.")
-            
-            # REGRA 2: url_mongo -> bingo_vendas_db
-            if 'url_mongo' in sala_doc and len(sala_doc['url_mongo']) > 10:
-                config['url_vendas'] = sala_doc['url_mongo']
-                print("   -> URL Vendas: Definida pelo Master.")
-        else:
-            print(f"⚠️ [MASTER] Sala {id_sala_fmt} NÃO encontrada. Usando fallback.")
-
-
-    except Exception as e:
-        print(f"❌ [MASTER] Erro de conexão: {e}")
-    finally:
-        if client_master: client_master.close()
-    
-    return config
-
-# --- EXECUTA A BUSCA AGORA (NO INÍCIO DO SCRIPT) ---
-_configs = buscar_configuracao_master(PARAM_ID_SALA)
-URI_SORTEIO_FINAL = _configs['url_sorteio']
-URI_VENDAS_FINAL = _configs['url_vendas']
-
-# Configurações do Ambiente
-DB_NAME = os.environ.get("DB_NAME", "dados_do_sorteio") # Nome fixo do banco do jogo
-port = int(os.environ.get('PORT', 3001))
-
-# ==============================================================================
-# FUNÇÕES DE CONEXÃO (REESCRITAS PARA USAR AS URLS DO MASTER)
-# ==============================================================================
-
-def connect_main_db():
-    """Conecta no banco do JOGO (dados_do_sorteio) usando URI_SORTEIO_FINAL"""
-    global client, db
-    try:
-        print(f"🔌 [GAME DB] Conectando...")
-        
-        # Conecta usando a URL específica de sorteio
-        client = MongoClient(URI_SORTEIO_FINAL, server_api=ServerApi('1'))
-        
-        # FORÇA O USO DO BANCO 'dados_do_sorteio'
-        # Independente do que está escrito na URL, pegamos esse banco.
-        db = client.get_database("dados_do_sorteio")
-        
-        # Teste de vida
-        client.admin.command('ping') 
-        print(f"✅ [GAME DB] Conectado com sucesso em: {db.name}")
-        
-    except Exception as e:
-        print(f"❌ [GAME DB] Erro fatal: {e}")
-        sys.exit(1)
 
 def get_sales_db_connection():
-    """Conecta no banco de VENDAS (bingo_vendas_db) usando URI_VENDAS_FINAL"""
-    global sales_client, current_sales_uri
-    
-    # Se já tem cliente conectado na URL certa, retorna o banco
-    if sales_client and current_sales_uri == URI_VENDAS_FINAL:
-        try:
-            return sales_client.get_database("bingo_vendas_db")
-        except: pass
-
-    # Se não, conecta
-    try:
-        # print(f"🛒 [SALES DB] Conectando...")
-        if sales_client: sales_client.close()
-        
-        sales_client = MongoClient(URI_VENDAS_FINAL, server_api=ServerApi('1'))
-        current_sales_uri = URI_VENDAS_FINAL
-        
-        # FORÇA O USO DO BANCO 'bingo_vendas_db'
-        db_vendas = sales_client.get_database("bingo_vendas_db")
-        return db_vendas
-        
-    except Exception as e:
-        print(f"❌ [SALES DB] Erro: {e}")
-        return None
-
-#================================================ AQUI
-def get_sales_db_connection2():
     """
     Gerencia a conexão com o Banco de Vendas/Clientes.
     Lê a URL de 'parametros.json' (local) ou da coleção 'parametros' do MongoDB (nuvem).
@@ -1534,6 +1433,75 @@ def get_sales_db_connection2():
 
     except Exception as e:
         print(f"❌ [VENDAS] Erro fatal na conexão: {e}")
+        return None
+
+
+
+
+def get_sales_db_connection2():
+    global sales_client, current_sales_uri, db
+    
+    # 1. Busca a URL (Lógica mantida da versão anterior)
+    new_uri = None
+    try:
+        if os.path.exists(os.path.join(LOCAL_PATH, 'parametros.json')):
+            with open(os.path.join(LOCAL_PATH, 'parametros.json'), 'r') as f:
+                p = json.load(f)
+                if p: new_uri = p[0].get('url_mongo_vendas')
+    except: pass
+
+    if not new_uri and db is not None:
+        try:
+            param_doc = db.parametros.find_one({})
+            if param_doc: new_uri = param_doc.get('url_mongo_vendas')
+        except: pass
+
+    if not new_uri:
+        print("❌ ERRO CRÍTICO: 'url_mongo_vendas' não encontrada.")
+        return None
+
+    try:
+        # Conecta ou Reutiliza conexão
+        if sales_client is None or new_uri != current_sales_uri:
+            if sales_client: sales_client.close()
+            print(f"🔌 Conectando ao Banco de Vendas...")
+            mongo_kwargs = {'server_api': ServerApi('1')}
+            if _TLS_CA_FILE: mongo_kwargs['tlsCAFile'] = _TLS_CA_FILE
+            
+            sales_client = MongoClient(new_uri, **mongo_kwargs)
+            current_sales_uri = new_uri
+            sales_client.admin.command('ping')
+            print("✅ Conexão estabelecida com o Cluster de Vendas!")
+            
+        # --- AQUI ESTÁ A CORREÇÃO DO ERRO ---
+        try:
+            # Tenta pegar o banco padrão definido no link
+            return sales_client.get_default_database()
+        except Exception as e_db:
+            print(f"⚠️ Aviso: O link não especificou o nome do banco (Erro: {e_db})")
+            
+            # Lista os bancos disponíveis para ajudar você
+            try:
+                bancos_disponiveis = sales_client.list_database_names()
+                print(f"📋 BANCOS DISPONÍVEIS NO CLUSTER: {bancos_disponiveis}")
+                
+                # SE TIVER APENAS 1 BANCO (além de admin/local), TENTA USAR ELE AUTOMATICAMENTE
+                filtro = [b for b in bancos_disponiveis if b not in ['admin', 'local', 'config']]
+                if len(filtro) > 0:
+                    banco_escolhido = filtro[0]
+                    print(f"🔄 Tentando usar automaticamente o banco: '{banco_escolhido}'")
+                    return sales_client.get_database(banco_escolhido)
+            except:
+                print("❌ Não foi possível listar os bancos automaticamente.")
+
+            # SE A AUTOMATIZAÇÃO FALHAR, USE ESTE NOME HARDCODED:
+            # Troque 'dados_do_sorteio' pelo nome que aparecer na lista acima se der erro
+            NOME_MANUAL = "dados_do_sorteio" 
+            print(f"⚠️ Forçando conexão no banco: '{NOME_MANUAL}'")
+            return sales_client.get_database(NOME_MANUAL)
+
+    except Exception as e:
+        print(f"❌ Erro fatal na conexão de vendas: {e}")
         return None
 
 
@@ -5069,49 +5037,55 @@ def pagar_ganhadores_imediato():
         return jsonify({'error': f"Erro interno: {str(e)}"}), 500
 
 
-# ==============================================================================
-# A FUNÇÃO MAIN (MANTENHA ELA, SÓ AJUSTE O INÍCIO)
-# ==============================================================================
+# =====================================================
+# --- MAIN DE PRODUÇÃO (PYTHON 3.12 COMPATÍVEL) ---
+# =====================================================
 def main():
     print("🚩 [1] Script iniciado. Configurando ambiente...")
 
     try:
-        # --- AJUSTE IMPORTANTE: GARANTIR A PORTA DO DOCKER ---
-        # No seu código original pode estar fixo 5000 ou 3001. 
-        # Mude para ler do ambiente:
-        port = int(os.environ.get('PORT', 3001)) 
-
-        # 1. Banco de Dados (Vai usar a MONGO_URI nova que definimos no topo)
+        # 1. Banco de Dados
         connect_main_db()
-        print(f"🚩 [2] Banco Conectado para Sala {PARAM_ID_SALA}")
+        print("🚩 [2] Banco Principal: OK")
 
-        # 2. Watcher 
-        print("🚩 [3] Iniciando Watcher...")
+        # 2. Watcher (Monitoramento em Background)
+        # O gevent.spawn cria uma "Greenlet" (thread leve) que não trava o boot
+        print("🚩 [3] Iniciando Watcher de Coleções...")
         gevent.spawn(watch_collections)
 
-        # 3. Servidor Web
+        # 3. Servidor Web (Gevent + WebSocket)
         from gevent import pywsgi
         from geventwebsocket.handler import WebSocketHandler
 
         print(f"🚩 [4] Iniciando WSGIServer na porta {port}...")
+        print(f"    -> Modo: {'PRODUÇÃO (Docker)' if not is_local_mode else 'LOCAL'}")
         
+        # --- AQUI ESTÁ O SEGREDO DA ESTABILIDADE ---
+        # Usamos o 'app' direto (o objeto Flask).
+        # O handler_class=WebSocketHandler ensina o servidor a lidar com sockets.
         server = pywsgi.WSGIServer(
             ('0.0.0.0', port), 
-            app, 
+            app,  # <--- USE 'app' AQUI, NÃO 'websocket_app'
             handler_class=WebSocketHandler,
-            log=None 
+            log=None # Desliga log de acesso padrão para não poluir o debug
         )
         
         print("✅ [5] Servidor PRONTO. Entrando em loop eterno...")
+        print("==================================================")
+        
+        # Inicia o servidor. Se travar aqui sem log, é problema de porta ou memória.
         server.serve_forever()
 
     except KeyboardInterrupt:
-        print("\n🛑 Parado.")
+        print("\n🛑 Servidor parado manualmente (CTRL+C).")
     except Exception as e:
-        print(f"\n❌ Erro: {e}")
+        print(f"\n❌ [ERRO FATAL]: O servidor caiu. Detalhes: {e}")
+        import traceback
+        traceback.print_exc()
 
-# ==============================================================================
-# O GATILHO FINAL
-# ==============================================================================
 if __name__ == '__main__':
+    # Garante que o Monkey Patch rodou lá no topo do arquivo
+    if not 'gevent.monkey' in sys.modules:
+        print("⚠️ AVISO CRÍTICO: Monkey Patch não detectado no topo!")
+    
     main()
