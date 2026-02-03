@@ -271,7 +271,7 @@ let timeoutId = null;
 // Nova variável para o temporizador do painel de prêmios.
 let prizeTimeoutId = null;
 
-let ws = null;
+//let ws = null;
 
 let iniciandoRodada = true;
 let winnerBingo = false;
