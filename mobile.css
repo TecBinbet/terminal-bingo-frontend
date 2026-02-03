@@ -67,6 +67,13 @@ body[data-device="mobile"] .bg-gray-700.p-1 {
     margin-bottom: 0.2rem !important;
 }
 
+
+@font-face {
+  font-family: 'Roboto';
+  src: url('...');
+  font-display: swap;  /* <--- ISSO RESOLVE O AVISO */
+}
+
 /* Animação para alternar cor de fundo e texto */
 @keyframes blink-red-white {
     0%, 100% {

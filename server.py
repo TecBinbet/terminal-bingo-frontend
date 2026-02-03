@@ -465,8 +465,74 @@ def fetch_data_from_local_files():
         print(f"Erro local: {e}")
         return {}
 
-
 def fetch_data_from_mongodb():
+    global db
+    if db is None: return {}
+
+    try:
+        # Helper interno para limpar ObjectId
+        def clean(cursor):
+            l = list(cursor)
+            for i in l: i['_id'] = str(i['_id'])
+            return l
+
+        # 1. Buscas no Banco
+        bolas = clean(db.bolas.find({}))
+        rodada = clean(db.rodada.find({}))
+        buscando = clean(db.buscando.find({}))
+        bolas_mesa = clean(db.bolas_mesa.find({}))
+        buscando_mesa = clean(db.buscando_mesa.find({}))
+        confere = clean(db.confere.find({}))
+        avisos = clean(db.avisos.find({}))
+        melhores = list(db['melhores'].find({}, {'_id':0}).sort('id_posicao', 1).limit(25))
+        
+        # 2. TRATAMENTO DOS PARÂMETROS (O Fim da Confusão)
+        lista_parametros = clean(db.parametros.find({}))
+        
+        param_doc = {} # Começa vazio (Objeto)
+        
+        if lista_parametros and len(lista_parametros) > 0:
+            # Pega o primeiro item da lista. O Javascript vai receber um OBJETO LIMPO.
+            param_doc = lista_parametros[0]
+        else:
+            # Se não tiver nada, cria um padrão para não travar o socket
+            print("⚠️ Tabela vazia. Usando Mock de segurança.")
+            param_doc = { "texto_sorteio": "SISTEMA ONLINE", "id_sala": "003" }
+
+        # 3. Tratamento de Ganhadores (Simplificado para funcionar)
+        ganhadores_live = list(db.ganhadores.find({}))
+        for g in ganhadores_live: g['_id'] = str(g['_id'])
+        
+        # Ganhadores Terminal (Se precisar da lógica complexa, mantenha a sua anterior, 
+        # mas certifique-se de que retorna uma lista em 'ganhadoresData')
+        ganhadores_terminal = list(db.osganhadores.find({}))
+        for g in ganhadores_terminal: g['_id'] = str(g['_id'])
+
+        # 4. RETORNO FINAL
+        return {
+            'type': 'UPDATE', 
+            'bolasData': bolas,
+            'rodadaData': rodada,
+            'buscandoData': buscando,
+            'bolasMesaData': bolas_mesa,
+            'buscandoMesaData': buscando_mesa,
+            'confereData': confere,
+            'parametrosInfo': param_doc, # <--- AQUI VAI O OBJETO, NÃO A LISTA
+            'melhoresData': melhores,
+            'ganhadoresLive': ganhadores_live,
+            'ganhadoresData': ganhadores_terminal,
+            'avisosData': avisos,
+            # Se sua função process_prizes existir, chame ela antes e passe aqui
+            'premioData': [], 
+            'premioInfo': {}
+        }
+
+    except Exception as e:
+        print(f"❌ ERRO FATAL NO FETCH: {e}")
+        return {} # Retorna vazio mas não None, para não matar o loop
+
+
+def fetch_data_from_mongodb__():
     global db
     if db is None: return {}
     try:
@@ -485,6 +551,7 @@ def fetch_data_from_mongodb():
         rodada = clean(db.rodada.find({}))
         confere = clean(db.confere.find({}))
         parametros = clean(db.parametros.find({}))
+
         if not parametros:
             print("⚠️ Erro Crítico: Tabela 'parametros' vazia ou ilegível. Mantendo estado anterior.")
             return None
@@ -1888,7 +1955,6 @@ def admin_salvar_config():
 
     if 'aguardandoVideo' in data:
         update_fields['aguardandoVideo'] = data.get('aguardandoVideo');
-
 
     # --- 2. Controle de Vídeos YouTube ---
     if 'url_padrao' in data:

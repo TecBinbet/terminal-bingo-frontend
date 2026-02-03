@@ -887,10 +887,16 @@ async function verificarNovasCompras() {
         return; 
     }
     // ---------------------------------------------
+    let urlBaseSegura = API_BASE_URL;
+    
+    // Se for localhost, ignoramos qualquer prefixo de sala (/sala1) e vamos na raiz
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+         urlBaseSegura = ""; 
+    }
 
     try {
         // 3. Consulta Silenciosa
-        const url = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idRodada}&id_cliente=${clienteLogadoId}`;
+        const url = `${urlBaseSegura}/api/consultar_cartelas_evento?id_evento=${idRodada}&id_cliente=${clienteLogadoId}`;
         const response = await fetch(url, { credentials: 'include' });
         
         if (!response.ok) return;
@@ -6365,38 +6371,62 @@ function atualizarImagemPremio(nomeArquivo, descricaoPremio) {
     }
 }
 
+
 // Função auxiliar para buscar a imagem no banco de vendas
 async function buscarImagemDoPremio(idEvento) {
 
     if (!idEvento) return;
 
-    // Se já buscamos esse evento antes e temos a imagem, não precisa buscar de novo (economiza rede)
+    // 1. SISTEMA DE CACHE INTELIGENTE
+    // Se já buscamos esse evento e temos a imagem, para por aqui.
     if (cacheIdEvento === idEvento && cacheImagem !== '') {
+        // Opcional: Se quiser garantir que a tela está certa mesmo com cache
+        // atualizarImagemPremio(cacheImagem, cacheTexto); 
         return; 
     }
 
     try {
         console.log(`🔍 Buscando foto do prêmio para o evento ${idEvento}...`);
         
-        // Chama a API que tem os dados corretos (Vendas)
-        const response = await fetch(`${API_BASE_URL}/api/verificar_status_evento?id_evento=${idEvento}`);
+        const baseUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
+        const urlParaBuscar = `${baseUrl}/api/verificar_status_evento?id_evento=${idEvento}`;
+
+        console.log(`🚀 [DEBUG] URL Gerada: ${urlParaBuscar}`);
+       
+        const response = await fetch(urlParaBuscar);
+        
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") === -1) {
+            const textoErro = await response.text(); // Lê o HTML para ver o erro
+            throw new Error(`Resposta não é JSON! Servidor devolveu: ${textoErro.substring(0, 100)}...`);
+        }
+
+        if (!response.ok) {
+            throw new Error(`Erro HTTP: ${response.status}`);
+        }
+
         const data = await response.json();
 
+        // 3. ATUALIZAÇÃO
         if (data && data.imagem_premio) {
-            // SALVA NA MEMÓRIA GLOBAL
+            // Salva no cache para não buscar de novo na próxima rodada
             cacheIdEvento = idEvento;
-            cacheImagem = data.imagem_premio;
-            cacheTexto = data.premio_atual;
+            cacheImagem = data.imagem_premio; // Ex: "carro.jpg"
+            cacheTexto = data.premio_atual;   // Ex: "MOTO 0KM"
             
             console.log("✅ Imagem encontrada:", cacheImagem);
             
-            // Força uma atualização visual imediata
-            atualizarImagemPremio(cacheImagem, cacheTexto);
+            // Chama a função visual que configuramos antes
+            if (typeof atualizarImagemPremio === 'function') {
+                atualizarImagemPremio(cacheImagem, cacheTexto);
+            }
         }
     } catch (error) {
-        console.error("Erro ao buscar imagem do prêmio:", error);
+        console.error("❌ Erro ao buscar imagem do prêmio:", error);
+        // Em caso de erro, não limpamos o cache para manter a imagem anterior se houver
     }
 }
+
 
 // =========================================================
 // === MÓDULO SORTE EXTRA (LÓGICA DO CLIENTE) ===

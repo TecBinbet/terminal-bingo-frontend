@@ -1,47 +1,50 @@
 version: '3.8'
 
 services:
-  # --- SALA 003 (Antiga Sala 0) ---
+  # --- SALA 003 (Antiga Sala 0 - Padrão) ---
   backend_sala3:
     container_name: bingo_sala3
     build: .
     restart: always
-    expose:
-      - "3001"
+    ports:            # <--- MUDANÇA AQUI
+      - "5000:3001"   # Mapeia Host 5000 -> Container 3001
     environment:
       - PORT=3001
-      - IDSALA=003  # Mudou de 000 para 003
+      - IDSALA=003
       - URL_MONGO_SORTEIO=${URL_MONGO_SORTEIO}
     volumes:
-      - ./json_data_sala3:/app/json # Pasta ajustada para sala3
+      - ./json_data_sala3:/app/json
+      - ./img003:/app/img
 
   # --- SALA 001 ---
   backend_sala1:
     container_name: bingo_sala1
     build: .
     restart: always
-    expose:
-      - "3001"
+    ports:            # <--- MUDANÇA AQUI
+      - "5001:3001"   # Mapeia Host 5001 -> Container 3001
     environment:
       - PORT=3001
       - IDSALA=001
       - URL_MONGO_SORTEIO=${URL_MONGO_SORTEIO}
     volumes:
       - ./json_data_sala1:/app/json
+      - ./img001:/app/img
 
   # --- SALA 002 ---
   backend_sala2:
     container_name: bingo_sala2
     build: .
     restart: always
-    expose:
-      - "3001"
+    ports:            # <--- MUDANÇA AQUI
+      - "5002:3001"   # Mapeia Host 5002 -> Container 3001
     environment:
       - PORT=3001
       - IDSALA=002
       - URL_MONGO_SORTEIO=${URL_MONGO_SORTEIO}
     volumes:
       - ./json_data_sala2:/app/json
+      - ./img002:/app/img
 
   # --- NGINX (Roteador) ---
   nginx:
@@ -55,6 +58,6 @@ services:
       - .:/usr/share/nginx/html
       - ./img:/usr/share/nginx/html/img
     depends_on:
-      - backend_sala3 # Atualizado dependência
+      - backend_sala3
       - backend_sala1
       - backend_sala2

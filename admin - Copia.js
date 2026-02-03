@@ -78,62 +78,14 @@ let vozAtiva = true;
 let cameraAtiva = false;
 let sorteioAutomatizadoConfig = false; 
 
-// ======================================================
-// CONFIGURAÇÃO BLINDADA (LOCAL vs PRODUÇÃO) - ADMIN
-// ======================================================
-
-// 1. Detecta parâmetros
-const urlParamsGlobal = new URLSearchParams(window.location.search);
-const salaParam = urlParamsGlobal.get('sala');
-const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const protocolWS = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-const host = window.location.host; // ex: localhost ou meudominio.com
-
-// 2. Define ID da Sala
-var currentSalaId = "003"; // Padrão
-if (salaParam) currentSalaId = salaParam.padStart(3, '0');
-
-// 3. Define URLs (API e WebSocket)
-var API_BASE_URL = "";
-var WS_URL = "";
-
-if (isLocal) {
-    // --- MODO LOCAL (FURA-FILA DO NGINX) ---
-    // Como abrimos as portas no Docker, vamos direto no Python.
-    // Isso resolve erros 404, 405 e quedas de socket no Localhost.
-    
-    let portLocal = 5000; // Padrão (Sala 3)
-    if (currentSalaId === '001') portLocal = 5001;
-    if (currentSalaId === '002') portLocal = 5002;
-
-    // AQUI ESTÁ O SEGREDO: Definimos a URL completa com a porta
-    API_BASE_URL = `http://${window.location.hostname}:${portLocal}`;
-    WS_URL = `ws://${window.location.hostname}:${portLocal}/stream`;
-
-    console.log(`🏠 LOCAL MODE: Conectando direto na porta ${portLocal}`);
-
-} else {
-    // --- MODO PRODUÇÃO (NUVEM) ---
-    // Na nuvem, o Nginx gerencia tudo via prefixos
-    if (salaParam === '1') API_BASE_URL = "/sala1";
-    else if (salaParam === '2') API_BASE_URL = "/sala2";
-    else API_BASE_URL = "/sala3";
-
-    WS_URL = `${protocolWS}${host}${API_BASE_URL}/stream`;
-}
-
-console.log(`🔧 [ADMIN] Sala: ${currentSalaId}`);
-console.log(`🔗 API: ${API_BASE_URL}`);
-console.log(`🔌 WS:  ${WS_URL}`);
-
-// --- VARIÁVEIS DE CONEXÃO (Mantidas) ---
+// --- VARIÁVEIS DE CONEXÃO ---
 let socket = null;
 let reconnectInterval = null;
 let countdownInterval = null;
 let houveGanhadorNaSessao = false;
 const RECONNECT_DELAY = 5000;
-// ======================================================
-
+//const API_BASE_URL = ""; 
+//const WS_URL = `ws://${window.location.host}/ws`; 
 
 
 // =========================================================
@@ -505,46 +457,7 @@ function gerenciarEstadoConexao(online) {
     }
 }
 
-
 function connectAdminWS() {
-    console.log("🔌 [CONNECT] Iniciando WebSocket em:", WS_URL);
-
-    if (socket) {
-        socket.onclose = null; // Remove listeners antigos
-        socket.close();
-    }
-
-    try {
-        socket = new WebSocket(WS_URL);
-    } catch (e) {
-        console.error("❌ Erro ao criar WebSocket:", e);
-        setTimeout(connectAdminWS, 5000);
-        return;
-    }
-
-    // --- O VÍNCULO IMPORTANTE ---
-    socket.onopen = function() {
-        console.log("✅ WebSocket Conectado!");
-        gerenciarEstadoConexao(true);
-    };
-
-    // Aqui amarramos a função que processa os dados
-    socket.onmessage = processarMensagemWS;
-
-    socket.onclose = function(e) {
-        console.warn("⚠️ WebSocket Fechado. Reconectando...");
-        gerenciarEstadoConexao(false);
-        setTimeout(connectAdminWS, 5000);
-    };
-
-    socket.onerror = function(err) {
-        console.error("❌ Erro no Socket:", err);
-        socket.close();
-    };
-}
-
-
-function connectAdminWS__() {
     if (socket) { socket.onclose = null; socket.close(); }
     try { socket = new WebSocket(WS_URL); } 
     catch (e) { agendarReconexao(); return; }
@@ -656,35 +569,26 @@ async function carregarDadosIniciaisSilencioso() {
 
 
 function processarMensagemWS(event) {
-    console.log("📨 [SOCKET RECEBIDO] Dados brutos:", event.data);
+    const payload = JSON.parse(event.data);
+    
+    if (payload.type === 'UPDATE') {        
+        let dadosBolas = [];
+        if (payload.bolasMesaData && payload.bolasMesaData.length > 0) {
+            dadosBolas = payload.bolasMesaData;
+        } else {
+            dadosBolas = payload.bolasData || []; 
+        }
 
-    try {
-        const payload = JSON.parse(event.data);
-        console.log("✅ [PASSO X1] JSON Válido. Tipo:", payload.type);
-
-
-        if (payload.type === 'UPDATE') {        
-            let dadosBolas = [];
-            if (payload.bolasMesaData && payload.bolasMesaData.length > 0) {
-                dadosBolas = payload.bolasMesaData;
-            } else {
-                dadosBolas = payload.bolasData || []; 
-            }
-
-
-           console.error("passo x2");
-
-
-            if (dadosBolas.length > 0) {
-                const ultimoSorteio = dadosBolas[0];
-                const listaDeNumeros = ultimoSorteio.bolas_cantadas || [];
+        if (dadosBolas.length > 0) {
+            const ultimoSorteio = dadosBolas[0];
+            const listaDeNumeros = ultimoSorteio.bolas_cantadas || [];
             
-                bolasSorteadasCache = listaDeNumeros; 
+            bolasSorteadasCache = listaDeNumeros; 
 
-                if (listaDeNumeros.length > ultimoTotalBolasProcessadas || listaDeNumeros.length === 0) {
-                    ultimoTotalBolasProcessadas = listaDeNumeros.length;
-                    jaAlertouNestaBola = false;
-                }
+            if (listaDeNumeros.length > ultimoTotalBolasProcessadas || listaDeNumeros.length === 0) {
+                ultimoTotalBolasProcessadas = listaDeNumeros.length;
+                jaAlertouNestaBola = false;
+            }
 
             if (typeof updateGrid === 'function') {
                 updateGrid(listaDeNumeros);
@@ -754,7 +658,6 @@ function processarMensagemWS(event) {
 
         if (payload.parametrosInfo) {
             configuracaoServer = payload.parametrosInfo;
-            console.error("XXconfiguracaoServer       :",configuracaoServer);
             
             if (configuracaoServer.sorteio_automatizado !== undefined) {
                 sorteioAutomatizadoConfig = configuracaoServer.sorteio_automatizado;
@@ -787,9 +690,9 @@ function processarMensagemWS(event) {
             if (typeof renderListaGanhadores === 'function') renderListaGanhadores(payload.ganhadoresData);
         }
 
-        if (payload.melhoresData) {
-           let tipoPremioBuscado = "BINGO";
-           if (payload.buscandoMesaData && payload.buscandoMesaData[0]) tipoPremioBuscado =        payload.buscandoMesaData[0].buscando_o_premio;
+if (payload.melhoresData) {
+   let tipoPremioBuscado = "BINGO";
+   if (payload.buscandoMesaData && payload.buscandoMesaData[0]) tipoPremioBuscado = payload.buscandoMesaData[0].buscando_o_premio;
     
     renderRanking(payload.melhoresData, tipoPremioBuscado);
 
@@ -875,12 +778,6 @@ function processarMensagemWS(event) {
             }
         }
     }
-
-    } catch (e) {
-        console.error("❌ ERRO AO LER JSON:", e);
-        console.error("💀 O que quebrou o JSON:", event.data);
-    }
-
 }
 
 
@@ -2193,6 +2090,83 @@ async function resetarJogo(force = false) {
 }
 
 
+// apagar xxx
+async function resetarJogo2(force = false) {
+    let msgConfirmacao = "TEM CERTEZA? Isso limpará a tela e encerrará o jogo atual.";
+    
+    // Se o jogo foi finalizado com sucesso (botão verde), muda a mensagem
+    if (jogoFoiFinalizadoComSucesso) {
+        msgConfirmacao = "Deseja FINALIZAR este evento e carregar o PRÓXIMO da agenda?";
+    }
+
+    if(!force && !(await customConfirm(msgConfirmacao))) { 
+        devolverFocoAoJogo(); return; 
+    } 
+    
+    showLoading("Processando...");
+
+    if (autoSorteioAtivo) pararAutoSorteio();
+    if (modoRoboAtivo) pararModoRobo();
+
+    try {
+        // Envia o flag 'finalizar_sucesso' baseada na nossa variável
+        await fetch(`${API_BASE_URL}/api/admin/resetar`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ finalizar_sucesso: jogoFoiFinalizadoComSucesso }) 
+        });
+        
+        // Reset local das variáveis
+        bolasCacheLocal = new Set(); 
+        bolasSorteadasCache = [];
+        matrizEnvio = [];
+        idsConfirmadosNestaRodada = new Set();
+        ultimoTotalBolasProcessadas = -1; 
+        jaAlertouNestaBola = false;
+        
+        // Reseta o estado do botão para o próximo jogo
+        alternarBotaoReset('reiniciar'); 
+
+        if(bolaDestaque) bolaDestaque.textContent = "--"; 
+        initGrid();
+        
+        const elStatus = document.getElementById('status-premio');
+        if(elStatus) elStatus.textContent = "Buscando: ...";
+        
+        const elContador = document.getElementById('contador-bolas');
+        if(elContador) elContador.textContent = "0 / 90";
+        
+        renderHistorico([]);
+        renderRanking([], "");
+        renderListaGanhadores([]); 
+        cartelasPendentesAuditoria = [];
+
+        const painelEvento = document.getElementById('painel-evento-ativo');
+        if(painelEvento) painelEvento.classList.add('hidden');
+        
+        await new Promise(r => setTimeout(r, 800));
+
+        if (!force) {
+            // Se finalizou com sucesso, o backend já mudou a rodada.
+            // Podemos apenas alertar ou abrir o modal para conferir.
+            if (jogoFoiFinalizadoComSucesso) {
+                customAlert("Evento Finalizado! O sistema carregou o próximo evento no painel.");
+                // Opcional: abrirModalEventos(); se quiser conferir
+            } else {
+                abrirModalEventos();
+            }
+        } else {
+            customAlert("Evento finalizado pelo Sorteio Automatizado.", "Sorteio Automatizado", 3);
+            abrirModalEventos();
+        }
+
+    } catch (e) { 
+        console.error("[DEBUG] Erro ao resetar:", e);
+        customAlert("Erro ao resetar."); 
+    } finally {
+        hideLoading();
+    }
+}
 
 
 // --- ATUALIZE A FUNÇÃO alternarBotaoReset ---
@@ -2879,47 +2853,36 @@ async function validarGanhadorExtra(ganhador) {
 
 
 function dispararVerificacaoRobo() {
-    
-    // 1. SEGURANÇA: Verifica se temos o ID do evento
-    // (Às vezes a variável se chama 'rodadaAtualId' ou 'dadosEventoAtual.id')
-    // Ajuste conforme sua variável global real.
-    let idParaEnvio = (typeof rodadaAtualId !== 'undefined') ? rodadaAtualId : null;
-    
-    if (!idParaEnvio && typeof dadosEventoAtual !== 'undefined') {
-        idParaEnvio = dadosEventoAtual.id || dadosEventoAtual._id;
-    }
-
-    if (!idParaEnvio) {
-        console.error("❌ [ROBO] Erro: ID do evento não encontrado para verificação.");
-        return;
-    }
-
+    // Monta o payload necessário (ajuste conforme sua API precisa)
     const payload = {
-        id_evento: idParaEnvio, 
+        id_evento: rodadaAtualId, // Certifique-se de ter essa variável disponível
         bola_gatilho: qtdeTopeSorteExtra
     };
 
-    console.log(`🤖 [ROBO] Consultando API na URL: ${API_BASE_URL}/api/admin/verificar_ganhadores_extra`);
+    console.log("🤖 [ROBO] Consultando API de ganhadores...");
 
-    // --- CORREÇÃO AQUI 👇 ---
-    // Adicionamos ${API_BASE_URL} antes do caminho.
-    fetch(`${API_BASE_URL}/api/admin/verificar_ganhadores_extra`, { 
+    // Chama a rota que calcula/verifica os ganhadores
+    // IMPORTANTE: Use a mesma rota que o Modal usa para buscar os dados
+    fetch('/api/admin/verificar_ganhadores_extra', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     })
-    .then(response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-    })
+    .then(response => response.json())
     .then(data => {
         if (data.ganhadores && data.ganhadores.length > 0) {
-            console.log(`🤖 [ROBO] ${data.ganhadores.length} ganhadores encontrados!`);
+            console.log(`🤖 [ROBO] ${data.ganhadores.length} ganhadores encontrados! O Socket vai cuidar do resto.`);
+            // Nota: Não precisamos chamar a fila aqui manualmente.
+            // O servidor (backend), ao processar isso, deve emitir o socket 'b_ganhadores_extra'.
+            // Aquele listener que criamos antes vai pegar o socket e iniciar a fila.
         } else {
             console.log("🤖 [ROBO] Nenhum ganhador no Sorte Extra.");
+            // Se não tem ganhador, o robô apenas segue o jogo.
         }
     })
     .catch(err => {
         console.error("❌ [ROBO] Erro ao verificar ganhadores extra:", err);
+        // Em caso de erro, talvez valha a pena abrir o modal para o humano intervir
+        // abrirModalValidacaoSorteExtra(); 
     });
-}
+}	
