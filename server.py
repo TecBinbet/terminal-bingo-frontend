@@ -32,6 +32,32 @@ from decimal import Decimal
 
 app = Flask(__name__, static_folder='.')
 
+
+# --- INÍCIO DO BLOCO DE CORREÇÃO ---
+class PrefixMiddleware(object):
+    def __init__(self, app, prefix=''):
+        self.app = app
+        self.prefix = prefix
+
+    def __call__(self, environ, start_response):
+        # Se a URL começar com o prefixo (ex: /sala1), a gente remove ele.
+        if environ['PATH_INFO'].startswith(self.prefix):
+            environ['PATH_INFO'] = environ['PATH_INFO'][len(self.prefix):]
+            environ['SCRIPT_NAME'] = self.prefix
+            return self.app(environ, start_response)
+        # Se não tiver prefixo (ex: rodando local), deixa passar normal
+        return self.app(environ, start_response)
+
+# Pega o ID da sala do ambiente (001, 002...) e remove zeros à esquerda se precisar
+# Mas pelo seu log a URL é "sala1", então vamos montar dinamicamente.
+id_sala_env = os.getenv('ID_SALA', '001') # Pega '001'
+numero_sala = int(id_sala_env) # Vira número 1
+prefixo_url = f"/sala{numero_sala}" # Vira "/sala1"
+
+print(f"🔧 [FIX] Aplicando correção de rota para prefixo: {prefixo_url}")
+app.wsgi_app = PrefixMiddleware(app.wsgi_app, prefix=prefixo_url)
+# --- FIM DO BLOCO DE CORREÇÃO ---
+
 @app.route('/img/<path:filename>')
 def serve_img(filename):
     # O parametro 'img' é o nome da PASTA física no seu computador
