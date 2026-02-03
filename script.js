@@ -1,17 +1,26 @@
 // ======================================================
-// CONFIGURAÇÃO GLOBAL DO AMBIENTE (Sala e WebSocket)
+// 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-// 1. Detectar Sala
+// Detecta parâmetros da URL (?sala=1)
 const urlParamsGlobal = new URLSearchParams(window.location.search);
 const salaParam = urlParamsGlobal.get('sala'); 
 
-// Variáveis GLOBAIS (acessíveis por todo o script)
-var API_BASE_URL = "";
-var currentSalaId = "003"; // Padrão se não tiver parâmetro
-var WS_URL = ""; // Declarada aqui para evitar ReferenceError
+// Detecta protocolo e host
+const protocolWS = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+const host = window.location.host;
+// Detecta se é local apenas para logs ou ajustes específicos, 
+// mas VAMOS MANTER A ESTRUTURA DE URL igual produção.
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-// 2. Lógica de Seleção
+// Variáveis GLOBAIS
+var API_BASE_URL = "";
+var currentSalaId = "003"; // Padrão
+var WS_URL = ""; 
+var ws = null; // Inicializa vazio
+
+// Lógica de Salas UNIFICADA (Vale para Local e Produção)
+// Isso garante que o Nginx local encontre a rota correta
 if (salaParam === '1') {
     API_BASE_URL = "/sala1";
     currentSalaId = "001";
@@ -22,29 +31,31 @@ if (salaParam === '1') {
     API_BASE_URL = "/sala3";
     currentSalaId = "003";
 } else {
-    // Se a URL for limpa, joga para Sala 3
-    console.log("⚠️ Sem parâmetro. Usando Sala 3 (Padrão).");
-    API_BASE_URL = "/sala3";
+    // Se não tem parâmetro
+    if (isLocal) {
+        // No local sem parametro, tentamos a raiz
+        API_BASE_URL = ""; 
+    } else {
+        // Em produção, joga para sala 3
+        API_BASE_URL = "/sala3";
+    }
     currentSalaId = "003";
 }
 
-// 3. Montagem da URL do WebSocket (Obrigatório para HTTPS/WSS)
-const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-const host = window.location.host;
+// Montagem da URL do WebSocket
+// Se estiver local e na raiz (sem sala), usa /stream direto
+if (isLocal && API_BASE_URL === "") {
+    WS_URL = `${protocolWS}${host}/stream`;
+} else {
+    // Caso contrário, respeita o prefixo (/sala1/stream)
+    WS_URL = `${protocolWS}${host}${API_BASE_URL}/stream`;
+}
 
-// Define a variável global WS_URL
-WS_URL = `${protocol}${host}${API_BASE_URL}/stream`;
+console.log(`🔧 [${isLocal ? 'LOCAL' : 'PROD'}] Sala: ${currentSalaId} | API: ${API_BASE_URL || '/'}`);
+console.log(`🔌 WebSocket Alvo: ${WS_URL}`);
 
-console.log("🌍 Ambiente:", currentSalaId);
-console.log("🔗 API Base:", API_BASE_URL);
-console.log("🔌 WS URL:", WS_URL);
+// --- FIM DA CONFIGURAÇÃO AUTOMÁTICA ---
 
-// Abre a conexão IMEDIATAMENTE usando a variável que acabamos de criar
-// var socket = new WebSocket(WS_URL);
-var ws = null;
-
-
-// --- FIM DA LÓGICA DE MULTI-SALAS ---
 
 //
 //const backendVersionElement = document.getElementById('backend-version');
