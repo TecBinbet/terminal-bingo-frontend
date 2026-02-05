@@ -1131,9 +1131,7 @@ function isMobileDevice() {
 // MENU
 function openSideMenu() {
     if (!menuOverlay) return;
-    if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
-       goFullscreen(); 
-    } 
+    //if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
 
     menuOverlay.classList.remove('hidden');
     
@@ -1433,7 +1431,6 @@ function checkDeviceType() {
 
 // Função para ativar o modo de tela cheia
 function goFullscreen() {
-    return;
  
     const element = document.documentElement; // Seleciona o elemento <html> para a tela cheia
 
@@ -1548,7 +1545,7 @@ function openMyCardsPanel() {
 
             renderizarListaMinhasCartelas(data);
             mostrarPainelMinhasCartelas();
-            if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
+            // if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
         })
         .catch(err => {
             console.error(err);
@@ -3914,9 +3911,7 @@ console.error("buscando_a_linha                           :",buscando_a_linha);
         }         // --- FIM se Manual-
 
         if (abrirYoutubeBtn) {
-             if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
-                 goFullscreen(); 
-             } 
+             // if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
              const isLocal = String(video_local).toLowerCase() === 'true'; 
              if (isLocal || tipoSorteio != "manual") {
                  abrirYoutubeBtn.classList.add('hidden');
@@ -4518,9 +4513,7 @@ document.addEventListener('DOMContentLoaded', () => {
 if (btnToggleTemaMobile) {
     btnToggleTemaMobile.addEventListener('click', () => {
 
-        if (!telaFull) { 
-            goFullscreen(); 
-        } 
+        // if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
 
         // 1. Inverte o estado do tema
         isDarkMode = !isDarkMode;
@@ -4644,9 +4637,7 @@ if (menuBtnTema) {
                 abrirYoutubeBtn.textContent = '❌ Fechar YouTube';
                 // Define src para tocar
                 youtubeIframe.src = videoUrl;
-                 if (!telaFull) { 
-                    goFullscreen(); 
-                 } 
+                // if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
             } else {
                 abrirYoutubeBtn.textContent = '📺 Abrir   YouTube';
                 // Limpa src para parar o som
@@ -4936,10 +4927,7 @@ let clienteLogado = false;
 // CORREÇÃO: Adicionei (idEventoEspecifico = null) nos parênteses
 function abrirMenuCliente(idEventoEspecifico = null) {
     // Verifica se os modais existem no HTML antes de tentar abrir
-    if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
-        goFullscreen(); 
-    } 
-
+    if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
     const modalLogin = document.getElementById('modal-login');
     const modalCarteira = document.getElementById('modal-carteira');
 
@@ -6120,9 +6108,7 @@ async function abrirModalCompra(idEventoEspecifico = 0) {
 // --- ABRIR MODAL DE LOGIN ---
 // Função genérica para abrir Login
 function abrirModalLogin() {
-    if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
-        goFullscreen(); 
-    } 
+    // if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
     const modal = document.getElementById('modal-login');
     if (modal) {
         modal.classList.remove('hidden');
@@ -6651,9 +6637,7 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
 function abrirTelaSorteExtra() {
     console.log("👆 Abrindo tela do Sorte Extra...");
     const modal = document.getElementById('modal-sorte-extra');
-    if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') { 
-       goFullscreen(); 
-    } 
+    if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
     
     if (modal) {
         closeSideMenu(); 
