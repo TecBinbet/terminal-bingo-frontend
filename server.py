@@ -1449,7 +1449,7 @@ def buscar_configuracao_master(id_sala_raw):
         'url_sorteio': "mongodb+srv://rivaldosp:TecBin24@tecbinon.3zsz7md.mongodb.net/?appName=TecBinOn",
         'url_vendas': "mongodb+srv://tecbin_db_vendas:TecBin24@cluster0.blwq4du.mongodb.net/?appName=Cluster0"
     }
-    nome_da_Sala = f"Sala {id_sala_alvo}"
+    nome_da_Sala = "LOCUTOR"
     client_master = None
     try:
         client_master = MongoClient(URI_CONSULTA_SALAS)
