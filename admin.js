@@ -2958,3 +2958,28 @@ function buscarNomeDaSalaBackend() {
         .catch(err => console.error("Erro ao carregar nome da sala:", err));
 }
 
+
+function enviarComandoHardware(codigoComando) {
+
+    console.log(`🔌 Enviando comando '${codigoComando}' para o Hardware...`);
+
+    // 2. Faz o POST para a API
+    fetch(`${API_BASE_URL}/api/enviar_comando_serial`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo: codigoComando })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === 'sucesso') {
+            console.log("✅ Hardware respondeu:", data.msg);
+            // Opcional: Mostrar um toast/aviso de sucesso
+        } else {
+            console.error("❌ Erro Hardware:", data.erro);
+            alert("Erro ao comunicar com o equipamento: " + data.erro);
+        }
+    })
+    .catch(err => {
+        console.error("❌ Erro de Rede:", err);
+    });
+}
