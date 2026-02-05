@@ -210,13 +210,13 @@ VERSION = "2.1.0-SingleTenant"
 # 🆕 ADIÇÃO MULTI-SALAS (INÍCIO)
 # ==============================================================================
 
-# Lê o ID da Sala que vem do Docker-Compose (Ex: 001, 002 ou 000)
-PARAM_ID_SALA = os.environ.get("IDSALA", "000")
+# Lê o ID da Sala que vem do Docker-Compose (Ex: 001, 002 ou 003)
+PARAM_ID_SALA = os.environ.get("IDSALA", "001")
 print(f"🚀 INICIANDO SERVIDOR PARA SALA: {PARAM_ID_SALA}")
 
 # URLs de Consulta para descobrir o banco de cada sala
 URI_CONSULTA_SALAS = "mongodb+srv://tecbin_db_vendas:TecBin24@cluster0.blwq4du.mongodb.net/?appName=Cluster0"
-# URL de Fallback (Caso a sala não seja achada, cai na sala 000)
+# URL de Fallback (Caso a sala não seja achada, cai na sala 001)
 URI_FALLBACK_PADRAO = "mongodb+srv://tecbin_db_vendas:TecBin24@cluster0.blwq4du.mongodb.net/?appName=Cluster0"
 
 def buscar_uri_da_sala(id_sala_alvo):
@@ -225,7 +225,7 @@ def buscar_uri_da_sala(id_sala_alvo):
     if id_sala_alvo:
         id_sala_alvo = str(id_sala_alvo).zfill(3)
 
-    if not id_sala_alvo or id_sala_alvo == "000":
+    if not id_sala_alvo or id_sala_alvo == "001":
         return URI_FALLBACK_PADRAO
 
     print(f"🔍 [ROTEAMENTO] Buscando configuração para Sala ID: {id_sala_alvo}...")
@@ -524,7 +524,7 @@ def fetch_data_from_mongodb():
         else:
             # Se não tiver nada, cria um padrão para não travar o socket
             print("⚠️ Tabela vazia. Usando Mock de segurança.")
-            param_doc = { "texto_sorteio": "SISTEMA ONLINE", "id_sala": "003" }
+            param_doc = { "texto_sorteio": "SISTEMA ONLINE", "id_sala": "001" }
 
         # 3. Tratamento de Ganhadores (Simplificado para funcionar)
         ganhadores_live = list(db.ganhadores.find({}))
@@ -1422,7 +1422,7 @@ current_sales_uri = None
 # ==============================================================================
 
 # 1. ID DA SALA (Vem do Docker)
-PARAM_ID_SALA = os.environ.get("IDSALA", "000")
+PARAM_ID_SALA = os.environ.get("IDSALA", "001")
 print(f"🚀 INICIANDO BOOT PARA SALA: {PARAM_ID_SALA}")
 
 # 2. ENDEREÇO DO MASTER CONTROLE (A Lista Telefônica)
@@ -1658,7 +1658,7 @@ def verificar_status_evento():
 
         # 3. Busca o Evento
         # Tenta buscar pelo ID numérico
-        print(f"🔎 Buscando Evento {id_evento} no banco '{sales_db.name}'...")
+        #print(f"🔎 Buscando Evento {id_evento} no banco '{sales_db.name}'...")
         evento = sales_db.eventos.find_one({'id_evento': id_evento})
 
         # 4. Retorna o Resultado
@@ -3824,7 +3824,7 @@ def buscar_id_cliente_por_cartela(sales_db, id_evento, cartela_id):
 # --- ROTAS DE AUTOATENDIMENTO (LOGIN E COMPRA) ---xxx
 @app.route('/api/login_cliente', methods=['POST'])
 def api_login_cliente():
-    print("📍 [DEBUG] 999. Requisição recebida na rota de login.")
+    #print("📍 [DEBUG] 999. Requisição recebida na rota de login.")
     try:
         data = request.json
         usuario = data.get('usuario')
@@ -3878,7 +3878,7 @@ def api_login_cliente():
                 except Exception as e_evt:
                     print(f"⚠️ Aviso no evento: {e_evt}")
                 
-                print(f"✅ [DEBUG] 111. Login concluído! Retornando JSON.")
+                #print(f"✅ [DEBUG] 111. Login concluído! Retornando JSON.")
                 
                 return jsonify({
                     'status': 'ok', 
