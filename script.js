@@ -1520,9 +1520,19 @@ function openMyCardsPanel() {
     
     console.log(`🚀 Buscando cartelas -> Evento: ${evtId} | Cliente: ${cliId}`);
 
+    const partesUrl = window.location.pathname.split('/');
+    const salaAtual = partesUrl[1] || 'sala1'; // Pega "sala1", "sala2" ou usa "sala1" de fallback
+
+    // 2. Monta a URL correta: /sala1/api/...
+    const urlApi = `/${salaAtual}/api/consultar_cartelas_evento?id_evento=${evtId}&id_cliente=${cliId}`;
+
     // 2. Busca no Servidor
-    fetch(`/api/consultar_cartelas_evento?id_evento=${evtId}&id_cliente=${cliId}`)
-        .then(res => res.json())
+    fetch(urlApi) 
+        .then(res => {
+            // Dica de Debug: Se não for ok (200), joga erro pra cair no catch
+            if (!res.ok) throw new Error(`Erro HTTP: ${res.status}`);
+            return res.json();
+        })
         .then(data => {
             // 1. Atualiza a memória Global com o que veio do banco
             if (Array.isArray(data)) {
@@ -7007,3 +7017,5 @@ function forcarReprocessamentoVisual() {
 
     console.log("✅ [FIX] Visual atualizado.");
 }
+
+

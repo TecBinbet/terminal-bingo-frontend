@@ -2683,6 +2683,7 @@ async function limparTelaPublicaExtra() {
 // === 6. INICIALIZAÇÃO ===
 // =========================================================
 document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(buscarNomeDaSalaBackend, 500);
     // 1. Config Local
     const savedMode = localStorage.getItem('admin_draw_mode');
     if (savedMode) {
@@ -2923,3 +2924,37 @@ function dispararVerificacaoRobo() {
         console.error("❌ [ROBO] Erro ao verificar ganhadores extra:", err);
     });
 }
+
+
+function buscarNomeDaSalaBackend() {
+    // 1. Pega o ID da variável que você disse que já tem. 
+    // (Substitua 'globalIdSala' pelo nome real da sua variável)
+    let idParaBusca = typeof currentSalaId !== 'undefined' ? currentSalaId : null;
+
+    // Fallback: Se a variável não existir, tenta pegar da URL (?sala=3)
+    if (!idParaBusca) {
+        const params = new URLSearchParams(window.location.search);
+        idParaBusca = params.get('sala') || '1'; // Padrão 1 se não achar nada
+    }
+
+    console.log("🔍 Buscando nome para a sala ID:", idParaBusca);
+                                                                     
+    // 2. Monta a URL correta para o Nginx direcionar (ex: /sala3/api/get_nome_sala)
+    const urlApi =`${API_BASE_URL}/api/get_nome_sala`;
+    fetch(urlApi)
+        .then(res => {
+            if (!res.ok) throw new Error("Erro na resposta da API");
+            return res.json();
+        })
+        .then(data => {
+            if (data.nome) {
+                // 3. Atualiza o Título
+                const elTitulo = document.getElementById('titulo-sala');
+                if (elTitulo) {
+                    elTitulo.innerText = `🎛️ CENTRAL DE SORTEIO | ${data.nome.toUpperCase()}`;
+                }
+            }
+        })
+        .catch(err => console.error("Erro ao carregar nome da sala:", err));
+}
+
