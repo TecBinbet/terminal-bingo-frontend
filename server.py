@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from gevent import monkey
-monkey.patch_all() # (dns=False)<--- O "dns=False" é vital no Windows
+
+#monkey.patch_all(dns=False) # <--- O "dns=False" é vital no Windows
+monkey.patch_all() # docker
+
 import gevent
 
 import os
@@ -12,7 +15,7 @@ import time
 import requests
 
 import bcrypt # Necessário para validar a senha
-from flask import Flask, jsonify, request, send_from_directory, session # Adicionar session
+from flask import Flask, jsonify, request, send_from_directory, session, redirect, url_for, render_template, flash
 
 from better_profanity import profanity
 import re
@@ -29,6 +32,33 @@ import sys
 sys.stdout.reconfigure(line_buffering=True)
 from pymongo import ReturnDocument # Certifique-se de importar isso no topo do arquivo
 from decimal import Decimal
+
+# ==============================================================================
+# 🛠️ CONFIGURAÇÃO INICIAL DA SALA (PRIORIDADE: ARGUMENTO > ENV > PADRÃO)
+# ==============================================================================
+
+# 1. Define o padrão base: Tenta pegar do Ambiente (Docker), se não tiver, usa "001"
+# Isso garante compatibilidade com o deploy atual
+PARAM_ID_SALA = os.environ.get("IDSALA", "001")
+
+# 2. Verifica se veio via Linha de Comando (ex: python server.py 002)
+# Se vier, SOBREESCREVE o valor anterior (tem prioridade total)
+if len(sys.argv) > 1:
+    arg_sala = sys.argv[1]
+    
+    # Validação: É numérico? (Evita erros se digitar algo errado)
+    if arg_sala.isdigit():
+        PARAM_ID_SALA = arg_sala
+        print(f"👉 [BOOT] Sala definida via ARGUMENTO: {PARAM_ID_SALA}")
+    else:
+        print(f"⚠️ [BOOT] Argumento '{arg_sala}' inválido. Usando ENV/Padrão: {PARAM_ID_SALA}")
+else:
+    print(f"👉 [BOOT] Sala definida via AMBIENTE/PADRÃO: {PARAM_ID_SALA}")
+
+# (Opcional) Garante formatação 3 dígitos se desejar
+PARAM_ID_SALA = str(PARAM_ID_SALA).zfill(3)
+
+print("==================================================")
 
 app = Flask(__name__, static_folder='.')
 
@@ -50,8 +80,12 @@ class PrefixMiddleware(object):
 
 # Pega o ID da sala do ambiente (001, 002...) e remove zeros à esquerda se precisar
 # Mas pelo seu log a URL é "sala1", então vamos montar dinamicamente.
-id_sala_env = os.getenv('ID_SALA', '001') # Pega '001'
-numero_sala = int(id_sala_env) # Vira número 1
+
+try:
+    numero_sala = int(PARAM_ID_SALA) 
+except:
+    numero_sala = 1
+
 prefixo_url = f"/sala{numero_sala}" # Vira "/sala1"
 
 print(f"🔧 [FIX] Aplicando correção de rota para prefixo: {prefixo_url}")
@@ -211,7 +245,7 @@ VERSION = "2.1.0-SingleTenant"
 # ==============================================================================
 
 # Lê o ID da Sala que vem do Docker-Compose (Ex: 001, 002 ou 003)
-PARAM_ID_SALA = os.environ.get("IDSALA", "001")
+#PARAM_ID_SALA = os.environ.get("IDSALA", "001")
 print(f"🚀 INICIANDO SERVIDOR PARA SALA: {PARAM_ID_SALA}")
 
 # URLs de Consulta para descobrir o banco de cada sala
@@ -393,7 +427,7 @@ def carregar_cache_evento(id_evento, sales_db):
         CACHE_JOGO['ativo'] = False
 
 
-def connect_main_db():
+def connect_main_db__():
     """Conecta no banco do JOGO (dados_do_sorteio) usando URI_SORTEIO_FINAL"""
     global client, db
     try:
@@ -405,7 +439,7 @@ def connect_main_db():
         # FORÇA O USO DO BANCO 'dados_do_sorteio'
         # Independente do que está escrito na URL, pegamos esse banco.
         db = client.get_database("dados_do_sorteio")
-        
+
         # Teste de vida
         client.admin.command('ping') 
         print(f"✅ [GAME DB] Conectado com sucesso em: {db.name}")
@@ -1340,7 +1374,59 @@ def serve_index():
 # ROTA DE DEBUG EXTREMO (Substitua a /stream atual por esta)
 # =========================================================
 @app.route('/stream')
-def stream():
+def api_stream():
+    # Pega a conexão WebSocket
+    ws = request.environ.get('wsgi.websocket')
+    
+    if not ws:
+        return "Erro: Utilize um cliente WebSocket", 400
+
+    id_sala_req = request.args.get('idsala', PARAM_ID_SALA)
+    print(f"🔌 [STREAM] Cliente conectado na Sala: {id_sala_req}")
+
+    try:
+        while not ws.closed:
+            # ---------------------------------------------------------
+            # 1. TENTATIVA DE LEITURA (Com proteção de erro)
+            # ---------------------------------------------------------
+            try:
+                # Usa Timeout para não travar o loop esperando mensagem
+                with gevent.Timeout(0.1, False):
+                    msg = ws.receive()
+                    if msg:
+                        # Se chegou mensagem, apenas imprime (por enquanto)
+                        print(f"📩 [CLIENTE]: {msg}")
+            except Exception as e_read:
+                print(f"⚠️ Erro leve na leitura: {e_read}")
+
+            # ---------------------------------------------------------
+            # 2. ENVIO DO PING (Coração do WebSocket)
+            # ---------------------------------------------------------
+            try:
+                # Prepara o pacote de ping
+                ping_data = json.dumps({'type': 'ping', 'timestamp': time.time()})
+                ws.send(ping_data)
+            except Exception as e_ping:
+                print(f"❌ Erro ao enviar PING (Cliente desconectou?): {e_ping}")
+                break # Se não der pra mandar ping, fecha.
+
+            # ---------------------------------------------------------
+            # 3. PAUSA (Respiração da CPU)
+            # ---------------------------------------------------------
+            gevent.sleep(2) # Espera 2 segundos antes do próximo ciclo
+
+    except Exception as e_fatal:
+        # AQUI VAI APARECER O MOTIVO DA QUEDA NO SEU TERMINAL
+        print(f"🔥 [STREAM] ERRO FATAL: {e_fatal}")
+        import traceback
+        traceback.print_exc()
+        
+    print(f"🔌 [STREAM] Conexão encerrada para Sala {id_sala_req}")
+    return ""
+
+
+@app.route('/stream_')
+def stream_():
     # Verifica se é uma requisição WebSocket
     if request.environ.get('wsgi.websocket'):
         ws = request.environ['wsgi.websocket']
@@ -1394,6 +1480,50 @@ def initial_data():
     # Se ainda assim for vazio (início do sistema), manda {}
     return jsonify(dados if dados else {})
 
+#============================
+# No server.py (Versão Cloud) porta serial
+#=============================
+@app.route('/api/enviar_comando_serial', methods=['POST'])
+def api_enviar_serial():
+    try:
+        # 1. Recebe do Admin
+        dados = request.get_json()
+        codigo = dados.get('codigo')
+        
+        # Usa a variável global que definimos no início do server.py
+        # Isso garante que o comando vá marcado com a sala certa
+        id_sala = PARAM_ID_SALA 
+
+        print(f"☁️ [API] Admin pediu comando: {codigo} (Para Sala: {id_sala})")
+
+        # Validação básica
+        if not codigo:
+            return jsonify({"erro": "Código não informado"}), 400
+
+        # ==================================================================
+        # 2. O PULO DO GATO: A PONTE PARA O LOCAL 🌉
+        # ==================================================================
+        # Em vez de chamar serial.write, nós emitimos um evento SocketIO.
+        # O script 'agente_local.py' no seu PC vai capturar isso.
+        
+        socketio.emit('comando_hardware', {
+            'codigo': codigo, 
+            'sala': id_sala,
+            'timestamp': time.time()
+        })
+
+        # 3. Retorna sucesso para o Admin não travar
+        return jsonify({
+            "status": "sucesso", 
+            "msg": "Comando enviado para a rede (Aguardando Agente Local)"
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Erro na API Serial: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+
 
 @app.route('/api/melhores')
 def get_melhores():
@@ -1422,8 +1552,8 @@ current_sales_uri = None
 # ==============================================================================
 
 # 1. ID DA SALA (Vem do Docker)
-PARAM_ID_SALA = os.environ.get("IDSALA", "001")
-print(f"🚀 INICIANDO BOOT PARA SALA: {PARAM_ID_SALA}")
+#PARAM_ID_SALA = os.environ.get("IDSALA", "001")
+#print(f"🚀 INICIANDO BOOT PARA SALA: {PARAM_ID_SALA}")
 
 # 2. ENDEREÇO DO MASTER CONTROLE (A Lista Telefônica)
 URI_CONSULTA_SALAS = "mongodb+srv://tecbin_db_vendas:TecBin24@cluster0.blwq4du.mongodb.net/?appName=Cluster0"
@@ -1473,7 +1603,7 @@ def buscar_configuracao_master(id_sala_raw):
 
             if 'nome_sala' in sala_doc and len(sala_doc['nome_sala']) > 2:
                 nome_da_Sala = sala_doc['nome_sala']
-                print (f"[NOME SALA] :2       {nome_da_Sala}")
+                print (f"[NOME SALA] :       {nome_da_Sala}")
         else:
             print(f"⚠️ [MASTER] Sala {id_sala_fmt} NÃO encontrada. Usando fallback.")
 
@@ -1503,14 +1633,14 @@ def connect_main_db():
     global client, db
     try:
         print(f"🔌 [GAME DB] Conectando...")
-        
+ 
         # Conecta usando a URL específica de sorteio
         client = MongoClient(URI_SORTEIO_FINAL, server_api=ServerApi('1'))
-        
+       
         # FORÇA O USO DO BANCO 'dados_do_sorteio'
         # Independente do que está escrito na URL, pegamos esse banco.
         db = client.get_database("dados_do_sorteio")
-        
+
         # Teste de vida
         client.admin.command('ping') 
         print(f"✅ [GAME DB] Conectado com sucesso em: {db.name}")
@@ -2060,6 +2190,11 @@ def admin_salvar_config():
     # 7. Controle da Sorte Extra (Boolean)
     if 'buscar_sorte_extra' in data:
         update_fields['buscar_sorte_extra'] = bool(data['buscar_sorte_extra'])
+
+    # 8. Enviar Porta Serial (Boolean)
+    if 'enviar_porta_serial' in data:
+        update_fields['enviar_porta_serial'] = bool(data['enviar_porta_serial'])
+
 
     if update_fields:
         try:
@@ -3821,45 +3956,58 @@ def buscar_id_cliente_por_cartela(sales_db, id_evento, cartela_id):
         return None
 
 
-# --- ROTAS DE AUTOATENDIMENTO (LOGIN E COMPRA) ---xxx
 @app.route('/api/login_cliente', methods=['POST'])
 def api_login_cliente():
-    #print("📍 [DEBUG] 999. Requisição recebida na rota de login.")
+    # print("📍 [DEBUG] 999. Requisição recebida na rota de login.")
     try:
-        data = request.json
-        usuario = data.get('usuario')
-        senha = data.get('senha')
+        # CORREÇÃO 1: Use get_json() é mais seguro que .json direto
+        data = request.get_json()
         
-        #print(f"📍 [DEBUG] 02. Dados extraídos. Usuario: {usuario}")
+        # Proteção caso data seja None
+        if not data:
+            return jsonify({'erro': 'Corpo da requisição inválido (JSON esperado).'}), 400
+
+        usuario = data.get('usuario', '').strip()
+        senha = data.get('senha', '').strip()
+        
+        # print(f"📍 [DEBUG] 02. Dados extraídos. Usuario: {usuario}")
 
         if not usuario or not senha:
             return jsonify({'erro': 'Preencha usuário e senha.'}), 400
 
         # --- PONTO DE TRAVAMENTO 1: CONEXÃO ---
-        #print("📍 [DEBUG] 03. Chamando get_sales_db_connection()...")
+        # print("📍 [DEBUG] 03. Chamando get_sales_db_connection()...")
         sales_db = get_sales_db_connection()
         
         if sales_db is None:
-            #print("❌ [DEBUG] Falha: sales_db retornou None.")
+            # print("❌ [DEBUG] Falha: sales_db retornou None.")
             return jsonify({'erro': 'Erro interno: Banco de clientes inacessível.'}), 500
-        #print("📍 [DEBUG] 04. Conexão obtida com sucesso.")
+        # print("📍 [DEBUG] 04. Conexão obtida com sucesso.")
 
         # --- PONTO DE TRAVAMENTO 2: CONSULTA MONGO ---
-        #print("📍 [DEBUG] 05. Executando find_one no Mongo...")
+        # print("📍 [DEBUG] 05. Executando find_one no Mongo...")
         cli = sales_db.clientes.find_one({'nick': {'$regex': f'^{usuario}$', '$options': 'i'}})
-        #print(f"📍 [DEBUG] 06. Consulta finalizada. Cliente encontrado? {cli is not None}")
+        # print(f"📍 [DEBUG] 06. Consulta finalizada. Cliente encontrado? {cli is not None}")
 
         if not cli:
             return jsonify({'erro': 'Usuário não encontrado.'}), 401
 
         # --- PONTO DE TRAVAMENTO 3: BCRYPT (PROCESSAMENTO PESADO) ---
         if 'senha' in cli:
+            # ATENÇÃO: Capitalize aqui pode impedir login se a senha real for "batata" e virar "Batata"
+            # O ideal seria testar a senha original primeiro, e depois o capitalize como fallback.
             senha_fmt = senha.capitalize()
-            #print("📍 [DEBUG] 07. Iniciando verificação de senha (bcrypt)...")
+            
+            # print("📍 [DEBUG] 07. Iniciando verificação de senha (bcrypt)...")
             
             # ATENÇÃO: Se travar aqui, é incompatibilidade do Gevent com C-Extensions
-            senha_valida = bcrypt.checkpw(senha_fmt.encode('utf-8'), cli['senha'].encode('utf-8'))
-            #print(f"📍 [DEBUG] 08. Bcrypt finalizado. Senha válida? {senha_valida}")
+            try:
+                # Testa com capitalize (como estava no seu código original)
+                senha_valida = bcrypt.checkpw(senha_fmt.encode('utf-8'), cli['senha'].encode('utf-8'))
+            except:
+                senha_valida = False
+
+            # print(f"📍 [DEBUG] 08. Bcrypt finalizado. Senha válida? {senha_valida}")
 
             if senha_valida:
                 # --- SUCESSO NO LOGIN ---
@@ -3868,8 +4016,20 @@ def api_login_cliente():
                 
                 saldo = converter_decimal(cli.get('saldo_atual', 0.0))
                 
+                # --- VERIFICAÇÃO DE TROCA DE SENHA OBRIGATÓRIA ---
+                # CUIDADO: No seu código estava "@senha@". Voltei para "senha".
+                # Se a sua senha padrão for realmente "@senha@", altere abaixo.
+                if senha.lower() == "@senha@": 
+                    session['id_cliente'] = str(cli['id_cliente']) 
+                    session['troca_senha_pendente'] = True
+    
+                    return jsonify({
+                        "status": "troca_senha_obrigatoria",
+                        "mensagem": "Por segurança, você deve atualizar sua senha.",
+                        "redirect_url": url_for('cliente_troca_senha_obrigatoria')
+                     })
+                    
                 # Busca Evento Ativo
-                #print("📍 [DEBUG] 09. Buscando evento ativo...")
                 id_evento_ativo = None
                 try:
                     evt_ativo = sales_db.eventos.find_one({'status': 'ativo'})
@@ -3877,8 +4037,6 @@ def api_login_cliente():
                         id_evento_ativo = str(evt_ativo.get('id_evento') or evt_ativo.get('numero') or evt_ativo.get('seq') or evt_ativo['_id'])
                 except Exception as e_evt:
                     print(f"⚠️ Aviso no evento: {e_evt}")
-                
-                #print(f"✅ [DEBUG] 111. Login concluído! Retornando JSON.")
                 
                 return jsonify({
                     'status': 'ok', 
@@ -5174,6 +5332,79 @@ def pagar_ganhadores_imediato():
 def get_nome_sala_api():
     # Retorna o JSON que o JavaScript está esperando
     return jsonify({"nome": nome_da_Sala})
+
+
+# ========================
+#  FORÇAR TROCA DE SENHA
+# ========================
+@app.route('/cliente/troca-senha-obrigatoria', methods=['GET', 'POST'])
+def cliente_troca_senha_obrigatoria():
+    # 1. SEGURANÇA: Verifica se tem id_cliente na sessão
+    if 'id_cliente' not in session:
+        return redirect('/cliente/login') # Ajuste para sua rota de login
+
+    # Nome do arquivo HTML correto (o último que você enviou)
+    NOME_TEMPLATE = 'cliente_trocar_senha.html'
+
+    if request.method == 'POST':
+        nova_senha = request.form.get('nova_senha', '').strip()
+        confirma_senha = request.form.get('confirma_senha', '').strip()
+        
+        # Pega o ID da sessão
+        id_cliente_sessao = session['id_cliente']
+
+        # --- VALIDAÇÕES ---
+        if nova_senha != confirma_senha:
+            return render_template(NOME_TEMPLATE, error="As senhas não coincidem!")
+
+        if nova_senha.lower() == "senha":
+            return render_template(NOME_TEMPLATE, error="⚠️ Você não pode usar a senha padrão 'Senha'.")
+
+        if len(nova_senha) < 4:
+            return render_template(NOME_TEMPLATE, error="A senha deve ter pelo menos 4 caracteres.")
+
+        try:
+            # 2. CONEXÃO: Garante que pega o banco de vendas conectado
+            sales_db = get_sales_db_connection()
+            if sales_db is None:
+                return render_template(NOME_TEMPLATE, error="Erro de conexão com o banco.")
+
+            # 3. CRIPTOGRAFIA: Gera o Hash para o login funcionar depois
+            senha_hash = bcrypt.hashpw(nova_senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+            # Prepara o filtro (alguns bancos usam int, outros string)
+            try:
+                filtro_id = int(id_cliente_sessao)
+            except:
+                filtro_id = str(id_cliente_sessao)
+
+            # --- ATUALIZAÇÃO NO BANCO ---
+            resultado = sales_db.clientes.update_one(
+                {"id_cliente": filtro_id}, 
+                {
+                    "$set": {"senha": senha_hash}
+                }
+            )
+
+            if resultado.modified_count > 0:
+                print(f"✅ Senha do cliente {filtro_id} alterada com sucesso.")
+                # Remove a obrigação de trocar a senha
+                session.pop('troca_senha_pendente', None)
+                
+                # Redireciona para o Painel do Cliente
+                return redirect('/cliente/painel') # Ajuste se sua rota for diferente
+            else:
+                # Se não mudou nada (talvez a senha fosse igual ou erro de ID)
+                print(f"⚠️ Cliente {filtro_id} encontrado, mas senha não alterada.")
+                return redirect('/cliente/painel')
+
+        except Exception as e:
+            print(f"❌ Erro ao salvar senha: {e}")
+            return render_template(NOME_TEMPLATE, error="Erro interno. Tente novamente.")
+
+    # Se for GET, mostra a tela
+    return render_template(NOME_TEMPLATE)
+
 
 # ==============================================================================
 # A FUNÇÃO MAIN (MANTENHA ELA, SÓ AJUSTE O INÍCIO)

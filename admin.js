@@ -74,7 +74,8 @@ let processandoVitoria = false;
 
 // Controle de Hardware/Config
 let modoSorteio = 'auto'; 
-let vozAtiva = true;   
+let vozAtiva = true;
+let enviarPortaSerial = false;   
 let cameraAtiva = false;
 let sorteioAutomatizadoConfig = false; 
 
@@ -570,6 +571,7 @@ async function carregarDadosIniciaisSilencioso() {
             const elDelay = document.getElementById('config-atraso-video');
             if(elDelay) elDelay.value = aguardandoVideo; // Adicionei verificação de null aqui
             vozAtiva = data.parametrosInfo.voz_ativa !== undefined ? data.parametrosInfo.voz_ativa : true;
+            enviarPortaSerial = data.parametrosInfo.enviar_porta_serial !== undefined ? data.parametrosInfo.enviar_porta_serial : false;
             buscarSorteExtra =  data.parametrosInfo.buscar_sorte_extra !== undefined ? data.parametrosInfo.buscar_sorte_extra : true;
             const chkExtra = document.getElementById('chk-buscar-sorte-extra');
             if (chkExtra) {
@@ -754,8 +756,7 @@ function processarMensagemWS(event) {
 
         if (payload.parametrosInfo) {
             configuracaoServer = payload.parametrosInfo;
-            console.error("XXconfiguracaoServer       :",configuracaoServer);
-            
+                       
             if (configuracaoServer.sorteio_automatizado !== undefined) {
                 sorteioAutomatizadoConfig = configuracaoServer.sorteio_automatizado;
             }
@@ -766,6 +767,10 @@ function processarMensagemWS(event) {
 
             if (configuracaoServer.voz_ativa !== undefined) {
                 vozAtiva = configuracaoServer.voz_ativa;
+            }
+
+            if (configuracaoServer.enviar_porta_serial !== undefined) {
+                enviarPortaSerial = configuracaoServer.enviar_porta_serial;
             }
 
             if (configuracaoServer.modo_sorteio) {
@@ -1059,6 +1064,11 @@ function preencherModalConfig(params) {
         const chkExtra = document.getElementById('chk-buscar-sorte-extra');
         if (chkExtra) chkExtra.checked = params.buscar_sorte_extra;
     }
+
+    if (params.enviar_porta_serial !== undefined) {
+        const chkSerial = document.getElementById('config-enviar-serial');
+        if (chkSerial) chkSerial.checked = params.enviar_porta_serial;
+    }
     document.getElementById('config-nome-sala').value = params.nome_sala || 'LIVE THE BET';
     document.getElementById('config-url-padrao').value = params.url_padrao || '';
     document.getElementById('config-url-live').value = params.url_live || '';
@@ -1070,7 +1080,22 @@ function preencherModalConfig(params) {
     if (params.aviso_fim_das_vendas) {
         document.getElementById('config-aviso-fim-vendas').value = params.aviso_fim_das_vendas;
     }
+
+    const radiosModo = document.querySelectorAll('input[name="modo_sorteio"]');
+    
+    radiosModo.forEach(radio => {
+        // Remove listeners antigos para não duplicar (boa prática)
+        radio.removeEventListener('change', toggleOpcaoAutomatizado);
+        radio.removeEventListener('change', toggleOpcaoSerial);
+        
+        // Adiciona o evento para disparar AS DUAS funções ao mudar
+        radio.addEventListener('change', () => {
+            toggleOpcaoAutomatizado();
+            toggleOpcaoSerial();
+        });
+    });
     toggleOpcaoAutomatizado();
+    toggleOpcaoSerial();
 }
 
 function toggleOpcaoAutomatizado() {
@@ -1080,9 +1105,24 @@ function toggleOpcaoAutomatizado() {
     else container.classList.add('hidden');
 }
 
+function toggleOpcaoSerial() {
+    // Verifica se o modo MANUAL está selecionado
+    const radioManual = document.querySelector('input[name="modo_sorteio"][value="manual"]');
+    // Pega o container azul que criamos
+    const container = document.getElementById('container-check-serial');
+    
+    // Se existe e está marcado, mostra. Senão, esconde.
+    if (radioManual && radioManual.checked) {
+        container.classList.remove('hidden');
+    } else {
+        container.classList.add('hidden');
+    }
+}
+
 async function salvarConfiguracoes() {
     const winnerTime = document.getElementById('config-winner-time').value;
     const isVoz = document.getElementById('config-voz-ativa').checked;
+    const checkSerial = document.getElementById('config-enviar-serial').checked;   
     const isCam = document.getElementById('config-camera-ativa').checked;
     const tempoVendas = document.getElementById('config-aviso-fim-vendas').value; 
     const buscarExtra = document.getElementById('chk-buscar-sorte-extra').checked;
@@ -1121,7 +1161,8 @@ async function salvarConfiguracoes() {
         sorteio_automatizado: isSorteioAuto,
         aviso_fim_das_vendas: parseInt(tempoVendas) || 120,
         aguardandoVideo: valorAtrasoFinal,
-        buscar_sorte_extra: buscarExtra 
+        buscar_sorte_extra: buscarExtra,
+        enviar_porta_serial: checkSerial  
     };  
 
     try {
@@ -1129,7 +1170,7 @@ async function salvarConfiguracoes() {
             method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
         });
         
-        vozAtiva = isVoz; cameraAtiva = isCam; modoSorteio = modoSelecionado;
+        vozAtiva = isVoz; cameraAtiva = isCam; modoSorteio = modoSelecionado; enviarSerialValor = checkSerial 
         aplicarVisualModoSorteio(modoSorteio);
         aplicarVisibilidadeCamera(cameraAtiva);
         aguardandoVideo = valorAtrasoFinal;
@@ -1266,6 +1307,15 @@ async function inserirBolaManual() {
     bolaDestaque.textContent = valor;
     if (vozAtiva) falarTextoLocutor(String(valor));
     
+    if (enviarPortaSerial) {
+        // 1. Converte para string e garante 2 dígitos (ex: 5 vira "05", 15 vira "15")
+        let valorFormatado = String(valor).padStart(2, '0');
+        // 2. Monta o comando (ex: "F05")
+        let comandoFinal = `F${valorFormatado}`;
+        // 3. Envia
+        enviarComandoHardware(comandoFinal);
+    }
+
     bolasCacheLocal.add(valor);
 
     console.log(`[DEBUG] Inserindo bola manual: ${valor}`);
@@ -2972,11 +3022,11 @@ function enviarComandoHardware(codigoComando) {
     .then(res => res.json())
     .then(data => {
         if (data.status === 'sucesso') {
-            console.log("✅ Hardware respondeu:", data.msg);
+           console.log("📤 Comando enviado para a rede:", data.msg); 
             // Opcional: Mostrar um toast/aviso de sucesso
         } else {
-            console.error("❌ Erro Hardware:", data.erro);
-            alert("Erro ao comunicar com o equipamento: " + data.erro);
+            console.error("❌ Falha no Envio do Pacote:", data.erro);
+            alert("Erro no envio do pacote: " + data.erro);
         }
     })
     .catch(err => {

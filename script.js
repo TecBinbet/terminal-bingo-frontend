@@ -55,8 +55,6 @@ console.log(`🔧 [${isLocal ? 'LOCAL' : 'PROD'}] Sala: ${currentSalaId} | API: 
 console.log(`🔌 WebSocket Alvo: ${WS_URL}`);
 
 // --- FIM DA CONFIGURAÇÃO AUTOMÁTICA ---
-
-
 //
 //const backendVersionElement = document.getElementById('backend-version');
 //const frontendVersionElement = document.getElementById('frontend-version');
