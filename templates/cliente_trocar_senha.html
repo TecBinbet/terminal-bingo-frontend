@@ -8,10 +8,55 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #F3F4F6; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); width: 100%; max-width: 400px; }
-        .btn-primary { background-color: #2563EB; color: white; font-weight: bold; padding: 0.75rem; border-radius: 0.375rem; width: 100%; margin-top: 1rem; transition: background-color 0.2s; }
-        .btn-primary:hover { background-color: #1D4ED8; }
+        /* Fundo Escuro Global */
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #111827; /* gray-900 */
+            color: #F3F4F6; /* gray-100 */
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            margin: 0;
+        }
+        
+        /* Card Escuro */
+        .card { 
+            background: #1F2937; /* gray-800 */
+            padding: 2rem; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); 
+            width: 100%; 
+            max-width: 400px; 
+            border: 1px solid #374151; /* gray-700 */
+        }
+
+        /* Botão */
+        .btn-primary { 
+            background-color: #2563EB; 
+            color: white; 
+            font-weight: bold; 
+            padding: 0.75rem; 
+            border-radius: 0.375rem; 
+            width: 100%; 
+            margin-top: 1rem; 
+            transition: all 0.2s; 
+        }
+        .btn-primary:hover { 
+            background-color: #3B82F6; 
+            transform: translateY(-1px);
+        }
+
+        /* Inputs Escuros */
+        .input-dark {
+            background-color: #374151; /* gray-700 */
+            border: 1px solid #4B5563; /* gray-600 */
+            color: #F3F4F6;
+        }
+        .input-dark:focus {
+            border-color: #3B82F6;
+            ring: 2px solid #3B82F6;
+        }
         .input-com-icone { padding-right: 50px !important; }
     </style>
 </head>
@@ -19,18 +64,26 @@
 
     <div class="card animate-fade-in-up">
         <div class="text-center mb-6">
-            <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-red-100 mb-4">
-                <span class="text-2xl">🔒</span>
+            <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-blue-900/30 mb-4">
+                <span class="text-3xl">🔒</span>
             </div>
-            <h2 class="text-xl font-bold text-gray-800">Atualização Obrigatória</h2>
-            <p class="text-gray-500 text-sm mt-2">
+            
+            <h2 class="text-xl font-bold text-white mb-2">Atualização Obrigatória</h2>
+            
+            {% if nome %}
+            <p class="text-lg text-blue-400 font-semibold mb-2">
+                Olá, {{ nome }}!
+            </p>
+            {% endif %}
+
+            <p class="text-gray-400 text-sm">
                 Detectamos que você está usando a senha provisória. 
                 <br>Por favor, defina uma nova senha pessoal.
             </p>
         </div>
 
         {% if error %}
-            <div class="bg-red-50 border-l-4 border-red-500 text-red-700 p-3 mb-4 text-sm rounded" role="alert">
+            <div class="bg-red-900/50 border-l-4 border-red-500 text-red-200 p-3 mb-4 text-sm rounded" role="alert">
                 <p class="font-bold">Atenção:</p>
                 <p>{{ error }}</p>
             </div>
@@ -38,42 +91,42 @@
 
         <form method="POST" action="{{ url_for('cliente_troca_senha_obrigatoria') }}">
             
-            <div class="mb-4">
-                <label class="block text-gray-700 text-xs font-bold mb-1 uppercase tracking-wide">Nova Senha</label>
+            <div class="mb-5">
+                <label class="block text-gray-400 text-xs font-bold mb-1 uppercase tracking-wide">Nova Senha</label>
                 <div class="relative w-full">
                     <input type="password" name="nova_senha" id="nova_senha" required 
-                           class="input-com-icone w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
+                           class="input-com-icone input-dark w-full p-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 transition" 
                            placeholder="Crie sua nova senha">
                     
                     <button type="button" onclick="toggleSenha('nova_senha', this)" 
-                            class="absolute inset-y-0 right-0 px-3 flex items-center justify-center text-gray-400 hover:text-blue-600 focus:outline-none bg-transparent border-none cursor-pointer">
+                            class="absolute inset-y-0 right-0 px-3 flex items-center justify-center text-gray-400 hover:text-white focus:outline-none bg-transparent border-none cursor-pointer">
                         👁️
                     </button>
                 </div>
-                <p class="text-[10px] text-gray-400 mt-1">Não use "Senha" ou sequências simples.</p>
+                <p class="text-[10px] text-gray-500 mt-1">Não use "Senha" ou sequências simples.</p>
             </div>
 
-            <div class="mb-2">
-                <label class="block text-gray-700 text-xs font-bold mb-1 uppercase tracking-wide">Confirmar Nova Senha</label>
+            <div class="mb-4">
+                <label class="block text-gray-400 text-xs font-bold mb-1 uppercase tracking-wide">Confirmar Nova Senha</label>
                 <div class="relative w-full">
                     <input type="password" name="confirma_senha" id="confirma_senha" required 
-                           class="input-com-icone w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
+                           class="input-com-icone input-dark w-full p-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 transition" 
                            placeholder="Repita a senha">
                     
                     <button type="button" onclick="toggleSenha('confirma_senha', this)" 
-                            class="absolute inset-y-0 right-0 px-3 flex items-center justify-center text-gray-400 hover:text-blue-600 focus:outline-none bg-transparent border-none cursor-pointer">
+                            class="absolute inset-y-0 right-0 px-3 flex items-center justify-center text-gray-400 hover:text-white focus:outline-none bg-transparent border-none cursor-pointer">
                         👁️
                     </button>
                 </div>
             </div>
 
-            <button type="submit" class="btn-primary shadow-lg">
-                💾 Salvar e Acessar Sistema
+            <button type="submit" class="btn-primary shadow-lg uppercase tracking-wide text-sm">
+                💾 Salvar e Acessar
             </button>
         </form>
         
-        <div class="mt-4 text-center">
-            <a href="/logout-cliente" class="text-xs text-gray-400 hover:text-gray-600 underline">Cancelar e Sair</a>
+        <div class="mt-6 text-center">
+            <a href="/logout-cliente" class="text-sm text-gray-500 hover:text-gray-300 underline transition">Cancelar e Sair</a>
         </div>
     </div>
 

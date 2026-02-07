@@ -94,6 +94,11 @@ const lastBall3 = document.getElementById('last-ball-3');
 
 const digitalBolaPanel = document.getElementById('digital-bola-panel'); 
 const bolaDigitalElement = document.getElementById('bola-digital');
+
+const btnMenuFullscreen = document.getElementById('menu-btn-fullscreen');
+const statusFullscreen = document.getElementById('menu-status-fullscreen');
+const iconFullscreen = document.getElementById('icon-fullscreen');
+
 // Cores
 let corFundoCartela = "bg-gray-900";                 
 let corBordaCartela = "border-gray-700";             
@@ -355,7 +360,6 @@ const releaseWakeLock = () => {
     }
 };
 
-// xxx
 function pegarSalaDaUrl() {
     const params = new URLSearchParams(window.location.search);
     const sala = params.get('sala');
@@ -767,33 +771,62 @@ function closeEventsPanel() {
 }
 
 
+// ======================================================
+// FUNÇÃO DE DECISÃO (O "Guarda de Trânsito")
+// Conectada ao botão: onclick="iniciarCompraCartelas()"
+// ======================================================
 function iniciarCompraCartelas(idEvento) {
-    // 1. Fecha o painel de listagem de eventos para limpar a tela
-    if (typeof closeEventsPanel === 'function') {
-        closeEventsPanel();
-    }
+    console.log("🛒 Botão de compra acionado. ID recebido:", idEvento);
 
-    // 2. Se não estiver logado, abre o modal (que deve cair na tela de login)
-    if (!clienteLogado) {
-        abrirMenuCliente(idEvento); 
-        return;
-    }
+    // 1. Limpa painéis anteriores (Fecha lista de eventos se estiver aberta)
+    if (typeof closeEventsPanel === 'function') closeEventsPanel();
 
-    // 4. AUTOMATIZAÇÃO: Clica na aba "Comprar" automaticamente
-    setTimeout(() => {
-        // Usamos o ID que você me mostrou no HTML: 'tab-compra'
-        const btnAbaComprar = document.getElementById('tab-compra'); 
-        
-        if (btnAbaComprar) {
-            // O .click() vai disparar o 'mudarAba' e aplicar os estilos visuais (verde)
-            btnAbaComprar.click();
-        } else {
-            // Caso de segurança: chama a função direto se o botão não for achado
-            if (typeof mudarAba === 'function') {
-                mudarAba('compra');
-            }
+    // 2. Verifica Login (Segurança Básica)
+    if (!isUsuarioLogado()) {
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Você precisa fazer login para comprar cartelas.", "Login Necessário", "🔒");
         }
-    }, 100); // Pequeno delay para dar tempo do modal abrir
+        if (typeof abrirModalLogin === 'function') abrirModalLogin();
+        return; 
+    }
+
+    // 3. Lógica de Decisão
+    if (idEvento) {
+        // CASO A: Já sabemos o ID (clicou num evento específico da lista)
+        // Chama direto a função que você mandou
+        abrirModalCompra(idEvento); 
+
+    } else {
+        // CASO B: Clicou no botão flutuante genérico (sem ID)
+        // Precisamos perguntar pro servidor quem está ativo
+        
+        fetch(`${API_BASE_URL}/api/status_evento_ativo`)
+            .then(response => response.json())
+            .then(data => {
+                const statusReal = (data.status || '').toLowerCase().trim();
+                const idDoBanco = data.id_evento || data.id || data.numero; // Garante pegar o ID certo
+
+                console.log(`📡 Status do Evento Ativo: ${statusReal} (ID: ${idDoBanco})`);
+
+                if (statusReal === 'ativo' && idDoBanco) {
+                    // ✅ CENÁRIO 1: Existe evento rodando
+                    // Abre direto o modal de compra para esse evento
+                    abrirModalCompra(idDoBanco);
+                } else {
+                    // ❌ CENÁRIO 2: Não tem evento ativo (está agendado, finalizado ou null)
+                    // Abre a lista para o usuário escolher
+                    console.warn("⚠️ Nenhum evento ativo automático. Abrindo painel de escolha.");
+                    if (typeof openEventsPanel === 'function') {
+                        openEventsPanel();
+                    }
+                }
+            })
+            .catch(err => {
+                console.error("❌ Erro ao verificar status:", err);
+                // Na dúvida (erro de rede), abre a lista de eventos
+                if (typeof openEventsPanel === 'function') openEventsPanel();
+            });
+    }
 }
 
 
@@ -1570,17 +1603,78 @@ function closeMyCardsPanel() {
     }
 }
 
-// Adiciona um listener ao botão
-const fullscreenButton = document.getElementById('fullscreen-button');
-if (fullscreenButton) {
-    fullscreenButton.addEventListener('click', goFullscreen);
-    startPromocionalTimer();
+
+
+// 1. Função para Alternar (Entrar/Sair)
+function toggleFullscreen() {
+    if (!document.fullscreenElement &&    // Padrão
+        !document.mozFullScreenElement && // Firefox
+        !document.webkitFullscreenElement && // Chrome, Safari e Opera
+        !document.msFullscreenElement) {  // IE/Edge
+        
+        // --- ENTRAR NA TELA CHEIA ---
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen();
+        } else if (document.documentElement.msRequestFullscreen) {
+            document.documentElement.msRequestFullscreen();
+        } else if (document.documentElement.mozRequestFullScreen) {
+            document.documentElement.mozRequestFullScreen();
+        } else if (document.documentElement.webkitRequestFullscreen) {
+            document.documentElement.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
+        }
+    } else {
+        // --- SAIR DA TELA CHEIA ---
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        } else if (document.msExitFullscreen) {
+            document.msExitFullscreen();
+        } else if (document.mozCancelFullScreen) {
+            document.mozCancelFullScreen();
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        }
+    }
 }
-// Adiciona um listener ao documento para o evento de mudança de tela cheia
-document.addEventListener('fullscreenchange', handleFullscreenChange);
-document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-document.addEventListener('msfullscreenchange', handleFullscreenChange);
+
+// 2. Função Visual (Atualiza o botão ON/OFF)
+function updateFullscreenUI() {
+    // Verifica se há algum elemento em fullscreen
+    const isFull = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+
+    if (isFull) {
+        // MODO ATIVO
+        if(statusFullscreen) {
+            statusFullscreen.textContent = "ON";
+            statusFullscreen.classList.remove('text-gray-500');
+            statusFullscreen.classList.add('text-green-500');
+        }
+        if(iconFullscreen) iconFullscreen.textContent = "↙️"; // Ícone de recolher
+    } else {
+        // MODO DESATIVADO
+        if(statusFullscreen) {
+            statusFullscreen.textContent = "OFF";
+            statusFullscreen.classList.remove('text-green-500');
+            statusFullscreen.classList.add('text-gray-500');
+        }
+        if(iconFullscreen) iconFullscreen.textContent = "⛶"; // Ícone de expandir
+    }
+}
+
+// 3. Adiciona os Listeners
+if (btnMenuFullscreen) {
+    btnMenuFullscreen.addEventListener('click', (e) => {
+        e.preventDefault(); // Evita scroll ou comportamentos estranhos
+        toggleFullscreen();
+    });
+}
+
+// Escuta mudanças no navegador (ex: se apertar F11 ou ESC) para atualizar o botão
+document.addEventListener('fullscreenchange', updateFullscreenUI);
+document.addEventListener('webkitfullscreenchange', updateFullscreenUI);
+document.addEventListener('mozfullscreenchange', updateFullscreenUI);
+document.addEventListener('msfullscreenchange', updateFullscreenUI);
+
+updateFullscreenUI();
 
 function setupCartelasEmJogo(maxCardNumber) {
     const isMobile = isMobileDevice();
@@ -2970,7 +3064,7 @@ function exibirConferenciaSorteExtra(dados) {
     // Layout Flex centralizado
     gridEl.className = 'flex flex-wrap justify-center items-center gap-3 w-full p-4 bg-gray-800/50 rounded-xl border border-yellow-600/30';
 
-    // Recupera as bolas que já saíram no jogo (Garante que é um array)  xxx
+    // Recupera as bolas que já saíram no jogo (Garante que é um array)  
     const bolasDoJogo = (typeof globalBolasCantadas !== 'undefined' && Array.isArray(globalBolasCantadas)) 
         ? globalBolasCantadas 
         : [];
@@ -5118,6 +5212,11 @@ async function salvarNovoUsuario() {
         return;
     }
 
+    if (senha.toLowerCase() === "senha") {
+        showCustomAlert("⚠️ Você não pode usar a senha padrão 'Senha'. Por favor, crie uma senha pessoal e segura.", "Senha Inválida", "🚫");
+        return;
+    }
+
     // 3. Envio
     showFullLoading("Criando sua conta...");
 
@@ -5880,6 +5979,13 @@ async function realizarLogin() {
 
         const data = await response.json();
 
+        if (data.status === 'troca_senha_obrigatoria') {
+            // Backend mandou trocar a senha. Redirecionar imediatamente.
+            // if (data.mensagem) alert(data.mensagem); // Opcional: avisar antes de ir
+            window.location.href = data.redirect_url;
+            return; // Pára tudo aqui para não dar erro embaixo
+        }
+
         if (response.ok && data.status === 'ok') {
             
             // === NOVA LÓGICA: SALVAR NO LOCALSTORAGE ===
@@ -6443,12 +6549,12 @@ function gerarBadgeStatusEvento(config) {
     // CENÁRIO 1: É EVENTO FUTURO (Aviso Amarelo com Fundo Vermelho)
     if (config.is_evento_futuro) {
         return `
-        <div class="w-full bg-red-600 border-2 border-yellow-400 p-2 rounded-lg mb-2 shadow-lg animate-pulse">
-            <div class="flex items-center justify-center gap-2 text-yellow-300 font-black text-sm uppercase tracking-wider">
+        <div class="w-full bg-red-600 border-2 border-yellow-400 p-0 rounded-lg mb-1 shadow-lg animate-pulse">
+            <div class="flex items-center justify-center gap-2 text-black font-black text-sm uppercase tracking-wider">
                 ⚠️ ATENÇÃO: PRÓXIMO EVENTO
             </div>
             <div class="text-center text-white font-bold text-xs">
-                Vendas abertas para: <span class="text-yellow-300 block text-sm">${config.data_hora_evento}</span>
+                Vendas abertas para: <span class="text-yellow-300 block text-sm -mt-1">${config.data_hora_evento}</span>
             </div>
         </div>
         `;
@@ -6710,10 +6816,10 @@ function atualizarDisplaySelecao() {
         const el = document.createElement('div');
         
         if (num !== undefined) {
-            el.className = "w-8 h-8 rounded-full bg-yellow-500 text-black font-bold flex items-center justify-center shadow border-2 border-white animate-pop";
+            el.className = "w-8 h-8 rounded-full bg-yellow-500 -mt-2 text-black font-bold flex items-center justify-center shadow border-2 border-white animate-pop";
             el.innerText = num;
         } else {
-            el.className = "w-8 h-8 rounded-full border-2 border-dashed border-gray-600 flex items-center justify-center text-gray-500 text-xs";
+            el.className = "w-8 h-8 rounded-full border-2 border-dashed border-gray-600 -mt-2 flex items-center justify-center text-gray-500 text-xs";
             el.innerText = i+1;
         }
         container.appendChild(el);

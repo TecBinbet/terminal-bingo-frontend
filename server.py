@@ -3994,9 +3994,12 @@ def api_login_cliente():
 
         # --- PONTO DE TRAVAMENTO 3: BCRYPT (PROCESSAMENTO PESADO) ---
         if 'senha' in cli:
+
             # ATENÇÃO: Capitalize aqui pode impedir login se a senha real for "batata" e virar "Batata"
             # O ideal seria testar a senha original primeiro, e depois o capitalize como fallback.
             senha_fmt = senha.capitalize()
+
+            senha_banco = cli['senha']
             
             # print("📍 [DEBUG] 07. Iniciando verificação de senha (bcrypt)...")
             
@@ -4019,10 +4022,11 @@ def api_login_cliente():
                 # --- VERIFICAÇÃO DE TROCA DE SENHA OBRIGATÓRIA ---
                 # CUIDADO: No seu código estava "@senha@". Voltei para "senha".
                 # Se a sua senha padrão for realmente "@senha@", altere abaixo.
-                if senha.lower() == "@senha@": 
+                if senha.lower() == "senha": 
                     session['id_cliente'] = str(cli['id_cliente']) 
+                    session['nick_cliente'] = cli['nick']
                     session['troca_senha_pendente'] = True
-    
+
                     return jsonify({
                         "status": "troca_senha_obrigatoria",
                         "mensagem": "Por segurança, você deve atualizar sua senha.",
@@ -4458,6 +4462,9 @@ def cadastrar_cliente():
         if sales_db.clientes.find_one({'nick': {'$regex': f'^{nick}$', '$options': 'i'}}):
             return jsonify({'erro': 'Este usuário já está sendo usado por outra pessoa.'}), 409
 
+        if senha_raw.lower() == "senha":
+            return jsonify({'erro': "Você não pode usar a senha padrão 'Senha'. Escolha outra."}), 400
+
         # 3. Criptografia da Senha
         senha_hash = bcrypt.hashpw(senha_formatada.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
@@ -4780,9 +4787,36 @@ def get_config_sorte_extra(id_evento_solicitado):
         is_futuro = (id_evento_venda != id_evento_tela)
 
         # 3. LÊ DIRETO DO BANCO (Sem buscas extras)
-        # Se não tiver gravado ainda, usa um fallback genérico
-        info_evento = config.get('data_hora_evento', 'Próximo Evento')
-        
+        # Se não tiver gravado ainda, usa um fallback genérico   
+
+        raw_info = config.get('data_hora_evento', 'Próximo Evento')
+
+        # Verifica se o texto é longo o suficiente para ter a data no final
+        # O trecho "30/01/2026 às 18:00" tem 19 caracteres
+        if len(raw_info) > 19:
+            
+            # 1. Pega a Descrição (O Início)
+            # Vai do começo até faltar 19 caracteres para o fim.
+            # Ex: "Notebook No Valor De 2000 - "
+            descricao = raw_info[:-19] 
+
+            # 2. Pega a Data Curta (O Dia/Mês)
+            # Começa no -19 e pega 5 letras.
+            # Ex: "30/01"
+            data_curta = raw_info[-19:-14]
+
+            # 3. Pega a Hora (As 5 últimas letras)
+            # Ex: "18:00"
+            hora = raw_info[-5:]
+
+            # 4. Junta tudo formatado
+            # Resultado: "Notebook No Valor De 2000 - 30/01-18:00"
+            info_evento = f"{descricao}{data_curta}-{hora}"
+            
+        else:
+            # Se for texto curto (ex: "Aguarde..."), mantém original
+            info_evento = raw_info
+
          
         if not ativar_extra_global:
             print(f"🔒 [API] Chave Global OFF. Ocultando Sorte Extra do evento {id_evento_venda}.")
@@ -5174,12 +5208,15 @@ def atualizar_ponteiro_sorte_extra(id_evento_finalizado):
             novo_id = int(proximo_evento['id_evento'])
             
             # Pega os dados para formatar o texto
-            data_next = proximo_evento.get('data_evento')
+            adata_next = proximo_evento.get('data_evento')
             hora_next = proximo_evento.get('hora_evento')
             descricao_next = proximo_evento.get('descricao')
             
-            # Cria a string formatada "DD/MM/YYYY às HH:MM"
-            texto_info_evento = f"{descricao_next} - {data_next} às {hora_next}"
+            # --- FORMATAÇÃO DE DATA COMPACTA (DD/MM - HH:MM) ---    
+            adata_next = f"{adata_next[:5]} - {hora_next}"
+ 
+            # Cria a string formatada "DD/MM/YYYY às HH:MM"  yyy
+            texto_info_evento = f"{descricao_next} - {adata_next}"
             
             print(f"✅ PRÓXIMO: {descricao_next} - ID {novo_id} - Info: {texto_info_evento}")
         else:
@@ -5346,6 +5383,10 @@ def cliente_troca_senha_obrigatoria():
     # Nome do arquivo HTML correto (o último que você enviou)
     NOME_TEMPLATE = 'cliente_trocar_senha.html'
 
+    # --- NOVO: PEGA O NOME DA SESSÃO PARA EXIBIR ---
+    nome_exibir = session.get('nick_cliente', 'Cliente') # Pega o nick salvo no login
+    # -----------------------------------------------
+
     if request.method == 'POST':
         nova_senha = request.form.get('nova_senha', '').strip()
         confirma_senha = request.form.get('confirma_senha', '').strip()
@@ -5369,8 +5410,11 @@ def cliente_troca_senha_obrigatoria():
             if sales_db is None:
                 return render_template(NOME_TEMPLATE, error="Erro de conexão com o banco.")
 
+            # Fiz este ajuste , ficou correto?
+            nova_senha_gravar =  nova_senha.capitalize()
+            
             # 3. CRIPTOGRAFIA: Gera o Hash para o login funcionar depois
-            senha_hash = bcrypt.hashpw(nova_senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            senha_hash = bcrypt.hashpw(nova_senha_gravar.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
             # Prepara o filtro (alguns bancos usam int, outros string)
             try:
@@ -5392,18 +5436,30 @@ def cliente_troca_senha_obrigatoria():
                 session.pop('troca_senha_pendente', None)
                 
                 # Redireciona para o Painel do Cliente
-                return redirect('/cliente/painel') # Ajuste se sua rota for diferente
+                return redirect('/') # Ajuste se sua rota for diferente
             else:
                 # Se não mudou nada (talvez a senha fosse igual ou erro de ID)
                 print(f"⚠️ Cliente {filtro_id} encontrado, mas senha não alterada.")
-                return redirect('/cliente/painel')
+                return redirect('/')
 
         except Exception as e:
             print(f"❌ Erro ao salvar senha: {e}")
             return render_template(NOME_TEMPLATE, error="Erro interno. Tente novamente.")
 
     # Se for GET, mostra a tela
-    return render_template(NOME_TEMPLATE)
+    return render_template(NOME_TEMPLATE, nome=nome_exibir)
+
+# ========================
+#  LOGOUT DO CLIENTE
+# ========================
+@app.route('/logout-cliente')
+def logout_cliente():
+    # Limpa todos os dados da sessão (ID, Nick, Flags, etc.)
+    session.clear()
+    print("👋 Cliente fez logout via Cancelar/Sair.")
+    
+    # Redireciona para a tela inicial (Login)
+    return redirect('/')
 
 
 # ==============================================================================

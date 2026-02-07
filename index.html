@@ -34,8 +34,7 @@
 </head>
 
 <body class="bg-gray-800 text-white min-h-screen overflow-hidden">
-    <button id="fullscreen-button">Tela Cheia</button>    
-    
+   
     <div id="loader" class="fixed inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75 z-[9999] hidden">
         <div class="flex flex-col items-center">
             <div class="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-green-500"></div>
@@ -540,6 +539,15 @@
                             <span id="menu-status-tema" class="text-xs font-bold text-gray-500">DARK</span>
                         </button>
                     </li>
+                    <li>
+                        <button id="menu-btn-fullscreen" class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-200">
+                            <div class="flex items-center gap-2">
+                                <span id="icon-fullscreen">⛶</span>
+                                <span class="font-medium">Tela Cheia</span>
+                            </div>
+                            <span id="menu-status-fullscreen" class="text-xs font-bold text-gray-500">OFF</span>
+                        </button>
+                    </li>
                 </ul>
                 <ul>
                      <li onclick="fazerLogout()" class="cursor-pointer p-2 hover:bg-red-600 hover:text-white rounded-lg transition-colors flex items-center gap-3 mt-4 border-t border-gray-700/30">
@@ -880,8 +888,8 @@
         <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
             
             <div class="flex-1 flex flex-col bg-gray-900 relative overflow-hidden">
-                <div class="bg-gray-800/50 p-2 text-center border-b border-gray-700 shrink-0">
-                    <p class="text-gray-300 text-lg font-semibold mb-1 -mt-2">Selecione <span id="lbl-qtde" class="text-yellow-400 font-bold text-lg">3</span> números:</p>
+                <div class="bg-gray-800/50 p-1 text-center border-b border-gray-700 shrink-0">
+                    <p class="text-gray-300 text-lg font-semibold mb-1 -mt-2.5">Selecione <span id="lbl-qtde" class="text-yellow-400 font-bold text-lg">3</span> números:</p>
                     <div class="flex justify-center gap-3" id="display-selecao"></div>
                 </div>
                 <div class="flex-1 overflow-y-auto p-2 custom-scrollbar">
@@ -908,7 +916,7 @@
                         <span>⬇️</span> ADICIONAR AO CARRINHO
                     </button>
                     <button id="btn-finalizar-extra" onclick="finalizarCompraExtra()" disabled
-                        class="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all animate-pulse disabled:animate-none flex items-center justify-center gap-2">
+                        class="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-bold py-3 rounded-xl shadow-lg transition-all animate-pulse disabled:animate-none flex items-center justify-center gap-2">
                         <span>✅</span> FINALIZAR COMPRA
                     </button>
                 </div>
