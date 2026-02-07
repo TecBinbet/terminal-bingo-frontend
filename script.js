@@ -890,16 +890,16 @@ async function verificarNovasCompras() {
         return; 
     }
     // ---------------------------------------------
-    let urlBaseSegura = API_BASE_URL;
+
     
     // Se for localhost, ignoramos qualquer prefixo de sala (/sala1) e vamos na raiz
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
          urlBaseSegura = ""; 
     }
-
+                              /// new forma
     try {
         // 3. Consulta Silenciosa
-        const url = `${urlBaseSegura}/api/consultar_cartelas_evento?id_evento=${idRodada}&id_cliente=${clienteLogadoId}`;
+        const url = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idRodada}&id_cliente=${clienteLogadoId}`;
         const response = await fetch(url, { credentials: 'include' });
         
         if (!response.ok) return;
@@ -1492,6 +1492,8 @@ function handleFullscreenChange() {
     }
 }
 
+
+
 // --- FUNÇÃO SEGURA: Abrir Minhas Cartelas ---
 function openMyCardsPanel() {
     
@@ -1506,58 +1508,49 @@ function openMyCardsPanel() {
     const loaderEl = document.getElementById('loader'); 
     
     if (loaderEl) {
-        // Remove 'hidden' (caso use Tailwind) e força o display flex
         loaderEl.classList.remove('hidden');
         loaderEl.style.display = 'flex';
     }
 
-    // =================================================================
-    // ✅ USANDO SUAS VARIÁVEIS GLOBAIS JÁ EXISTENTES
-    // =================================================================
-    // Se eventoCarregadoAtual estiver vazio, usa o 'padrao' por segurança
+    // ✅ CONFIGURAÇÃO PARA SERVIDOR INDEPENDENTE (SEM PREFIXO /SALA1)
     const evtId = eventoCarregadoAtual || 'padrao';
     const cliId = globalIdCliente || '';
     
-    console.log(`🚀 Buscando cartelas -> Evento: ${evtId} | Cliente: ${cliId}`);
+    console.log(`🚀 Buscando as cartelas -> Evento: ${evtId} | Cliente: ${cliId}`);
 
-    const partesUrl = window.location.pathname.split('/');
-    const salaAtual = partesUrl[1] || 'sala1'; // Pega "sala1", "sala2" ou usa "sala1" de fallback
-
-    // 2. Monta a URL correta: /sala1/api/...
-    const urlApi = `/${salaAtual}/api/consultar_cartelas_evento?id_evento=${evtId}&id_cliente=${cliId}`;
+    // A URL deve usar apenas o API_BASE_URL (que está vazio "") 
+    // para resultar em: /api/consultar_cartelas_evento...
+    const urlApi = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${evtId}&id_cliente=${cliId}`;
 
     // 2. Busca no Servidor
     fetch(urlApi) 
         .then(res => {
-            // Dica de Debug: Se não for ok (200), joga erro pra cair no catch
+            // Se o console mostrar 404 aqui, verifique se API_BASE_URL está realmente "" no topo do arquivo
             if (!res.ok) throw new Error(`Erro HTTP: ${res.status}`);
             return res.json();
         })
         .then(data => {
-            // 1. Atualiza a memória Global com o que veio do banco
             if (Array.isArray(data)) {
-                // Caso sua API em algum momento devolva direto o array
                 cartelasDoJogador = data; 
             } else {
-                // O caso mais provável: devolve objeto com propriedade cartelas
                 cartelasDoJogador = data.cartelas || []; 
             }
 
-            // 2. Agora sim, com os dados na mão, forçamos o cálculo matemático
+            // Reprocessa os acertos baseados no que já foi sorteado
             forcarReprocessamentoVisual();
 
             renderizarListaMinhasCartelas(data);
             mostrarPainelMinhasCartelas();
-            // if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
         })
         .catch(err => {
-            console.error(err);
-            myCardsList.innerHTML = '<div class="p-4 text-center text-red-400">Erro de conexão.</div>';
+            console.error("❌ Erro no fetch de cartelas:", err);
+            myCardsList.innerHTML = '<div class="p-4 text-center text-red-400">Erro ao carregar cartelas.</div>';
             mostrarPainelMinhasCartelas();
         })
-        .finally(() => { if (loader) loader.style.display = 'none'; });
+        .finally(() => { 
+            if (loaderEl) loaderEl.style.display = 'none'; 
+        });
 }
-
 
 
 // Função auxiliar para exibir o painel e esconder o loader
@@ -6652,7 +6645,7 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
         if (elQtde) elQtde.innerText = dados.qtde_dezenas;
         
         const elRegras = document.getElementById('lbl-regras-resumo');
-        const containerBtnHeader = document.getElementById('container-btn-regras-header');
+        const containerBtnHeader = document.getElementById('container-btn-regras-novo');
 
         if (containerBtnHeader) containerBtnHeader.innerHTML = '';
 
@@ -6676,7 +6669,7 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
                 if (containerBtnHeader) {
                     containerBtnHeader.innerHTML = `
                         <button id="btn-ver-regras" onclick="toggleRegrasExtra()" 
-                            class="text-[16px] md:text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-green-300 py-1 px-3 rounded border border-gray-500 transition-all shadow-sm flex items-center gap-1">
+                            class="text-[16px] md:text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-green-300 py-1 px-2 rounded border border-gray-500 transition-all shadow-sm flex items-center gap-1">
                             <span>📜 Regras</span>
                         </button>
                     `;
@@ -6713,7 +6706,6 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
         console.warn("Sorte Extra indisponível:", e.message); 
     }
 }
-
 
 
 function abrirTelaSorteExtra() {
@@ -6809,26 +6801,50 @@ function atualizarDisplaySelecao() {
     btnAdd.disabled = !completo;
 }
 
-// 5. ADICIONAR CUPOM AO CARRINHO
+// 5. ADICIONAR CUPOM AO CARRINHO (Versão Final e Segura)
 function adicionarCupomAoCarrinho() {
-    const cupom = [...configSorteExtra.numeros_selecionados].sort((a, b) => a - b);
-    
+    // 1. Prepara e ordena a combinação atual para comparação
+    const cupomAtual = [...configSorteExtra.numeros_selecionados].sort((a, b) => a - b);
+    const chaveNova = cupomAtual.join('-');
+
+    // 2. Verifica se a combinação já existe no carrinho (dentro do objeto configSorteExtra)
+    const jaExiste = configSorteExtra.carrinho.some(itemNoCarrinho => {
+        // Ordenamos os números salvos para comparar maçãs com maçãs
+        const numerosExistentes = [...itemNoCarrinho.numeros].sort((a, b) => a - b);
+        return numerosExistentes.join('-') === chaveNova;
+    });
+
+    if (jaExiste) {
+        showCustomAlert("Você já escolheu esses mesmos números em outro cupom!", "Ops", "⚠️");
+        return; 
+    }   
+ 
+    // 3. Adiciona ao carrinho se for único
     configSorteExtra.carrinho.push({
-        numeros: cupom,
+        numeros: cupomAtual, // Salva ordenado para facilitar a vida
         id_temp: Date.now()
     });
 
-    // Limpa seleção visual e lógica
+    // 4. Limpeza e Atualização Visual
     configSorteExtra.numeros_selecionados = [];
-    renderizarGridVolante(); // Redesenha para limpar as cores
+    
+    renderizarGridVolante(); 
     atualizarDisplaySelecao();
     atualizarCarrinhoUI();
+    
+    // Auto-scroll para o último cupom adicionado
+    setTimeout(() => {
+        const lista = document.getElementById('lista-carrinho');
+        if (lista) lista.scrollTop = lista.scrollHeight;
+    }, 100);
 }
+
 
 // 6. GERENCIAR CARRINHO UI
 function atualizarCarrinhoUI() {
     const lista = document.getElementById('lista-carrinho');
     const lblTotal = document.getElementById('lbl-total-carrinho');
+    const qtdTotal = document.getElementById('lbl-qtde-carrinho');
     const btnFinalizar = document.getElementById('btn-finalizar-extra');
 
     // --- BLINDAGEM: Se os elementos não existirem, para aqui e não dá erro ---
@@ -6836,20 +6852,21 @@ function atualizarCarrinhoUI() {
 
     lista.innerHTML = "";
     let total = 0;
+    let qtde = 0;
 
     if (configSorteExtra.carrinho.length === 0) {
         lista.innerHTML = '<div class="text-center text-gray-500 text-sm mt-8 italic">Nenhum cupom.</div>';
     } else {
         configSorteExtra.carrinho.forEach((item, index) => {
             total += configSorteExtra.preco;
-            
+            qtde ++;
             const row = document.createElement('div');
-            row.className = "bg-gray-700/50 rounded-lg border border-gray-600 flex justify-between items-center animate-fade-in-left";
+            row.className = "bg-gray-700/50 rounded-lg border border-gray-600 flex justify-between items-center px-1 animate-fade-in-left";
             row.innerHTML = `
                 <div class="flex gap-2">
-                    ${item.numeros.map(n => `<span class="bg-black text-yellow-500 text-[16px] px-3 py-0.5 rounded font-bold">${n < 10 ? '0'+n : n}</span>`).join('')}
+                    ${item.numeros.map(n => `<span class="bg-black text-yellow-500 text-[14px] px-3 py-0.5 rounded font-bold">${n < 10 ? '0'+n : n}</span>`).join('')}
                 </div>
-                <button onclick="removerCupom(${index})" class="text-red-400 hover:text-red-200 p-1 hover:bg-red-900/30 rounded">
+                <button onclick="removerCupom(${index})" class="text-red-400 hover:text-red-200 hover:bg-red-900/30 rounded">
                     🗑️
                 </button>
             `;
@@ -6858,7 +6875,8 @@ function atualizarCarrinhoUI() {
     }
 
     lblTotal.innerText = `R$ ${total.toFixed(2)}`;
-    
+    qtdTotal.innerText = `Qt ${qtde}`;
+
     // Habilita Botão Finalizar
     if (configSorteExtra.carrinho.length > 0) {
         btnFinalizar.disabled = false;

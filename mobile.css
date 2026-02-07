@@ -238,3 +238,11 @@ html, body {
             from { --angle: 0deg; }
             to { --angle: 360deg; }
         }
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #4b5563; /* Cor cinza */
+    border-radius: 10px;
+}
