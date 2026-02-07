@@ -58,13 +58,15 @@ let jogoFoiFinalizadoComSucesso = false;
 let cartelasPendentesAuditoria = [];
 let idsConfirmadosNestaRodada = new Set()
 
+// --- MATRIZ DE SINCRONIA (BUFFER DE SAÍDA) ---
+
 let bolasEmTransito = new Set();
 let aguardandoVideo = 0; // temporizaor de atraso
 
-// --- MATRIZ DE SINCRONIA (BUFFER DE SAÍDA) ---
 let matrizEnvio = []; 
+let isEnviando = false;
 let bolasCacheLocal = new Set();
-let timerSincronia = setInterval(processarMatrizEnvio, 100);
+let timerSincronia = setInterval(processarMatrizEnvio, 200);
 
 let matrizAcoes = []; 
 
@@ -80,52 +82,26 @@ let cameraAtiva = false;
 let sorteioAutomatizadoConfig = false; 
 
 // ======================================================
-// CONFIGURAÇÃO BLINDADA (LOCAL vs PRODUÇÃO) - ADMIN
+// CONFIGURAÇÃO BLINDADA (SERVIDOR INDEPENDENTE) - ADMIN
 // ======================================================
 
-// 1. Detecta parâmetros
-const urlParamsGlobal = new URLSearchParams(window.location.search);
-const salaParam = urlParamsGlobal.get('sala');
-const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+// 1. Detecta protocolo e host automaticamente
 const protocolWS = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-const host = window.location.host; // ex: localhost ou meudominio.com
+const host = window.location.host; 
 
-// 2. Define ID da Sala
-var currentSalaId = "003"; // Padrão
-if (salaParam) currentSalaId = salaParam.padStart(3, '0');
+// 2. Define ID da Sala (Apenas para fins visuais no painel)
+const urlParamsGlobal = new URLSearchParams(window.location.search);
+var currentSalaId = urlParamsGlobal.get('sala') || "001"; 
 
 // 3. Define URLs (API e WebSocket)
-var API_BASE_URL = "";
-var WS_URL = "";
+// Como o servidor agora é independente, a API e o WS rodam na RAIZ.
+var API_BASE_URL = ""; 
+var WS_URL = `${protocolWS}${host}/stream`;
 
-if (isLocal) {
-    // --- MODO LOCAL (FURA-FILA DO NGINX) ---
-    // Como abrimos as portas no Docker, vamos direto no Python.
-    // Isso resolve erros 404, 405 e quedas de socket no Localhost.
-    
-    let portLocal = 5000; // Padrão (Sala 3)
-    if (currentSalaId === '001') portLocal = 5001;
-    if (currentSalaId === '002') portLocal = 5002;
-
-    // AQUI ESTÁ O SEGREDO: Definimos a URL completa com a porta
-    API_BASE_URL = `http://${window.location.hostname}:${portLocal}`;
-    WS_URL = `ws://${window.location.hostname}:${portLocal}/stream`;
-
-    console.log(`🏠 LOCAL MODE: Conectando direto na porta ${portLocal}`);
-
-} else {
-    // --- MODO PRODUÇÃO (NUVEM) ---
-    // Na nuvem, o Nginx gerencia tudo via prefixos
-    if (salaParam === '1') API_BASE_URL = "/sala1";
-    else if (salaParam === '2') API_BASE_URL = "/sala2";
-    else API_BASE_URL = "/sala3";
-
-    WS_URL = `${protocolWS}${host}${API_BASE_URL}/stream`;
-}
-
-console.log(`🔧 [ADMIN] Sala: ${currentSalaId}`);
-console.log(`🔗 API: ${API_BASE_URL}`);
-console.log(`🔌 WS:  ${WS_URL}`);
+console.log(`🚀 [ADMIN] Conectado ao Servidor: ${host}`);
+console.log(`🔧 Sala Referência: ${currentSalaId}`);
+console.log(`🔗 API Base: ${API_BASE_URL || '(raiz)'}`);
+console.log(`🔌 WS Alvo: ${WS_URL}`);
 
 // --- VARIÁVEIS DE CONEXÃO (Mantidas) ---
 let socket = null;
@@ -133,54 +109,99 @@ let reconnectInterval = null;
 let countdownInterval = null;
 let houveGanhadorNaSessao = false;
 const RECONNECT_DELAY = 5000;
-// ======================================================
-
 
 
 // =========================================================
-// === 1. LÓGICA ATRASO DA GRAVAÇÃO ===
+// === ROTINA APRIMORADA: BUFFER COM RETRY E TRAVA ===
 // =========================================================
-
 async function processarMatrizEnvio() {
-    if (matrizEnvio.length === 0) return;
+    
+    // 1. TRAVA DE SEGURANÇA
+    // Se a fila está vazia OU se já estamos tentando enviar algo, paramos.
+    if (matrizEnvio.length === 0 || isEnviando) return;
 
+    // Pega o primeiro da fila (sem remover ainda!)
     const item = matrizEnvio[0]; 
     
-    // Se o modo for 'manual', usa o delay configurado. Senão, é zero. aquixx 
-    const delay = (modoSorteio === 'manual') ? (aguardandoVideo || 0) : 0;
+    // 2. CÁLCULO DO DELAY DINÂMICO
+    // Permite mudar o delay no meio do jogo e afetar as bolas que já estão na fila
+    const delayConfigurado = (typeof aguardandoVideo !== 'undefined') ? aguardandoVideo : 0;
+    const delayAplicavel = (modoSorteio === 'manual') ? delayConfigurado : 0;
 
-    // Log para verificar se o delay está correto
-    // console.log(`[DEBUG] Matriz: Aguardando ${delay}ms | Atual: ${Date.now() - item.hora}ms`);
+    // Verifica se já "cozinhou" o tempo suficiente
+    const tempoDecorrido = Date.now() - item.hora;
+    
+    // debug opcional (cuidado com flood no console)
+    // console.log(`[BUFFER] Item: ${item.valor} | Espera: ${tempoDecorrido}/${delayAplicavel}ms`);
 
-    if (Date.now() - item.hora >= delay) {
-        matrizEnvio.shift(); // Remove da fila
+    if (tempoDecorrido >= delayAplicavel) {
         
-        console.log(`[DEBUG] 🚀 Enviando para o PÚBLICO: [${item.tipo}] Valor: ${item.valor}`);
+        // 3. ATIVA A TRAVA
+        isEnviando = true;
 
         try {
-            if (item.tipo === 'BOLA_CLIENTE') {
-                await fetch(`${API_BASE_URL}/api/admin/publicar_bola`, {
-                    method: 'POST', 
-                    headers: {'Content-Type': 'application/json'}, 
-                    body: JSON.stringify({ bola: item.valor })
-                });
-            } 
-            else if (item.tipo === 'PREMIO_CLIENTE') {
-                console.log(`[DEBUG] 🏆 Atualizando prêmio público para: ${item.valor}`);
-                await fetch(`${API_BASE_URL}/api/admin/definir_premio_publico`, {
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ premio: item.valor })
-                });
-            }    
-            else if (item.tipo === 'LIMPAR_PUBLICO') {
-                console.log(`[DEBUG] 🧹 Limpando tela pública`);
-                await fetch(`${API_BASE_URL}/api/admin/limpar_conferencia_publica`, { method: 'POST' });
+            console.log(`[SYNC] 🚀 Enviando item retido há ${(tempoDecorrido/1000).toFixed(1)}s:`, item.tipo);
+
+            let urlEndpoint = '';
+            let bodyData = {};
+
+            // Mapeamento dos tipos para configurar a requisição
+            switch (item.tipo) {
+                case 'BOLA_CLIENTE':
+                    urlEndpoint = `${API_BASE_URL}/api/admin/publicar_bola`;
+                    bodyData = { bola: item.valor };
+                    break;
+                case 'PREMIO_CLIENTE':
+                    urlEndpoint = `${API_BASE_URL}/api/admin/definir_premio_publico`;
+                    bodyData = { premio: item.valor };
+                    break;
+                case 'LIMPAR_PUBLICO':
+                    urlEndpoint = `${API_BASE_URL}/api/admin/limpar_conferencia_publica`;
+                    bodyData = {}; // Body vazio pode ser necessário dependendo do backend
+                    break;
+                default:
+                    console.warn("Tipo desconhecido na matriz, removendo...", item.tipo);
+                    matrizEnvio.shift();
+                    isEnviando = false;
+                    return;
             }
 
-        } catch (e) {
-            console.error(`[DEBUG] ❌ Erro ao enviar [${item.tipo}]:`, e);
+            // 4. EXECUÇÃO DO ENVIO (COM AWAIT REAL)
+            const response = await fetch(urlEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(bodyData)
+            });
+
+            if (response.ok) {
+                // ✅ SUCESSO: Agora sim podemos remover da fila
+                matrizEnvio.shift(); 
+                
+                // Feedback visual para o Admin (Opcional: atualizar contador de fila)
+                atualizarIndicadorFila(matrizEnvio.length);
+            } else {
+                // ⚠️ FALHA DO SERVIDOR (500, 404)
+                // Não removemos da fila! Ele tentará de novo em 100ms.
+                console.error(`[SYNC] Erro servidor ${response.status}. Tentando novamente...`);
+            }
+
+        } catch (erroRede) {
+            // ❌ FALHA DE REDE (Sem internet)
+            // Não removemos da fila. O sistema fica tentando até a internet voltar.
+            console.error(`[SYNC] Erro de Rede: ${erroRede.message}. Retentando...`);
+        } finally {
+            // 5. LIBERA A TRAVA (Sempre, mesmo com erro)
+            isEnviando = false;
         }
+    }
+}
+
+// Função auxiliar para mostrar ao locutor que tem coisas pendentes
+function atualizarIndicadorFila(qtd) {
+    const el = document.getElementById('indicador-fila-sync');
+    if (el) {
+        el.innerText = qtd > 0 ? `⏳ Sincronizando: ${qtd}` : "✅ Sincronizado";
+        el.style.color = qtd > 0 ? "orange" : "lightgreen";
     }
 }
 
@@ -1278,7 +1299,8 @@ async function sortearBola() {
            valor: data.bola,
            hora: Date.now()
         });
-        
+        atualizarIndicadorFila(matrizEnvio.length);
+
     } catch (error) { console.error("[DEBUG] Erro sortearBola:", error); } 
     finally { isSorting = false; if(btn) { btn.disabled = false; btn.textContent = "SORTEAR BOLA 🎲"; } }
 }
@@ -1342,6 +1364,7 @@ async function inserirBolaManual() {
             valor: valor,
             hora: Date.now()
         });
+        atualizarIndicadorFila(matrizEnvio.length);
 
     } catch (e) {
         console.error("[DEBUG] Erro conexão manual:", e);
@@ -2134,6 +2157,7 @@ async function mudarPremio(tipo) {
             valor: tipo,
             hora: Date.now()
         });
+        atualizarIndicadorFila(matrizEnvio.length);
         
     } catch(e) {
         console.error("[DEBUG] Erro ao mudar prêmio:", e);

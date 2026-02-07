@@ -6,6 +6,7 @@ from gevent import monkey
 monkey.patch_all() # docker
 
 import gevent
+from gevent import pool
 
 import os
 import json
@@ -39,57 +40,32 @@ from decimal import Decimal
 
 # 1. Define o padrão base: Tenta pegar do Ambiente (Docker), se não tiver, usa "001"
 # Isso garante compatibilidade com o deploy atual
-PARAM_ID_SALA = os.environ.get("IDSALA", "001")
+#PARAM_ID_SALA = os.environ.get("IDSALA", "001")
 
-# 2. Verifica se veio via Linha de Comando (ex: python server.py 002)
-# Se vier, SOBREESCREVE o valor anterior (tem prioridade total)
+# ==============================================================================
+# 🛠️ CONFIGURAÇÃO LIMPA DA SALA (ARGUMENTO > ENV > PADRÃO)
+# ==============================================================================
+PARAM_ID_SALA = "001" # Padrãozão
+
+# 1. Tenta pegar do argumento do Python (O jeito novo que você gostou)
 if len(sys.argv) > 1:
     arg_sala = sys.argv[1]
-    
-    # Validação: É numérico? (Evita erros se digitar algo errado)
     if arg_sala.isdigit():
-        PARAM_ID_SALA = arg_sala
+        PARAM_ID_SALA = str(arg_sala).zfill(3)
         print(f"👉 [BOOT] Sala definida via ARGUMENTO: {PARAM_ID_SALA}")
-    else:
-        print(f"⚠️ [BOOT] Argumento '{arg_sala}' inválido. Usando ENV/Padrão: {PARAM_ID_SALA}")
-else:
-    print(f"👉 [BOOT] Sala definida via AMBIENTE/PADRÃO: {PARAM_ID_SALA}")
 
-# (Opcional) Garante formatação 3 dígitos se desejar
-PARAM_ID_SALA = str(PARAM_ID_SALA).zfill(3)
+# 2. Se não veio argumento, tenta variável de ambiente (Docker)
+elif os.environ.get("IDSALA"):
+    PARAM_ID_SALA = str(os.environ.get("IDSALA")).zfill(3)
+    print(f"👉 [BOOT] Sala definida via DOCKER ENV: {PARAM_ID_SALA}")
+
+print(f"✅ [SISTEMA] Rodando servidor para SALA ID: {PARAM_ID_SALA}")
 
 print("==================================================")
 
 app = Flask(__name__, static_folder='.')
 
 
-# --- INÍCIO DO BLOCO DE CORREÇÃO ---
-class PrefixMiddleware(object):
-    def __init__(self, app, prefix=''):
-        self.app = app
-        self.prefix = prefix
-
-    def __call__(self, environ, start_response):
-        # Se a URL começar com o prefixo (ex: /sala1), a gente remove ele.
-        if environ['PATH_INFO'].startswith(self.prefix):
-            environ['PATH_INFO'] = environ['PATH_INFO'][len(self.prefix):]
-            environ['SCRIPT_NAME'] = self.prefix
-            return self.app(environ, start_response)
-        # Se não tiver prefixo (ex: rodando local), deixa passar normal
-        return self.app(environ, start_response)
-
-# Pega o ID da sala do ambiente (001, 002...) e remove zeros à esquerda se precisar
-# Mas pelo seu log a URL é "sala1", então vamos montar dinamicamente.
-
-try:
-    numero_sala = int(PARAM_ID_SALA) 
-except:
-    numero_sala = 1
-
-prefixo_url = f"/sala{numero_sala}" # Vira "/sala1"
-
-print(f"🔧 [FIX] Aplicando correção de rota para prefixo: {prefixo_url}")
-app.wsgi_app = PrefixMiddleware(app.wsgi_app, prefix=prefixo_url)
 # --- FIM DO BLOCO DE CORREÇÃO ---
 
 @app.route('/img/<path:filename>')
@@ -314,7 +290,11 @@ db = None
 client = None
 sales_client = None  # Cache para conexão de vendas
 current_sales_uri = None
-clients = set() # WebSocket clients
+
+#clients = set() # WebSocket clients
+if 'clients' not in globals():
+    clients = set()
+
 local_data = {}
 mongo_data = {}
 stop_flag = threading.Event()
@@ -1361,7 +1341,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Lista de clientes conectados (Se já não tiver definida lá em cima)
 connected_clients = set()
 
-
 # =========================================================
 # 1. ROTA DO SITE (Apenas carrega o HTML)
 # =========================================================
@@ -1370,97 +1349,158 @@ def serve_index():
     # Não mistura mais socket aqui. Apenas entrega o site.
     return send_from_directory('.', 'index.html')
 
-# =========================================================
-# ROTA DE DEBUG EXTREMO (Substitua a /stream atual por esta)
-# =========================================================
+
+
+
+
+
+# ==============================================================================
+# 🔌 ROTA DO WEBSOCKET (VERSÃO ESTÁVEL PARA PYTHON 3.12+)
+# ==============================================================================
 @app.route('/stream')
 def api_stream():
-    # Pega a conexão WebSocket
+    ws = request.environ.get('wsgi.websocket')
+    if not ws: return "Erro: Utilize um cliente WebSocket", 400
+
+    id_sala = request.args.get('idsala', PARAM_ID_SALA)
+    
+    # 1. Registra Cliente
+    global clients
+    clients.add(ws)
+    print(f"👉 [SOCKET] Cliente conectado na Sala {id_sala}. Total online: {len(clients)}")
+
+    try:
+        # Loop Infinito (Sem Timeout que derruba a conexão)
+        while not ws.closed:
+            # receive() bloqueia até chegar algo ou cair a conexão
+            # Isso é seguro pois estamos usando um Pool de Processos no main()
+            msg = ws.receive() 
+            
+            if msg:
+                try:
+                    data = json.loads(msg)
+                    acao = data.get('acao') or data.get('type')
+                    
+                    if acao == 'estado_inicial':
+                         # Busca dados (mantendo sua lógica segura)
+                         sales_db = get_sales_db_connection()
+                         if db:
+                             bolas_doc = db.bolas.find_one({'tipo': 'sorteio_atual'}) or {}
+                             premio_doc = db.parametros.find_one({'chave': 'premio_atual'}) or {}
+                             
+                             ws.send(json.dumps({
+                                 'tipo': 'ESTADO_INICIAL',
+                                 'bolas': bolas_doc.get('bolas_cantadas', []),
+                                 'premio': premio_doc.get('valor', ''),
+                                 'sala': id_sala
+                             }, default=str))
+                             # print(f"✅ Estado inicial enviado.")
+                    
+                    elif acao == 'ping':
+                        ws.send(json.dumps({'type': 'pong'}))
+
+                except Exception as e:
+                    print(f"⚠️ Erro ao processar mensagem: {e}")
+            else:
+                # Se msg for None, o cliente desconectou
+                break
+                
+    except Exception as e:
+        print(f"🔥 Erro Socket: {e}")
+    finally:
+        if ws in clients: clients.discard(ws)
+        print(f"👋 Cliente saiu. Restam: {len(clients)}")
+    
+    return ""
+
+# ==============================================================================
+# 🔌 ROTA DO WEBSOCKET (AGORA ACEITA COM E SEM PREFIXO)
+# ==============================================================================
+@app.route('/stream_')          # <--- Pega quem chama direto (localhost:3001/stream)
+def api_stream_():
+    # --- DEBUG: PARA PROVAR QUE ENTROU NA FUNÇÃO ---
+    print("👉 [DEBUG EXTREMO] Alguém bateu na porta /stream!") 
+    
     ws = request.environ.get('wsgi.websocket')
     
+    # Se não for WebSocket (ex: navegador acessando via http normal), ignora
     if not ws:
+        print("❌ [DEBUG] Não é requisição WebSocket (provavelmente HTTP normal)")
         return "Erro: Utilize um cliente WebSocket", 400
 
-    id_sala_req = request.args.get('idsala', PARAM_ID_SALA)
-    print(f"🔌 [STREAM] Cliente conectado na Sala: {id_sala_req}")
+    # 2. Registra o cliente
+    global clients
+    clients.add(ws)
+    
+    id_sala = request.args.get('idsala', PARAM_ID_SALA)
+    print(f"👉 [SOCKET] Cliente entrou na Sala {id_sala}. Total online: {len(clients)}")
 
     try:
         while not ws.closed:
-            # ---------------------------------------------------------
-            # 1. TENTATIVA DE LEITURA (Com proteção de erro)
-            # ---------------------------------------------------------
+            # --- Leitura com Timeout (para não travar) ---
             try:
-                # Usa Timeout para não travar o loop esperando mensagem
-                with gevent.Timeout(0.1, False):
+                with gevent.Timeout(0.5, False):
                     msg = ws.receive()
+                    
                     if msg:
-                        # Se chegou mensagem, apenas imprime (por enquanto)
-                        print(f"📩 [CLIENTE]: {msg}")
-            except Exception as e_read:
-                print(f"⚠️ Erro leve na leitura: {e_read}")
+                        dados = json.loads(msg)
+                        acao = dados.get('acao') or dados.get('type')
+                        
+                        # LOG DEBUG: O que o cliente pediu?
+                        # print(f"📩 Pedido recebido: {acao}")
 
-            # ---------------------------------------------------------
-            # 2. ENVIO DO PING (Coração do WebSocket)
-            # ---------------------------------------------------------
-            try:
-                # Prepara o pacote de ping
-                ping_data = json.dumps({'type': 'ping', 'timestamp': time.time()})
-                ws.send(ping_data)
-            except Exception as e_ping:
-                print(f"❌ Erro ao enviar PING (Cliente desconectou?): {e_ping}")
-                break # Se não der pra mandar ping, fecha.
+                        if acao == 'estado_inicial':
+                            # --- AQUI É ONDE ESTAVA O PERIGO ---
+                            try:
+                                sales_db = get_sales_db_connection()
+                                if sales_db:
+                                    # Busca Bolas
+                                    bolas_doc = sales_db.bolas.find_one({'tipo': 'sorteio_atual'})
+                                    lista_bolas = bolas_doc.get('bolas', []) if bolas_doc else []
+                                    
+                                    # Busca Prêmio
+                                    premio_doc = sales_db.parametros.find_one({'chave': 'premio_atual'})
+                                    premio_atual = premio_doc.get('valor', '') if premio_doc else ''
 
-            # ---------------------------------------------------------
-            # 3. PAUSA (Respiração da CPU)
-            # ---------------------------------------------------------
-            gevent.sleep(2) # Espera 2 segundos antes do próximo ciclo
+                                    # Monta Resposta
+                                    resposta = {
+                                        'tipo': 'ESTADO_INICIAL',
+                                        'bolas': lista_bolas,
+                                        'premio': premio_atual,
+                                        'sala': id_sala
+                                    }
+                                    
+                                    # ENVIA COM PROTEÇÃO DE SERIALIZAÇÃO (default=str)
+                                    # Isso evita erro se tiver ObjectId ou Datetime no meio
+                                    ws.send(json.dumps(resposta, default=str))
+                                    print(f"✅ [SOCKET] Estado inicial enviado para Sala {id_sala}")
+                                else:
+                                    print("❌ [SOCKET] Erro: Sem conexão com o Banco de Dados.")
+                            
+                            except Exception as e_banco:
+                                print(f"🔥 [ERRO NO BANCO] Ao buscar estado inicial: {e_banco}")
+                                import traceback
+                                traceback.print_exc() # MOSTRA ONDE O CÓDIGO QUEBROU
+
+                        elif acao == 'ping':
+                            ws.send(json.dumps({'type': 'pong'}))
+
+            except Exception:
+                pass # Timeout normal de leitura, segue o jogo
+
+            # --- Mantém vivo e evita 100% CPU ---
+            gevent.sleep(0.5)
 
     except Exception as e_fatal:
-        # AQUI VAI APARECER O MOTIVO DA QUEDA NO SEU TERMINAL
-        print(f"🔥 [STREAM] ERRO FATAL: {e_fatal}")
+        print(f"☠️ [FATAL] O WebSocket morreu: {e_fatal}")
         import traceback
         traceback.print_exc()
         
-    print(f"🔌 [STREAM] Conexão encerrada para Sala {id_sala_req}")
-    return ""
+    finally:
+        if ws in clients:
+            clients.discard(ws)
+        print(f"👋 [SOCKET] Cliente saiu. Restam: {len(clients)}")
 
-
-@app.route('/stream_')
-def stream_():
-    # Verifica se é uma requisição WebSocket
-    if request.environ.get('wsgi.websocket'):
-        ws = request.environ['wsgi.websocket']
-        
-        # 1. ADICIONA NA LISTA GLOBAL
-        clients.add(ws)
-        print(f"📍 [STREAM] Novo cliente conectado! Total agora: {len(clients)}")
-        
-        try:
-            # Loop que mantem a conexão viva
-            while not ws.closed:
-                message = ws.receive()
-                
-                if message:
-                    print(f"📍 [STREAM] Mensagem recebida: {message}")
-                    data = json.loads(message)
-                    
-                    if data.get('action') == 'GET_INITIAL_STATE':
-                        # Retorna estado atual imediatamente
-                        current_data = local_data if is_local_mode else mongo_data
-                        ws.send(json.dumps({'type': 'UPDATE', **current_data}, default=str))
-                        print("✅ [STREAM] Estado inicial enviado.")
-                
-                gevent.sleep(0.1)
-                
-        except Exception as e:
-            print(f"❌ [STREAM] Erro na conexão: {e}")
-            
-        finally:
-            # 2. REMOVE DA LISTA AO SAIR
-            if ws in clients:
-                clients.remove(ws)
-            print(f"👋 [STREAM] Cliente desconectado. Restam: {len(clients)}")
-            
     return ""
 
 
@@ -5462,50 +5502,55 @@ def logout_cliente():
     return redirect('/')
 
 
+
 # ==============================================================================
-# A FUNÇÃO MAIN (MANTENHA ELA, SÓ AJUSTE O INÍCIO)
+# 🚀 MAIN: VERSÃO OTIMIZADA PARA DOCKER E WINDOWS (SEM TRAVAMENTOS)
 # ==============================================================================
 def main():
-    print("🚩 [1] Script iniciado. Configurando ambiente...")
+    print(f"🚩 [1] Script iniciado para SALA: {PARAM_ID_SALA}")
 
     try:
-        # --- AJUSTE IMPORTANTE: GARANTIR A PORTA DO DOCKER ---
-        # No seu código original pode estar fixo 5000 ou 3001. 
-        # Mude para ler do ambiente:
-        port = int(os.environ.get('PORT', 3001)) 
+        # Pega a porta do ambiente (Docker) ou usa 3001 (Local)
+        port = int(os.environ.get('PORT', 3001))
 
-        # 1. Banco de Dados (Vai usar a MONGO_URI nova que definimos no topo)
+        # 1. Banco de Dados
         connect_main_db()
-        print(f"🚩 [2] Banco Conectado para Sala {PARAM_ID_SALA}")
+        print(f"🚩 [2] Banco Conectado com sucesso!")
 
-        # 2. Watcher 
+        # 2. Watcher (Monitora o banco em paralelo)
         print("🚩 [3] Iniciando Watcher...")
         gevent.spawn(watch_collections)
 
-        # 3. Servidor Web
+        # 3. Servidor Web (WSGI)
         from gevent import pywsgi
         from geventwebsocket.handler import WebSocketHandler
 
-        print(f"🚩 [4] Iniciando WSGIServer na porta {port}...")
+        # --- AQUI ESTÁ A CORREÇÃO VITAL PARA O ERRO 'BlockingSwitchOutError' ---
+        # Criamos um Pool de 1000 conexões. Isso isola cada cliente num processo leve.
+        # Sem isso, o Python 3.12+ no Windows pode confundir o loop de eventos.
+        pool_de_conexoes = pool.Pool(1000) 
+
+        print(f"🚩 [4] Iniciando WSGIServer na porta {port} (Modo Pool)...")
         
         server = pywsgi.WSGIServer(
             ('0.0.0.0', port), 
             app, 
             handler_class=WebSocketHandler,
-            log=None 
+            log=None,
+            spawn=pool_de_conexoes # <--- AQUI A MÁGICA ACONTECE
         )
         
-        print("✅ [5] Servidor PRONTO. Entrando em loop eterno...")
+        print("✅ [5] Servidor ONLINE e PRONTO. Aguardando conexões...")
         server.serve_forever()
 
     except KeyboardInterrupt:
-        print("\n🛑 Parado.")
+        print("\n🛑 Servidor parado pelo usuário.")
     except Exception as e:
-        print(f"\n❌ Erro: {e}")
+        print(f"\n❌ Erro Fatal no Main: {e}")
+        traceback.print_exc()
 
 # ==============================================================================
-# O GATILHO FINAL
+# GATILHO DE EXECUÇÃO
 # ==============================================================================
 if __name__ == '__main__':
     main()
-

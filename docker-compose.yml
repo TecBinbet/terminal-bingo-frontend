@@ -1,63 +1,37 @@
 version: '3.8'
 
 services:
-  # --- SALA 003 (Antiga Sala 0 - Padrão) ---
-  backend_sala3:
-    container_name: bingo_sala3
+  # --- O SERVIDOR PYTHON (Sua Aplicação) ---
+  backend:
+    container_name: bingo_backend
     build: .
     restart: always
-    ports:            # <--- MUDANÇA AQUI
-      - "5000:3001"   # Mapeia Host 5000 -> Container 3001
+    # Passamos o ID da sala como variável de ambiente
+    # Se não houver variável definida, usa '001' como padrão
     environment:
+      - IDSALA=${IDSALA:-001}
       - PORT=3001
-      - IDSALA=003
-      - URL_MONGO_SORTEIO=${URL_MONGO_SORTEIO}
+      - PYTHONUNBUFFERED=1
+    # O comando usa a variável para iniciar a sala correta
+    command: python server.py ${IDSALA:-001}
+    # Expõe a porta interna apenas para o Nginx ver (segurança)
+    expose:
+      - "3001"
     volumes:
-      - ./json_data_sala3:/app/json
-      - ./img003:/app/img
+      # Mapeia as pastas locais para salvar os dados
+      # Basta criar as pastas 'json' e 'img' na raiz do servidor
+      - ./json:/app/json
+      - ./img:/app/img
 
-  # --- SALA 001 ---
-  backend_sala1:
-    container_name: bingo_sala1
-    build: .
-    restart: always
-    ports:            # <--- MUDANÇA AQUI
-      - "5001:3001"   # Mapeia Host 5001 -> Container 3001
-    environment:
-      - PORT=3001
-      - IDSALA=001
-      - URL_MONGO_SORTEIO=${URL_MONGO_SORTEIO}
-    volumes:
-      - ./json_data_sala1:/app/json
-      - ./img001:/app/img
-
-  # --- SALA 002 ---
-  backend_sala2:
-    container_name: bingo_sala2
-    build: .
-    restart: always
-    ports:            # <--- MUDANÇA AQUI
-      - "5002:3001"   # Mapeia Host 5002 -> Container 3001
-    environment:
-      - PORT=3001
-      - IDSALA=002
-      - URL_MONGO_SORTEIO=${URL_MONGO_SORTEIO}
-    volumes:
-      - ./json_data_sala2:/app/json
-      - ./img002:/app/img
-
-  # --- NGINX (Roteador) ---
+  # --- O NGINX (Porteiro / Web Server) ---
   nginx:
     image: nginx:alpine
     container_name: bingo_nginx
     restart: always
     ports:
-      - "80:80"
+      - "80:80" # Porta 80 do servidor -> Porta 80 do Nginx
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
-      - .:/usr/share/nginx/html
-      - ./img:/usr/share/nginx/html/img
+      - .:/usr/share/nginx/html # Serve arquivos estáticos se precisar
     depends_on:
-      - backend_sala3
-      - backend_sala1
-      - backend_sala2
+      - backend

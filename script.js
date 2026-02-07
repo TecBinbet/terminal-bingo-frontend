@@ -2,60 +2,33 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-// Detecta parâmetros da URL (?sala=1)
-const urlParamsGlobal = new URLSearchParams(window.location.search);
-const salaParam = urlParamsGlobal.get('sala'); 
+// --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
-// Detecta protocolo e host
+// Detecta protocolo e host automaticamente
 const protocolWS = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
 const host = window.location.host;
-// Detecta se é local apenas para logs ou ajustes específicos, 
-// mas VAMOS MANTER A ESTRUTURA DE URL igual produção.
-const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
 // Variáveis GLOBAIS
-var API_BASE_URL = "";
-var currentSalaId = "003"; // Padrão
-var WS_URL = ""; 
-var ws = null; // Inicializa vazio
+// Agora o API_BASE_URL fica vazio porque cada servidor responde na própria raiz /
+var API_BASE_URL = ""; 
 
-// Lógica de Salas UNIFICADA (Vale para Local e Produção)
-// Isso garante que o Nginx local encontre a rota correta
-if (salaParam === '1') {
-    API_BASE_URL = "/sala1";
-    currentSalaId = "001";
-} else if (salaParam === '2') {
-    API_BASE_URL = "/sala2";
-    currentSalaId = "002";
-} else if (salaParam === '3') {
-    API_BASE_URL = "/sala3";
-    currentSalaId = "003";
-} else {
-    // Se não tem parâmetro
-    if (isLocal) {
-        // No local sem parametro, tentamos a raiz
-        API_BASE_URL = ""; 
-    } else {
-        // Em produção, joga para sala 3
-        API_BASE_URL = "/sala3";
-    }
-    currentSalaId = "003";
-}
+// O ID da Sala agora é apenas para exibição ou identificação no Front, 
+// pois o Backend já sabe quem ele é através do .env
+const urlParamsGlobal = new URLSearchParams(window.location.search);
+var currentSalaId = urlParamsGlobal.get('sala') || "001"; 
 
 // Montagem da URL do WebSocket
-// Se estiver local e na raiz (sem sala), usa /stream direto
-if (isLocal && API_BASE_URL === "") {
-    WS_URL = `${protocolWS}${host}/stream`;
-} else {
-    // Caso contrário, respeita o prefixo (/sala1/stream)
-    WS_URL = `${protocolWS}${host}${API_BASE_URL}/stream`;
-}
+// Simples e direta: aponta sempre para o /stream do host atual
+var WS_URL = `${protocolWS}${host}/stream`;
+var ws = null;
+var reconnectInterval = null;
 
-console.log(`🔧 [${isLocal ? 'LOCAL' : 'PROD'}] Sala: ${currentSalaId} | API: ${API_BASE_URL || '/'}`);
+
+console.log(`🚀 Conectado ao Servidor: ${host}`);
+console.log(`🔧 Sala identificada no Front: ${currentSalaId}`);
 console.log(`🔌 WebSocket Alvo: ${WS_URL}`);
 
-// --- FIM DA CONFIGURAÇÃO AUTOMÁTICA ---
-//
+// --- FIM DA CONFIGURAÇÃO ---//
 //const backendVersionElement = document.getElementById('backend-version');
 //const frontendVersionElement = document.getElementById('frontend-version');
 const loader = document.getElementById('loader');
@@ -290,7 +263,6 @@ let prizeTimeoutId = null;
 let iniciandoRodada = true;
 let winnerBingo = false;
 
-let reconnectInterval = null;
 let cartelaRanges = [];
 let cartelasDoJogador = [];
 
@@ -4197,7 +4169,12 @@ if (idDoEvento) {
     console.error("❌ init: ID do evento não encontrado.");
 }
 
-        connectWebSocket();   //  testando sem esta função
+        if (typeof connectWebSocket === 'function') {
+            connectWebSocket(); 
+        } else {
+            console.error("❌ Erro Crítico: Função connectWebSocket não encontrada!");
+        }
+
         setInterval(() => {
             // Só verifica se o cliente estiver logado e o jogo já tiver começado (não estiver na animação de início)
             if (typeof clienteLogado !== 'undefined' && clienteLogado && !iniciandoRodada) {
@@ -4352,88 +4329,86 @@ function lockScreenOrientation() {
 }
 
 function connectWebSocket() {
-    // Evita abrir conexão duplicada se já estiver conectado
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        return;
+    // 1. LIMPEZA E RESET (Garante que não existam conexões fantasmas)
+    if (ws) {
+        console.log("♻️ Fechando conexão anterior para garantir um início limpo...");
+        try {
+            // Remove os ouvintes antigos para evitar que o .onclose dispare uma reconexão dupla
+            ws.onopen = null;
+            ws.onmessage = null;
+            ws.onclose = null;
+            ws.onerror = null;
+            ws.close();
+        } catch (e) {
+            console.error("Erro ao limpar WS antigo:", e);
+        }
     }
 
-    // --- CORREÇÃO VITAL: GARANTIR A ROTA /stream ---
-    // Remove barra final se houver e garante que conecta na rota sem buffer
-    let baseUrl = WS_URL.replace(/\/$/, ""); 
+    // 2. MONTAGEM DA URL (Simples e Direta para o Servidor Independente)
+    // Como cada servidor é dono da sua raiz, usamos apenas o WS_URL definido no topo
+    // Adicionamos o idsala como parâmetro para o Python validar internamente
+    const wsUrlWithRoom = `${WS_URL}${WS_URL.includes('?') ? '&' : '?'}idsala=${currentSalaId}`;
     
-    // Se a URL base ainda não tiver '/stream', nós adicionamos na marra
-    if (!baseUrl.includes('/stream')) {
-        baseUrl += '/stream';
-    }
+    console.log("🔌 [FRONT] Conectando ao Servidor Independente:", wsUrlWithRoom);
 
-    // Monta a URL com a Sala
-    const separator = baseUrl.includes('?') ? '&' : '?';
-    const wsUrlWithRoom = `${baseUrl}${separator}idsala=${currentSalaId}`;
-    
-    console.log("🔌 [FRONT] Tentando conectar WebSocket em:", wsUrlWithRoom);
-
+    // 3. INICIALIZAÇÃO
     ws = new WebSocket(wsUrlWithRoom);
 
     ws.onopen = () => {
-        console.log("✅ [FRONT] WebSocket Conectado!");
+        console.log("✅ [FRONT] WebSocket Conectado com Sucesso!");
 
+        // Limpa o intervalo de reconexão se ele existir
         if (reconnectInterval) {
             clearInterval(reconnectInterval);
             reconnectInterval = null;
         }
         
-        // Proteção para o erro 'The requesting page is not visible'
-        try { requestWakeLock(); } catch(e) { console.warn("WakeLock ignorado (aba oculta)"); }
+        // Mantém a tela acesa (WakeLock)
+        try { requestWakeLock(); } catch(e) { console.warn("WakeLock não suportado ou aba oculta."); }
 
+        // Solicita o estado atual do bingo ao entrar
         const initialRequest = { action: "GET_INITIAL_STATE" };
         ws.send(JSON.stringify(initialRequest));
-        console.log("📤 Solicitando estado inicial ao servidor.");
+        console.log("📤 Solicitando estado inicial da sala.");
 
-        // Aguarda um pouco para processar login e parâmetros
+        // Pequeno delay para garantir que o DOM esteja pronto antes de processar login
         setTimeout(processarParametrosURL, 500); 
     };
 
     ws.onmessage = (event) => {
         try {
             const payload = JSON.parse(event.data);
-            const melhoresData = payload.melhoresData;
             
-            // Verifica o tipo da mensagem (Compatível com seu Python novo)
+            // --- TRATAMENTO DE ATUALIZAÇÃO DE RODADA ---
             if (payload.type === 'UPDATE') {
+                const melhoresData = payload.melhoresData;
 
-                // --- BUSCA INTELIGENTE DO ID DO EVENTO ---
+                // BUSCA DO ID DO EVENTO (Para carregar imagem do prêmio)
                 let idSocket = null;
-
-                // 1. Tenta pegar dentro de rodadaData
                 if (payload.rodadaData && payload.rodadaData.length > 0) {
                     idSocket = payload.rodadaData[0].id_evento;
                 }
-
-                // 2. Fallback para parametros
                 if (!idSocket) {
-                    // Tenta achar em varios lugares possiveis do JSON
                     const params = payload.parametros || payload.parametrosInfo || {};
                     idSocket = payload.id_evento || params.id_evento;
                 }
 
-                // Se achou ID, busca imagem
                 if (idSocket) {
                      buscarImagemDoPremio(idSocket);
                 }
 
-                // Renderiza a tela principal
+                // Renderização Visual
                 renderMainContent(payload); 
                 
-                // Renderiza melhores da rodada
                 if (melhoresData) {
                     renderMelhores(melhoresData);
                 }
                 
-                // Verifica compras
                 verificarNovasCompras();
             }
+            // --- TRATAMENTO DE SORTEIO EXTRA / CUPOM ---
             else if (payload.type === 'EXIBIR_CUPOM') {
-                console.log("📨 Comando de conferência recebido:", payload.cupom);
+                console.log("📨 Comando de exibição de cupom recebido.");
                 if (payload.cupom) {
                     exibirConferenciaSorteExtra(payload.cupom);
                 } else {
@@ -4442,24 +4417,27 @@ function connectWebSocket() {
             }
 
         } catch (e) {
-            console.error('❌ [FRONT] Erro ao processar mensagem do WebSocket:', e);
+            console.error('❌ [FRONT] Erro crítico no processamento da mensagem:', e);
         }
     };
 
     ws.onclose = (event) => {
-        console.warn("⚠️ [FRONT] WebSocket caiu. Tentando Reconectar...");
+        console.warn(`⚠️ [FRONT] Conexão Perdida (Código: ${event.code}). Tentando Reconectar...`);
         try { releaseWakeLock(); } catch(e){}
         
+        // Inicia o ciclo de reconexão se já não estiver rodando
         if (!reconnectInterval) {
             reconnectInterval = setInterval(() => {
+                console.log("🔄 Tentativa de reconexão automática...");
                 connectWebSocket();
             }, 3000);
         }
     };
 
     ws.onerror = (error) => {
-        console.error('❌ [FRONT] Erro técnico no WebSocket:', error);
-        ws.close();
+        console.error('❌ [FRONT] Erro técnico detectado no WebSocket.');
+        // O fechamento forçado aqui dispara o onclose que fará a reconexão
+        if (ws) ws.close();
     };
 }
 
