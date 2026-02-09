@@ -295,6 +295,8 @@ current_sales_uri = None
 if 'clients' not in globals():
     clients = set()
 
+CUPOM_FILE = "cupom_atual.json"
+
 local_data = {}
 mongo_data = {}
 stop_flag = threading.Event()
@@ -2005,60 +2007,66 @@ def admin_fechar_vendas():
         return jsonify({'error': str(e)}), 500
 
 
-# Rota Consultar Cartelas e Cupons (Unificada)
+# Rota Consultar Cartelas e Cupons (Unificada e Blindada para Docker)
 @app.route('/api/consultar_cartelas_evento')
 def api_consultar_cartelas():
     try:
-        # Pega parâmetros
+        # 1. PEGA PARÂMETROS E VALIDA CONEXÃO LOGO DE CARA
         id_evt = request.args.get('id_evento')
         id_cli = request.args.get('id_cliente')
         
-        # --- BLINDAGEM DE SESSÃO ---
-        if not id_cli or id_cli == 'null' or id_cli == 'undefined':
-            if 'id_cliente' in session:
-                id_cli = session['id_cliente']
-            else:
-                return jsonify({'error': 'Cliente não identificado'}), 401
-        
-        if not id_evt: 
-            return jsonify({'error': 'Faltam parâmetros'}), 400
-        
         s_db = get_sales_db_connection()
-        if s_db is None: return jsonify({'error': 'DB Offline'}), 500
+        if s_db is None:
+            return jsonify({'error': 'Falha na conexão com o Banco de Dados de Vendas'}), 500
 
-        # Prepara ID Cliente (Híbrido)
+        # 2. DEFINIÇÃO SEGURA DA VARIÁVEL (Evita Erro 500 por variável inexistente)
+        id_cli_val = id_cli 
+
+        # Se a URL não trouxe o ID, tentamos a sessão do Flask
+        if not id_cli_val or id_cli_val in ['null', 'undefined', '']:
+            id_cli_val = session.get('id_cliente')
+
+        if not id_cli_val:
+            return jsonify({'error': 'Cliente não identificado (ID ausente)'}), 401
+        
+        # 3. TRATAMENTO DE TIPAGEM HÍBRIDA (Importante para o Docker/Linux)
         try:
-            id_cli_int = int(id_cli)
-        except:
-            id_cli_int = str(id_cli)
+            # Tenta converter para inteiro caso o banco armazene como Number
+            id_cli_val_processado = int(id_cli_val)
+        except (ValueError, TypeError):
+            # Se falhar (ID alfanumérico), mantém o valor original
+            id_cli_val_processado = id_cli_val
 
-        # Filtro que aceita tanto número quanto texto
+        # Filtro que busca as duas possibilidades (Int e String) para evitar falhas de migração
         filtro_cliente = {
             '$or': [
-                {'id_cliente': id_cli_int}, 
-                {'id_cliente': str(id_cli_int)}
+                {'id_cliente': id_cli_val_processado}, 
+                {'id_cliente': str(id_cli_val_processado)}
             ]
         }
 
-        # === DEBUG: O QUE ESTAMOS PROCURANDO? ===
-        #print(f"\n🔍 CONSULTA JOGOS | Evento: {id_evt} | Cliente: {id_cli}")
-        
-        # 1. BINGO NORMAL
+        # --- 1. BUSCA BINGO NORMAL ---
         col_bingo = f"vendas{id_evt}"
         cartelas_bingo = []
+        
+        # Verificamos se a coleção existe para evitar erros de cursor no Docker
         if col_bingo in s_db.list_collection_names():
             cursor = s_db[col_bingo].find(filtro_cliente)
             for v in cursor:
-                # Lógica de faixas (Mantida igual)
                 try:
-                    n_ini, n_fim = int(v.get('numero_inicial') or 0), int(v.get('numero_final') or 0)
-                    if n_ini > 0: cartelas_bingo.extend(range(n_ini, n_fim + 1))
-                    n_ini2, n_fim2 = int(v.get('numero_inicial2') or 0), int(v.get('numero_final2') or 0)
-                    if n_ini2 > 0: cartelas_bingo.extend(range(n_ini2, n_fim2 + 1))
-                except: continue
+                    n_ini = int(v.get('numero_inicial') or 0)
+                    n_fim = int(v.get('numero_final') or 0)
+                    if n_ini > 0: 
+                        cartelas_bingo.extend(range(n_ini, n_fim + 1))
+                    
+                    n_ini2 = int(v.get('numero_inicial2') or 0)
+                    n_fim2 = int(v.get('numero_final2') or 0)
+                    if n_ini2 > 0: 
+                        cartelas_bingo.extend(range(n_ini2, n_fim2 + 1))
+                except Exception:
+                    continue
         
-        # 2. SORTE EXTRA (O FOCO DO PROBLEMA)
-        # Tenta converter evento para INT para garantir compatibilidade com nome da tabela
+        # --- 2. BUSCA SORTE EXTRA ---
         try:
             id_evt_limpo = int(id_evt) 
         except:
@@ -2067,36 +2075,28 @@ def api_consultar_cartelas():
         col_extra = f"vendas_sorte_extra{id_evt_limpo}"
         cupons_extra = []
         
-        #print(f"🧐 Procurando Sorte Extra na tabela: '{col_extra}'")
-        
-        # Removemos a verificação 'if in list_collection_names' para testar direto
-        # Isso evita falso negativo se o Mongo demorar pra atualizar cache de nomes
+        # No Sorte Extra, buscamos direto (o cursor vazio não quebra o Python se a col não existir)
         cursor_extra = s_db[col_extra].find(filtro_cliente)
-        count_extra = 0
         
         for v in cursor_extra:
-            count_extra += 1
-            # Debug do documento encontrado
-            # print(f"   📄 Achei venda extra: {v.get('_id')}") 
-            
-            meus_jogos = v.get('cartelas', []) # Espera [[1,2,3], [4,5,6]]
+            meus_jogos = v.get('cartelas', [])
             if isinstance(meus_jogos, list):
                 cupons_extra.extend(meus_jogos)
-                
-        #print(f"✅ Resultado Extra: {count_extra} vendas encontradas | {len(cupons_extra)} cupons extraídos.")
 
-        # Retorno
+        # 4. RETORNO DE SUCESSO
         return jsonify({
             'id_evento': id_evt, 
             'cartelas': cartelas_bingo,
             'quantidade': len(cartelas_bingo),
             'cupons_extra': cupons_extra, 
-            'qtd_extra': len(cupons_extra)
+            'qtd_extra': len(cupons_extra),
+            'status': 'success'
         }), 200
 
     except Exception as e:
-        print(f"❌ ERRO API: {e}")
-        return jsonify({'error': str(e)}), 500
+        # Log detalhado no console do Docker para facilitar o seu debug
+        print(f"❌ ERRO CRÍTICO NA API (Docker/Backend): {str(e)}")
+        return jsonify({'error': f"Erro interno: {str(e)}"}), 500
 
 
 # --- WEBSOCKET CORRIGIDO ---
@@ -5158,6 +5158,38 @@ def validar_sorte_extra():
 # --- ROTA ATUALIZADA: PERMITE LIMPAR A TELA (ENVIA NULL) ---
 @app.route('/api/admin/publicar_cupom_terminal', methods=['POST'])
 def publicar_cupom_terminal():
+    try:
+        data = request.json
+        cupom_payload = data.get('cupom') # Pode ser os dados ou None
+
+        # 1. SALVAR NO ARQUIVO FISICAMENTE
+        with open(CUPOM_FILE, "w") as f:
+            json.dump(cupom_payload, f)
+
+        # 2. MANDAR O AVISO PELO WEBSOCKET (O "Empurrão")
+        msg_ws = {
+            'type': 'EXIBIR_CUPOM',
+            'cupom': cupom_payload 
+        }
+        broadcast_para_clientes(msg_ws)
+        
+        return jsonify({'status': 'ok', 'msg': 'Arquivo atualizado e Broadcast enviado'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/get_cupom_atual')
+def get_cupom_atual():
+    if os.path.exists(CUPOM_FILE):
+        with open(CUPOM_FILE, "r") as f:
+            dados = json.load(f)
+        return jsonify(dados)
+    return jsonify(None)
+
+
+
+# --- ROTA ATUALIZADA: PERMITE LIMPAR A TELA (ENVIA NULL) ---
+@app.route('/api/admin/publicar_cupom_terminal_aaa', methods=['POST'])
+def publicar_cupom_terminal_aaa():
     try:
         data = request.json
         # Pega o cupom (pode ser um Objeto cheio ou None/Null para limpar)

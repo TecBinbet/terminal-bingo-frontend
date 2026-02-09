@@ -1494,62 +1494,40 @@ function handleFullscreenChange() {
 
 
 
-// --- FUNÇÃO SEGURA: Abrir Minhas Cartelas ---
-function openMyCardsPanel() {
-    
-    // 1. Trava de Login
-    if (!isUsuarioLogado()) {
-        showCustomAlert("Faça login.", "Ops", "🚫");
-        abrirModalLogin();
+// 15. ABRIR PAINEL DE MINHAS CARTELAS
+async function openMyCardsPanel() {
+    const idEvt = currentEventoId;
+    const idCli = globalIdCliente;
+
+    // Se o ID for "null" em string, tratamos como erro
+    if (!idEvt || !idCli || idCli === 'null') {
+        console.error("IDs ausentes:", { idEvt, idCli });
         return;
     }
-    
-    if (!myCardsPanel || !myCardsList) return;
-    const loaderEl = document.getElementById('loader'); 
-    
-    if (loaderEl) {
-        loaderEl.classList.remove('hidden');
-        loaderEl.style.display = 'flex';
+
+    // Use caminho RELATIVO (sem http://localhost)
+    const urlApi = `/api/consultar_cartelas_evento?id_evento=${idEvt}&id_cliente=${idCli}`;
+
+    try {
+        const response = await fetch(urlApi);
+        
+        if (!response.ok) {
+            const errorText = await response.text(); // Pega o erro bruto do Python
+            throw new Error(`Erro ${response.status}: ${errorText}`);
+        }
+
+        const data = await response.json();
+        
+        // Atualiza os arrays globais
+        cartelasDoJogador = data.cartelas || [];
+        cuponsSorteExtra = data.cupons_extra || [];
+
+        renderizarListaMinhasCartelas();
+        document.getElementById('modal-minhas-cartelas').classList.remove('hidden');
+
+    } catch (error) {
+        console.error("❌ Erro no fetch:", error);
     }
-
-    // ✅ CONFIGURAÇÃO PARA SERVIDOR INDEPENDENTE (SEM PREFIXO /SALA1)
-    const evtId = eventoCarregadoAtual || 'padrao';
-    const cliId = globalIdCliente || '';
-    
-    console.log(`🚀 Buscando as cartelas -> Evento: ${evtId} | Cliente: ${cliId}`);
-
-    // A URL deve usar apenas o API_BASE_URL (que está vazio "") 
-    // para resultar em: /api/consultar_cartelas_evento...
-    const urlApi = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${evtId}&id_cliente=${cliId}`;
-
-    // 2. Busca no Servidor
-    fetch(urlApi) 
-        .then(res => {
-            // Se o console mostrar 404 aqui, verifique se API_BASE_URL está realmente "" no topo do arquivo
-            if (!res.ok) throw new Error(`Erro HTTP: ${res.status}`);
-            return res.json();
-        })
-        .then(data => {
-            if (Array.isArray(data)) {
-                cartelasDoJogador = data; 
-            } else {
-                cartelasDoJogador = data.cartelas || []; 
-            }
-
-            // Reprocessa os acertos baseados no que já foi sorteado
-            forcarReprocessamentoVisual();
-
-            renderizarListaMinhasCartelas(data);
-            mostrarPainelMinhasCartelas();
-        })
-        .catch(err => {
-            console.error("❌ Erro no fetch de cartelas:", err);
-            myCardsList.innerHTML = '<div class="p-4 text-center text-red-400">Erro ao carregar cartelas.</div>';
-            mostrarPainelMinhasCartelas();
-        })
-        .finally(() => { 
-            if (loaderEl) loaderEl.style.display = 'none'; 
-        });
 }
 
 
@@ -4321,12 +4299,30 @@ function lockScreenOrientation() {
     }
 }
 
+
+async function sincronizarCupomViaArquivo() {
+    try {
+        // Busca o arquivo JSON via API normal (HTTPS - super estável)
+        const response = await fetch('/api/get_cupom_atual');
+        const cupom = await response.json();
+
+        if (cupom) {
+            console.log("📄 Cupom recuperado do arquivo do servidor.");
+            exibirConferenciaSorteExtra(cupom);
+        } else {
+            ocultarConferencia();
+        }
+    } catch (err) {
+        console.error("Erro ao ler arquivo de cupom:", err);
+    }
+}
+
+
 function connectWebSocket() {
     // 1. LIMPEZA E RESET (Garante que não existam conexões fantasmas)
     if (ws) {
         console.log("♻️ Fechando conexão anterior para garantir um início limpo...");
         try {
-            // Remove os ouvintes antigos para evitar que o .onclose dispare uma reconexão dupla
             ws.onopen = null;
             ws.onmessage = null;
             ws.onclose = null;
@@ -4337,34 +4333,33 @@ function connectWebSocket() {
         }
     }
 
-    // 2. MONTAGEM DA URL (Simples e Direta para o Servidor Independente)
-    // Como cada servidor é dono da sua raiz, usamos apenas o WS_URL definido no topo
-    // Adicionamos o idsala como parâmetro para o Python validar internamente
+    // 2. MONTAGEM DA URL
     const wsUrlWithRoom = `${WS_URL}${WS_URL.includes('?') ? '&' : '?'}idsala=${currentSalaId}`;
-    
     console.log("🔌 [FRONT] Conectando ao Servidor Independente:", wsUrlWithRoom);
 
     // 3. INICIALIZAÇÃO
     ws = new WebSocket(wsUrlWithRoom);
 
-    ws.onopen = () => {
+    ws.onopen = async () => {
         console.log("✅ [FRONT] WebSocket Conectado com Sucesso!");
 
-        // Limpa o intervalo de reconexão se ele existir
         if (reconnectInterval) {
             clearInterval(reconnectInterval);
             reconnectInterval = null;
         }
         
-        // Mantém a tela acesa (WakeLock)
-        try { requestWakeLock(); } catch(e) { console.warn("WakeLock não suportado ou aba oculta."); }
+        try { requestWakeLock(); } catch(e) { console.warn("WakeLock não suportado."); }
 
-        // Solicita o estado atual do bingo ao entrar
-        const initialRequest = { action: "GET_INITIAL_STATE" };
-        ws.send(JSON.stringify(initialRequest));
-        console.log("📤 Solicitando estado inicial da sala.");
+        // --- SINCRONIZAÇÃO DUPLA (BINGO + ARQUIVO DO CUPOM) ---
 
-        // Pequeno delay para garantir que o DOM esteja pronto antes de processar login
+        // A. Solicita estado do Bingo (via WebSocket)
+        ws.send(JSON.stringify({ action: "GET_INITIAL_STATE" }));
+        console.log("📤 Solicitando estado inicial do Bingo.");
+
+        // B. Busca Cupom Ativo (via Arquivo/API - Segurança máxima para celular)
+        // Isso resolve o problema de não aparecer no celular ao conectar/reconectar
+        sincronizarCupomViaArquivo(); 
+
         setTimeout(processarParametrosURL, 500); 
     };
 
@@ -4375,8 +4370,6 @@ function connectWebSocket() {
             // --- TRATAMENTO DE ATUALIZAÇÃO DE RODADA ---
             if (payload.type === 'UPDATE') {
                 const melhoresData = payload.melhoresData;
-
-                // BUSCA DO ID DO EVENTO (Para carregar imagem do prêmio)
                 let idSocket = null;
                 if (payload.rodadaData && payload.rodadaData.length > 0) {
                     idSocket = payload.rodadaData[0].id_evento;
@@ -4385,28 +4378,18 @@ function connectWebSocket() {
                     const params = payload.parametros || payload.parametrosInfo || {};
                     idSocket = payload.id_evento || params.id_evento;
                 }
+                if (idSocket) { buscarImagemDoPremio(idSocket); }
 
-                if (idSocket) {
-                     buscarImagemDoPremio(idSocket);
-                }
-
-                // Renderização Visual
                 renderMainContent(payload); 
                 
-                if (melhoresData) {
-                    renderMelhores(melhoresData);
-                }
-                
+                if (melhoresData) { renderMelhores(melhoresData); }              
                 verificarNovasCompras();
             }
-            // --- TRATAMENTO DE SORTEIO EXTRA / CUPOM ---
+            
+            // --- TRATAMENTO DE SORTEIO EXTRA / CUPOM (PUSH) ---
             else if (payload.type === 'EXIBIR_CUPOM') {
-                console.log("📨 Comando de exibição de cupom recebido.");
-                if (payload.cupom) {
-                    exibirConferenciaSorteExtra(payload.cupom);
-                } else {
-                    ocultarConferencia();
-                }
+                console.log("📨 Comando de exibição de cupom recebido via Socket.");
+                tratarExibicaoCupom(payload.cupom);
             }
 
         } catch (e) {
@@ -4418,7 +4401,6 @@ function connectWebSocket() {
         console.warn(`⚠️ [FRONT] Conexão Perdida (Código: ${event.code}). Tentando Reconectar...`);
         try { releaseWakeLock(); } catch(e){}
         
-        // Inicia o ciclo de reconexão se já não estiver rodando
         if (!reconnectInterval) {
             reconnectInterval = setInterval(() => {
                 console.log("🔄 Tentativa de reconexão automática...");
@@ -4429,11 +4411,42 @@ function connectWebSocket() {
 
     ws.onerror = (error) => {
         console.error('❌ [FRONT] Erro técnico detectado no WebSocket.');
-        // O fechamento forçado aqui dispara o onclose que fará a reconexão
         if (ws) ws.close();
     };
 }
 
+// ======================================================
+// FUNÇÕES DE APOIO PARA O CUPOM EM ARQUIVO
+// ======================================================
+
+async function sincronizarCupomViaArquivo() {
+    try {
+        console.log("📂 Buscando estado do cupom no servidor...");
+        // API_BASE_URL deve estar vazio ou apontar para a raiz da Digital Ocean
+        const resp = await fetch(`${API_BASE_URL}/api/get_cupom_atual?t=${Date.now()}`); 
+        const cupom = await resp.json();
+        
+        console.log("📄 Resultado da busca por arquivo:", cupom);
+        tratarExibicaoCupom(cupom);
+    } catch (err) {
+        console.error("❌ Erro ao sincronizar cupom via arquivo:", err);
+    }
+}
+
+function tratarExibicaoCupom(dadosCupom) {
+    if (dadosCupom && Object.keys(dadosCupom).length > 0) {
+        // Se a função abaixo existir, ela será chamada com os dados do arquivo ou socket
+        if (typeof exibirConferenciaSorteExtra === "function") {
+            exibirConferenciaSorteExtra(dadosCupom);
+        } else {
+            console.error("A função exibirConferenciaSorteExtra não foi encontrada!");
+        }
+    } else {
+        if (typeof ocultarConferencia === "function") {
+            ocultarConferencia();
+        }
+    }
+}
 
 // Adiciona o ouvinte de evento para redimensionamento da janela
 window.addEventListener('resize', checkDeviceType);
@@ -6525,7 +6538,7 @@ function gerarBadgeStatusEvento(config) {
                 ⚠️ ATENÇÃO: PRÓXIMO EVENTO
             </div>
             <div class="text-center text-white font-bold text-xs">
-                Vendas abertas para: <span class="text-yellow-300 block text-sm -mt-1">${config.data_hora_evento}</span>
+                Vendas abertas para: <span class="text-yellow-300 block text-sm -mt-1.5">${config.data_hora_evento}</span>
             </div>
         </div>
         `;
