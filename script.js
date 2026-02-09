@@ -110,10 +110,14 @@ let ultimaBolaExibida = null;          // Para controlar a "Bola Grande"
 
 //let clienteLogado = false;
 
-let globalIdCliente = null;   // Guarda o ID do usuário logado
 let globalUserNick = null;
 let globalUserSaldo = 0.0;
 var globalPrecoCartela = 0;
+
+var currentEventoId = null;   // ID do Evento ativo (usado para buscar cartelas)
+var globalIdCliente = null;   // ID do Cliente logado
+var globalMinhasCartelas = { cartelas: [], cupons_extra: [] }; // Cache de jogos
+var globalBolasCantadas = []; // Cache de sorteio
 
 let eventoSelecionadoParaCompra = 0;
 
@@ -128,7 +132,6 @@ let tipoDoSorteio = "";
 let Carregando = true;
 let cachedRawCards = [];
 let MAX_BOLAS = 90;
-let globalBolasCantadas = [];
 
 let configBingo75 = {
     horizontal: true,  // Padrão: Ativo
@@ -957,9 +960,6 @@ function agruparNumerosEmRanges2(numeros) {
 
 // --- FUNÇÕES VISUAIS DE CARTELAS ---
 
-// Variável Global Segura
-var globalMinhasCartelas = { cartelas: [], cupons_extra: [] };
-
 function renderizarListaMinhasCartelas(dados) {
 
     let listaBingo = [];
@@ -1493,40 +1493,35 @@ function handleFullscreenChange() {
 }
 
 
-
 // 15. ABRIR PAINEL DE MINHAS CARTELAS
 async function openMyCardsPanel() {
-    const idEvt = currentEventoId;
-    const idCli = globalIdCliente;
+    // Busca os IDs das variáveis globais ou da URL como segurança
+    const urlParams = new URLSearchParams(window.location.search);
+    const idEvt = eventoCarregadoAtual;
+    const idCli =clienteLogadoId || urlParams.get('id_cliente') || localStorage.getItem('idCliente');
 
-    // Se o ID for "null" em string, tratamos como erro
-    if (!idEvt || !idCli || idCli === 'null') {
-        console.error("IDs ausentes:", { idEvt, idCli });
+    if (!idEvt || !idCli || idCli === 'null' || idCli === 'undefined') {
+        console.error("⚠️ Falha ao abrir cartelas: Dados ausentes", { idEvt, idCli });
+        showCustomAlert("Aguardando identificação do evento/cliente.", "Aviso", "⏳");
         return;
     }
 
-    // Use caminho RELATIVO (sem http://localhost)
+    // Caminho RELATIVO para funcionar no Docker e Online
     const urlApi = `/api/consultar_cartelas_evento?id_evento=${idEvt}&id_cliente=${idCli}`;
 
     try {
         const response = await fetch(urlApi);
-        
         if (!response.ok) {
-            const errorText = await response.text(); // Pega o erro bruto do Python
+            const errorText = await response.text();
             throw new Error(`Erro ${response.status}: ${errorText}`);
         }
-
         const data = await response.json();
-        
-        // Atualiza os arrays globais
-        cartelasDoJogador = data.cartelas || [];
-        cuponsSorteExtra = data.cupons_extra || [];
-
-        renderizarListaMinhasCartelas();
-        document.getElementById('modal-minhas-cartelas').classList.remove('hidden');
-
+        // Salva e renderiza
+        renderizarListaMinhasCartelas(data); 
+        document.getElementById('my-cards-panel-container').classList.remove('hidden');
     } catch (error) {
-        console.error("❌ Erro no fetch:", error);
+        console.error("❌ Erro ao buscar cartelas:", error);
+        showCustomAlert("Não foi possível carregar seus jogos agora.", "Erro", "❌");
     }
 }
 

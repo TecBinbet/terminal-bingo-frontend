@@ -2714,7 +2714,7 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
                 'nome': nome_ganhador,
                 'valor_rateio': str_total, # Rateio pode ser ajustado depois se houver mais ganhadores
                 'linha_ganha_tag': tag_premio,
-                'hora': datetime.now().strftime("%H:%M:%S")
+                'hora': hora_brasil().strftime("%H:%M:%S")
             })
 
             if val_total_float > 0:
@@ -2982,8 +2982,8 @@ def admin_validar_cartela():
                     'nome': nome_ganhador,
                     'valor_rateio': valor_monetario_str,
                     'linha_ganha_tag': linha_ganha,
-                    'hora': datetime.now().strftime("%H:%M:%S")
-                })
+                    'hora': hora_brasil().strftime("%H:%M:%S")
+                }) # brasil
 
                 # 2. --- PAGAMENTO AUTOMÁTICO ---
                 if raw_val > 0:
