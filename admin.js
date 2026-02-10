@@ -14,6 +14,7 @@ const bolaDestaque = document.getElementById('bola-destaque');
 const btnSortear = document.getElementById('btn-sortear');
 const contadorElement = document.getElementById('contador-bolas');
 
+
 // --- VARIÁVEIS DE CONTROLE ---
 let isSorting = false;
 let autoSorteioInterval = null;
@@ -3032,10 +3033,17 @@ function buscarNomeDaSalaBackend() {
 
 
 function enviarComandoHardware(codigoComando) {
-    console.log(`🔌 Enviando comando '${codigoComando}' para o Hardware...`);
+    // --- LINHAS VITAIS PARA SER DINÂMICO ---
+    const protoccolo = window.location.protocol; 
+    const hostname = window.location.hostname;   
+    const porta = "3001"; 
 
-    // Ajuste a URL se necessário (localhost ou IP da DigitalOcean)
-    const url = 'http://localhost:3001/api/enviar_comando_serial';
+    const API_BASE_URL_SERIAL = `${protoccolo}//${hostname}:${porta}`;
+    // ---------------------------------------
+
+    console.log(`🔌 Enviando comando '${codigoComando}' para: ${API_BASE_URL_SERIAL}`);
+
+    const url = `${API_BASE_URL_SERIAL}/api/enviar_comando_serial`;
 
     fetch(url, {
         method: 'POST',
@@ -3045,12 +3053,14 @@ function enviarComandoHardware(codigoComando) {
             sala: '001' 
         })
     })
-    .then(res => res.json())
+    .then(res => {
+        // Verifica se o servidor sequer respondeu (CORS ou Porta fechada)
+        if (!res.ok) throw new Error("Servidor não respondeu adequadamente.");
+        return res.json();
+    })
     .then(data => {
-        // CORREÇÃO AQUI: Aceita 'ok' (que vem do Python) OU 'sucesso'
         if (data.status === 'ok' || data.status === 'sucesso') {
-           console.log("📤 SUCESSO! Comando recebido pelo servidor:", data); 
-           // alert("Bola enviada com sucesso!"); 
+           console.log("📤 SUCESSO! Comando recebido:", data); 
         } else {
             console.error("❌ O servidor recusou:", data);
             alert("Erro: " + (data.erro || JSON.stringify(data)));
@@ -3058,6 +3068,7 @@ function enviarComandoHardware(codigoComando) {
     })
     .catch(err => {
         console.error("❌ Erro de Rede:", err);
-        alert("Erro de conexão! O servidor está ligado?");
+        // Dica amigável para o erro mais comum
+        alert(`Erro de conexão!\n\nVerifique se:\n1. O server.py está rodando.\n2. A porta ${porta} está liberada no firewall.\n3. Tentou usar o IP direto em vez de localhost.`);
     });
 }
