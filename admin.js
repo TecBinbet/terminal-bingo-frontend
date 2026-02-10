@@ -679,11 +679,11 @@ async function carregarDadosIniciaisSilencioso() {
 
 
 function processarMensagemWS(event) {
-    console.log("📨 [SOCKET RECEBIDO] Dados brutos:", event.data);
+    //console.log("📨 [SOCKET RECEBIDO] Dados brutos:", event.data);
 
     try {
         const payload = JSON.parse(event.data);
-        console.log("✅ [PASSO X1] JSON Válido. Tipo:", payload.type);
+        //console.log("✅ [PASSO X1] JSON Válido. Tipo:", payload.type);
 
 
         if (payload.type === 'UPDATE') {        
@@ -693,10 +693,6 @@ function processarMensagemWS(event) {
             } else {
                 dadosBolas = payload.bolasData || []; 
             }
-
-
-           console.error("passo x2");
-
 
             if (dadosBolas.length > 0) {
                 const ultimoSorteio = dadosBolas[0];
@@ -1899,13 +1895,15 @@ function renderListaGanhadores(data) {
         return;
     }
     
+console.error("data                         :",data);
+
     let total = 0;
     data.forEach(g => {
         const h = document.createElement('div');
         h.className = "text-green-400 font-bold uppercase border-b border-gray-700 -mt-2 mb-0.5 pt-1 text-[9px]";
         h.textContent = g.premio;
         c.appendChild(h);
-        
+console.error("g                             :",g);        
         if(g.ganhadores) g.ganhadores.forEach(w => {
             total++;
             const r = document.createElement('div');

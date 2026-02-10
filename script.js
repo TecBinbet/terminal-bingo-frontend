@@ -2690,7 +2690,7 @@ function displayPrizeValues(premioData, topeData = null) {
     }
     lastPrizeJson = currentJson; // Atualiza a memória
 
-    // --- PASSO 4: DESENHO (Sua lógica original preservada) ---
+    // --- PASSO 4: DESENHO (Sua lógica original preservada) ---  xxx Erro no envio do pacote: name 'socketio' is not defined xxx
     const fragment = document.createDocumentFragment();
 
     if (validPrizes.length === 0) {
@@ -3072,9 +3072,7 @@ function ocultarConferencia() {
 // --- FUNÇÃO MOSTRAR GANHADORES (CORRIGIDA) ---
 function displayWinnersPanel(ganhadoresData) {
     // 1. Validação se há dados
-    console.error("passo_1");
     if (!ganhadoresData || ganhadoresData.length === 0 || ultimaBolaCantada !== null) return;
-    console.error("passo_2");
     // 2. Gera o Hash (Assinatura) dos dados atuais
     const currentHash = JSON.stringify(ganhadoresData);
 
@@ -3085,7 +3083,7 @@ function displayWinnersPanel(ganhadoresData) {
     if (currentHash === lastGanhadoresHash) {
         return;
     }
-    console.error("passo_3");
+
     // 4. Se passou, atualiza o hash global para a próxima vez
     lastGanhadoresHash = currentHash;
 
@@ -3097,7 +3095,7 @@ function displayWinnersPanel(ganhadoresData) {
 
     // O Backend já manda os dados agrupados. Iteramos sobre os grupos.
     ganhadoresData.forEach(grupo => {
-        
+console.log("Grupo recebido:", grupo);
         // Container do Grupo (Prêmio)
         const groupDiv = document.createElement('div');
         groupDiv.className = 'bg-gray-800 rounded-lg p-1 border border-gray-700 mb-1';
@@ -3105,15 +3103,18 @@ function displayWinnersPanel(ganhadoresData) {
         // Cabeçalho do Prêmio
         const headerDiv = document.createElement('div');
         headerDiv.className = 'flex justify-between items-center border-b border-gray-600 pb-1 mb-1';
+
         headerDiv.innerHTML = `
             <span class="text-green-400 font-bold text-lg">${grupo.premio}</span>
-            <span class="text-white font-bold bg-green-700 px-1 py-0.5 rounded text-sm">${grupo.valor}</span>
+            <span class="text-white font-bold bg-green-700 px-1 py-0.5 rounded text-sm">${grupo.valor_total_premio}</span>
         `;
         groupDiv.appendChild(headerDiv);
 
         // Lista de Ganhadores deste prêmio
         if (grupo.ganhadores && Array.isArray(grupo.ganhadores)) {
+console.log("Ganhadores encontrados:", grupo.ganhadores);
             grupo.ganhadores.forEach(ganhador => {
+console.log("Dados do ganhador individual:", ganhador);
                 const row = document.createElement('div');
                 row.className = 'flex justify-between items-center text-sm py-1 hover:bg-gray-700 rounded px-1';
                 row.innerHTML = `
