@@ -1,0 +1,3 @@
+URL=http://localhost
+SALA=001
+PORTA_SERIAL=AUTO

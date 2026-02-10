@@ -3032,26 +3032,32 @@ function buscarNomeDaSalaBackend() {
 
 
 function enviarComandoHardware(codigoComando) {
-
     console.log(`🔌 Enviando comando '${codigoComando}' para o Hardware...`);
 
-    // 2. Faz o POST para a API
-    fetch(`${API_BASE_URL}/api/enviar_comando_serial`, {
+    // Ajuste a URL se necessário (localhost ou IP da DigitalOcean)
+    const url = 'http://localhost:3001/api/enviar_comando_serial';
+
+    fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codigo: codigoComando })
+        body: JSON.stringify({ 
+            codigo: codigoComando,
+            sala: '001' 
+        })
     })
     .then(res => res.json())
     .then(data => {
-        if (data.status === 'sucesso') {
-           console.log("📤 Comando enviado para a rede:", data.msg); 
-            // Opcional: Mostrar um toast/aviso de sucesso
+        // CORREÇÃO AQUI: Aceita 'ok' (que vem do Python) OU 'sucesso'
+        if (data.status === 'ok' || data.status === 'sucesso') {
+           console.log("📤 SUCESSO! Comando recebido pelo servidor:", data); 
+           // alert("Bola enviada com sucesso!"); 
         } else {
-            console.error("❌ Falha no Envio do Pacote:", data.erro);
-            alert("Erro no envio do pacote: " + data.erro);
+            console.error("❌ O servidor recusou:", data);
+            alert("Erro: " + (data.erro || JSON.stringify(data)));
         }
     })
     .catch(err => {
         console.error("❌ Erro de Rede:", err);
+        alert("Erro de conexão! O servidor está ligado?");
     });
 }

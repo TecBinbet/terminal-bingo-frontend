@@ -291,9 +291,17 @@ client = None
 sales_client = None  # Cache para conexão de vendas
 current_sales_uri = None
 
+estado_jogo = {
+    "bola_atual": "--",
+    "ultimas_bolas": [],
+    "status": "aguardando"
+}
+
 #clients = set() # WebSocket clients
 if 'clients' not in globals():
     clients = set()
+
+comandos_pendentes = {}
 
 CUPOM_FILE = "cupom_atual.json"
 
@@ -1549,49 +1557,69 @@ def initial_data():
     # Se ainda assim for vazio (início do sistema), manda {}
     return jsonify(dados if dados else {})
 
-#============================
-# No server.py (Versão Cloud) porta serial
-#=============================
+
+# ==============================================================================
+# 1. ROTA DE ENVIO (Painel Admin -> Servidor)
+# ==============================================================================
+# Atualize a sua rota de RECEBER COMANDO para atualizar também o estado do jogo
 @app.route('/api/enviar_comando_serial', methods=['POST'])
-def api_enviar_serial():
+def receber_do_painel():
+    global comandos_pendentes, estado_jogo
     try:
-        # 1. Recebe do Admin
         dados = request.get_json()
         codigo = dados.get('codigo')
-        
-        # Usa a variável global que definimos no início do server.py
-        # Isso garante que o comando vá marcado com a sala certa
-        id_sala = PARAM_ID_SALA 
+        sala_id = dados.get('sala', 'padrao')
 
-        print(f"☁️ [API] Admin pediu comando: {codigo} (Para Sala: {id_sala})")
-
-        # Validação básica
-        if not codigo:
-            return jsonify({"erro": "Código não informado"}), 400
-
-        # ==================================================================
-        # 2. O PULO DO GATO: A PONTE PARA O LOCAL 🌉
-        # ==================================================================
-        # Em vez de chamar serial.write, nós emitimos um evento SocketIO.
-        # O script 'agente_local.py' no seu PC vai capturar isso.
-        
-        socketio.emit('comando_hardware', {
-            'codigo': codigo, 
-            'sala': id_sala,
-            'timestamp': time.time()
-        })
-
-        # 3. Retorna sucesso para o Admin não travar
-        return jsonify({
-            "status": "sucesso", 
-            "msg": "Comando enviado para a rede (Aguardando Agente Local)"
-        }), 200
-
+        if codigo:
+            # 1. Guarda para o Agente Físico buscar
+            comandos_pendentes[sala_id] = codigo
+            
+            # 2. Atualiza a memória da Tela/Admin
+            estado_jogo["bola_atual"] = codigo
+            # Adiciona ao histórico (mantém só as ultimas 5)
+            estado_jogo["ultimas_bolas"].insert(0, codigo)
+            estado_jogo["ultimas_bolas"] = estado_jogo["ultimas_bolas"][:5]
+            
+            print(f"✅ [JOGO] Bola {codigo} sorteada e atualizada no painel.")
+            return jsonify({"status": "ok"}), 200
+            
     except Exception as e:
-        print(f"❌ Erro na API Serial: {e}")
         return jsonify({"erro": str(e)}), 500
 
+# ==============================================================================
+# 2. ROTA DE BUSCA (Agente Local -> Servidor)
+# ==============================================================================
+@app.route('/api/buscar_comando', methods=['GET'])
+def entregar_ao_agente():
+    try:
+        # O Agente pode dizer quem ele é na URL: /api/buscar_comando?sala=001
+        # Se não disser, assume 'padrao'
+        sala_id = request.args.get('sala', 'padrao')
 
+        # Verifica se tem algo na gaveta dessa sala
+        comando = comandos_pendentes.get(sala_id)
+
+        if comando:
+            # 1. Entrega a bola
+            msg = comando
+            
+            # 2. LIMPA a gaveta imediatamente para a bola não girar 2 vezes
+            comandos_pendentes[sala_id] = None 
+            
+            print(f"🚀 [ENTREGA] Comando '{msg}' enviado para o Agente ({sala_id})")
+            return jsonify({"comando": msg})
+        
+        # Se a gaveta estiver vazia ou None
+        return jsonify({"comando": None})
+
+    except Exception as e:
+        print(f"⚠️ Erro na entrega: {e}")
+        return jsonify({"comando": None})
+
+
+@app.route('/api/estado_atual', methods=['GET'])
+def ler_estado_tela():
+    return jsonify(estado_jogo)
 
 
 @app.route('/api/melhores')
