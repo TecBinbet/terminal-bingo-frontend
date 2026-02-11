@@ -14,7 +14,6 @@ const bolaDestaque = document.getElementById('bola-destaque');
 const btnSortear = document.getElementById('btn-sortear');
 const contadorElement = document.getElementById('contador-bolas');
 
-
 // --- VARIÁVEIS DE CONTROLE ---
 let isSorting = false;
 let autoSorteioInterval = null;
@@ -78,7 +77,9 @@ let processandoVitoria = false;
 // Controle de Hardware/Config
 let modoSorteio = 'auto'; 
 let vozAtiva = true;
-let enviarPortaSerial = false;   
+let enviarPortaSerial = false;  
+let portaSerial = null;
+ 
 let cameraAtiva = false;
 let sorteioAutomatizadoConfig = false; 
 
@@ -109,7 +110,7 @@ let socket = null;
 let reconnectInterval = null;
 let countdownInterval = null;
 let houveGanhadorNaSessao = false;
-const RECONNECT_DELAY = 5000;
+const RECONNECT_DELAY = 2000;
 
 
 // =========================================================
@@ -412,6 +413,10 @@ function renderGridConferencia(data) {
     }
     // yyyy
     const ultimaBola = bolas.length > 0 ? bolas[bolas.length - 1] : null;
+    
+    console.error("bolas                        :",bolas);
+    console.error("bolas.length             :",bolas.length);
+    console.error("ultimaBola               :",ultimaBola); 
 
     console.error("ultimaBola               :",ultimaBola); 
     if (tipoJogo === 75 && numerosDaCartela.length === 25) { 
@@ -507,27 +512,149 @@ function hideLoading() {
 // === 2. SISTEMA DE CONEXÃO & WEBSOCKET ===
 // =========================================================
 
+
+// --- SUA FUNÇÃO (Com leve proteção para não resetar o timer toa hora) ---
 function gerenciarEstadoConexao(online) {
     const overlay = document.getElementById('overlay-conexao');
     const countdownSpan = document.getElementById('countdown-connection');
+    
     if (online) {
+        // VOLTOU! Esconde tudo e vida que segue
         if(overlay) overlay.classList.add('hidden');
         if (countdownInterval) clearInterval(countdownInterval);
-        carregarDadosIniciaisSilencioso();
-    } else {
-        if(overlay) overlay.classList.remove('hidden');
-        if (modoRoboAtivo) pararModoRobo();
+        countdownInterval = null; // Limpa a referência
         
-        let count = RECONNECT_DELAY / 1000;
-        if(countdownSpan) countdownSpan.textContent = count;
-        if (countdownInterval) clearInterval(countdownInterval);
-        countdownInterval = setInterval(() => {
-            count--; if(count < 0) count = RECONNECT_DELAY / 1000;
+        // Atualiza a tela sem recarregar a página (Soft Update)
+        carregarDadosIniciaisSilencioso(); 
+    } else {
+        // CAIU!
+        if(overlay && overlay.classList.contains('hidden')) {
+            // Só entra aqui se for a PRIMEIRA vez que cai (para não resetar o timer a cada loop)
+            overlay.classList.remove('hidden');
+            if (typeof modoRoboAtivo !== 'undefined' && modoRoboAtivo) pararModoRobo();
+            
+            let count = RECONNECT_DELAY / 1000;
             if(countdownSpan) countdownSpan.textContent = count;
-        }, 1000);
+            
+            if (countdownInterval) clearInterval(countdownInterval);
+            
+            // Inicia a contagem visual
+            countdownInterval = setInterval(() => {
+                count--; 
+                if(count <= 0) count = RECONNECT_DELAY / 1000;
+                if(countdownSpan) countdownSpan.textContent = count;
+            }, 1000);
+        }
     }
 }
 
+// --- A NOVA FUNÇÃO DO BOTÃO (Manual) ---
+function tentarReconexaoManual() {
+    const btn = document.getElementById('btn-reconnect');
+    const textoOriginal = btn.innerText;
+
+    // 1. Feedback visual para o usuário não clicar 50 vezes
+    btn.innerText = "⏳ Testando...";
+    btn.disabled = true;
+    btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+    console.log("👆 Tentativa manual iniciada...");
+
+    // 2. Define a URL (Dinâmica, como fizemos antes)
+    const urlBase = window.location.origin; // Pega https://seu-app.digitalocean...
+    const url = `${urlBase}/api/estado_atual`; // Rota leve só para testar
+
+    // 3. Tenta buscar
+    fetch(url)
+        .then(res => {
+            if (res.ok) {
+                console.log("✅ Conexão voltou!");
+                // Chama sua função passando TRUE para esconder a tela vermelha
+                gerenciarEstadoConexao(true);
+            } else {
+                throw new Error("Servidor respondeu com erro");
+            }
+        })
+        .catch(err => {
+            console.log("❌ Ainda sem conexão.");
+            // Se falhar, reseta o botão para o usuário tentar de novo depois
+        })
+        .finally(() => {
+            // Sempre restaura o botão (dando certo ou errado)
+            btn.innerText = textoOriginal;
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        });
+}
+
+
+// ==========================================
+// === FUNÇÃO WEBSOCKET DINÂMICA (CORRIGIDA) ===
+// ==========================================
+
+let adminSocket = null;
+let adminSocketRetries = 0;
+
+function connectAdminWSb() {
+    if (adminSocket && (adminSocket.readyState === WebSocket.OPEN || adminSocket.readyState === WebSocket.CONNECTING)) {
+        return; // Já tem um socket aberto, não cria outro
+    }
+
+    // --- LÓGICA DINÂMICA DE URL ---
+    const protocolo = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const hostname = window.location.hostname;
+    
+    // Se for DigitalOcean/Nuvem, não usa porta :3001 (o roteador redireciona). 
+    // Se for Localhost, usa :3001.
+    const isCloud = hostname.includes('digitalocean') || hostname.includes('ondigitalocean') || hostname.includes('herokuapp');
+    const porta = isCloud ? "" : ":3001";
+
+    const wsUrl = `${protocolo}//${hostname}${porta}/stream`;
+
+    console.log(`🔌 [WS] Tentando conectar em: ${wsUrl}`);
+
+    try {
+        adminSocket = new WebSocket(wsUrl);
+
+        adminSocket.onopen = () => {
+            console.log("✅ WebSocket Conectado e Estável!");
+            adminSocketRetries = 0; // Reseta contador de erros
+        };
+
+        adminSocket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                // Se receber uma bola nova pelo socket, atualiza a tela na hora
+                if (data.tipo === 'nova_bola' && data.bola) {
+                    console.log("⚡ Bola recebida via Socket:", data.bola);
+                    // Atualiza interface se necessário (opcional, pois o Polling já faz isso)
+                }
+            } catch (e) {
+                console.error("Erro ao ler msg socket:", e);
+            }
+        };
+
+        adminSocket.onclose = (e) => {
+            // Só tenta reconectar se não foi fechado de propósito
+            console.warn(`⚠️ WebSocket Fechado (Código: ${e.code}). Tentando reconectar em 5s...`);
+            adminSocket = null;
+            
+            // Backoff exponencial simples (evita travar o navegador)
+            const tempoEspera = Math.min(5000 * (adminSocketRetries + 1), 30000); 
+            adminSocketRetries++;
+
+            setTimeout(connectAdminWS, tempoEspera);
+        };
+
+        adminSocket.onerror = (err) => {
+            console.error("❌ Erro no WebSocket:", err);
+            adminSocket = null;
+        };
+
+    } catch (error) {
+        console.error("Erro fatal ao criar WebSocket:", error);
+    }
+}
 
 function connectAdminWS() {
     console.log("🔌 [CONNECT] Iniciando WebSocket em:", WS_URL);
@@ -1174,10 +1301,10 @@ async function salvarConfiguracoes() {
         url_padrao: urlPadrao, 
         url_live: urlLive, 
         url_mongo_vendas: urlMongo,
-        tipo_sorteio: parseInt(tipoSorteio) || 15, 
-        tipo_entrada_de_cartelas: parseInt(tipoEntrada) || 1,
+        tipo_sorteio: parseInt(tipoSorteio) || 25, 
+        tipo_entrada_de_cartelas: parseInt(tipoEntrada) || 2,
         sorteio_automatizado: isSorteioAuto,
-        aviso_fim_das_vendas: parseInt(tempoVendas) || 120,
+        aviso_fim_das_vendas: parseInt(tempoVendas) || 30,
         aguardandoVideo: valorAtrasoFinal,
         buscar_sorte_extra: buscarExtra,
         enviar_porta_serial: checkSerial  
@@ -1479,7 +1606,7 @@ function iniciarTimerEspera(idEvento) {
     const display = document.getElementById('timer-display');
     const progress = document.getElementById('timer-progress');
     
-    let tempoTotal = 120; 
+    let tempoTotal = 30; 
     if (configuracaoServer && configuracaoServer.aviso_fim_das_vendas) {
         tempoTotal = parseInt(configuracaoServer.aviso_fim_das_vendas);
     }
@@ -1563,7 +1690,7 @@ async function executarCarregamentoReal(idEvento) {
         dadosEventoAtual = dados; 
         document.getElementById('painel-evento-ativo').classList.remove('hidden');
 
-        const tipoCartela = parseInt(dados.tipo_cartela || 15);
+        const tipoCartela = parseInt(dados.tipo_cartela || 25);
         if (tipoCartela === 25) {
             MAX_BOLAS = 75;
             console.log("🎱 Evento Configurado: BINGO 75");
@@ -1895,8 +2022,6 @@ function renderListaGanhadores(data) {
         if(count) count.textContent="0";
         return;
     }
-    
-console.error("data                         :",data);
 
     let total = 0;
     data.forEach(g => {
@@ -1904,7 +2029,6 @@ console.error("data                         :",data);
         h.className = "text-green-400 font-bold uppercase border-b border-gray-700 -mt-2 mb-0.5 pt-1 text-[9px]";
         h.textContent = g.premio;
         c.appendChild(h);
-console.error("g                             :",g);        
         if(g.ganhadores) g.ganhadores.forEach(w => {
             total++;
             const r = document.createElement('div');
@@ -3032,43 +3156,245 @@ function buscarNomeDaSalaBackend() {
 }
 
 
-function enviarComandoHardware(codigoComando) {
-    // --- LINHAS VITAIS PARA SER DINÂMICO ---
-    const protoccolo = window.location.protocol; 
-    const hostname = window.location.hostname;   
-    const porta = "3001"; 
+// =========================================================
+// === MÓDULO DE COMUNICAÇÃO SERIAL (HARDWARE) ===
+// =========================================================
 
-    const API_BASE_URL_SERIAL = `${protoccolo}//${hostname}:${porta}`;
-    // ---------------------------------------
-
-    console.log(`🔌 Enviando comando '${codigoComando}' para: ${API_BASE_URL_SERIAL}`);
-
-    const url = `${API_BASE_URL_SERIAL}/api/enviar_comando_serial`;
-
-    fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            codigo: codigoComando,
-            sala: '001' 
-        })
-    })
-    .then(res => {
-        // Verifica se o servidor sequer respondeu (CORS ou Porta fechada)
-        if (!res.ok) throw new Error("Servidor não respondeu adequadamente.");
-        return res.json();
-    })
-    .then(data => {
-        if (data.status === 'ok' || data.status === 'sucesso') {
-           console.log("📤 SUCESSO! Comando recebido:", data); 
+/**
+ * Abre a porta serial com tratamento de erro e reconexão automática
+ */
+async function ativarSerial() {
+    try {
+        // 1. Verifica se já temos permissão de sessões anteriores
+        const portasDisponiveis = await navigator.serial.getPorts();
+        
+        if (portasDisponiveis.length > 0) {
+            // Pega a primeira porta disponível (geralmente é a correta)
+            portaSerial = portasDisponiveis[0];
+            console.log("🔄 Reconectando à porta autorizada anteriormente...");
         } else {
-            console.error("❌ O servidor recusou:", data);
-            alert("Erro: " + (data.erro || JSON.stringify(data)));
+            // Se não tem, abre o popup para o usuário escolher
+            portaSerial = await navigator.serial.requestPort();
+        }
+
+        // 2. Tenta abrir a porta
+        await portaSerial.open({ baudRate: 9600 });
+        
+        console.log("✅ [HARDWARE] Serial conectada com sucesso!");
+       
+        // 3. Pega informações do dispositivo (Vendor ID) para "simular" o nome
+        const info = portaSerial.getInfo();
+        // Se tiver VendorID, usa ele (ex: 2341 é Arduino). Se não, usa "Genérico".
+        const idDispositivo = info.usbVendorId ? `(ID: ${info.usbVendorId})` : "";
+        
+        // Feedback Visual (se o botão existir)
+        const btn = document.getElementById('btn-debug-conectar');
+        if(btn) {
+            btn.textContent = "CONECTADO ✅";
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+
+        const btnPrincipal = document.getElementById('btn-ligar-extratora');
+        if (btnPrincipal) {
+            // Muda a cor para verde e altera o texto
+            btnPrincipal.className = "flex items-center gap-2 bg-green-700 text-white px-4 py-1 rounded-lg font-bold border border-green-500 shadow-lg cursor-default";
+            // Remove a função de clique para não abrir de novo
+            btnPrincipal.onclick = null; 
+            btnPrincipal.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                EXTRATORA CONECTADA ${idDispositivo}
+            `;
+        }        
+
+        alert("Extratora Conectada!");
+
+    } catch (err) {
+        console.error("❌ [HARDWARE] Erro ao conectar:", err);
+        
+        // Tratamento específico para o erro que você relatou
+        if (err.message.includes("Failed to open serial port")) {
+            alert("⚠️ A porta parece estar travada!\n\nDica: Desconecte o cabo USB e conecte novamente, ou feche outras abas do navegador.");
+        } else {
+            alert("Erro ao conectar serial: " + err.message);
+        }
+        
+        portaSerial = null; // Reseta a variável para tentar de novo
+    }
+}
+
+/**
+ * Envia comando com Checksum para a CPU Local
+ * @param {string} codigoComando - Ex: "F04"
+ */
+async function enviarComandoHardware(codigoComando) {
+    // 1. Verifica se a porta está aberta
+    if (!portaSerial || !portaSerial.writable) {
+        console.warn(`⚠️ [HARDWARE] Falha: Tentando enviar '${codigoComando}' mas a serial está OFF.`);
+        return false;
+    }
+
+    try {
+        const s_limpa = String(codigoComando).trim();
+
+        // --- Cálculo de Checksum (Lógica Python) ---
+        let z = 85; // Valor inicial
+        for (let i = 0; i < s_limpa.length; i++) {
+            z += s_limpa.charCodeAt(i);
+        }
+        
+        z = z % 256;
+        const checksum = (255 - z + 1) % 256;
+
+        // --- Montagem do Payload ---
+        const encoder = new TextEncoder(); 
+        const dataBytes = encoder.encode(s_limpa);
+        
+        // Buffer: Dados + 1 byte Checksum + 2 bytes (\r\n)
+        const payload = new Uint8Array(dataBytes.length + 3);
+        payload.set(dataBytes);
+        payload[dataBytes.length] = checksum;
+        payload[dataBytes.length + 1] = 13; // \r 
+        payload[dataBytes.length + 2] = 10; // \n 
+
+        // --- Envio ---
+        const writer = portaSerial.writable.getWriter();
+        await writer.write(payload);
+        writer.releaseLock();
+
+        console.log(`[%] 📤 [HARDWARE] Enviado: ${s_limpa} (Checksum: ${checksum})`);
+        return true;
+
+    } catch (e) {
+        console.error(`[%] ❌ [HARDWARE] Erro de escrita: ${e.message}`);
+        return false;
+    } 
+}
+
+
+// Variável para não abrir vários timers ao mesmo tempo
+let tentandoReconectar = false;
+
+function exibirErroConexao() {
+    // Se já estiver tentando, não faz nada para não encavalar
+    if (tentandoReconectar) return;
+    
+    tentandoReconectar = true;
+    const overlay = document.getElementById('overlay-conexao');
+    if(overlay) overlay.classList.remove('hidden');
+
+    iniciarCicloReconexao();
+}
+
+function iniciarCicloReconexao() {
+    let segundos = 2; // Tempo entre tentativas
+    const contadorSpan = document.getElementById('countdown-connection');
+    
+    // Atualiza o número na tela (2... 1...)
+    if(contadorSpan) contadorSpan.innerText = segundos;
+
+    const contagem = setInterval(() => {
+        segundos--;
+        if(contadorSpan) contadorSpan.innerText = segundos;
+
+        if (segundos <= 0) {
+            clearInterval(contagem);
+            testarConexaoComServidor(); // Tenta falar com o servidor
+        }
+    }, 1000);
+}
+
+function testarConexaoComServidor() {
+    // Tenta bater na rota mais leve do servidor apenas para ver se ele responde
+    // Use a URL dinâmica que criamos antes
+    const protocolo = window.location.protocol;
+    const hostname = window.location.hostname;
+    // Se estiver na DigitalOcean app platform, não use porta. Se for local, use :3001
+    // Ajuste conforme sua configuração atual:
+    const porta = (hostname.includes('digitalocean')) ? '' : ':3001'; 
+    
+    const urlTeste = `${protocolo}//${hostname}${porta}/api/estado_atual`;
+
+    console.log("📡 Testando conexão com:", urlTeste);
+
+    fetch(urlTeste)
+    .then(response => {
+        if (response.ok) {
+            // SUCESSO! O servidor respondeu.
+            console.log("✅ Conexão restabelecida!");
+            ocultarErroConexao();
+        } else {
+            // Servidor respondeu com erro (ex: 500), mas respondeu.
+            // Consideramos conectado ou tentamos de novo? Geralmente tentamos de novo.
+            throw new Error("Servidor com erro interno");
         }
     })
-    .catch(err => {
-        console.error("❌ Erro de Rede:", err);
-        // Dica amigável para o erro mais comum
-        alert(`Erro de conexão!\n\nVerifique se:\n1. O server.py está rodando.\n2. A porta ${porta} está liberada no firewall.\n3. Tentou usar o IP direto em vez de localhost.`);
+    .catch(error => {
+        // FALHA! Ainda sem internet ou servidor caiu.
+        console.log("❌ Ainda desconectado...");
+        iniciarCicloReconexao(); // Reinicia o contador de 2 segundos
     });
 }
+
+
+function ocultarErroConexao() {
+    const overlay = document.getElementById('overlay-conexao');
+    if(overlay) overlay.classList.add('hidden');
+    
+    tentandoReconectar = false;
+    
+    // Opcional: Forçar uma atualização dos dados imediatamente
+    // buscarDadosDoJogo(); 
+}
+
+// Adicione isso no final do admin.js
+window.addEventListener("beforeunload", async (event) => {
+    if (portaSerial) {
+        try {
+            // Se estiver escrevendo, tenta liberar
+            if (portaSerial.writable && portaSerial.writable.locked) {
+               // Não conseguimos forçar o desbloqueio síncrono no unload,
+               // mas podemos tentar fechar a porta.
+            }
+            await portaSerial.close();
+            console.log("🔒 Porta serial fechada ao sair.");
+        } catch (e) {
+            console.error("Erro ao fechar porta na saída:", e);
+        }
+    }
+});
+
+// =========================================================
+// === CONTROLE DE VISIBILIDADE DA EXTRATORA (SERIAL) ===
+// =========================================================
+
+function atualizarVisibilidadeExtratora() {
+    const radioManual = document.querySelector('input[name="modo_sorteio"][value="manual"]');
+    const btnExtratora = document.getElementById('btn-ligar-extratora');
+    const painelDebug = document.getElementById('painel-debug-serial');
+
+    if (radioManual && radioManual.checked) {
+        // MODO MANUAL: Mostra o botão
+        if(btnExtratora) btnExtratora.classList.remove('hidden');
+    } else {
+        // MODO DIGITAL: Esconde tudo
+        if(btnExtratora) btnExtratora.classList.add('hidden');
+        
+        // Se o painel de debug estiver aberto, fecha ele também
+        if(painelDebug && !painelDebug.classList.contains('hidden')) {
+            painelDebug.classList.add('hidden');
+        }
+    }
+}
+
+// Adiciona os eventos aos Radio Buttons assim que a página carregar
+window.addEventListener('DOMContentLoaded', () => {
+    const radios = document.querySelectorAll('input[name="modo_sorteio"]');
+    radios.forEach(radio => {
+        radio.addEventListener('change', atualizarVisibilidadeExtratora);
+    });
+
+    // Chama uma vez para definir o estado inicial
+    atualizarVisibilidadeExtratora();
+});
