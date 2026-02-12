@@ -4330,7 +4330,8 @@ function connectWebSocket() {
     }
 
     // 2. MONTAGEM DA URL
-    const wsUrlWithRoom = `${WS_URL}${WS_URL.includes('?') ? '&' : '?'}idsala=${currentSalaId}`;
+    //xxx const wsUrlWithRoom = `${WS_URL}${WS_URL.includes('?') ? '&' : '?'}idsala=${currentSalaId}`;
+    const wsUrlWithRoom = `${WS_URL}?idsala=${currentSalaId}`;
     console.log("🔌 [FRONT] Conectando ao Servidor Independente:", wsUrlWithRoom);
 
     // 3. INICIALIZAÇÃO
@@ -4344,7 +4345,8 @@ function connectWebSocket() {
             reconnectInterval = null;
         }
         
-        try { requestWakeLock(); } catch(e) { console.warn("WakeLock não suportado."); }
+        //xxx try { requestWakeLock(); } catch(e) { console.warn("WakeLock não suportado."); }
+        try { if(navigator.wakeLock) navigator.wakeLock.request('screen'); } catch(e){}
 
         // --- SINCRONIZAÇÃO DUPLA (BINGO + ARQUIVO DO CUPOM) ---
 
@@ -4354,9 +4356,10 @@ function connectWebSocket() {
 
         // B. Busca Cupom Ativo (via Arquivo/API - Segurança máxima para celular)
         // Isso resolve o problema de não aparecer no celular ao conectar/reconectar
-        sincronizarCupomViaArquivo(); 
-
-        setTimeout(processarParametrosURL, 500); 
+        if (typeof sincronizarCupomViaArquivo === 'function') {
+            sincronizarCupomViaArquivo(); 
+        }
+        //xxx setTimeout(processarParametrosURL, 500); 
     };
 
     ws.onmessage = (event) => {
@@ -4385,7 +4388,9 @@ function connectWebSocket() {
             // --- TRATAMENTO DE SORTEIO EXTRA / CUPOM (PUSH) ---
             else if (payload.type === 'EXIBIR_CUPOM') {
                 console.log("📨 Comando de exibição de cupom recebido via Socket.");
-                tratarExibicaoCupom(payload.cupom);
+                if (typeof tratarExibicaoCupom === 'function') {
+                    tratarExibicaoCupom(payload.cupom);
+                } 
             }
 
         } catch (e) {
@@ -4728,6 +4733,17 @@ if (menuBtnTema) {
     resultadoSpan = document.getElementById('resultado');
     cardRangeValidation = document.getElementById('card-range-validation');
    // Chama a sua função de inicialização
+
+   connectWebSocket();
+    
+    // 2. Polling de Segurança (Backup a cada 5s para garantir que o cupom apareça)
+    setInterval(() => {
+        // Só executa se a função existir (evita erros)
+        if (typeof sincronizarCupomViaArquivo === 'function') {
+            sincronizarCupomViaArquivo();
+        }
+    }, 5000);
+
     init();
 });
 
