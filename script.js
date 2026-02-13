@@ -110,6 +110,8 @@ let ultimaBolaExibida = null;          // Para controlar a "Bola Grande"
 
 //let clienteLogado = false;
 
+let donoDoModal = null;
+
 let globalUserNick = null;
 let globalUserSaldo = 0.0;
 var globalPrecoCartela = 0;
@@ -2849,6 +2851,7 @@ function updateCardHighlighting(bolasCantadas) {
 }
 
 function displayCardGrid(numerosStringOrArray, bolasCantadas) {
+   donoDoModal = 'BINGO';
     if (MAX_BOLAS === 75) {
         displayCardGrid75(numerosStringOrArray, bolasCantadas);
     } else {
@@ -2973,16 +2976,21 @@ function displayConferencePanel(confereData, bolasCantadas) {
             winnerNameElement.textContent = nomeDoGanhador || 'O Próximo será Seu!';
             displayCardGrid(numerosDaCartela, bolasCantadas);            
         } else {
-            ocultarConferencia();
+            if (donoDoModal === 'BINGO') {                          
+                ocultarConferencia();
+            } 
         }
     } else {
-        ocultarConferencia();
+        if (donoDoModal === 'BINGO') {
+            ocultarConferencia();
+        }
     }
 }
 
 
 // --- FUNÇÃO PARA EXIBIR O GANHADOR DO SORTE EXTRA NA TV (COM DESTAQUE) ---
 function exibirConferenciaSorteExtra(dados) {
+    donoDoModal = 'CUPOM';
     const container = document.getElementById('conference-panel-container');
     const titleEl = container.querySelector('h2'); 
     const cardNumEl = document.getElementById('card-number');
@@ -3045,7 +3053,7 @@ function ocultarConferencia() {
 
     container.classList.remove('flex');
     container.classList.add('hidden');
-    
+    donoDoModal = null;
     // Reseta os textos usando as variáveis globais
     if (cardNumberElement) cardNumberElement.textContent = '...';
     if (winnerNameElement) winnerNameElement.textContent = '...';
@@ -4295,7 +4303,7 @@ function lockScreenOrientation() {
     }
 }
 
-
+// yyy
 async function sincronizarCupomViaArquivo() {
     try {
         // Busca o arquivo JSON via API normal (HTTPS - super estável)
@@ -4306,7 +4314,9 @@ async function sincronizarCupomViaArquivo() {
             console.log("📄 Cupom recuperado do arquivo do servidor.");
             exibirConferenciaSorteExtra(cupom);
         } else {
-            ocultarConferencia();
+            if (donoDoModal === 'CUPOM') {
+               ocultarConferencia();
+            } 
         }
     } catch (err) {
         console.error("Erro ao ler arquivo de cupom:", err);
@@ -4444,7 +4454,9 @@ function tratarExibicaoCupom(dadosCupom) {
         }
     } else {
         if (typeof ocultarConferencia === "function") {
-            ocultarConferencia();
+            if (donoDoModal === 'CUPOM') {                          
+                ocultarConferencia();
+            }
         }
     }
 }

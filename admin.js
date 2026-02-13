@@ -157,7 +157,7 @@ async function processarMatrizEnvio() {
                     urlEndpoint = `${API_BASE_URL}/api/admin/definir_premio_publico`;
                     bodyData = { premio: item.valor };
                     break;
-                case 'LIMPAR_PUBLICO':
+                case 'LIMPAR_PUBLICO':            
                     urlEndpoint = `${API_BASE_URL}/api/admin/limpar_conferencia_publica`;
                     bodyData = {}; // Body vazio pode ser necessário dependendo do backend
                     break;
