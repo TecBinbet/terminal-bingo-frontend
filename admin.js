@@ -470,7 +470,7 @@ function renderGridConferencia(data) {
                 const num = numerosDaCartela[index]; // AQUI TEM CERTEZA QUE EXISTE
 
                 const cell = document.createElement('div');
-                const isFree = (index === 12); 
+                const isFree = false; //(index === 12); 
                 
                 // Tratamento seguro do valor
                 const valorDisplay = (num !== undefined && num !== null) ? num : '';
@@ -1019,6 +1019,24 @@ function processarMensagemWS(event) {
                     !jaValidouSorteExtraNestaRodada) {
         
                     console.log("🚨 [DEBUG] CONDIÇÃO ATINGIDA! ABRINDO MODAL...");
+                    if (typeof autoSorteioAtivo !== 'undefined' && autoSorteioAtivo) {
+                        console.log("✋ Parando Avanço Automático para processar Sorte Extra...");
+                        
+                        // 1. Para o Relógio do intervalo
+                        if (typeof autoSorteioInterval !== 'undefined') clearInterval(autoSorteioInterval);
+                        
+                        // 2. Atualiza a variável de controle
+                        autoSorteioAtivo = false;
+                        
+                        // 3. Atualiza o Botão na interface (Volta para "Play") yyy
+                        const btnAuto = document.getElementById('btn-auto-toggle');
+                        if (btnAuto) {
+                            btnAuto.innerHTML = '▶ Iniciar Auto';
+                            btnAuto.classList.remove('bg-red-600', 'animate-pulse');
+                            btnAuto.classList.add('bg-blue-600');
+                        }
+                    }
+
                     jaValidouSorteExtraNestaRodada = true; 
 
                     if (modoRoboAtivo) {
