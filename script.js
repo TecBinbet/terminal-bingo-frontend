@@ -133,7 +133,7 @@ let lastBuscandoJson = "";
 let tipoDoSorteio = "";
 let Carregando = true;
 let cachedRawCards = [];
-let MAX_BOLAS = 90;
+let MAX_BOLAS = 75;
 
 let configBingo75 = {
     horizontal: true,  // Padrão: Ativo
@@ -3306,12 +3306,19 @@ function renderMelhores(melhoresData) {
 
 // Função para mapear o número da bola à cor (padrão de bingo)
 function getBallColorClass(numero) {
-    if (numero >= 1 && numero <= 15) return 'bg-blue-600 border-4 border-blue-400';
-    if (numero >= 16 && numero <= 30) return 'bg-red-600 border-4 border-red-400';
-    if (numero >= 31 && numero <= 45) return 'bg-purple-600 border-4 border-purple-400';
-    if (numero >= 46 && numero <= 60) return 'bg-green-600 border-4 border-green-400';
-    if (numero >= 61 && numero <= 75) return 'bg-yellow-600 border-4 border-yellow-400';
-    return 'bg-black border-4 border-green-700'; // Cor padrão
+    // Calcula o tamanho do intervalo automaticamente (Ex: 75/5 = 15 ou 90/5 = 18)
+    const intervalo = MAX_BOLAS / 5;
+
+    // Proteção para número 0 ou inválido
+    if (numero < 1) return 'bg-black border-4 border-green-700';
+
+    if (numero <= intervalo * 1) return 'bg-blue-600 border-4 border-blue-400';   // Faixa 1 (B)
+    if (numero <= intervalo * 2) return 'bg-red-600 border-4 border-red-400';    // Faixa 2 (I)
+    if (numero <= intervalo * 3) return 'bg-purple-600 border-4 border-purple-400'; // Faixa 3 (N)
+    if (numero <= intervalo * 4) return 'bg-green-600 border-4 border-green-400';  // Faixa 4 (G)
+    if (numero <= MAX_BOLAS)     return 'bg-yellow-600 border-4 border-yellow-400'; // Faixa 5 (O)
+    
+    return 'bg-black border-4 border-green-700'; // Fallback
 }
 
 
