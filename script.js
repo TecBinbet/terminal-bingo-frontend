@@ -3306,11 +3306,11 @@ function renderMelhores(melhoresData) {
 
 // Função para mapear o número da bola à cor (padrão de bingo)
 function getBallColorClass(numero) {
-    if (numero >= 1 && numero <= 18) return 'bg-blue-600 border-4 border-blue-400';
-    if (numero >= 19 && numero <= 36) return 'bg-red-600 border-4 border-red-400';
-    if (numero >= 37 && numero <= 54) return 'bg-purple-600 border-4 border-purple-400';
-    if (numero >= 55 && numero <= 72) return 'bg-green-600 border-4 border-green-400';
-    if (numero >= 73 && numero <= 90) return 'bg-yellow-600 border-4 border-yellow-400';
+    if (numero >= 1 && numero <= 15) return 'bg-blue-600 border-4 border-blue-400';
+    if (numero >= 16 && numero <= 30) return 'bg-red-600 border-4 border-red-400';
+    if (numero >= 31 && numero <= 45) return 'bg-purple-600 border-4 border-purple-400';
+    if (numero >= 46 && numero <= 60) return 'bg-green-600 border-4 border-green-400';
+    if (numero >= 61 && numero <= 75) return 'bg-yellow-600 border-4 border-yellow-400';
     return 'bg-black border-4 border-green-700'; // Cor padrão
 }
 

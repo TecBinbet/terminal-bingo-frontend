@@ -112,7 +112,6 @@ let countdownInterval = null;
 let houveGanhadorNaSessao = false;
 const RECONNECT_DELAY = 2000;
 
-
 // =========================================================
 // === ROTINA APRIMORADA: BUFFER COM RETRY E TRAVA ===
 // =========================================================
@@ -412,10 +411,16 @@ function renderGridConferencia(data) {
     }
 
     // Identifica o tipo de jogo
-    let tipoJogo = data.layout.tipo;
+    let tipoJogo = data.layout.tipo;   // ttt
     if (!tipoJogo) {
-        if (data.layout.lista && data.layout.lista.length > 0) tipoJogo = 75;
-        else tipoJogo = 90;
+       if (data.layout.superior || data.layout.central || data.layout.inferior) {
+            tipoJogo = 90;
+            MAX_BOLAS = 90;
+        } else {
+            // Caso contrário (mesmo se vier vazio ou zero), assumimos que é BINGO 75 (O seu padrão).
+            tipoJogo = 75;
+            MAX_BOLAS = 75;
+        }
     }
 
     // Extrai os números recebidos
@@ -429,7 +434,7 @@ function renderGridConferencia(data) {
     }
 
     // --- 3. A REGRA DE OURO (TOLERÂNCIA ZERO) ---
-    const tamanhoEsperado = (tipoJogo === 75) ? 25 : 15;
+    const tamanhoEsperado = (tipoJogo === 90) ? 15 : 25;
 
     if (numerosDaCartela.length !== tamanhoEsperado) {
         console.warn(`⚠️ Pacote incompleto! Esperado: ${tamanhoEsperado}, Recebido: ${numerosDaCartela.length}. Rejeitando visualização.`);
