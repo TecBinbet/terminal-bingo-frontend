@@ -832,8 +832,9 @@ async function carregarCartelasAutomaticas(idEvento) {
     }
 
     console.log(`🔄 Buscando cartelas do evento ${idEvento}...`);
+    //let url = `/api/consultar_cartelas_evento?id_evento=${idEvento}`;
+    let url = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idEvento}`;
     
-    let url = `/api/consultar_cartelas_evento?id_evento=${idEvento}`;
     if (clienteLogadoId) {
         url += `&id_cliente=${clienteLogadoId}`;
     }
@@ -1508,8 +1509,9 @@ async function openMyCardsPanel() {
         return;
     }
 
-    // Caminho RELATIVO para funcionar no Docker e Online
-    const urlApi = `/api/consultar_cartelas_evento?id_evento=${idEvt}&id_cliente=${idCli}`;
+    // Caminho RELATIVO para funcionar no Docker e Online aaa
+    //const urlApi = `/api/consultar_cartelas_evento?id_evento=${idEvt}&id_cliente=${idCli}`;
+    const urlApi = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idEvt}&id_cliente=${idCli}`;
 
     try {
         const response = await fetch(urlApi);
@@ -1532,6 +1534,7 @@ async function openMyCardsPanel() {
 function mostrarPainelMinhasCartelas() {
     myCardsPanel.classList.remove('hidden');
     myCardsPanel.classList.add('flex');
+    container.scrollTop = 0;
     if (loader) loader.style.display = 'none';
 }
 
@@ -1850,84 +1853,64 @@ function checkTotalCards(total) {
 async function fetchAndProcessCards() {
     if (isFetchingCards) return;
     isFetchingCards = true;
-    // 1. Usa a variável global 'cartelaRanges' (que já está sendo preenchida corretamente)
-    if (!cartelaRanges || cartelaRanges.length === 0) {
-        //loadedCards = [];
-        displayLoadedCards([]);
-        isFetchingCards = false;
-        return;
-    }
-    // Feedback visual (Loader)
+
+    // FORÇAR RESET DE TRAVA (Garante que se der erro, o loader não mate a tela)
     if (loader) loader.style.display = 'flex';
 
     try {
-        // 2. Chama a API do Servidor (Melhor que carregar JSON gigante no celular)
+        if (!cartelaRanges || cartelaRanges.length === 0) {
+            displayLoadedCards([]);
+            return;
+        }
+
         const response = await fetch(`${API_BASE_URL}/api/cartelas`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ranges: cartelaRanges })
         });
-        if (!response.ok) {
-            throw new Error(`Falha ao buscar cartelas: ${response.status}`);
-        }
+        
         const cards = await response.json();
-
         cachedRawCards = cards || [];
 
-        // 3. Se não veio nada
         if (!cards || cards.length === 0) {
-            console.warn("API retornou 0 cartelas.");
-            loadedCards = [];
             displayLoadedCards([]);
-            // Mostra mensagem de erro na tela se necessário
-            const msgEl = isMobileDevice() ? mobileValidationMessage : validationMessage;
-            if(msgEl) {
-                msgEl.textContent = 'Nenhuma cartela encontrada nestas faixas.';
-                msgEl.classList.remove('hidden');
-            }
             return;
         }
-        console.log(`✅ Recebidas ${cards.length} cartelas da API.`);
 
-        // 4. Prepara os dados para o Processador
-        // Pega as bolas cantadas e o prêmio atual das variáveis globais ou do DOM
-        // (Tentamos pegar do initialData se disponível, senão das variáveis globais)
-        
+        // --- AJUSTE DE OURO: CAPTURA DE BOLAS ---
         let bolas = [];
 
-        // Verifica se existe dados vindo de variáveis externas (bolasData)
-        if (typeof bolasData !== 'undefined' && bolasData && bolasData.length > 0) {
-            const novasBolas = bolasData[0].bolas_cantadas;
-            
-            // CASO 1: Temos bolas novas? Usa elas.
-            if (novasBolas && novasBolas.length > 0) {
-                bolas = novasBolas;
-            } 
-            // CASO 2: Veio vazio, mas temos memória? Mantém a memória (Anti-Pisca).
-            else if (typeof globalBolasCantadas !== 'undefined' && globalBolasCantadas.length > 0) {
-                bolas = globalBolasCantadas;
-            }
-        } 
-        // CASO 3: Não veio bolasData, usa direto a global
-        else if (typeof globalBolasCantadas !== 'undefined' && Array.isArray(globalBolasCantadas)) {
+        // 1. Tenta pegar da global que o WebSocket alimenta (Mais confiável)
+        if (typeof globalBolasCantadas !== 'undefined' && globalBolasCantadas.length > 0) {
             bolas = globalBolasCantadas;
+        } 
+        // 2. Se a global estiver vazia, tenta pegar do cache do sorteio
+        else if (typeof bolasSorteadasCache !== 'undefined' && bolasSorteadasCache.length > 0) {
+            bolas = bolasSorteadasCache;
         }
-        // CASO 4: Fallback antigo (Cache de sorteio)
-        else if (typeof bolasSorteadasCache !== 'undefined') { 
-            bolas = bolasSorteadasCache; 
+        // 3. Se ainda assim estiver vazio, tenta extrair do DOM (Último recurso)
+        else {
+            const bolasNoPainel = document.querySelectorAll('.bola-cantada'); // Ajuste o seletor conforme seu HTML
+            bolas = Array.from(bolasNoPainel).map(el => parseInt(el.textContent)).filter(n => !isNaN(n));
         }
 
-        // Garante valores padrão para prêmio
+        console.log(`✅ Processando ${cards.length} cartelas com ${bolas.length} bolas.`);
+
+        // --- RESET DA VARIÁVEL DE ESTADO ---
+        // Se o sistema usa uma variável global 'Carregando', force ela para false aqui
+        if (typeof Carregando !== 'undefined') Carregando = false;
+
         let premio = buscando_o_premio || "BINGO";
         let linhas = buscando_a_linha || "";
 
-        // 5. CHAMA O NOVO PROCESSADOR (Que decide entre 90 ou 75)
-
+        // Chama o processador
         processCards(cards, bolas, premio, linhas);
         
-        // Limpa mensagens de erro
-        const msgEl = isMobileDevice() ? mobileValidationMessage : validationMessage;
-        if(msgEl) msgEl.classList.add('hidden');
+        // --- FORÇAR ATUALIZAÇÃO DO TOP 10 ---
+        // Se o Top 10 não estiver aparecendo, chame a renderização dele explicitamente
+        if (typeof renderMelhores === 'function') {
+            renderMelhores(cards); 
+        }
 
     } catch (error) {
         console.error("❌ Erro fetchAndProcessCards:", error);
@@ -1936,7 +1919,6 @@ async function fetchAndProcessCards() {
         if (loader) loader.style.display = 'none';
     }
 }
-
 // --------------------------
 
 async function f_etchAndProcessCards() {
@@ -2012,6 +1994,7 @@ async function f_etchAndProcessCards() {
 function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
     // Verifica qual o tipo de jogo (75 ou 90)
     // Se a variável global MAX_BOLAS não estiver definida, assume 90.
+
     if (typeof MAX_BOLAS !== 'undefined' && MAX_BOLAS === 75) {
         if (typeof processCards75 === 'function') {
             processCards75(cards, bolasCantadas, premioBuscado);
@@ -2113,7 +2096,6 @@ function processCards90(cards, bolasCantadas, premioBuscado, linhasAtivas) {
 function processCards75(cards, bolasCantadas, premioBuscado) {
     const processedCards = [];
     if (premioBuscado === 'BINGO') bingoWinners.clear();
-
     const premioUpper = (premioBuscado || "").toUpperCase();
     const bolasSet = new Set(bolasCantadas);
     // --- CONFIGURAÇÃO IDÊNTICA AO SERVER.PY ---
@@ -2126,7 +2108,6 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
         [4, 9, 14, 19, 24]  // Linha 5 (Inferior)
     ];
     const indicesCantos = [0, 4, 20, 24]; // B1, B5, O1, O5
-
     // Decide o Modo de Jogo baseado no Prêmio
     const buscarBingo = premioUpper.includes('BINGO') || premioUpper.includes('ACUMULADO');
     // Se não for Bingo, verifica se é fase de Linha ou Cantos
@@ -2168,7 +2149,6 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
             .filter(n => n !== 0 && !bolasSet.has(n));
         const countCantos = faltamCantos.length;
         const cantosCompleto = (countCantos === 0);
-
         // 4. DECISÃO FINAL (O que mostrar na tela?)
         let missingToDisplay = [];
         let qtdeParaRanking = 99;
@@ -2209,12 +2189,10 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
             missingToDisplay = faltamGeral;
             qtdeParaRanking = countGeral;
         }
-
         // Sons e Efeitos
         if (premioEncontrado && !bingoWinners.has(card.cartao + '_' + premioEncontrado)) {
              // Lógica de disparo de som/gif aqui se necessário
         }
-
         processedCards.push({
             cartao: card.cartao,
             counts: {
@@ -2226,10 +2204,8 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
             type: 75
         });
     });
-
     // 5. ORDENAÇÃO (Menos faltantes no topo)
     processedCards.sort((a, b) => a.counts.ranking - b.counts.ranking);
-
     loadedCards = processedCards;
     
     // Renderiza
@@ -3844,11 +3820,11 @@ async function renderMainContent(data) {
 
     // Detecta mudanças
  
-console.error("premioBuscadoDaAPI                   :",premioBuscadoDaAPI);
-console.error( "buscando_o_premio                      :",buscando_o_premio.replace(/\s+/g, '').trim()); 
+//console.error("premioBuscadoDaAPI                   :",premioBuscadoDaAPI);
+//console.error( "buscando_o_premio                      :",buscando_o_premio.replace(/\s+/g, '').trim()); 
 
-console.error("linhasAtivasDaAPI                           :", linhasAtivasDaAPI );
-console.error("buscando_a_linha                           :",buscando_a_linha); 
+//console.error("linhasAtivasDaAPI                           :", linhasAtivasDaAPI );
+//console.error("buscando_a_linha                           :",buscando_a_linha); 
 
     const premioMudou = (premioBuscadoDaAPI !== buscando_o_premio.replace(/\s+/g, '').trim() || linhasAtivasDaAPI !== buscando_a_linha);
 
@@ -3859,16 +3835,21 @@ console.error("buscando_a_linha                           :",buscando_a_linha);
         bolaBuscandoPremio = bolasCantadas.length;
     }
 
+    // Localize onde você trata a 'bolaMudou' e ajuste:
     if (bolaMudou) {
         falarTexto(`${ultimaBolaDaLista}`);
         ultimaBolaCantada = ultimaBolaDaLista;
-        ultimaBolaExibida = ultimaBolaDaLista; // Atualiza controle visual
+        ultimaBolaExibida = ultimaBolaDaLista; 
+    
+        // Pequeno delay para garantir que o DOM não esteja ocupado
         setTimeout(() => {
-             if (typeof cartelasDoJogador !== 'undefined' && cartelasDoJogador.length > 0) {
-                 console.log("🎱 Bola nova detectada visualmente. Recalculando cartelas...");
+             if (cachedRawCards.length > 0) {
                  forcarReprocessamentoVisual();
+             } else if (cartelasEmJogo > 0) {
+                 // Se não tem cache, mas tem cartelas, tenta buscar novamente como última alternativa
+                 fetchAndProcessCards();
              }
-        }, 50);
+        }, 100);
     }
 
     // --- REPROCESSAMENTO LOCAL ---
@@ -3889,8 +3870,9 @@ console.error("buscando_a_linha                           :",buscando_a_linha);
         const nome_da_sala = parametrosInfo.nome_sala; 
         if (nome_da_sala && salaTitleElement) salaTitleElement.textContent = nome_da_sala;
         
-        const tipoCartelaConfig = parseInt(parametrosInfo.tipo_cartela || 15);
+        const tipoCartelaConfig = parseInt(parametrosInfo.tipo_sorteio || 15);
         MAX_BOLAS = (tipoCartelaConfig === 25) ? 75 : 90;
+
         tempoExibicaoGanhador = parseInt(parametrosInfo.tempo_ganhador);
         
         const tipoSorteio = parametrosInfo.modo_sorteio;
@@ -4391,19 +4373,16 @@ function connectWebSocket() {
                 if (idSocket) { buscarImagemDoPremio(idSocket); }
 
                 renderMainContent(payload); 
+
+                if (cachedRawCards && cachedRawCards.length > 0) {
+                    console.log("🔄 WebSocket atualizou bolas. Reprocessando visual...");
+                    forcarReprocessamentoVisual(); 
+                 }
                 
                 if (melhoresData) { renderMelhores(melhoresData); }              
                 verificarNovasCompras();
             }
             
-            // --- TRATAMENTO DE SORTEIO EXTRA / CUPOM (PUSH) ---
-            else if (payload.type === 'EXIBIR_CUPOM') {
-                console.log("📨 Comando de exibição de cupom recebido via Socket.");
-                if (typeof tratarExibicaoCupom === 'function') {
-                    tratarExibicaoCupom(payload.cupom);
-                } 
-            }
-
         } catch (e) {
             console.error('❌ [FRONT] Erro crítico no processamento da mensagem:', e);
         }
@@ -4427,338 +4406,215 @@ function connectWebSocket() {
     };
 }
 
-// ======================================================
-// FUNÇÕES DE APOIO PARA O CUPOM EM ARQUIVO
-// ======================================================
-
-async function sincronizarCupomViaArquivo() {
-    try {
-        console.log("📂 Buscando estado do cupom no servidor...");
-        // API_BASE_URL deve estar vazio ou apontar para a raiz da Digital Ocean
-        const resp = await fetch(`${API_BASE_URL}/api/get_cupom_atual?t=${Date.now()}`); 
-        const cupom = await resp.json();
-        
-        console.log("📄 Resultado da busca por arquivo:", cupom);
-        tratarExibicaoCupom(cupom);
-    } catch (err) {
-        console.error("❌ Erro ao sincronizar cupom via arquivo:", err);
-    }
-}
-
-function tratarExibicaoCupom(dadosCupom) {
-    if (dadosCupom && Object.keys(dadosCupom).length > 0) {
-        // Se a função abaixo existir, ela será chamada com os dados do arquivo ou socket
-        if (typeof exibirConferenciaSorteExtra === "function") {
-            exibirConferenciaSorteExtra(dadosCupom);
-        } else {
-            console.error("A função exibirConferenciaSorteExtra não foi encontrada!");
-        }
-    } else {
-        if (typeof ocultarConferencia === "function") {
-            if (donoDoModal === 'CUPOM') {                          
-                ocultarConferencia();
-            }
-        }
-    }
-}
 
 // Adiciona o ouvinte de evento para redimensionamento da janela
 window.addEventListener('resize', checkDeviceType);
 
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && cartelasEmJogo > 0) {
+        console.log("👀 Aba reativada. Forçando sincronismo visual...");
+        forcarReprocessamentoVisual();
+    }
+});
+
+
 document.addEventListener('DOMContentLoaded', () => {
 
-    const isMobileTest = isMobileDevice();
-    if (isMobileTest) {
+    // 1. ORIENTAÇÃO DA TELA (MOBILE)
+    if (isMobileDevice()) {
         if (screen.orientation && screen.orientation.lock) {
             screen.orientation.lock('portrait').catch((err) => {
                 console.error("Erro ao travar a orientação da tela:", err);
             });
         }
-    }   
+    }
 
-    // --- LÓGICA BLINDADA DO BOTÃO DE COMPRA MOBILE ---
+    // 2. BOTÃO DE COMPRA MOBILE (LOGICA BLINDADA COM CHECK DE STATUS)
     const btnCompraMobile = document.getElementById('btn-comprar-cartelas-mobile');
-    
     if (btnCompraMobile) {
-        // Transformamos a função em ASYNC para poder esperar o servidor responder
         btnCompraMobile.onclick = async function(e) {
             e.preventDefault(); 
             
-            // 1. Pega o ID do evento que está carregado na tela agora
-            // (Se for nulo ou 0, assume que não tem evento carregado)
             const idParaChecar = (typeof eventoCarregadoAtual !== 'undefined') ? eventoCarregadoAtual : 0;
 
-            console.log(`🔘 Verificando status do evento ID: ${idParaChecar}...`);
-
             if (!idParaChecar) {
-                // Se não tem ID, abre a agenda direto
-                openEventsPanel();
+                if (typeof openEventsPanel === 'function') openEventsPanel();
                 return;
             }
 
-            // 2. Feedback visual rápido (opcional, muda o cursor ou opacidade)
             btnCompraMobile.style.opacity = "0.7";
             btnCompraMobile.textContent = "⏳ ...";
 
             try {
-                // 3. Pergunta ao servidor o status ATUAL
                 const response = await fetch(`${API_BASE_URL}/api/verificar_status_evento?id_evento=${idParaChecar}`);
                 const data = await response.json();
-                
                 const statusReal = (data.status || '').toLowerCase().trim();
-                console.log(`📡 Resposta do servidor: O evento ${idParaChecar} está '${statusReal}'`);
 
-                // 4. TOMADA DE DECISÃO
                 if (statusReal === 'ativo') {
-                    // Se está valendo -> Tela de Compra
-                    iniciarCompraCartelas(idParaChecar);
+                    if (typeof iniciarCompraCartelas === 'function') iniciarCompraCartelas(idParaChecar);
                 } else {
-                    // Se finalizou, agendado ou erro -> Agenda
-                    // (Você pode até mostrar um alerta se quiser: "Este evento já encerrou!")
-                    openEventsPanel();
+                    if (typeof openEventsPanel === 'function') openEventsPanel();
                 }
-
             } catch (err) {
                 console.error("Erro ao checar status:", err);
-                // Em caso de erro de rede, por segurança abre a Agenda
-                openEventsPanel();
+                if (typeof openEventsPanel === 'function') openEventsPanel();
             } finally {
-                // 5. Restaura o botão
                 btnCompraMobile.style.opacity = "1";
-                btnCompraMobile.textContent = "🛒 Comprar"; // Ou o ícone que estava antes
+                btnCompraMobile.textContent = "🛒 Comprar"; 
             }
         };
     }
 
-    // Listeners do Painel de Próximos Eventos
-    if (btnEventsMenu) {
+    // 3. LISTENERS DOS PAINÉIS (EVENTOS, CARTELAS, GANHADORES)
+    if (typeof btnEventsMenu !== 'undefined' && btnEventsMenu) {
         btnEventsMenu.addEventListener('click', () => {
-            closeSideMenu(); // Fecha o menu lateral se estiver aberto
+            closeSideMenu();
             openEventsPanel();
         });
     }
+    if (typeof btnEventsMobile !== 'undefined' && btnEventsMobile) btnEventsMobile.addEventListener('click', openEventsPanel);
+    if (typeof btnCloseEvents !== 'undefined' && btnCloseEvents) btnCloseEvents.addEventListener('click', closeEventsPanel);
     
-    if (btnEventsMobile) {
-        btnEventsMobile.addEventListener('click', openEventsPanel);
-    }
-    
-    if (btnCloseEvents) {
-        btnCloseEvents.addEventListener('click', closeEventsPanel);
-    }
-    
-    // Fecha ao clicar fora (Opcional, mas boa UX)
-    if (eventsPanelContainer) {
+    if (typeof eventsPanelContainer !== 'undefined' && eventsPanelContainer) {
         eventsPanelContainer.addEventListener('click', (e) => {
-            if (e.target === eventsPanelContainer) {
-                closeEventsPanel();
-            }
+            if (e.target === eventsPanelContainer) closeEventsPanel();
         });
     }
 
-// Listeners para "Minhas Cartelas" (Menu Lateral e Botão Mobile)
+    // Listeners para "Minhas Cartelas"
     const btnMyCardsMenu = document.getElementById('menu-btn-cartelas');
-    const btnMyCardsMobile = document.getElementById('btn-minhas-cartelas-mobile-view'); // Botão do painel novo
+    const btnMyCardsMobile = document.getElementById('btn-minhas-cartelas-mobile-view');
 
-    if (btnMyCardsMenu) btnMyCardsMenu.addEventListener('click', () => {
-        closeSideMenu(); // Fecha o menu lateral
-        openMyCardsPanel(); // <--- CHAMADA 1 (Menu)
-    });
-
-    if (btnMyCardsMobile) btnMyCardsMobile.addEventListener('click', openMyCardsPanel); // <--- CHAMADA 2 (Painel de Compra)
-// --- BOTÃO FECHAR TELA GANHADORES ---
-    if (btnCloseMyCards) {
-        btnCloseMyCards.addEventListener('click', closeMyCardsPanel);
+    if (btnMyCardsMenu) {
+        btnMyCardsMenu.addEventListener('click', () => {
+            closeSideMenu();
+            openMyCardsPanel();
+            if (typeof forcarReprocessamentoVisual === 'function') forcarReprocessamentoVisual(); 
+        });
     }
+    if (btnMyCardsMobile) {
+        btnMyCardsMobile.addEventListener('click', () => {
+            openMyCardsPanel();
+            if (typeof forcarReprocessamentoVisual === 'function') forcarReprocessamentoVisual();
+        });
+    }
+    if (typeof btnCloseMyCards !== 'undefined' && btnCloseMyCards) btnCloseMyCards.addEventListener('click', closeMyCardsPanel);
+
+    // 4. ALTERNÂNCIA VISUAL (LISTA vs TOP 10) - MOBILE E DESKTOP
     const btnIrTop10 = document.getElementById('btn-ir-para-top10');
     const btnIrLista = document.getElementById('btn-ir-para-lista');
     const viewLista = document.getElementById('view-lista-numerica');
     const viewTop10 = document.getElementById('view-top10-grafico');
 
-    if (btnIrTop10 && btnIrLista && viewLista && viewTop10) {
-        btnIrTop10.addEventListener('click', () => {
-            viewLista.classList.add('hidden');
-            viewTop10.classList.remove('hidden');
-        });
-
-        btnIrLista.addEventListener('click', () => {
-            viewTop10.classList.add('hidden');
-            viewLista.classList.remove('hidden');
-        });
-    }
-
-// --- BOTÃO FECHAR TELA GANHADORES ---
-    if (btnCloseWinners) {
-        btnCloseWinners.addEventListener('click', closeWinnersPanel);
-    }
-
-// --- BOTÃO FECHAR TELA CONFERENCIA ---
-    const btnCloseConf = document.getElementById('btn-close-conference');
-    if (btnCloseConf) {
-        btnCloseConf.addEventListener('click', () => {
-            ocultarConferencia();
-        });
-    }
-
-// --- CONTROLE DE TEMA (BOTÃO MOBILE) ---
-if (btnToggleTemaMobile) {
-    btnToggleTemaMobile.addEventListener('click', () => {
-
-        // if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
-
-        // 1. Inverte o estado do tema
-        isDarkMode = !isDarkMode;
-        
-        // 2. Sincroniza com o texto do Menu Lateral (se existir)
-        if (menuStatusTema) {
-            menuStatusTema.textContent = isDarkMode ? 'DARK' : 'LIGHT';
-            if (isDarkMode) {
-                menuStatusTema.classList.remove('text-yellow-500');
-                menuStatusTema.classList.add('text-gray-400');
-            } else {
-                menuStatusTema.classList.remove('text-gray-400');
-                menuStatusTema.classList.add('text-yellow-500');
-            }
+    const setupToggle = (btn1, btn2, v1, v2) => {
+        if (btn1 && btn2 && v1 && v2) {
+            btn1.addEventListener('click', () => { v1.classList.add('hidden'); v2.classList.remove('hidden'); });
+            btn2.addEventListener('click', () => { v2.classList.add('hidden'); v1.classList.remove('hidden'); });
         }
-
-        // 3. Aplica o tema visualmente
-        temaTope10(); 
-
-    });
-}
-
-
-// Listeners
-if (btnOpenMenu) btnOpenMenu.addEventListener('click', openSideMenu);
-if (btnCloseMenu) btnCloseMenu.addEventListener('click', closeSideMenu);
-if (menuBackdrop) menuBackdrop.addEventListener('click', closeSideMenu);
-
-// Lógica do Botão de Som (Dentro do Menu)
-if (menuBtnSom) {
-    menuBtnSom.addEventListener('click', () => {
-        vozAtiva = !vozAtiva; // Inverte o estado global
-        
-        if (vozAtiva) {
-            desbloquearAudio();
-            falarTexto("Áudio Ativado");
-        } else {
-            window.speechSynthesis.cancel();
-        }
-        updateMenuSoundVisuals();
-        closeSideMenu();
-    });
-}
-
-// Lógica do Botão de Tema
-if (menuBtnTema) {
-    menuBtnTema.addEventListener('click', () => {
-        // 1. Inverte o estado
-        isDarkMode = !isDarkMode;
-        
-        // 2. Atualiza texto do menu
-        menuStatusTema.textContent = isDarkMode ? 'DARK' : 'LIGHT';
-        
-        // 3. Muda cor do texto do status para feedback visual
-        if (isDarkMode) {
-            menuStatusTema.classList.remove('text-yellow-500');
-            menuStatusTema.classList.add('text-gray-400');
-        } else {
-            menuStatusTema.classList.remove('text-gray-400');
-            menuStatusTema.classList.add('text-yellow-500');
-        }
-
-        // 4. Executa a função de troca de cores e renderização
-        temaTope10();
-        closeSideMenu(); 
- 
-    });
-}
-
-// --- LÓGICA PARA ALTERNAR VISUALIZAÇÃO NO MOBILE ---
+    };
+    setupToggle(btnIrTop10, btnIrLista, viewLista, viewTop10);
+    
+    // Toggle Mobile
     const btnMobileTop10 = document.getElementById('btn-ir-para-top10-mobile');
     const btnMobileLista = document.getElementById('btn-ir-para-lista-mobile');
     const viewMobileLista = document.getElementById('view-lista-numerica-mobile');
     const viewMobileTop10 = document.getElementById('view-top10-grafico-mobile');
+    setupToggle(btnMobileTop10, btnMobileLista, viewMobileLista, viewMobileTop10);
 
-    if (btnMobileTop10 && btnMobileLista && viewMobileLista && viewMobileTop10) {
-        btnMobileTop10.addEventListener('click', () => {
-            viewMobileLista.classList.add('hidden');
-            viewMobileTop10.classList.remove('hidden');
-        });
+    // 5. CONTROLES DE INTERFACE (MENU, SOM, TEMA)
+    if (typeof btnOpenMenu !== 'undefined' && btnOpenMenu) btnOpenMenu.addEventListener('click', openSideMenu);
+    if (typeof btnCloseMenu !== 'undefined' && btnCloseMenu) btnCloseMenu.addEventListener('click', closeSideMenu);
+    if (typeof menuBackdrop !== 'undefined' && menuBackdrop) menuBackdrop.addEventListener('click', closeSideMenu);
 
-        btnMobileLista.addEventListener('click', () => {
-            viewMobileTop10.classList.add('hidden');
-            viewMobileLista.classList.remove('hidden');
+    if (typeof menuBtnSom !== 'undefined' && menuBtnSom) {
+        menuBtnSom.addEventListener('click', () => {
+            vozAtiva = !vozAtiva;
+            if (vozAtiva) {
+                desbloquearAudio();
+                falarTexto("Áudio Ativado");
+            } else {
+                window.speechSynthesis.cancel();
+            }
+            if (typeof updateMenuSoundVisuals === 'function') updateMenuSoundVisuals();
+            closeSideMenu();
         });
     }
- 
-// Referencia o novo container
-    const videoContainer = document.getElementById('video-container');
 
-    if (abrirYoutubeBtn && videoContainer && youtubeIframe) {
-        abrirYoutubeBtn.addEventListener('click', () => {
-            if (typeof closeSideMenu === 'function') {
-                closeSideMenu();
+    if (typeof btnToggleTemaMobile !== 'undefined' && btnToggleTemaMobile) {
+        btnToggleTemaMobile.addEventListener('click', () => {
+            isDarkMode = !isDarkMode;
+            if (typeof menuStatusTema !== 'undefined' && menuStatusTema) {
+                menuStatusTema.textContent = isDarkMode ? 'DARK' : 'LIGHT';
+                menuStatusTema.classList.toggle('text-yellow-500', !isDarkMode);
+                menuStatusTema.classList.toggle('text-gray-400', isDarkMode);
             }
-            startPromocionalTimer();
-   
-            const videoToLoad = currentVideoUrl; 
+            if (typeof temaTope10 === 'function') temaTope10(); 
+        });
+    }
 
-            if (!videoToLoad) {
+    if (typeof menuBtnTema !== 'undefined' && menuBtnTema) {
+        menuBtnTema.addEventListener('click', () => {
+            isDarkMode = !isDarkMode;
+            if (menuStatusTema) {
+                menuStatusTema.textContent = isDarkMode ? 'DARK' : 'LIGHT';
+                menuStatusTema.classList.toggle('text-yellow-500', !isDarkMode);
+                menuStatusTema.classList.toggle('text-gray-400', isDarkMode);
+            }
+            if (typeof temaTope10 === 'function') temaTope10();
+            closeSideMenu();
+        });
+    }
+
+    // 6. LÓGICA DO YOUTUBE
+    const videoContainer = document.getElementById('video-container');
+    const youtubeIframe = document.getElementById('youtube-iframe'); // Certifique-se que o ID existe no HTML
+    
+    if (typeof abrirYoutubeBtn !== 'undefined' && abrirYoutubeBtn && videoContainer) {
+        abrirYoutubeBtn.addEventListener('click', () => {
+            closeSideMenu();
+            if (typeof startPromocionalTimer === 'function') startPromocionalTimer();
+
+            if (!currentVideoUrl) {
                 alert('Nenhuma URL de vídeo configurada.');
                 return;
             }
-        
-            // Lógica de URL (mantida)
-            let videoUrl;
-            if (videoToLoad.includes('youtube.com/embed/')) {
-                videoUrl = videoToLoad; 
-            } else {
-                const videoID = videoToLoad.split('&')[0];
+
+            let videoUrl = currentVideoUrl;
+            if (!videoUrl.includes('youtube.com/embed/')) {
+                const videoID = videoUrl.split('v=')[1]?.split('&')[0] || videoUrl.split('/').pop();
                 videoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1`;
             }
 
-            // Alternar visibilidade
-            videoContainer.classList.toggle('hidden');
+            const isHidden = videoContainer.classList.toggle('hidden');
+            abrirYoutubeBtn.textContent = isHidden ? '📺 Abrir YouTube' : '❌ Fechar YouTube';
+            if (youtubeIframe) youtubeIframe.src = isHidden ? '' : videoUrl;
             
-            // Verifica estado
-            const isVideoVisible = !videoContainer.classList.contains('hidden');
-            
-            if (isVideoVisible) {
-                abrirYoutubeBtn.textContent = '❌ Fechar YouTube';
-                // Define src para tocar
-                youtubeIframe.src = videoUrl;
-                // if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
-            } else {
-                abrirYoutubeBtn.textContent = '📺 Abrir   YouTube';
-                // Limpa src para parar o som
-                youtubeIframe.src = ''; 
-            }
-            
-            // Atualiza posição do painel promocional se necessário
-            updatePromocionalPanelPosition();
+            if (typeof updatePromocionalPanelPosition === 'function') updatePromocionalPanelPosition();
         });
     }
 
-    // Referencia os elementos de entrada para validação
-    inputInicial = document.getElementById('card-initial-input');
-    inputFinal = document.getElementById('card-final-input');
-    adicionarBtn = document.getElementById('adicionar-cartela');
-    resultadoSpan = document.getElementById('resultado');
-    cardRangeValidation = document.getElementById('card-range-validation');
-   // Chama a sua função de inicialização
+    // 7. VALIDAÇÃO DE INPUTS
+    const inputInicial = document.getElementById('card-initial-input');
+    const inputFinal = document.getElementById('card-final-input');
+    const adicionarBtn = document.getElementById('adicionar-cartela');
+    const resultadoSpan = document.getElementById('resultado');
 
-   connectWebSocket();
-    
-    // 2. Polling de Segurança (Backup a cada 5s para garantir que o cupom apareça)
+    // 8. WATCHDOG DE SEGURANÇA VISUAL
     setInterval(() => {
-        // Só executa se a função existir (evita erros)
-        if (typeof sincronizarCupomViaArquivo === 'function') {
-            sincronizarCupomViaArquivo();
+        const listContainer = document.getElementById('mobile-loaded-cards-list');
+        if (typeof cartelasEmJogo !== 'undefined' && cartelasEmJogo > 0) {
+            if (!listContainer || listContainer.children.length <= 1) {
+                console.log("🕵️ Watchdog: Restaurando visualização...");
+                if (typeof forcarReprocessamentoVisual === 'function') forcarReprocessamentoVisual();
+            }
         }
     }, 5000);
 
-    init();
+    // 9. INICIALIZAÇÃO
+    if (typeof connectWebSocket === 'function') connectWebSocket();
+    if (typeof init === 'function') init();
 });
+
 
 // --- INÍCIO DAS NOVAS FUNÇÕES (Movidas do index.html para cá) ---
 // (Estas funções agora são parte do script.js e não estão mais no index.html)
@@ -7101,43 +6957,54 @@ function fecharRegrasSeEstiveremAbertas() {
  * Recalcula matematicamente os acertos e força a atualização da interface
  * usando a função centralizadora displayLoadedCards.
  */
+
 function forcarReprocessamentoVisual() {
-    // 1. Verificações de segurança
-    // Verifica se temos cartelas E se temos cache de bolas para cruzar
-    if (!cartelasDoJogador || cartelasDoJogador.length === 0) {
-        // Se não tiver cartela, não tem o que reprocessar
-        return; 
-    }
+    // 1. Forçar reset de travas visuais
+    if (typeof Carregando !== 'undefined') Carregando = false;
+    if (typeof isFetchingCards !== 'undefined') isFetchingCards = false;
+    if (loader) loader.style.display = 'none';
+
+    // 2. Garante que as bolas sejam tratadas como Números para evitar erro de String
+    const bolasRaw = globalBolasCantadas || [];
+    const bolasNumericas = bolasRaw.map(b => parseInt(b)).filter(n => !isNaN(n));
     
-    // Se bolasSorteadasCache for undefined (início do jogo), assumimos array vazio
-    const bolasParaConferir = globalBolasCantadas || [];
+    // 3. Define a fonte de dados e sincroniza as globais
+    const cartelas = (cachedRawCards && cachedRawCards.length > 0) ? cachedRawCards : cartelasDoJogador;
 
-    console.log(`🔄 [FIX] Reprocessando ${cartelasDoJogador.length} cartelas com ${bolasParaConferir.length} bolas.`);
+    if (!cartelas || cartelas.length === 0) {
+        console.warn("⚠️ [Reprocessamento] Nenhuma cartela encontrada no cache.");
+        return;
+    }
 
-    // 2. Loop Matemático (Recalcula acertos um por um)
-    cartelasDoJogador.forEach(cartela => {
-        let contaAcertos = 0;
-        
-        if (cartela.numeros && Array.isArray(cartela.numeros)) {
-            // Cruza os números da cartela com as bolas do cache
-            contaAcertos = cartela.numeros.filter(num => bolasParaConferir.includes(num)).length;
+    // Sincronização Crítica: Algumas funções de desenho usam cartelasDoJogador
+    // Se estamos no modo terminal/cached, clonamos para garantir que o desenho ache os dados
+    if (cachedRawCards && cachedRawCards.length > 0) {
+        cartelasDoJogador = cachedRawCards;
+    }
+
+    // 4. Recálculo Matemático com tratamento de erro
+    cartelas.forEach(c => {
+        try {
+            const nums = Array.isArray(c.numeros) ? c.numeros : JSON.parse(c.numeros || "[]");
+            // Compara número com número
+            c.acertos = nums.filter(n => bolasNumericas.includes(parseInt(n))).length;
+        } catch (e) {
+            c.acertos = 0;
         }
-
-        // Atualiza o objeto da cartela na memória
-        cartela.acertos = contaAcertos;
     });
 
-    // 3. Ordenação (Do maior acerto para o menor para exibir no topo)
-    cartelasDoJogador.sort((a, b) => b.acertos - a.acertos);
+    // 5. Ordenação para o Ranking
+    cartelas.sort((a, b) => b.acertos - a.acertos);
 
-    // 4. Força a atualização Visual usando sua função centralizadora
+    console.log(`🎨 Renderizando ${cartelas.length} cartelas com ${bolasNumericas.length} bolas confirmadas.`);
+
+    // 6. Chamada de Renderização
+    // Passamos o array de bolas já convertido para evitar erros de comparação no desenho
     if (typeof displayLoadedCards === 'function') {
-        displayLoadedCards(bolasParaConferir);
-    } else {
-        console.warn("⚠️ Função displayLoadedCards não encontrada.");
+        displayLoadedCards(bolasNumericas); 
     }
-
-    console.log("✅ [FIX] Visual atualizado.");
+    
+    if (typeof renderMelhores === 'function') {
+        renderMelhores(cartelas);
+    }
 }
-
-

@@ -27,7 +27,9 @@ let jaAlertouNestaBola = false;
 let dadosEventoAtual = null;
 let localStream = null;
 let vendasTimerInterval = null;
-let MAX_BOLAS = 90;
+let MAX_BOLAS = 75;
+
+let id_evento_ativo = 0;
 
 // --- CONTROLE SORTE EXTRA ---
 let sorteioExtraConfigAtivo = true;    // Se o evento atual tem Sorte Extra
@@ -891,16 +893,15 @@ async function carregarDadosIniciaisSilencioso() {
         // Agora verificamos se existe id OU id_evento
         if (dadosEventoAtual && (dadosEventoAtual.id || dadosEventoAtual.id_evento)) {
              // Garante que o ID esteja setado corretamente caso tenha vindo só com id_evento
-             if(!dadosEventoAtual.id) dadosEventoAtual.id = dadosEventoAtual.id_evento;
              
-             await carregarConfigSorteExtraAdmin();
-        }
-       
-        if (dadosEventoAtual && (dadosEventoAtual.id || dadosEventoAtual.id_evento)) {
              if(!dadosEventoAtual.id) dadosEventoAtual.id = dadosEventoAtual.id_evento;
              await carregarConfigSorteExtraAdmin();
         }
 
+        if (dadosEventoAtual && (dadosEventoAtual.id || dadosEventoAtual.id_evento)) {
+             if(!dadosEventoAtual.id) dadosEventoAtual.id = dadosEventoAtual.id_evento;
+             await carregarConfigSorteExtraAdmin();
+        }
  
         if (data.evento && parseInt(data.evento.tipo_cartela) === 25) {
             MAX_BOLAS = 75;
@@ -1990,7 +1991,7 @@ async function carregarEvento(idEvento) {
         
         const dadosPrep = await respPrep.json();
         if (dadosPrep.error) throw new Error(dadosPrep.error);
-
+        
         showLoading("🔒 Encerrando vendas...");
 
         await fetch(`${API_BASE_URL}/api/admin/fechar_vendas_evento`, {
@@ -2104,6 +2105,11 @@ async function executarCarregamentoReal(idEvento) {
 
         dadosEventoAtual = dados; 
         document.getElementById('painel-evento-ativo').classList.remove('hidden');
+
+
+        id_rodada_ativa = parseInt(idEvento);
+        console.error("🎱 Evento Configurado: id_rodada_ativa:  ",id_rodada_ativa );
+
 
         const tipoCartela = parseInt(dados.tipo_cartela || 25);
         if (tipoCartela === 25) {
@@ -3229,7 +3235,7 @@ function renderizarListaExtra(elementId, lista, tipoCodigo) {
 
 
 async function publicarGanhadorExtra(dados, tipo) {
-    const idRodada = (dadosEventoAtual && (dadosEventoAtual.id_evento || dadosEventoAtual.id)) || 0;
+    const idRodada = id_evento_ativo // xxx (dadosEventoAtual && (dadosEventoAtual.id_evento || dadosEventoAtual.id)) || 0;
 
     const labelPremios = {
         '5_acertos': '🏆 JACKPOT (5 ACERTOS)',
@@ -3240,7 +3246,7 @@ async function publicarGanhadorExtra(dados, tipo) {
 
     // Ajustamos o payload para o padrão da tabela 'confere'
     const payload = {
-        rodada: parseInt(idRodada),           // ID global da rodada atual
+        rodada: parseInt(idRodada),     // ID global da rodada atual
         cartao: dados.id,                  // Número do cupom
         ganhador: dados.nick,              // Nome/Nick do cliente
         numeros: dados.nums.join(' - '),   // Transforma [1,2,3] em "01 - 02 - 03"
@@ -3271,7 +3277,7 @@ async function publicarGanhadorExtra(dados, tipo) {
 
 async function limparTelaPublicaExtra() {
     
-    const idRodadaLimpeza = (dadosEventoAtual && (dadosEventoAtual.id_evento || dadosEventoAtual.id)) || 0;
+    const idRodadaLimpeza = id_evento_ativo //xxx (dadosEventoAtual && (dadosEventoAtual.id_evento || dadosEventoAtual.id)) || 0;
     const btn = document.getElementById('btn-limpar-tv'); 
     const textoOriginal = btn ? btn.innerText : "🧹📺 Limpar TV";
 

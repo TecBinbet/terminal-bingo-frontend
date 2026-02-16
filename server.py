@@ -2047,6 +2047,7 @@ def admin_fechar_vendas():
             filtro = {'id_evento': str(id_evt)}
 
         # finalizar as vendas
+        #  finalizar eventos ao abrir rodada
         result = sales_db.eventos.update_one(filtro, {'$set': {'status': 'finalizado'}})
         
         if result.modified_count > 0:
@@ -3917,7 +3918,6 @@ def get_cartelas_game():
         except Exception as e:
             print(f"❌ Erro ao buscar cartelas: {e}")
             return jsonify({'error': str(e)}), 500
-
 
 
 @app.route('/api/admin/preparar_evento', methods=['POST'])
