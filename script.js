@@ -1544,9 +1544,9 @@ function closeMyCardsPanel() {
 }
 
 
-
 // 1. Função para Alternar (Entrar/Sair)
 function toggleFullscreen() {
+    closeSideMenu();
     if (!document.fullscreenElement &&    // Padrão
         !document.mozFullScreenElement && // Firefox
         !document.webkitFullscreenElement && // Chrome, Safari e Opera
@@ -2956,93 +2956,87 @@ function displayCardGrid75(numeros, bolasCantadas) {
 }
 
 
+function renderizarDezenasCupom(numerosRaw, bolasDoJogo) {
+    if (!cardGridElement) return;
+    
+    cardGridElement.innerHTML = '';
+    cardGridElement.className = 'flex flex-wrap justify-center items-center gap-3 w-full p-4 bg-gray-800/50 rounded-xl border border-yellow-600/30';
+
+    // Converte a string "01 - 02 - 03" ou "01,02" em Array de Números
+    const dezenas = (typeof numerosRaw === 'string') 
+        ? numerosRaw.split(/[- ,+/]+/).filter(n => n.trim() !== "").map(n => parseInt(n))
+        : (Array.isArray(numerosRaw) ? numerosRaw : []);
+
+    const cacheBolas = Array.isArray(bolasDoJogo) ? bolasDoJogo.map(b => parseInt(b)) : [];
+
+    dezenas.forEach(num => {
+        const el = document.createElement('div');
+        const foiSorteada = cacheBolas.includes(num);
+
+        if (foiSorteada) {
+            el.className = "w-14 h-14 rounded-full bg-yellow-500 border-4 border-white text-black font-black text-2xl flex items-center justify-center shadow-[0_0_15px_rgba(234,179,8,0.6)] animate-pop transform scale-110";
+        } else {
+            el.className = "w-14 h-14 rounded-full bg-gray-700 border-2 border-gray-600 text-gray-500 font-bold text-2xl flex items-center justify-center opacity-60 grayscale";
+        }
+
+        el.innerText = num < 10 ? '0' + num : num;
+        cardGridElement.appendChild(el);
+    });
+}
+
 
 function displayConferencePanel(confereData, bolasCantadas) {
     const container = document.getElementById('conference-panel-container');
-    
-    if (confereData && confereData.length > 0 && typeof confereData[0] === 'object') {
-        const data = confereData[0];
-        const numeroDoCartao = parseInt(data.cartao, 10);
-        const nomeDoGanhador = data.ganhador;
-        const numerosDaCartela = data.numeros;
-        const cartaoValido = !isNaN(numeroDoCartao) && numeroDoCartao > 0;
-
-        if (cartaoValido) {
-            // Exibe o Overlay
-            container.classList.remove('hidden');
-            container.classList.add('flex'); // 'flex' é necessário para centralizar o conteúdo no CSS novo
-            
-            cardNumberElement.textContent = numeroDoCartao;
-            winnerNameElement.textContent = nomeDoGanhador || 'O Próximo será Seu!';
-            displayCardGrid(numerosDaCartela, bolasCantadas);            
-        } else {
-            if (donoDoModal === 'BINGO') {                          
-                ocultarConferencia();
-            } 
-        }
-    } else {
-        if (donoDoModal === 'BINGO') {
-            ocultarConferencia();
-        }
-    }
-}
-
-
-// --- FUNÇÃO PARA EXIBIR O GANHADOR DO SORTE EXTRA NA TV (COM DESTAQUE) ---
-function exibirConferenciaSorteExtra(dados) {
-    donoDoModal = 'CUPOM';
-    const container = document.getElementById('conference-panel-container');
     const titleEl = container.querySelector('h2'); 
-    const cardNumEl = document.getElementById('card-number');
-    const winnerEl = document.getElementById('winner-name');
-    const gridEl = document.getElementById('card-grid');
     
-    // 1. Preenche os Textos
-    titleEl.textContent = dados.premio_titulo || "🍀 CONFERÊNCIA EXTRA 🍀";
-    titleEl.className = "text-center text-xl text-yellow-400 font-black uppercase tracking-widest border-b-2 border-yellow-500 pb-1 w-full animate-pulse";
+    // 1. Verificação de Dados (Suporta Array do Banco ou Objeto do Socket)
+    const data = (Array.isArray(confereData) && confereData.length > 0) ? confereData[0] : confereData;
 
-    cardNumEl.textContent = dados.id || "---"; 
-    winnerEl.textContent = dados.nick || "Visitante"; 
+    if (data && data.cartao > 0) {
+        const numeroDoCartao = data.cartao;
+        const nomeDoGanhador = data.ganhador || 'Conferindo...';
+        const tipoConferencia = data.tipo_conferencia; // "SORTE_EXTRA" ou "BINGO_NORMAL"
+        
+        // 2. Exibe o Overlay
+        container.classList.remove('hidden');
+        container.classList.add('flex');
 
-    // 2. Preenche os Números
-    gridEl.innerHTML = '';
-    
-    // Layout Flex centralizado
-    gridEl.className = 'flex flex-wrap justify-center items-center gap-3 w-full p-4 bg-gray-800/50 rounded-xl border border-yellow-600/30';
-
-    // Recupera as bolas que já saíram no jogo (Garante que é um array)  
-    const bolasDoJogo = (typeof globalBolasCantadas !== 'undefined' && Array.isArray(globalBolasCantadas)) 
-        ? globalBolasCantadas 
-        : [];
-
-    if (dados.nums && Array.isArray(dados.nums)) {
-        dados.nums.forEach(num => {
-            const el = document.createElement('div');
+        // 3. Diferenciação de Layout
+        if (tipoConferencia === "SORTE_EXTRA") {
+            donoDoModal = 'CUPOM';
             
-            // Converte para inteiro para garantir a comparação (ex: "05" == 5)
-            const numInt = parseInt(num);
-            
-            // Verifica se este número está na lista de bolas sorteadas do jogo
-            const foiSorteada = bolasDoJogo.some(b => parseInt(b) === numInt);
-
-            if (foiSorteada) {
-                // ESTILO 1: BOLA SORTEADA (Amarelo Brilhante - DESTAQUE)
-                el.className = "w-14 h-14 rounded-full bg-yellow-500 border-4 border-white text-black font-black text-2xl flex items-center justify-center shadow-[0_0_15px_rgba(234,179,8,0.6)] animate-pop transform scale-110";
-            } else {
-                // ESTILO 2: NÃO SORTEADA (Cinza Escuro / Apagada)
-                el.className = "w-14 h-14 rounded-full bg-gray-700 border-2 border-gray-600 text-gray-500 font-bold text-2xl flex items-center justify-center opacity-60 grayscale";
+            // Estilo do Título (Dourado/Animado)
+            if (titleEl) {
+                titleEl.textContent = data.mensagem || "🍀 SORTE EXTRA 🍀";
+                titleEl.className = "text-center text-xl text-yellow-400 font-black uppercase tracking-widest border-b-2 border-yellow-500 pb-1 w-full animate-pulse";
             }
 
-            el.innerText = num < 10 ? '0' + num : num;
-            gridEl.appendChild(el);
-        });
+            cardNumberElement.textContent = numeroDoCartao;
+            winnerNameElement.textContent = nomeDoGanhador;
+
+            // Renderiza as dezenas do cupom com a lógica de destaque
+            renderizarDezenasCupom(data.numeros, bolasCantadas);
+
+        } else {
+            // Layout de Bingo Normal
+            donoDoModal = 'BINGO';
+            
+            if (titleEl) {
+                titleEl.textContent = "🎉 Conferência 🎉";
+                titleEl.className = "text-center text-xl text-white uppercase tracking-widest border-b-2 border-yellow-500 pb-0 w-full";
+            }
+
+            cardNumberElement.textContent = numeroDoCartao;
+            winnerNameElement.textContent = nomeDoGanhador;
+            
+            // Chama o grid tradicional de 75/90 bolas
+            displayCardGrid(data.numeros, bolasCantadas);
+        }
+    } else {
+        // Se o cartão for 0 ou nulo, limpa a tela
+        ocultarConferencia();
     }
-
-    // 3. Exibe o Painel
-    container.classList.remove('hidden');
-    container.classList.add('flex');
 }
-
 
 // Função auxiliar para esconder e limpar (ATUALIZADA)
 function ocultarConferencia() {
@@ -3316,7 +3310,7 @@ function getBallColorClass(numero) {
     if (numero <= intervalo * 2) return 'bg-red-600 border-4 border-red-400';    // Faixa 2 (I)
     if (numero <= intervalo * 3) return 'bg-purple-600 border-4 border-purple-400'; // Faixa 3 (N)
     if (numero <= intervalo * 4) return 'bg-green-600 border-4 border-green-400';  // Faixa 4 (G)
-    if (numero <= MAX_BOLAS)     return 'bg-yellow-600 border-4 border-yellow-400'; // Faixa 5 (O)
+    if (numero <= MAX_BOLAS) return 'bg-yellow-600 border-4 border-yellow-400'; // Faixa 5 (O)
     
     return 'bg-black border-4 border-green-700'; // Fallback
 }

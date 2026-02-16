@@ -27,14 +27,14 @@ let jaAlertouNestaBola = false;
 let dadosEventoAtual = null;
 let localStream = null;
 let vendasTimerInterval = null;
-let MAX_BOLAS = 90;
+let MAX_BOLAS = 75;
 
 // --- CONTROLE SORTE EXTRA ---
-let sorteioExtraConfigAtivo = true;    // Se o evento atual tem Sorte Extra
-let qtdeDezenasSorteExtra = 5;          // Padrão (será atualizado pela config)
+let sorteioExtraConfigAtivo = false;    // Se o evento atual tem Sorte Extra
+let qtdeDezenasSorteExtra = 3;          // Padrão (será atualizado pela config)
 let qtdeTopeSorteExtra = 10;          // Padrão (será atualizado pela config)
 let cacheGanhadoresExtraFinal = [];
-let buscarSorteExtra = true;
+let buscarSorteExtra = false;
 
 let filaSorteExtra = [];       // Onde os ganhadores vão esperar a vez
 let processandoFilaExtra = false; // Trava para saber se o timer já está rodando
@@ -76,7 +76,7 @@ let processandoVitoria = false;
 
 // Controle de Hardware/Config
 let modoSorteio = 'auto'; 
-let vozAtiva = false;
+let vozAtiva = true;
 let enviarPortaSerial = false;  
 let portaSerial = null;
  
@@ -89,8 +89,7 @@ let sorteioAutomatizadoConfig = false;
 
 // 1. Detecta protocolo e host automaticamente
 const protocolWS = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-//const host = window.location.host; 
-const host = window.location.host.replace('www.', '');
+const host = window.location.host; 
 
 // 2. Define ID da Sala (Apenas para fins visuais no painel)
 const urlParamsGlobal = new URLSearchParams(window.location.search);
@@ -681,45 +680,34 @@ function hideLoading() {
 }
 
 
+// yyxx
 // =========================================================
-// === 2. SISTEMA DE CONEXÃO & WEBSOCKET ===
+// === GERENCIADOR DE CONEXÃO (GATEKEEPER) ===
 // =========================================================
 
+let estaOffline = false; // Controle de estado
 
-// --- SUA FUNÇÃO (Com leve proteção para não resetar o timer toa hora) ---
 function gerenciarEstadoConexao(online) {
+    const statusIcon = document.getElementById('status-conexao'); // Se existir ícone
     const overlay = document.getElementById('overlay-conexao');
-    const countdownSpan = document.getElementById('countdown-connection');
-    
+
     if (online) {
-        // VOLTOU! Esconde tudo e vida que segue
-        if(overlay) overlay.classList.add('hidden');
-        if (countdownInterval) clearInterval(countdownInterval);
-        countdownInterval = null; // Limpa a referência
+        console.log("📡 Conexão restabelecida.");
+        if (overlay) overlay.classList.add('hidden');
         
-        // Atualiza a tela sem recarregar a página (Soft Update)
-        carregarDadosIniciaisSilencioso(); 
+        // AQUI ESTAVA O ERRO: Chamávamos 'carregarDadosIniciaisSilencioso()'
+        // e ele resetava para 90 bolas porque o server demorava a responder.
+        // AGORA: Não fazemos nada. O Admin confia no cache dele.
+        // Apenas volta a funcionar o WS para Ranking.
+        
     } else {
-        // CAIU!
-        if(overlay && overlay.classList.contains('hidden')) {
-            // Só entra aqui se for a PRIMEIRA vez que cai (para não resetar o timer a cada loop)
-            overlay.classList.remove('hidden');
-            if (typeof modoRoboAtivo !== 'undefined' && modoRoboAtivo) pararModoRobo();
-            
-            let count = RECONNECT_DELAY / 1000;
-            if(countdownSpan) countdownSpan.textContent = count;
-            
-            if (countdownInterval) clearInterval(countdownInterval);
-            
-            // Inicia a contagem visual
-            countdownInterval = setInterval(() => {
-                count--; 
-                if(count <= 0) count = RECONNECT_DELAY / 1000;
-                if(countdownSpan) countdownSpan.textContent = count;
-            }, 1000);
-        }
+        console.warn("📡 Conexão perdida. Tentando reconectar em background...");
+        // Opcional: Mostrar ícone vermelho, mas NÃO TRAVAR A TELA.
+        // Se quiser travar, descomente as linhas do overlay abaixo.
+        // if (overlay) overlay.classList.remove('hidden');
     }
 }
+
 
 // --- A NOVA FUNÇÃO DO BOTÃO (Manual) ---
 function tentarReconexaoManual() {
@@ -761,56 +749,15 @@ function tentarReconexaoManual() {
 }
 
 
-// =========================================================
-// === CONEXÃO WEBSOCKET (MODO SILENCIOSO) ===
-// =========================================================
+// ==========================================
+// === FUNÇÃO WEBSOCKET DINÂMICA (CORRIGIDA) ===
+// ==========================================
 
-function connectAdminWS() { // Use o nome que você já está chamando no final do arquivo
-    if (socket) {
-        // Se já existe e está conectando ou aberto, não faz nada
-        if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) return;
-        socket.close();
-    }
-
-    console.log(`🔌 [WS] Tentando conectar em: ${WS_URL}`);
-    socket = new WebSocket(WS_URL);
-
-    socket.onopen = function() {
-        console.log("✅ [WS] Conectado!");
-        // O "Locutor Rei" NÃO pede dados ao reconectar.
-        // Ele confia no que já está na tela.
-        // Apenas registramos a presença na sala.
-        socket.send(JSON.stringify({ type: 'REGISTER_ADMIN', sala_id: currentSalaId }));
-        
-        // Remove aviso de desconexão se existir
-        const overlay = document.getElementById('overlay-conexao');
-        if(overlay) overlay.classList.add('hidden');
-    };
-
-    socket.onmessage = processarMensagemWS; // Usa a função Híbrida que criamos antes
-
-    socket.onclose = function(e) {
-        console.warn(`⚠️ [WS] Fechado (Cod: ${e.code}). Reconectando em 3s...`);
-        
-        // NÃO CHAMAMOS carregarConfigSorteExtraAdmin AQUI!
-        // Apenas agendamos a reconexão do socket.
-        
-        if (!reconnectInterval) {
-            reconnectInterval = setTimeout(() => {
-                reconnectInterval = null;
-                connectAdminWS();
-            }, 3000);
-        }
-    };
-
-    socket.onerror = function(err) {
-        console.error("❌ [WS] Erro:", err);
-        socket.close();
-    };
-}
+let adminSocket = null;
+let adminSocketRetries = 0;
 
 
-function connectAdminWS___() {
+function connectAdminWS() {
     console.log("🔌 [CONNECT] Iniciando WebSocket em:", WS_URL);
 
     if (socket) {
@@ -848,7 +795,6 @@ function connectAdminWS___() {
 }
 
 
-
 function agendarReconexao() {
     if (reconnectInterval) clearTimeout(reconnectInterval);
     reconnectInterval = setTimeout(connectAdminWS, RECONNECT_DELAY);
@@ -857,66 +803,92 @@ function agendarReconexao() {
 async function carregarDadosIniciaisSilencioso() {
     try {
         const response = await fetch(`${API_BASE_URL}/api/initial-data`);
+        if (!response.ok) return; // Se falhar, sai silenciosamente
+        
         const data = await response.json();
 
+        // 1. RECUPERA PARÂMETROS GERAIS
         if (data.parametrosInfo) {
             aguardandoVideo = parseInt(data.parametrosInfo.aguardandoVideo) || 0;
             const elDelay = document.getElementById('config-atraso-video');
-            if(elDelay) elDelay.value = aguardandoVideo; // Adicionei verificação de null aqui
+            if(elDelay) elDelay.value = aguardandoVideo;
+            
             vozAtiva = data.parametrosInfo.voz_ativa !== undefined ? data.parametrosInfo.voz_ativa : true;
             enviarPortaSerial = data.parametrosInfo.enviar_porta_serial !== undefined ? data.parametrosInfo.enviar_porta_serial : false;
-            buscarSorteExtra =  data.parametrosInfo.buscar_sorte_extra !== undefined ? data.parametrosInfo.buscar_sorte_extra : true;
+            
+            // Recupera estado do Sorte Extra
+            buscarSorteExtra = data.parametrosInfo.buscar_sorte_extra !== undefined ? data.parametrosInfo.buscar_sorte_extra : true;
             const chkExtra = document.getElementById('chk-buscar-sorte-extra');
-            if (chkExtra) {
-                chkExtra.checked = buscarSorteExtra;
-            }
+            if (chkExtra) chkExtra.checked = buscarSorteExtra;
         }
 
+        // 2. RECUPERA EVENTO ATIVO (CRÍTICO PARA F5)
         if (!dadosEventoAtual && data.rodadaData && data.rodadaData.length > 0) {
             const rodada = data.rodadaData[0];
             if (rodada.id_evento && rodada.id_evento !== "0") {
                 const idEventoInt = parseInt(rodada.id_evento);
                 console.log(`♻️ [RECUPERAÇÃO] Restaurando ID do evento após F5: ${rodada.id_evento}`);
                 
-                // --- CORREÇÃO AQUI ---
-                // Criamos 'id' E 'id_evento' para garantir compatibilidade
                 dadosEventoAtual = { 
-                    id: idEventoInt,        // <--- O 'carregarConfig' busca por .id
-                    id_evento: idEventoInt, // <--- Mantém para outras partes do sistema
+                    id: idEventoInt, 
+                    id_evento: idEventoInt,
                     descricao: 'Evento Recuperado' 
                 };
             }
         }
 
-        // Agora verificamos se existe id OU id_evento
+        // 3. CARREGA CONFIGURAÇÕES DO EVENTO (Sorte Extra, Prêmios, etc)
         if (dadosEventoAtual && (dadosEventoAtual.id || dadosEventoAtual.id_evento)) {
-             // Garante que o ID esteja setado corretamente caso tenha vindo só com id_evento
              if(!dadosEventoAtual.id) dadosEventoAtual.id = dadosEventoAtual.id_evento;
              
+             // Busca configurações específicas desse evento
              await carregarConfigSorteExtraAdmin();
-        }
-       
-        if (dadosEventoAtual && (dadosEventoAtual.id || dadosEventoAtual.id_evento)) {
-             if(!dadosEventoAtual.id) dadosEventoAtual.id = dadosEventoAtual.id_evento;
-             await carregarConfigSorteExtraAdmin();
+             
+             // Força exibição do painel se estiver escondido
+             const painel = document.getElementById('painel-evento-ativo');
+             if (painel && painel.classList.contains('hidden')) {
+                 painel.classList.remove('hidden');
+                 const modalSelecao = document.getElementById('painel-selecao-eventos');
+                 if(modalSelecao) modalSelecao.classList.add('hidden');
+             }
         }
 
- 
-        if (data.evento && parseInt(data.evento.tipo_cartela) === 25) {
-            MAX_BOLAS = 75;
-        } else {
-            MAX_BOLAS = 90;
-        }
-
-        // Verifica se o grid existe antes de contar
-        const bolasNaTela = document.querySelectorAll('[id^="admin-ball-"]');
-        const totalBolasNaTela = bolasNaTela.length;
+        // -----------------------------------------------------------
+        // 4. DEFINE TIPO DE JOGO (BLINDAGEM CONTRA FALHA DE REDE)
+        // -----------------------------------------------------------
         
-        if (totalBolasNaTela !== MAX_BOLAS) {
+        // Padrão: Mantém o que já está na memória (não reseta para 90 à toa)
+        let novoMaxBolas = MAX_BOLAS; 
+
+        if (data.evento && data.evento.tipo_cartela) {
+            const tipo = parseInt(data.evento.tipo_cartela);
+            
+            // Só aceitamos troca se for um valor válido conhecido
+            if (tipo === 25) {
+                novoMaxBolas = 75;
+            } else if (tipo === 15 || tipo === 90) {
+                novoMaxBolas = 90;
+            }
+        } else {
+             console.warn("⚠️ [RECOVERY] Servidor não informou tipo de jogo. Mantendo atual:", MAX_BOLAS);
+        }
+        
+        // Aplica a mudança SOMENTE se for diferente
+        if (MAX_BOLAS !== novoMaxBolas) {
+            MAX_BOLAS = novoMaxBolas;
+            console.log(`🔧 [RECOVERY] Ajustando MAX_BOLAS para ${MAX_BOLAS}`);
+            initGrid(); // Redesenha a grade imediatamente
+        }
+
+        // 5. CHECAGEM SECUNDÁRIA DO GRID
+        // Garante que o visual bate com a variável, mesmo que não tenha mudado agora
+        const bolasNaTela = document.querySelectorAll('[id^="admin-ball-"]');
+        if (bolasNaTela.length !== MAX_BOLAS) {
+            console.log("🔧 [GRID] Redesenhando Grid por divergência visual...");
             initGrid(); 
         }
 
-        // Tenta pegar primeiro da Mesa, depois do Público
+        // 6. RECUPERA BOLAS SORTEADAS (MESA OU PÚBLICO)
         let listaBolasInit = [];
         if (data.bolasMesaData && data.bolasMesaData.length > 0) {
             listaBolasInit = data.bolasMesaData[0].bolas_cantadas || [];
@@ -924,24 +896,21 @@ async function carregarDadosIniciaisSilencioso() {
             listaBolasInit = data.bolasData[0].bolas_cantadas || [];
         }
 
+        // Só atualiza se tiver dados (para não zerar o jogo se a API falhar)
         if(listaBolasInit.length > 0) {
              bolasSorteadasCache = listaBolasInit;
-             updateGrid(bolasSorteadasCache);
+             
+             // Atualiza visualmente (Grid e Contador)
+             if (typeof updateGrid === 'function') updateGrid(bolasSorteadasCache);
+             else if (typeof atualizarGrid === 'function') atualizarGrid(bolasSorteadasCache);
+             
+             const contador = document.getElementById('contador-bolas');
+             if(contador) contador.textContent = bolasSorteadasCache.length;
+             
+             // Se tiver última bola, destaca ela
+             const ultima = bolasSorteadasCache[bolasSorteadasCache.length - 1];
+             if(ultima && typeof destacarBola === 'function') destacarBola(ultima);
         }
-
-        if (dadosEventoAtual && (dadosEventoAtual.id || dadosEventoAtual.id_evento)) {
-            const painel = document.getElementById('painel-evento-ativo');
-            
-            if (painel && painel.classList.contains('hidden')) {
-                console.log("🔓 [FIX] Forçando exibição do Painel de Evento Ativo.");
-                painel.classList.remove('hidden');
-                
-                // Se estivermos em modo "Mesa", talvez seja bom esconder a seleção de eventos
-                const modalSelecao = document.getElementById('painel-selecao-eventos'); // Ajuste conforme seu ID
-                if(modalSelecao) modalSelecao.classList.add('hidden');
-            }
-        }
-
 
     } catch(e) {
         console.error("Erro no carregamento silencioso:", e);
@@ -949,386 +918,166 @@ async function carregarDadosIniciaisSilencioso() {
 }
 
 // =========================================================
-// === PROCESSADOR HÍBRIDO (75/90) COM RANKING E GANHADORES ===
+// === PROCESSADOR HÍBRIDO (RANKING ATIVO + SEM PISCAR) ===
 // =========================================================
 
 function processarMensagemWS(event) {
     try {
         const payload = JSON.parse(event.data);
 
-        // 1. Ignora PING
+        // 1. IGNORA PING
         if (payload.type === 'PING') return;
 
-        // 2. Comandos de Reset (Obedece sempre)
+        // 2. COMANDOS DE RESET
         if (payload.type === 'RESET_RODADA' || payload.type === 'LIMPAR_TUDO') {
             window.location.reload();
             return;
         }
 
-        // 3. BLOCO UPDATE (Onde chega o Ranking)
-        if (payload.type === 'UPDATE') {
+        // 3. BLOCO DE ATUALIZAÇÃO (Onde mora a mágica)
+        if (payload.type === 'UPDATE') { 
             
-            // --- PARTE A: AS BOLAS (BLOQUEADO PARA NÃO PISCAR) ---
-            /* if (payload.bolasMesaData || payload.bolasData) {
-                // Não atualizamos o grid aqui porque o Locutor já desenhou.
+            // 🔴 PARTE 1: AS BOLAS (MANTENHA DESATIVADO!)
+            // O servidor manda as bolas, mas se atualizarmos, a tela pisca.
+            // O Admin (Você) já desenhou a bola na hora do clique.
+            
+            /* let dadosBolas = payload.bolasMesaData || payload.bolasData || [];
+            if (dadosBolas.length > 0) {
+                 // updateGrid(dadosBolas[0].bolas_cantadas); <--- ISSO CAUSA O BUG VISUAL
             }
             */
 
-            // --- PARTE B: RANKING / TOP 10 (ATIVO!) ---
-            if (payload.melhoresData) {
-                let tipoPremioBuscado = "BINGO";
-                if (payload.buscandoMesaData && payload.buscandoMesaData[0]) {
-                    tipoPremioBuscado = payload.buscandoMesaData[0].buscando_o_premio;
-                }
-                
-                // CHAMA A FUNÇÃO QUE DESENHA O RANKING NA TELA
-                if (typeof renderRanking === 'function') {
-                    renderRanking(payload.melhoresData, tipoPremioBuscado);
-                }
-
-                // --- DETECÇÃO DE GANHADORES (PARA PAUSAR O ROBÔ/LOCUTOR) ---
-                verificarVitoriaPeloRanking(payload.melhoresData);
+            // 🟢 PARTE 2: ESTADO DOS BOTÕES (ATIVO)
+            if (payload.rodadaData && payload.rodadaData.length > 0) {
+                const estado = payload.rodadaData[0].estado;
+                if (typeof gerenciarEstadoBotoes === 'function') gerenciarEstadoBotoes(estado);
             }
 
-            // --- PARTE C: STATUS DO PRÊMIO (TEXTO "BUSCANDO LINHA...") ---
+            // 🟢 PARTE 3: TEXTOS DE PRÊMIO (ATIVO)
             if (payload.buscandoMesaData && payload.buscandoMesaData.length > 0) {
                 const dados = payload.buscandoMesaData[0];
                 let premio = dados?.buscando_o_premio || '...';
-                if (MAX_BOLAS === 75 && premio === 'QUADRA') premio = '4 CANTOS';
-                
+                if (typeof MAX_BOLAS !== 'undefined' && MAX_BOLAS === 75 && premio === 'QUADRA') {
+                    premio = '4 CANTOS';
+                }
                 const elTitulo = document.getElementById('premio-atual'); 
                 if (elTitulo) elTitulo.textContent = premio;
+                
+                // Texto "Buscando Linha..."
+                const linhas = dados?.buscando_a_linha || '';
+                let textoCompleto = premio + (linhas ? ` (${linhas})` : '');
+                const elStatus = document.getElementById('status-premio');
+                if (elStatus) elStatus.textContent = `Buscando: ${textoCompleto}`;
             }
 
+            // 🟢 PARTE 4: CONFIGURAÇÕES (ATIVO)
             if (payload.parametrosInfo) {
-                if (!configuracaoServer || Object.keys(configuracaoServer).length === 0) {
-                    configuracaoServer = payload.parametrosInfo;
-                       
-                    if (configuracaoServer.sorteio_automatizado !== undefined) {
-                        sorteioAutomatizadoConfig = configuracaoServer.sorteio_automatizado;
-                    }
-            
-                    if (configuracaoServer.aguardandoVideo !== undefined) {
-                        aguardandoVideo = parseInt(configuracaoServer.aguardandoVideo) || 0; 
-                    }
-
-                    if (configuracaoServer.voz_ativa !== undefined) {
-                        vozAtiva = configuracaoServer.voz_ativa;
-                    }
-
-                    if (configuracaoServer.enviar_porta_serial !== undefined) {
-                        enviarPortaSerial = configuracaoServer.enviar_porta_serial;
-                    }
-
-                    if (configuracaoServer.modo_sorteio) {
-                        modoSorteio = configuracaoServer.modo_sorteio;
-                        if (typeof aplicarVisualModoSorteio === 'function') {
-                            aplicarVisualModoSorteio(modoSorteio);
-                        }
-                    }
-            
-                    const modal = document.getElementById('modal-config');
-                    if (modal && modal.classList.contains('hidden') && typeof preencherModalConfig === 'function') {
-                        preencherModalConfig(configuracaoServer);
-                    }
+                configuracaoServer = payload.parametrosInfo;
+                if (configuracaoServer.modo_sorteio && modoSorteio !== configuracaoServer.modo_sorteio) {
+                    modoSorteio = configuracaoServer.modo_sorteio;
+                    if(typeof aplicarVisualModoSorteio === 'function') aplicarVisualModoSorteio(modoSorteio);
                 }
             }
 
-        }
+            // 🟢 PARTE 5: LISTA DE GANHADORES (ATIVO)
+            if (payload.ganhadoresLive && payload.ganhadoresLive.length > 0) {
+                if (typeof renderListaGanhadores === 'function') renderListaGanhadores(payload.ganhadoresLive);
+            } else if (payload.ganhadoresData) {
+                if (typeof renderListaGanhadores === 'function') renderListaGanhadores(payload.ganhadoresData);
+            }
 
-    } catch (e) {
-        console.error("Erro no processamento do WS:", e);
-    }
-}
-
-function verificarVitoriaPeloRanking(listaMelhores) {
-    // 1. Definimos as paradas e termos de vitória conforme o tipo de jogo
-    let paradasObrigatorias = [];
-    let termosVitoria = [];
-
-    if (MAX_BOLAS === 75) {
-        paradasObrigatorias = ['QUADRA', 'LINHA', 'BINGO', 'DUPLO BINGO', '4 CANTOS', '4 CANTOS E LINHA'];
-        termosVitoria = ['BINGO', 'LINHA', 'QUADRA', '4 CANTOS', '4 CANTOS E LINHA'];
-    } else {
-        paradasObrigatorias = ['QUADRA', 'LINHA', 'FALTA UM', 'BINGO', 'DUPLO BINGO'];
-        termosVitoria = ['BINGO', 'LINHA', 'QUADRA', 'FALTA 1', 'FALTA UM', 'DUPLO BINGO'];
-    }
-
-    // 2. Filtramos os ganhadores reais vindos do servidor
-    const ganhadoresEncontrados = listaMelhores.filter(item => {
-        const statusPremio = (item.premio && item.premio !== "null") ? item.premio.toUpperCase() : "";
-        // Verifica se o status enviado pelo server bate com nossos termos de vitória
-        return termosVitoria.some(termo => statusPremio.includes(termo));
-    });
-
-    // 3. Se houver ganhadores e ainda não alertamos nesta bola
-    if (ganhadoresEncontrados.length > 0 && !jaAlertouNestaBola) {
+            // 🟢 PARTE 6: RANKING "TOP 10" E VITÓRIA (AQUI ESTÁ O QUE FALTAVA!)
+            if (payload.melhoresData) {
+               
+               // A. Desenha o Top 10
+               let tipoPremioBuscado = "BINGO";
+               if (payload.buscandoMesaData && payload.buscandoMesaData[0]) 
+                   tipoPremioBuscado = payload.buscandoMesaData[0].buscando_o_premio;
         
-        // PARA O SORTEIO IMEDIATAMENTE (Modo Rei assume o controle)
-        if (autoSorteioAtivo) {
-            pararAutoSorteio();
-        }
-        
-        // --- ALIMENTA A LISTA DE AUDITORIA LOCAL ---
-        // Isso resolve o problema de a tela de conferência aparecer vazia
-        cartelasPendentesAuditoria = ganhadoresEncontrados.map(g => ({
-            cartela: String(g.cartela).trim(),
-            nome: (g.nome === "null" || !g.nome) ? "Balcão" : g.nome,
-            premio: g.premio
-        }));
+               if (typeof renderRanking === 'function') {
+                   renderRanking(payload.melhoresData, tipoPremioBuscado);
+               }
 
-        console.log("🏆 Vitória detectada! Cartelas para conferência:", cartelasPendentesAuditoria);
-
-        // Dispara o alerta visual para o locutor
-        customAlert("🏆 ALERTA DE PREMIAÇÃO! Verifique os ganhadores.");
-        jaAlertouNestaBola = true;
-    }
-}
-function processarMensagemWS___(event) {
-    //console.log("📨 [SOCKET RECEBIDO] Dados brutos:", event.data);
-
-    try {
-        const payload = JSON.parse(event.data);
-        //console.log("✅ [PASSO X1] JSON Válido. Tipo:", payload.type);
-
-
-        if (payload.type === 'UPDATE') {        
-            let dadosBolas = [];
-            if (payload.bolasMesaData && payload.bolasMesaData.length > 0) {
-                dadosBolas = payload.bolasMesaData;
-            } else {
-                dadosBolas = payload.bolasData || []; 
-            }
-
-            if (dadosBolas.length > 0) {
-                const ultimoSorteio = dadosBolas[0];
-                const listaDeNumeros = ultimoSorteio.bolas_cantadas || [];
-            
-                bolasSorteadasCache = listaDeNumeros; 
-
-                if (listaDeNumeros.length > ultimoTotalBolasProcessadas || listaDeNumeros.length === 0) {
-                    ultimoTotalBolasProcessadas = listaDeNumeros.length;
-                    jaAlertouNestaBola = false;
-                }
-
-            if (typeof updateGrid === 'function') {
-                updateGrid(listaDeNumeros);
-            }
-
-            if (bolaDestaque) {
-                if (ultimoSorteio.proxima_bola && ultimoSorteio.proxima_bola !== "--") {
-                    bolaDestaque.textContent = ultimoSorteio.proxima_bola;
-                } else if (listaDeNumeros.length > 0) {
-                    bolaDestaque.textContent = listaDeNumeros[listaDeNumeros.length - 1];
-                }
-            }
-
-            // O Alerta
-            if (buscarSorteExtra) { 
-                if (sorteioExtraConfigAtivo && 
-                    listaDeNumeros.length === qtdeTopeSorteExtra && 
-                    !jaValidouSorteExtraNestaRodada) {
-        
-                    console.log("🚨 [DEBUG] CONDIÇÃO ATINGIDA! ABRINDO MODAL...");
-                    if (typeof autoSorteioAtivo !== 'undefined' && autoSorteioAtivo) {
-                        console.log("✋ Parando Avanço Automático para processar Sorte Extra...");
-                        
-                        // 1. Para o Relógio do intervalo
-                        if (typeof autoSorteioInterval !== 'undefined') clearInterval(autoSorteioInterval);
-                        
-                        // 2. Atualiza a variável de controle
-                        autoSorteioAtivo = false;
-                        
-                        // 3. Atualiza o Botão na interface (Volta para "Play") yyy
-                        const btnAuto = document.getElementById('btn-auto-toggle');
-                        if (btnAuto) {
-                            btnAuto.innerHTML = '▶ Iniciar Auto';
-                            btnAuto.classList.remove('bg-red-600', 'animate-pulse');
-                            btnAuto.classList.add('bg-blue-600');
-                        }
-                    }
-
-                    jaValidouSorteExtraNestaRodada = true; 
-
-                    if (modoRoboAtivo) {
-                        // --- CAMINHO A: ROBÔ 🤖 ---
-                        console.log("🤖 [ROBO] Modo Automático: Solicitando validação silenciosa...");
-                        dispararVerificacaoRobo(); 
-                    } else {
-                        // --- CAMINHO B: HUMANO 👤 ---
-                        console.log("👤 [MANUAL] Modo Operador: Abrindo modal...");
-                        abrirModalValidacaoSorteExtra();
-                    }
-                }
-           }
-        } else {
-           jaValidouSorteExtraNestaRodada = false; 
-        }
-
-        if (payload.rodadaData && payload.rodadaData.length > 0) {
-            const estado = payload.rodadaData[0].estado;
-            
-            // Chama a função de segurança que criamos
-            if (typeof gerenciarEstadoBotoes === 'function') {
-                gerenciarEstadoBotoes(estado);
-            }
-        }
-
-        if (payload.buscandoMesaData && payload.buscandoMesaData.length > 0) {
-            const dados = payload.buscandoMesaData[0];
-            let premio = dados?.buscando_o_premio || '...';
-            const linhas = dados?.buscando_a_linha || '';
-            
-            if (typeof MAX_BOLAS !== 'undefined' && MAX_BOLAS === 75) {
-               if (premio === 'QUADRA') premio = '4 CANTOS';
-            }
-
-            let textoCompleto = premio;
-            if (linhas && (premio === 'LINHA' || premio === '3 LINHAS')) {
-                textoCompleto += ` (${linhas})`;
-            }
-
-            const elStatus = document.getElementById('status-premio');
-            if (elStatus) elStatus.textContent = `Buscando: ${textoCompleto}`;
-    
-            const elTitulo = document.getElementById('premio-atual'); 
-            if (elTitulo) elTitulo.textContent = premio;
-        }
-
-        if (payload.parametrosInfo) {
-            configuracaoServer = payload.parametrosInfo;
-                       
-            if (configuracaoServer.sorteio_automatizado !== undefined) {
-                sorteioAutomatizadoConfig = configuracaoServer.sorteio_automatizado;
-            }
-            
-            if (configuracaoServer.aguardandoVideo !== undefined) {
-                aguardandoVideo = parseInt(configuracaoServer.aguardandoVideo) || 0; 
-            }
-
-            if (configuracaoServer.voz_ativa !== undefined) {
-                vozAtiva = configuracaoServer.voz_ativa;
-            }
-
-            if (configuracaoServer.enviar_porta_serial !== undefined) {
-                enviarPortaSerial = configuracaoServer.enviar_porta_serial;
-            }
-
-            if (configuracaoServer.modo_sorteio) {
-                modoSorteio = configuracaoServer.modo_sorteio;
-                if (typeof aplicarVisualModoSorteio === 'function') {
-                    aplicarVisualModoSorteio(modoSorteio);
-                }
-            }
-            
-            const modal = document.getElementById('modal-config');
-            if (modal && modal.classList.contains('hidden') && typeof preencherModalConfig === 'function') {
-                preencherModalConfig(configuracaoServer);
-            }
-        }
-
-        if (payload.ganhadoresLive && payload.ganhadoresLive.length > 0) {
-            if (typeof renderListaGanhadores === 'function') renderListaGanhadores(payload.ganhadoresLive);
-        } else if (payload.ganhadoresData) {
-            if (typeof renderListaGanhadores === 'function') renderListaGanhadores(payload.ganhadoresData);
-        }
-
-        if (payload.melhoresData) {
-           let tipoPremioBuscado = "BINGO";
-           if (payload.buscandoMesaData && payload.buscandoMesaData[0]) tipoPremioBuscado =        payload.buscandoMesaData[0].buscando_o_premio;
-    
-    renderRanking(payload.melhoresData, tipoPremioBuscado);
-
-    if (MAX_BOLAS === 75) {
-        paradasObrigatorias = ['QUADRA', 'LINHA', 'BINGO', 'DUPLO BINGO', '4 CANTOS', '4 CANTOS E LINHA'];
-        termosVitoria = ['BINGO', 'LINHA', 'QUADRA', '4 CANTOS', '4 CANTOS E LINHA'];
-    } else {
-        paradasObrigatorias = ['QUADRA', 'LINHA', 'FALTA UM', 'BINGO', 'DUPLO BINGO'];
-        termosVitoria = ['BINGO', 'LINHA', 'QUADRA', 'FALTA 1', 'FALTA UM', 'DUPLO BINGO'];
-    }
-    
-    const ganhadoresAtuais = payload.melhoresData.filter(item => {
-        const status = (item.premio && item.premio !== "null") ? item.premio.toUpperCase() : "";
-        return paradasObrigatorias.some(termo => status.includes(termo)); 
-    });
-
-    const novosContemplados = payload.melhoresData.filter(item => {
-        const status = (item.premio && item.premio !== "null") ? item.premio.toUpperCase() : "";
-        return termosVitoria.some(termo => status.includes(termo));              
-    });
-
-    // Buscar Sorte Extra
-    const bolasMesa = bolasSorteadasCache; // Array das bolas [15, 42, 63...]
-    
-    // Verificamos se atingiu a quantidade X
-    if (sorteioExtraConfigAtivo && bolasMesa.length === qtdeTopeSorteExtra) {
-        
-        if (!jaValidouSorteExtraNestaRodada) {
-            jaValidouSorteExtraNestaRodada = true; // Trava para não abrir 1000 vezes
-            
-            // TOCA UM SOM DE ALERTA (Opcional)
-            const audio = new Audio('/sons/sorteextra.mp3'); // Se tiver
-            audio.play().catch(e=>{});
-
-            // ABRE O MODAL AUTOMATICAMENTE
-            abrirModalValidacaoSorteExtra();
-        }
-    }
-    
-    // Se resetar o jogo (0 bolas), reseta a trava
-    if (bolasMesa.length === 0) {
-        jaValidouSorteExtraNestaRodada = false;
-    }
-// sorte extra
-
-    if (!modoRoboAtivo) {
-        novosContemplados.forEach(novo => {
-        const ID = String(novo.cartela).trim();
-        if (!idsConfirmadosNestaRodada.has(ID) && 
-            !cartelasPendentesAuditoria.some(c => String(c.cartela).trim() === ID)) {
-               cartelasPendentesAuditoria.push({
-                   cartela: ID, 
-                   nome: novo.nome === "null" ? "Balcão" : novo.nome,
-                   premio: novo.premio 
+               // B. Lógica de Vitória (Quem ganhou?)
+               let paradasObrigatorias = [];
+               if (MAX_BOLAS === 75) {
+                   paradasObrigatorias = ['QUADRA', 'LINHA', 'BINGO', 'DUPLO BINGO', '4 CANTOS', '4 CANTOS E LINHA'];
+               } else {
+                   paradasObrigatorias = ['QUADRA', 'LINHA', 'FALTA UM', 'BINGO', 'DUPLO BINGO'];
+               }
+               
+               const ganhadoresAtuais = payload.melhoresData.filter(item => {
+                   const status = (item.premio && item.premio !== "null") ? item.premio.toUpperCase() : "";
+                   return paradasObrigatorias.some(termo => status.includes(termo)); 
                });
-            }
-        });
-    } else {
-         cartelasPendentesAuditoria = [];
-    }
 
-            if (ganhadoresAtuais.length > 0) {
-                if (modoRoboAtivo) {
-                    if (!processandoVitoria) {
-                        if (autoSorteioAtivo) pararAutoSorteio();
-                        processandoVitoria = true; 
-                        console.log("⏳ Aguardando sincronização visual dos terminais (4s)...");
-                        setTimeout(() => {
-                            processandoVitoria = false; 
-                            gerenciarVitoriaRobo(ganhadoresAtuais);
-                        }, 4000);   // aqui esta o tempo
+               // Se tiver ganhador, processa a vitória
+               if (ganhadoresAtuais.length > 0) {
+                   if (modoRoboAtivo) {
+                        if (!processandoVitoria) {
+                            if (autoSorteioAtivo && typeof pararAutoSorteio === 'function') pararAutoSorteio();
+                            processandoVitoria = true;
+                            console.log("⏳ Aguardando sincronização visual dos terminais (4s)...");
+                            setTimeout(() => {
+                                processandoVitoria = false;
+                                if (typeof gerenciarVitoriaRobo === 'function') gerenciarVitoriaRobo(ganhadoresAtuais);
+                            }, 4000);
+                        }
+                   } else {
+                        // Modo Manual
+                        if (autoSorteioAtivo && typeof pararAutoSorteio === 'function') {
+                            pararAutoSorteio();
+                            customAlert("🏆 Alerta de Premiação! Sorteio pausado.");
+                            jaAlertouNestaBola = true;
+                        } else if (!jaAlertouNestaBola) {
+                            customAlert("🏆 Alerta de Premiação!");
+                            jaAlertouNestaBola = true;
+                        }
+                   }
+               }
+
+               // C. Lógica de Sorte Extra (Restaurada do seu código original)
+               const bolasMesa = bolasSorteadasCache; // Usa nossa memória local
+               
+               if (sorteioExtraConfigAtivo && bolasMesa.length === qtdeTopeSorteExtra) {
+                    if (!jaValidouSorteExtraNestaRodada) {
+                        console.log("🚨 GATILHO SORTE EXTRA (WS BACKUP)!");
+                        
+                        // Pausa Auto Sorteio
+                        if (typeof autoSorteioAtivo !== 'undefined' && autoSorteioAtivo) {
+                            if (typeof pararAutoSorteio === 'function') pararAutoSorteio();
+                            const btnAuto = document.getElementById('btn-auto-toggle'); // Ajuste o ID se precisar
+                            if (btnAuto) {
+                                btnAuto.innerHTML = '▶ Iniciar Auto';
+                                btnAuto.classList.remove('bg-red-600', 'animate-pulse');
+                                btnAuto.classList.add('bg-blue-600');
+                            }
+                        }
+
+                        jaValidouSorteExtraNestaRodada = true;
+                        
+                        // Dispara Modal
+                        if (modoRoboAtivo) {
+                             if(typeof dispararVerificacaoRobo === 'function') dispararVerificacaoRobo();
+                        } else {
+                             if(typeof abrirModalValidacaoSorteExtra === 'function') abrirModalValidacaoSorteExtra();
+                        }
                     }
-                } else { 
-                    if (autoSorteioAtivo) {
-                        pararAutoSorteio();
-                        customAlert("Alerta de Premiação! Sorteio pausado.");
-                        jaAlertouNestaBola = true;
-                    } else if (!jaAlertouNestaBola) {
-                        customAlert("Alerta de Premiação!");
-                        jaAlertouNestaBola = true;
-                    }
-                }
+               } else {
+                   // Se passou do ponto ou resetou, libera a trava
+                   if (bolasMesa.length !== qtdeTopeSorteExtra) {
+                       // jaValidouSorteExtraNestaRodada = false; // Cuidado para não resetar enquanto está na bola
+                   }
+               }
+               
+               if (bolasMesa.length === 0) jaValidouSorteExtraNestaRodada = false;
             }
-        }
-    }
+        } // Fim do IF UPDATE
 
     } catch (e) {
-        console.error("❌ ERRO AO LER JSON:", e);
-        console.error("💀 O que quebrou o JSON:", event.data);
+        console.error("Erro no JSON:", e);
     }
-
 }
-
 
 // =========================================================
 // === 3. FUNÇÕES UI E MODAIS ===
@@ -1486,51 +1235,12 @@ function renderizarListaEventos(eventos) {
     });
 }
 
-async function carregarParametrosDoBanco() {
-    console.log("📡 [API] Buscando parâmetros oficiais do banco...");
-    try {                                              
-        const response = await fetch(`${API_BASE_URL}/api/admin/get_config`);
-        if (!response.ok) throw new Error("Erro na resposta da rede");
-        
-        const dados = await response.json();
-        
-        // Atualiza a global e os tipos
-        configuracaoServer = dados;
-        if (dados.qtde_tope) qtdeTopeSorteExtra = parseInt(dados.qtde_tope);
-        if (dados.aguardandoVideo) aguardandoVideo = parseInt(dados.aguardandoVideo);
-        
-        console.log("✅ [API] Parâmetros sincronizados com sucesso:", configuracaoServer);
-        return dados;
-    } catch (e) {
-        console.error("❌ [API] Falha ao sincronizar parâmetros:", e);
-        return null;
-    }
-}
-
-// xxxx
-async function abrirModalConfig() {
+function abrirModalConfig() {
     toggleAdminMenu();
     const modal = document.getElementById('modal-config');
-    
-    // LOG DE DEPURAÇÃO
-    console.log("🛠️ Abrindo Modal. Cache atual:", configuracaoServer);
-
-    // SE O CACHE ESTIVER VAZIO, FORÇA A BUSCA NA ROTA NOVA
-    if (!configuracaoServer || Object.keys(configuracaoServer).length === 0) {
-        const dadosRecuperados = await carregarParametrosDoBanco();
-        if (dadosRecuperados) {
-            configuracaoServer = dadosRecuperados;
-        }
-    }
-
     modal.classList.remove('hidden');
-
-    // Preenche o modal com o que temos (seja do cache ou da busca nova)
-    if (typeof preencherModalConfig === 'function') {
-        preencherModalConfig(configuracaoServer);
-    }
+    if (configuracaoServer) preencherModalConfig(configuracaoServer);
 }
-
 
 function preencherModalConfig(params) {
     if (params.tempo_ganhador) document.getElementById('config-winner-time').value = params.tempo_ganhador;
@@ -1553,8 +1263,6 @@ function preencherModalConfig(params) {
     document.getElementById('config-url-padrao').value = params.url_padrao || '';
     document.getElementById('config-url-live').value = params.url_live || '';
     document.getElementById('config-url-mongo').value = params.url_mongo_vendas || '';
-    document.getElementById('config-atraso-video').value = params.aguardandoVideo;
- 
     if (params.tipo_sorteio) document.getElementById('config-tipo-sorteio').value = params.tipo_sorteio;
     const selectEntrada = document.getElementById('config-entrada-cartelas');
     if (params.tipo_entrada_de_cartelas && selectEntrada) selectEntrada.value = params.tipo_entrada_de_cartelas;
@@ -1727,114 +1435,111 @@ function atualizarBarraProgresso(totalSegundos) {
     }, 100);
 }
 
-// =========================================================
-// === SORTEIO LOCUTOR REI (INDEPENDÊNCIA TOTAL) ===
-// =========================================================
 
 async function sortearBola() {
-    // 1. Verificações Básicas
-    if (isSorting) return;
+    // 1. Bloqueios de Segurança
+    if (isSorting) return; 
+    
+    // Verifica se já saíram todas as bolas
     if (bolasSorteadasCache.length >= MAX_BOLAS) {
-        customAlert("Fim de Jogo! O globo está vazio.");
+        customAlert("Fim de Jogo! Todas as bolas foram sorteadas.");
         pararAutoSorteio();
         return;
     }
 
     isSorting = true;
     const btn = document.getElementById('btn-sortear');
-    if(btn) { btn.disabled = true; btn.textContent = "PROCESSANDO..."; }
+    if(btn) { btn.disabled = true; btn.textContent = "SORTEANDO..."; }
 
-    // 2. SORTEIO LOCAL (Gera o número na memória do Admin)
-    let numero = gerarNumeroUnicoLocal(); 
-    
-    if (!numero) {
-        console.error("Erro fatal: Não consegui gerar número único.");
+    // 2. MÁGICA LOCAL: Gera o número AQUI e AGORA
+    let numeroSorteado = gerarNumeroUnicoLocal();
+
+    if (!numeroSorteado) {
+        console.error("Erro fatal: Não foi possível gerar número único.");
         isSorting = false;
         if(btn) { btn.disabled = false; btn.textContent = "SORTEAR BOLA 🎲"; }
         return;
     }
 
-    console.log(`🎱 LOCUTOR SORTEOU: ${numero}`);
-    jaAlertouNestaBola = false;
-    // 3. ATUALIZA A TELA IMEDIATAMENTE (Não espera internet)
-    bolasSorteadasCache.push(numero); // Adiciona na Matriz Local
+    console.log(`🎱 Sorteio Local: Bola ${numeroSorteado}`);
+
+    // 3. ATUALIZA A TELA IMEDIATAMENTE (Aqui que a bola aparece!)
+    bolasSorteadasCache.push(numeroSorteado); // Salva na memória
     
-    // Atualiza Grid Visual
-    if(typeof updateGrid === 'function') updateGrid(bolasSorteadasCache);
-    
-    // Atualiza Contador
+    // Atualiza o Grid (Pinta a bolinha pequena)
+    if (typeof updateGrid === 'function') updateGrid(bolasSorteadasCache);
+    else if (typeof atualizarGrid === 'function') atualizarGrid(bolasSorteadasCache);
+
+    // Atualiza o Contador
     const contador = document.getElementById('contador-bolas');
     if(contador) contador.textContent = bolasSorteadasCache.length;
 
-    // Atualiza Bola Destaque
-    if (bolaDestaque) bolaDestaque.textContent = numero;
-    const elBola = document.getElementById(`admin-ball-${numero}`);
-    if(elBola) {
-        // Remove destaque anterior
-        document.querySelectorAll('.admin-bola').forEach(b => b.classList.remove('animate-pulse', 'scale-110', 'z-10'));
-        // Adiciona novo destaque
-        elBola.classList.add('bg-green-600', 'text-white', 'animate-pulse', 'scale-110', 'z-10');
+    // Mostra a Bola Grande (Destaque)
+    if (bolaDestaque) bolaDestaque.textContent = numeroSorteado;
+    const elBolaGrid = document.getElementById(`admin-ball-${numeroSorteado}`);
+    if (elBolaGrid) {
+         // Remove animação de outras
+         document.querySelectorAll('.admin-bola').forEach(b => b.classList.remove('animate-pulse', 'scale-110'));
+         // Adiciona nesta
+         elBolaGrid.classList.add('bg-green-600', 'text-white', 'animate-pulse', 'scale-110');
+    }
+    
+    // Fala o número
+    if (vozAtiva) falarTextoLocutor(String(numeroSorteado));
+
+    // 4. VERIFICA SORTE EXTRA (Gatilho yyxx)
+
+    if (!bolasSorteadasCache.includes(numeroSorteado)) {
+        bolasSorteadasCache.push(numeroSorteado);
     }
 
-    // Fala o número (Voz)
-    if (vozAtiva && typeof falarTextoLocutor === 'function') falarTextoLocutor(String(numero));
 
-    // 4. ENVIA PARA O SERVIDOR EM BACKGROUND (Fire and Forget)
-    // Aqui nós avisamos o servidor para ele calcular o Ranking e validar Cartelas
+    verificarGatilhoSorteExtra(bolasSorteadasCache);
+
+    // 5. ENVIA PRO SERVIDOR EM BACKGROUND (Para os terminais saberem)
     try {
-        // Envia via POST (Sem travar o Admin)
-        fetch(`${API_BASE_URL}/api/admin/sortear_mesa`, {
+        // Envia via POST silencioso
+        await fetch(`${API_BASE_URL}/api/admin/sortear_mesa`, { // Ou sortear_bola_especifica
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                bola: numero, // Mandamos a bola que NÓS escolhemos
-                id_evento: dadosEventoAtual?.id 
+                bola: numeroSorteado, // Manda a bola que NÓS escolhemos
+                id_evento: dadosEventoAtual?.id || currentSalaId
             })
-        }).catch(e => console.warn("⚠️ Aviso: Envio ao servidor demorou, mas o jogo segue."));
+        });
         
-        // Se tiver fila de envio serial, adiciona
+        // Envia para a Fila do Painel Público (se houver)
         if (typeof matrizEnvio !== 'undefined') {
-             matrizEnvio.push({ tipo: 'BOLA_CLIENTE', valor: numero, hora: Date.now() });
+             matrizEnvio.push({ tipo: 'BOLA_CLIENTE', valor: numeroSorteado, hora: Date.now() });
              if(typeof atualizarIndicadorFila === 'function') atualizarIndicadorFila(matrizEnvio.length);
         }
 
-        // 🍀 GATILHO SORTE EXTRA (LOCAL)
-         if (buscarSorteExtra) {
-          if (sorteioExtraConfigAtivo && bolasSorteadasCache.length === qtdeTopeSorteExtra) {
-            if (!jaValidouSorteExtraNestaRodada) {
-                jaValidouSorteExtraNestaRodada = true;
-                if (autoSorteioAtivo) pararAutoSorteio(); // Para o robô para processar o sorte extra
-        
-                console.log("🚨 [GATILHO LOCAL] Atingiu quantidade para Sorte Extra!");
-        
-                if (modoRoboAtivo) {
-                    if (typeof dispararVerificacaoRobo === 'function') dispararVerificacaoRobo();
-                } else {
-                    if (typeof abrirModalValidacaoSorteExtra === 'function') abrirModalValidacaoSorteExtra();
-                }
-            }
-          }
-        }
-     
-    } catch (e) {
-        console.error("Erro de comunicação (Ignorado pelo Locutor):", e);
+    } catch (erro) {
+        console.error("❌ Erro ao sincronizar com servidor (mas a bola tá na tela):", erro);
+        // Não removemos a bola da tela, pois o show tem que continuar!
+        // Apenas tentamos reenviar no próximo ciclo se necessário.
     } finally {
-        // Libera o botão imediatamente
         isSorting = false;
         if(btn) { btn.disabled = false; btn.textContent = "SORTEAR BOLA 🎲"; }
     }
 }
 
-// Função Auxiliar para gerar número sem repetir
+// --- FUNÇÃO AUXILIAR OBRIGATÓRIA (CÉREBRO DO SORTEIO) ---
 function gerarNumeroUnicoLocal() {
-    let tentativas = 0;
-    let num;
-    do {
-        num = Math.floor(Math.random() * MAX_BOLAS) + 1;
-        tentativas++;
-        if (tentativas > 500) return null; // Segurança contra loop infinito
-    } while (bolasSorteadasCache.includes(num));
-    return num;
+    // 1. Cria lista de disponíveis (1 até MAX_BOLAS)
+    let disponiveis = [];
+    for (let i = 1; i <= MAX_BOLAS; i++) {
+        // Só adiciona se NÃO estiver no cache
+        if (!bolasSorteadasCache.includes(i)) {
+            disponiveis.push(i);
+        }
+    }
+
+    if (disponiveis.length === 0) return null;
+
+    // 2. Sorteia um índice aleatório da lista de disponíveis
+    const indiceAleatorio = Math.floor(Math.random() * disponiveis.length);
+    return disponiveis[indiceAleatorio];
 }
 
 
@@ -1899,12 +1604,18 @@ async function inserirBolaManual() {
         });
         atualizarIndicadorFila(matrizEnvio.length);
 
+        if (!bolasSorteadasCache.includes(valor)) {
+            bolasSorteadasCache.push(valor);
+        }
+        verificarGatilhoSorteExtra(bolasSorteadasCache); // yyxx
+
     } catch (e) {
         console.error("[DEBUG] Erro conexão manual:", e);
         erroLabel.textContent = "Erro ao conectar com servidor!";
         bolasCacheLocal.delete(valor);
     }
 }
+
 
 function aplicarVisibilidadeCamera(ativa) {
     const container = document.getElementById('camera-preview-container');
@@ -2083,14 +1794,14 @@ async function executarCarregamentoReal(idEvento) {
 
     try {
         console.log("[DEBUG] Resetando jogo para novo evento...");
-        await fetch(`${API_BASE_URL}/api/admin/resetar`, { method: 'POST' });
-        bolasSorteadasCache = [];
-        ultimoTotalBolasProcessadas = -1;
-        jaAlertouNestaBola = false;
-        jaValidouSorteExtraNestaRodada = false;
-        if (bolaDestaque) bolaDestaque.textContent = "--";
-        updateGrid([]); // Limpa o painel visual
-
+        await fetch(`${API_BASE_URL}/api/admin/resetar`, { 
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json'  // <--- FALTAVA ISSO!
+            },
+            body: JSON.stringify({}) // Envia um corpo vazio, mas válido
+        });
+       
         const response = await fetch(`${API_BASE_URL}/api/admin/detalhes_evento?id_evento=${idEvento}`);
         const dados = await response.json();
 
@@ -2748,8 +2459,7 @@ async function resetarJogo(force = false) {
         idsConfirmadosNestaRodada = new Set();
         ultimoTotalBolasProcessadas = -1; 
         jaAlertouNestaBola = false;
-
-
+        
         // --- RESET ESPECÍFICO DO SORTE EXTRA ---
         cacheGanhadoresExtraFinal = []; // Limpa o cache para não duplicar no próximo
         modalExtraJaAberto = false;     // Destrava o modal para o próximo jogo
@@ -2760,6 +2470,7 @@ async function resetarJogo(force = false) {
         alternarBotaoReset('reiniciar'); 
 
         if(bolaDestaque) bolaDestaque.textContent = "--"; 
+
         initGrid();
         
         const elStatus = document.getElementById('status-premio');
@@ -2851,8 +2562,8 @@ async function carregarConfigSorteExtraAdmin() {
             
             if(cfg.ativo) {
                 sorteioExtraConfigAtivo = true;
-                qtdeDezenasSorteExtra = parseInt(cfg.qtde_dezenas || 5);
-                qtdeTopeSorteExtra  = parseInt(cfg.qtde_tope_sorte_extra || 10); 
+                qtdeDezenasSorteExtra = cfg.qtde_dezenas || 5;
+                qtdeTopeSorteExtra  = cfg.qtde_tope_sorte_extra || 10; 
                 valorPremioMaximoExtra = parseFloat(cfg.premio_maximo) || 0;
                 valorPremioIntermediario = parseFloat(cfg.premio_intermediario) || 0;
                 valorPremioBase          = parseFloat(cfg.premio_base) || 0;
@@ -3229,49 +2940,36 @@ function renderizarListaExtra(elementId, lista, tipoCodigo) {
 
 
 async function publicarGanhadorExtra(dados, tipo) {
-    const idRodada = (dadosEventoAtual && (dadosEventoAtual.id_evento || dadosEventoAtual.id)) || 0;
-
-    const labelPremios = {
-        '5_acertos': '🏆 JACKPOT (5 ACERTOS)',
-        '4_acertos': '🥈 PRÊMIO (4 ACERTOS)',
-        '3_acertos': '🥉 PRÊMIO (3 ACERTOS)',
+const labelPremios = {
+        '5_acertos': '🏆 JACKPOT 🏆 (5 ACERTOS)',
+        '4_acertos': '🥈 PRÊMIO INTERMEDIÁRIO (4 ACERTOS)',
+        '3_acertos': '🥉 PRÊMIO BASE (3 ACERTOS)',
         '2_acertos': '✨ BÔNUS (2 ACERTOS)'
     };
 
-    // Ajustamos o payload para o padrão da tabela 'confere'
     const payload = {
-        rodada: parseInt(idRodada),           // ID global da rodada atual
-        cartao: dados.id,                  // Número do cupom
-        ganhador: dados.nick,              // Nome/Nick do cliente
-        numeros: dados.nums.join(' - '),   // Transforma [1,2,3] em "01 - 02 - 03"
-        mensagem: labelPremios[tipo] || 'SORTE EXTRA!',
-        tipo_conferencia: "SORTE_EXTRA"    // Identificador vital para a TV
+        id: dados.id,
+        nick: dados.nick,
+        nums: dados.nums,
+        premio_titulo: labelPremios[tipo],
+        tipo_codigo: tipo
     };
 
-    console.log("🚀 Enviando Cupom para o Terminal:", payload);
-
     try {
-        // Chamando a rota específica que criamos no server.py
-        const response = await fetch(`${API_BASE_URL}/api/admin/atualizar_conferencia_extra`, {
+        await fetch(`${API_BASE_URL}/api/admin/publicar_cupom_terminal`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ cupom: payload })
         });
-
-        if (response.ok) {
-            customAlert(`🎟️ Cupom ${dados.id} (${dados.nick}) enviado para a TV!`);
-        } else {
-            throw new Error("Falha na resposta do servidor");
-        }
-    } catch(e) { 
-        console.error("❌ Erro ao publicar cupom:", e);
-        customAlert("Erro ao enviar para o terminal.");
-    }
+        
+        // Feedback visual
+        customAlert(`Cupom: ${dados.id} enviado para conferencia!`);
+    } catch(e) { console.error(e); }
 }
 
+// --- FUNÇÃO PARA LIMPAR A TV DOS CLIENTES ---
 async function limparTelaPublicaExtra() {
-    
-    const idRodadaLimpeza = (dadosEventoAtual && (dadosEventoAtual.id_evento || dadosEventoAtual.id)) || 0;
+    // Tenta pegar o botão para dar feedback visual (opcional)
     const btn = document.getElementById('btn-limpar-tv'); 
     const textoOriginal = btn ? btn.innerText : "🧹📺 Limpar TV";
 
@@ -3280,33 +2978,24 @@ async function limparTelaPublicaExtra() {
         btn.innerText = "⏳ Limpando...";
     }
 
-    // Criamos o payload de "reset" no padrão da tabela confere
-    const payloadLimpeza = {
-        rodada: parseInt(idRodadaLimpeza),
-        cartao: 0,
-        numeros: "null",
-        ganhador: "null",
-        mensagem: "null",
-        status: "vazio",
-        tipo_conferencia: "BINGO_NORMAL" // Voltamos para o tipo padrão
-    };
-
     try {
-        // Chamamos a mesma rota de atualização de conferência
-        const resp = await fetch(`${API_BASE_URL}/api/admin/atualizar_conferencia_extra`, {
+        const resp = await fetch(`${API_BASE_URL}/api/admin/publicar_cupom_terminal`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payloadLimpeza)
+            body: JSON.stringify({ cupom: null }) // ✅ O segredo: enviar NULL
         });
 
         if (!resp.ok) throw new Error("Falha na comunicação com o servidor");
 
-        console.log("✅ TV limpa: Tabela 'confere' resetada para valores nulos.");
+        console.log("✅ Comando de limpar enviado com sucesso.");
+        // Opcional: mostrar um toast/aviso rápido
+        // showToast("Tela dos clientes limpa!");
 
     } catch (e) {
         console.error("Erro ao limpar TV:", e);
-        customAlert("Erro ao tentar limpar a tela: " + e.message);
+        alert("Erro ao tentar limpar a tela: " + e.message);
     } finally {
+        // Restaura o botão
         if(btn) {
             btn.disabled = false;
             btn.innerText = textoOriginal;
@@ -3413,8 +3102,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (modal && modal.parentNode !== document.body) document.body.appendChild(modal);
 
     iniciarRelogio();
+
     initGrid();
-    connectAdminWS();
+    //connectAdminWS();  // yyxx
     devolverFocoAoJogo();
 });
 
@@ -3724,7 +3414,7 @@ function exibirErroConexao() {
 
     iniciarCicloReconexao();
 }
-
+// yyxx
 function iniciarCicloReconexao() {
     let segundos = 2; // Tempo entre tentativas
     const contadorSpan = document.getElementById('countdown-connection');
@@ -3836,3 +3526,32 @@ window.addEventListener('DOMContentLoaded', () => {
     // Chama uma vez para definir o estado inicial
     atualizarVisibilidadeExtratora();
 });
+
+function verificarGatilhoSorteExtra(listaBolas) {
+    // Se não estiver ativo ou configurado, ignora
+    if (!sorteioExtraConfigAtivo) return;
+
+    // Verifica se atingiu a quantidade exata
+    if (listaBolas.length === qtdeTopeSorteExtra) {
+        console.log("🚨 GATILHO SORTE EXTRA ATINGIDO (LOCAL)!");
+        
+        // 1. Pausa o Auto Sorteio (Freio de Mão)
+        if (autoSorteioAtivo) {
+            pararAutoSorteio();
+            // Atualiza visual do botão
+            const btnAuto = document.getElementById('btn-auto-sorteio');
+            if (btnAuto) {
+                btnAuto.innerHTML = '▶ Iniciar Auto';
+                btnAuto.classList.remove('bg-red-600', 'animate-pulse');
+                btnAuto.classList.add('bg-blue-600');
+            }
+        }
+
+        // 2. Dispara a lógica de validação
+        if (modoRoboAtivo) {
+            dispararVerificacaoRobo();
+        } else {
+            abrirModalValidacaoSorteExtra();
+        }
+    }
+}

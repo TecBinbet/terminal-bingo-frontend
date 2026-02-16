@@ -2195,19 +2195,6 @@ def websocket_app(environ, start_response):
     return app(environ, start_response)
 
 
-# --- ROTA PARA LEITURA DAS CONFIGURAÇÕES GLOBAIS (ATUALIZADA) ---
-@app.route('/api/admin/get_config', methods=['GET'])
-def admin_get_config():
-    try:
-        # Busca o documento de parâmetros (presumindo que seja único)
-        config = db.parametros.find_one({}, {'_id': 0})
-        if config:
-            return jsonify(config)
-        return jsonify({'error': 'Configuração não encontrada'}), 404
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
 # --- ROTA PARA SALVAR CONFIGURAÇÕES GLOBAIS (ATUALIZADA) ---
 @app.route('/api/admin/salvar_config', methods=['POST'])
 def admin_salvar_config():
@@ -2416,51 +2403,68 @@ def admin_sortear_mesa():
     if db is None: return jsonify({'error': 'Sem conexão com DB'}), 500
     
     try:
+        # Pega dados enviados
         data = request.json or {}
-        # 1. PEGAMOS A BOLA QUE O LOCUTOR ESCOLHEU (Importante: use a chave 'bola')
-        nova_bola = data.get('bola') 
-        id_evento = data.get('id_evento')
+        bola_manual = data.get('bola_manual') 
 
-        if nova_bola is None:
-            return jsonify({'error': 'Nenhuma bola enviada pelo Admin'}), 400
+        # 1. Busca bolas já sorteadas NA MESA (Tabela Interna)
+        # --- ALTERADO: Lê da tabela privada da mesa ---
+        dados_bolas = db.bolas_mesa.find_one({})
+        bolas_cantadas = dados_bolas.get('bolas_cantadas', []) if dados_bolas else []
+        
+        # Define máximo de bolas (ajuste se for 75 ou 90 conforme sua config global)
+        MAX_BOLAS = CACHE_MAX_BOLAS 
 
-        # 2. BUSCAMOS A LISTA ATUAL DA TABELA OFICIAL (bolas)
-        # Para garantir que não haja "fantasmas", vamos ler a 'bolas' e replicar na 'mesa'
-        doc_oficial = db.bolas.find_one({"id_evento": id_evento}) or {}
-        bolas_cantadas = doc_oficial.get('bolas_cantadas', [])
+        # 2. Verifica fim de jogo
+        if len(bolas_cantadas) >= MAX_BOLAS:
+            return jsonify({'error': 'Todas as bolas já foram sorteadas'}), 400
 
-        # 3. SEGURANÇA: Se a bola já estiver lá, não duplicamos, apenas seguimos
-        if int(nova_bola) not in bolas_cantadas:
-            bolas_cantadas.append(int(nova_bola))
+        nova_bola = 0
+
+        if bola_manual:
+            # --- MODO MANUAL ---
+            nova_bola = int(bola_manual)
+            if nova_bola < 1 or nova_bola > MAX_BOLAS:
+                return jsonify({'error': f'Bola deve ser entre 1 e {MAX_BOLAS}'}), 400
+            
+            # Valida se já existe na lista da MESA
+            if nova_bola in bolas_cantadas:
+                return jsonify({'error': f'Bola {nova_bola} já foi registrada na Mesa!'}), 400
+        else:
+            # --- MODO AUTOMÁTICO (RANDOM) ---
+            import random
+            todas_bolas = list(range(1, MAX_BOLAS + 1))
+            disponiveis = [b for b in todas_bolas if b not in bolas_cantadas]
+            if not disponiveis: return jsonify({'error': 'Todas as bolas sorteadas'}), 400
+            nova_bola = random.choice(disponiveis)
+        
+        # 3. Atualiza lista local
+        bolas_cantadas.append(nova_bola)
 
         if len(bolas_cantadas) == 1:
             timeStart = datetime.now()
+            print(f"⏰ Jogo Iniciado (Mesa) em: {timeStart.strftime('%H:%M:%S')}")
 
-        # 4. ATUALIZAÇÃO SÍNCRONA (A chave da vitória)
-        # Atualizamos as DUAS coleções com a MESMA lista exata.
-        update_data = {
+        # --- ALTERADO: Grava na tabela privada 'bolas_mesa' ---
+        db.bolas_mesa.update_one({}, {
             '$set': {
                 'bolas_cantadas': bolas_cantadas,
-                'proxima_bola': int(nova_bola),          
-                'ordem': len(bolas_cantadas),
-                'ultimas_bolas': bolas_cantadas[-3:],
-                'id_evento': id_evento
+                'proxima_bola': nova_bola,          
+                'ordem' : len(bolas_cantadas),
+                'ultimas_bolas': bolas_cantadas[-3:]
             }
-        }
-
-        # Grava na dos Terminais
-        db.bolas.update_one({"id_evento": id_evento}, update_data, upsert=True)
-        # Grava na da Mesa (Ranking) - Agora elas são gêmeas idênticas
-        db.bolas_mesa.update_one({"id_evento": id_evento}, update_data, upsert=True)
+        }, upsert=True)
         
-        # 5. DISPARA O RANKING
-        # Como as tabelas são idênticas, o Ranking nunca mais verá bolas fantasmas.
+        # 4. Dispara o Cálculo de Ranking (IMEDIATO)
+        # O Admin precisa saber na hora quem ganhou.
+        # IMPORTANTE: Sua função 'recalcular_ranking_principal' precisa ser ajustada
+        # para ler os números sorteados de 'bolas_mesa' e não de 'bolas'.
         threading.Thread(target=recalcular_ranking_principal).start()
 
-        return jsonify({'status': 'sincronizado', 'bola': nova_bola, 'total': len(bolas_cantadas)})
+        return jsonify({'bola': nova_bola, 'total_sorteadas': len(bolas_cantadas)})
         
     except Exception as e:
-        print(f"❌ Erro na sincronização Rei: {e}")
+        print(f"Erro ao sortear mesa: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -2725,8 +2729,7 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
         "numeros": str_numeros_formatada,    # AQUI VAI A STRING FORMATADA (05+10*22...)
         "mensagem": msg_validacao,        # A mensagem de texto vai num campo separado
         "ganhador": nome_ganhador, 
-        "status": "conferindo",
-        "tipo_conferencia": "BINGO_NORMAL"
+        "status": "conferindo"
     })
     
     # 6. GRAVAÇÃO DO GANHADOR COM VALORES
@@ -2964,7 +2967,7 @@ def admin_validar_cartela():
         db.confere.delete_many({})
         db.confere.insert_one({
             "rodada": int(id_evento_ativo), "cartao": cartela_id,
-            "numeros": str_numeros_formatada, "ganhador": nome_ganhador, "status": "conferindo","status": "conferindo","tipo_conferencia": "BINGO_NORMAL"
+            "numeros": str_numeros_formatada, "ganhador": nome_ganhador, "status": "conferindo"
         })
             
         # Regras 90
@@ -3069,43 +3072,6 @@ def admin_validar_cartela():
         import traceback
         traceback.print_exc()
         return jsonify({'status_code': 'ERROR', 'msg': str(e)}), 500
-
-
-@app.route('/api/admin/atualizar_conferencia_extra', methods=['POST'])
-def atualizar_conferencia_extra():
-    global db
-    if db is None: 
-        return jsonify({'error': 'Sem conexão com DB'}), 500
-
-    try:
-        data = request.json or {}
-        
-        # 1. Limpamos a tabela para garantir que não haja lixo de conferências passadas
-        db.confere.delete_many({})
-
-        # 2. Preparamos o documento com os campos que o Terminal espera
-        # Note que mantemos a estrutura que você já usa, mas com o novo "tipo_conferencia"
-        doc_conferencia = {
-            "rodada": data.get('rodada', 0),
-            "cartao": data.get('cartao', 0),
-            "numeros": data.get('numeros', "null"),     # Aqui vão as dezenas do cupom
-            "ganhador": data.get('ganhador', "null"),   # Nome do cliente
-            "mensagem": data.get('mensagem', "SORTE EXTRA!"),
-            "status": "conferindo",
-            "tipo_conferencia": "SORTE_EXTRA"           # Identificador para a TV mudar o layout
-        }
-
-        # 3. Inserimos o novo registro de conferência
-        db.confere.insert_one(doc_conferencia)
-        
-        print(f"🍀 [CONFERÊNCIA] Cupom {doc_conferencia['cartao']} enviado para o Terminal.")
-        
-        return jsonify({"status": "success", "tipo": "SORTE_EXTRA"})
-
-    except Exception as e:
-        print(f"❌ Erro ao atualizar conferência extra: {e}")
-        return jsonify({'error': str(e)}), 500
-
 
 
 # --- ROTA: ATUALIZAR LINHAS RESTANTES (RESOLVE O PROBLEMA DE LINHA REPETIDA) ---
@@ -5145,10 +5111,10 @@ def validar_sorte_extra():
         tamanho_cupom = int(config.get('qtde_dezenas', 5)) if config else 5 
 
         # 3. VERIFICA SE TEM BOLAS SUFICIENTES (O TOPE)
-        #if len(todas_bolas_int) < qtde_tope:
-            #msg = f'Aguardando {qtde_tope} bolas... Sorteados: {len(todas_bolas_int)}'
-            #print(f"⏳ {msg}")
-            #return jsonify({'status': 'aguardando', 'msg': msg})
+        if len(todas_bolas_int) < qtde_tope:
+            msg = f'Aguardando {qtde_tope} bolas... Sorteados: {len(todas_bolas_int)}'
+            print(f"⏳ {msg}")
+            return jsonify({'status': 'aguardando', 'msg': msg})
 
         # 4. DEFINE O UNIVERSO DE ACERTO (As primeiras 'qtde_tope' bolas)
         # O user disse: "TODAS EM ORDEM ALEATORIA", então usamos SET para comparar
@@ -5621,8 +5587,6 @@ def logout_cliente():
     
     # Redireciona para a tela inicial (Login)
     return redirect('/')
-
-
 
 
 
