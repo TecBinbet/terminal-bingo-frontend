@@ -902,8 +902,8 @@ async function carregarDadosIniciaisSilencioso() {
              if(!dadosEventoAtual.id) dadosEventoAtual.id = dadosEventoAtual.id_evento;
              await carregarConfigSorteExtraAdmin();
         }
- 
-        if (data.evento && parseInt(data.evento.tipo_cartela) === 25) {
+                                                                       // zzzzzzzzzz   
+        if (data.evento && parseInt(data.evento.tipo_sorteio) === 25) {
             MAX_BOLAS = 75;
         } else {
             MAX_BOLAS = 90;
@@ -2110,8 +2110,8 @@ async function executarCarregamentoReal(idEvento) {
         id_rodada_ativa = parseInt(idEvento);
         console.error("🎱 Evento Configurado: id_rodada_ativa:  ",id_rodada_ativa );
 
-
-        const tipoCartela = parseInt(dados.tipo_cartela || 25);
+                                                       // zzzz  
+        const tipoCartela = parseInt(dados.tipo_sorteio || 25);
         if (tipoCartela === 25) {
             MAX_BOLAS = 75;
             console.log("🎱 Evento Configurado: BINGO 75");

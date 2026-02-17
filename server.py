@@ -4921,18 +4921,18 @@ def get_config_sorte_extra(id_evento_solicitado):
         raw_info = config.get('data_hora_evento', 'Próximo Evento')
 
         # Verifica se o texto é longo o suficiente para ter a data no final
-        # O trecho "30/01/2026 às 18:00" tem 19 caracteres
-        if len(raw_info) > 19:
+        # O trecho "30/01/2026 às 18:00" tem 16 caracteres
+        if len(raw_info) > 16:
             
             # 1. Pega a Descrição (O Início)
-            # Vai do começo até faltar 19 caracteres para o fim.
+            # Vai do começo até faltar 16 caracteres para o fim.
             # Ex: "Notebook No Valor De 2000 - "
-            descricao = raw_info[:-19] 
+            descricao = raw_info[:-17] 
 
             # 2. Pega a Data Curta (O Dia/Mês)
-            # Começa no -19 e pega 5 letras.
+            # Começa no -16 e pega 5 letras.
             # Ex: "30/01"
-            data_curta = raw_info[-19:-14]
+            data_curta = raw_info[-16:-11]
 
             # 3. Pega a Hora (As 5 últimas letras)
             # Ex: "18:00"

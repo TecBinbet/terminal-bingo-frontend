@@ -589,6 +589,7 @@ if (btnCloseAviso) {
  * Processa a lista de eventos e cria o HTML dos cartões.
  */
 function renderEventsList(eventos) {
+    if (!eventsListContent) return;
     eventsListContent.innerHTML = '';
 
     if (!eventos || eventos.length === 0) {
@@ -604,101 +605,75 @@ function renderEventsList(eventos) {
     const now = new Date();
 
     eventos.forEach(evt => {
-        // --- Tratamento de Data ---
-        // Tenta usar a data ISO (padrão seguro) ou faz parse manual
-
+        // --- 1. Tratamento de Data ---
         let eventDate;
         if (evt.data && evt.data.includes('/')) {
-            const dateParts = evt.data.split('/'); // [04, 12, 2025]
+            const dateParts = evt.data.split('/');
             const timeParts = evt.hora ? evt.hora.split(':') : ['00', '00'];
-            
-            // new Date(ano, mês (0-11), dia, hora, min)
             eventDate = new Date(
-                parseInt(dateParts[2]),       // 2025
-                parseInt(dateParts[1]) - 1,   // 12 - 1 = 11 (Dezembro)
-                parseInt(dateParts[0]),       // 04
+                parseInt(dateParts[2]),
+                parseInt(dateParts[1]) - 1,
+                parseInt(dateParts[0]),
                 parseInt(timeParts[0] || 0),
                 parseInt(timeParts[1] || 0)
             );
         } else if (evt.data_iso) {
-            // Só usa ISO se não tivermos conseguido parsear manualmente
             eventDate = new Date(evt.data_iso);
         } else {
-            eventDate = new Date(); // Fallback
+            eventDate = new Date();
         }
 
-        // 2. CORREÇÃO DA LÓGICA DE COMPARAÇÃO
-        // Adicionamos uma tolerância de 1 horas para eventos que acabaram de começar não sumirem
-        // Clona a data do evento e subtrai horas para manter ele visível um pouco depois de começar
-        const toleranceDate = new Date(eventDate.getTime() + (1 * 60 * 60 * 1000)); 
-
-        // Lógica: É futuro (data maior que agora) OU o status é explicitamente ativo (mesmo se a hora já passou)
+        // --- 2. Lógica de Status ---
+        const isFinalizado = evt.status === 'finalizado';
         const isFuture = eventDate >= now;
         const isActive = evt.status === 'ativo';
-        
-        // AQUI ESTAVA O ERRO DO &&. O correto é || (OU) se você quer ver a agenda futura
-        // Mas se o status for 'finalizado', forçamos false.
-        const isFinalizado = evt.status === 'finalizado';
-        
-        // Mostra se for Futuro OU Ativo, desde que não esteja finalizado.
-        const isFutureOrActive = (isFuture && isActive) && !isFinalizado;
+        const isFutureOrActive = (isFuture || isActive) && !isFinalizado;
 
-        // --- Definição de Estilos do Cartão ---
+        // --- 3. Definição de Estilos e Badges ---
         let cardClass = 'rounded-xl p-3 border shadow-lg flex flex-col gap-1 relative overflow-hidden transition-all duration-300';
         let statusBadge = '';
-        let btnComprarHtml = '';
+        let botoesAcaoHtml = '';
 
         if (isFinalizado) {
-            // ESTILO: FINALIZADO (Cinza, Opaco)
             cardClass += ' bg-gray-800 border-gray-600 opacity-60 grayscale';
             statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-gray-600 text-gray-300 px-3 py-1 rounded-bl-lg">ENCERRADO</span>';
         } 
         else if (isFutureOrActive) {
-            // ESTILO: ATIVO / EM BREVE (Destaque Azul/Verde)
             cardClass += ' bg-gradient-to-br from-gray-900 to-gray-800 border-blue-500 hover:border-blue-400 transform hover:scale-[1.02]';
             
-            if (evt.status === 'ativo') {
+            if (isActive) {
                 statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-green-600 text-white px-3 py-1 rounded-bl-lg animate-pulse">🔴 AO VIVO / ATIVO</span>';
             } else {
                 statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-blue-600 text-white px-3 py-1 rounded-bl-lg">EM BREVE</span>';
             }
-            
-            // Botão de Compra (Só aparece para eventos ativos/futuros)
-            btnComprarHtml = `
-                <div class="-mt-1 border-t border-gray-700 pt-1">  
+
+            // --- BLOCO DE BOTÕES (Compra + Ver Apostas) ---
+            botoesAcaoHtml = `
+                <div class="mt-2 grid grid-cols-2 gap-2 border-t border-gray-700 pt-2">  
+                    <button onclick="openMyCardsPanel('${evt.id_evento}')" 
+                            class="bg-blue-900 hover:bg-blue-700 text-white text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
+                        <span>📋</span> VER APOSTAS
+                    </button>
                     <button onclick="abrirModalCompra('${evt.id_evento}')" 
-                            class="w-full bg-green-900 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md flex items-center justify-center gap-2 transition-colors active:scale-95">
-                        <span>🛒</span> COMPRAR CARTELAS
+                            class="bg-green-700 hover:bg-green-500 text-white text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
+                        <span>🛒</span> COMPRAR
                     </button>
                 </div>
             `;
         } 
         else {
-            // ESTILO: PASSADO (Mas não finalizado - Raro)
             cardClass += ' bg-gray-800 border-red-900 opacity-80';
             statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-red-900 text-red-200 px-3 py-1 rounded-bl-lg">DATA PASSADA</span>';
         }
 
-        // Formatação de Moeda
+        // --- 4. Formatação de Dados ---
         const preco = parseFloat(evt.valor_cartela).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
+        
         let rawPremios = evt.premios_desc || evt.premios || [];
-        let listaPremios = [];
+        let listaPremios = Array.isArray(rawPremios) ? rawPremios : (typeof rawPremios === 'string' ? rawPremios.split(',').map(p => p.trim()) : []);
+        const premiosHtml = listaPremios.filter(p => p).map(p => `<li class="flex items-start gap-0"><span class="text-yellow-500">★</span> ${p}</li>`).join('');
 
-        if (Array.isArray(rawPremios)) {
-            // Se já for array, usa direto
-            listaPremios = rawPremios;
-        } else if (typeof rawPremios === 'string') {
-            // Se for string (ex: "Carro, Moto"), transforma em array
-            listaPremios = rawPremios.split(',').map(p => p.trim()).filter(p => p !== "");
-        }
-
-        // Renderiza a lista de prêmios
-       const premiosHtml = listaPremios.map(p =>
-            `<li class="flex items-start gap-0"><span class="text-yellow-500">★</span> ${p}</li>`
-        ).join('');
-
-        // Montagem do HTML do Cartão
+        // --- 5. Montagem do Card ---
         const card = document.createElement('div');
         card.className = cardClass;
         card.innerHTML = `
@@ -711,28 +686,25 @@ function renderEventsList(eventos) {
                 </p>
             </div>
 
-            <!-- Área de Prêmios -->
             <div class="bg-black/40 rounded-lg p-1 border border-gray-700/50">
-                <p class="text-[10px]  text-center text-green-00 font-bold uppercase -mb-1 -mt-1 tracking-wider">Premiação Prevista:</p>
-                
+                <p class="text-[10px] text-center text-green-400 font-bold uppercase -mb-1 -mt-1 tracking-wider">Premiação Prevista:</p>
                 <ul class="grid grid-cols-2 gap-x-2 text-[11px] text-yellow-300 font-medium leading-tight mt-0.5">
                     ${premiosHtml}
                 </ul>
             </div>
 
-            <!-- Rodapé do Cartão (Preço e Info) -->
-            <div class="flex justify-between items-end -mt-1">
-                <div class="text-gray-250">
-                    <span class="block text-[9px] font-bold">ID: ${evt.id_evento}</span>
-                    <span class="text-xs text-gray-300">Kit c/ <strong>${evt.unidade_venda}</strong> cartelas</span>
+            <div class="flex justify-between items-end mt-1">
+                <div class="text-gray-400">
+                    <span class="block text-[9px] font-bold text-gray-500">ID: ${evt.id_evento}</span>
+                    <span class="text-[11px]">Kit c/ <strong>${evt.unidade_venda}</strong> cartelas</span>
                 </div>
                 <div class="text-right">
-                    <span class="block text-[9px] font-bold  text-gray-400 uppercase">Valor do Kit</span>
-                    <span class="text-xl font-bold text-green-400 tracking-tighter">${preco}</span>
+                    <span class="block text-[9px] font-bold text-gray-400 uppercase">Valor do Kit</span>
+                    <span class="text-lg font-bold text-green-400 tracking-tighter">${preco}</span>
                 </div>
             </div>
 
-            ${btnComprarHtml}
+            ${botoesAcaoHtml}
         `;
 
         eventsListContent.appendChild(card);
@@ -1497,11 +1469,10 @@ function handleFullscreenChange() {
 
 
 // 15. ABRIR PAINEL DE MINHAS CARTELAS
-async function openMyCardsPanel() {
-    // Busca os IDs das variáveis globais ou da URL como segurança
+async function openMyCardsPanel(idEventoParam = null) {
     const urlParams = new URLSearchParams(window.location.search);
-    const idEvt = eventoCarregadoAtual;
-    const idCli =clienteLogadoId || urlParams.get('id_cliente') || localStorage.getItem('idCliente');
+    const idEvt = idEventoParam || eventoCarregadoAtual;
+    const idCli = clienteLogadoId || urlParams.get('id_cliente') || localStorage.getItem('idCliente');
 
     if (!idEvt || !idCli || idCli === 'null' || idCli === 'undefined') {
         console.error("⚠️ Falha ao abrir cartelas: Dados ausentes", { idEvt, idCli });
@@ -1509,8 +1480,19 @@ async function openMyCardsPanel() {
         return;
     }
 
-    // Caminho RELATIVO para funcionar no Docker e Online aaa
-    //const urlApi = `/api/consultar_cartelas_evento?id_evento=${idEvt}&id_cliente=${idCli}`;
+    // --- LÓGICA DO LOADER EXISTENTE ---
+    const loaderContainer = document.getElementById('loader');
+    const loaderMsg = document.getElementById('loader-message');
+
+    if (loaderContainer) {
+        if (loaderMsg) loaderMsg.textContent = "Buscando suas cartelas...";
+        loaderContainer.classList.remove('hidden'); // Mostra o loader removendo a classe do Tailwind
+    }
+
+    // Trava de segurança no botão para evitar cliques múltiplos
+    const btnAcesso = document.getElementById('menu-btn-cartelas') || document.getElementById('btn-minhas-cartelas-mobile-view');
+    if (btnAcesso) btnAcesso.style.pointerEvents = 'none';
+
     const urlApi = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idEvt}&id_cliente=${idCli}`;
 
     try {
@@ -1519,16 +1501,39 @@ async function openMyCardsPanel() {
             const errorText = await response.text();
             throw new Error(`Erro ${response.status}: ${errorText}`);
         }
+        
         const data = await response.json();
-        // Salva e renderiza
+
+        const elSubtitulo = document.getElementById('minhas_apostas_evento');
+        if (elSubtitulo) {
+            // Busca o nome do prêmio/evento no cache global do Terminal
+            const nomeGlobal = (typeof premioInfo !== 'undefined' && premioInfo.descricao) 
+                       ? premioInfo.descricao 
+                       : `EVENTO ${idEvt}`;
+                       
+            elSubtitulo.innerHTML = `📅 ${nomeGlobal}`;
+        }
+        
+        // Renderiza os dados recebidos
         renderizarListaMinhasCartelas(data); 
-        document.getElementById('my-cards-panel-container').classList.remove('hidden');
+        
+        // Abre o painel visual
+        const panel = document.getElementById('my-cards-panel-container');
+        if (panel) panel.classList.remove('hidden');
+
     } catch (error) {
         console.error("❌ Erro ao buscar cartelas:", error);
         showCustomAlert("Não foi possível carregar seus jogos agora.", "Erro", "❌");
+    } finally {
+        // --- FINALIZAÇÃO DO LOADER ---
+        if (loaderContainer) {
+            loaderContainer.classList.add('hidden'); // Esconde novamente
+        }
+
+        // Restaura a interatividade do botão
+        if (btnAcesso) btnAcesso.style.pointerEvents = 'auto';
     }
 }
-
 
 // Função auxiliar para exibir o painel e esconder o loader
 function mostrarPainelMinhasCartelas() {
@@ -3276,19 +3281,43 @@ function renderMelhores(melhoresData) {
 
 // Função para mapear o número da bola à cor (padrão de bingo)
 function getBallColorClass(numero) {
-    // Calcula o tamanho do intervalo automaticamente (Ex: 75/5 = 15 ou 90/5 = 18)
+    // 1. Garante que o número seja um inteiro para comparações precisas
+    const num = parseInt(numero);
+    
+    // 2. Calcula o intervalo (75/5 = 15 ou 90/5 = 18)
     const intervalo = MAX_BOLAS / 5;
 
-    // Proteção para número 0 ou inválido
-    if (numero < 1) return 'bg-black border-4 border-green-700';
+    // 3. Proteção para valores inválidos
+    if (isNaN(num) || num < 1) {
+        return 'bg-black border-4 border-green-700';
+    }
 
-    if (numero <= intervalo * 1) return 'bg-blue-600 border-4 border-blue-400';   // Faixa 1 (B)
-    if (numero <= intervalo * 2) return 'bg-red-600 border-4 border-red-400';    // Faixa 2 (I)
-    if (numero <= intervalo * 3) return 'bg-purple-600 border-4 border-purple-400'; // Faixa 3 (N)
-    if (numero <= intervalo * 4) return 'bg-green-600 border-4 border-green-400';  // Faixa 4 (G)
-    if (numero <= MAX_BOLAS) return 'bg-yellow-600 border-4 border-yellow-400'; // Faixa 5 (O)
-    
-    return 'bg-black border-4 border-green-700'; // Fallback
+    // 4. Lógica de Faixas com 'else if' (Exclusividade Total)
+    // A ordem aqui é vital: ele testa a primeira, se não for, pula para a próxima
+    if (num <= intervalo) { 
+        // Faixa 1 (B) - Ex: 1 a 15
+        return 'bg-blue-600 border-4 border-blue-400'; 
+    } 
+    else if (num <= intervalo * 2) { 
+        // Faixa 2 (I) - Ex: 16 a 30
+        return 'bg-red-600 border-4 border-red-400'; 
+    } 
+    else if (num <= intervalo * 3) { 
+        // Faixa 3 (N) - Ex: 31 a 45
+        return 'bg-purple-600 border-4 border-purple-400'; 
+    } 
+    else if (num <= intervalo * 4) { 
+        // Faixa 4 (G) - Ex: 46 a 60
+        return 'bg-green-600 border-4 border-green-400'; 
+    } 
+    else if (num <= MAX_BOLAS) { 
+        // Faixa 5 (O) - Ex: 61 a 75
+        // Agora o 61-75 cairá obrigatoriamente aqui e terá fundo E borda amarela
+        return 'bg-yellow-600 border-4 border-yellow-400'; 
+    }
+
+    // Fallback para números acima do MAX_BOLAS
+    return 'bg-black border-4 border-green-700';
 }
 
 
@@ -4287,26 +4316,6 @@ function lockScreenOrientation() {
 }
 
 // yyy
-async function sincronizarCupomViaArquivo() {
-    try {
-        // Busca o arquivo JSON via API normal (HTTPS - super estável)
-        const response = await fetch('/api/get_cupom_atual');
-        const cupom = await response.json();
-
-        if (cupom) {
-            console.log("📄 Cupom recuperado do arquivo do servidor.");
-            exibirConferenciaSorteExtra(cupom);
-        } else {
-            if (donoDoModal === 'CUPOM') {
-               ocultarConferencia();
-            } 
-        }
-    } catch (err) {
-        console.error("Erro ao ler arquivo de cupom:", err);
-    }
-}
-
-
 function connectWebSocket() {
     // 1. LIMPEZA E RESET (Garante que não existam conexões fantasmas)
     if (ws) {
@@ -4348,10 +4357,7 @@ function connectWebSocket() {
         console.log("📤 Solicitando estado inicial do Bingo.");
 
         // B. Busca Cupom Ativo (via Arquivo/API - Segurança máxima para celular)
-        // Isso resolve o problema de não aparecer no celular ao conectar/reconectar
-        if (typeof sincronizarCupomViaArquivo === 'function') {
-            sincronizarCupomViaArquivo(); 
-        }
+        // Isso resolve o problema de não aparecer no celular ao conectar/reconect
         //xxx setTimeout(processarParametrosURL, 500); 
     };
 
@@ -6414,12 +6420,12 @@ function gerarBadgeStatusEvento(config) {
     // CENÁRIO 1: É EVENTO FUTURO (Aviso Amarelo com Fundo Vermelho)
     if (config.is_evento_futuro) {
         return `
-        <div class="w-full bg-red-600 border-2 border-yellow-400 p-0 rounded-lg mb-1 shadow-lg animate-pulse">
-            <div class="flex items-center justify-center gap-2 text-black font-black text-sm uppercase tracking-wider">
+        <div class="w-full bg-red-800 border-2 border-yellow-400 p-0 rounded-lg mb-1 shadow-lg animate-pulse">
+            <div class="flex items-center justify-center gap-2 text-white font-bold text-sm uppercase tracking-wider">
                 ⚠️ ATENÇÃO: PRÓXIMO EVENTO
             </div>
-            <div class="text-center text-white font-bold text-xs">
-                Vendas abertas para: <span class="text-yellow-300 block text-sm -mt-1.5">${config.data_hora_evento}</span>
+            <div class="text-center text-yellow-300 font-bold text-xs -mt-1">
+                Vendas abertas para: <span class="text-white block text-sm -mt-0.5">${config.data_hora_evento}</span>
             </div>
         </div>
         `;
@@ -6433,32 +6439,33 @@ function gerarBadgeStatusEvento(config) {
               <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
               <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
             </span>
-            <span class="text-green-400 font-bold uppercase tracking-widest text-[10px]">Evento Atual</span>
+            <span class="text-green-400 font-bold uppercase tracking-widest text-[12px]">Evento Atual</span>
         </div>
         `;
     }
 }
 //
 
-// 1. INICIALIZAR E BUSCAR REGRAS (COM CONTROLE DE ABERTURA)
-async function carregarSorteExtra(abrirTela = true, idOverride = null) {
-    let rawId = idOverride; // 1ª Prioridade: Parâmetro passado manualmente
 
-    // 2ª Prioridade: Sua variável global (A melhor opção)
+// 1. INICIALIZAR E BUSCAR REGRAS (VERSÃO UNIFICADA E BLINDADA)
+async function carregarSorteExtra(abrirTela = true, idOverride = null) {
+    let rawId = idOverride; 
+
+    // 2ª Prioridade: Variável global (Detetive de ID)
     if (!rawId) {
-        if (typeof eventoCarregadoAtual !== 'undefined' && eventoCarregadoAtual && eventoCarregadoAtual.id_evento) {
-            rawId = eventoCarregadoAtual.id_evento;
-            console.log("✅ ID recuperado de 'eventoCarregadoAtual':", rawId);
+        if (typeof eventoCarregadoAtual !== 'undefined' && eventoCarregadoAtual) {
+            // Aceita tanto se for objeto {id_evento: X} quanto se for o ID direto
+            rawId = eventoCarregadoAtual.id_evento || eventoCarregadoAtual;
         }
     }
 
-    // 3ª Prioridade: URL (Caso seja um link direto)
+    // 3ª Prioridade: URL
     if (!rawId) {
         const urlParams = new URLSearchParams(window.location.search);
-        rawId = urlParams.get('idsala');
+        rawId = urlParams.get('idsala') || urlParams.get('id_evento');
     }
 
-    // 4ª Prioridade: Outras variáveis globais (Fallback)
+    // 4ª Prioridade: Fallbacks de outras variáveis
     if (!rawId || rawId === 'padrao') {
         if (typeof premioInfo !== 'undefined' && premioInfo && premioInfo.id_evento) {
             rawId = premioInfo.id_evento;
@@ -6467,88 +6474,78 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
         }
     }
 
-    // --- VALIDAÇÃO FINAL (INPUT) ---
-    const idEvento = parseInt(rawId, 10);
+    const idEventoNaTela = parseInt(rawId, 10);
     
-    if (!idEvento || isNaN(idEvento) || idEvento <= 0) { // <--- Adicione idEvento <= 0
-        console.warn(`⚠️ Sorte Extra ignorado: ID inválido (Recebido: ${rawId}).`);
-        
-        // Esconde botões...
-        const btnMenu = document.getElementById('btn-open-extra');
-        if (btnMenu) btnMenu.classList.add('hidden');
-        // ... (resto do código de ocultar)
-        
-        return; // ABORTA ANTES DO FETCH
+    // --- VALIDAÇÃO DE ENTRADA ---
+    if (!idEventoNaTela || isNaN(idEventoNaTela) || idEventoNaTela <= 0) {
+        console.warn(`⚠️ Sorte Extra ignorado: ID inválido.`);
+        ocultarBotoesSorteExtra();
+        return;
     }
 
-    // Fecha o menu lateral...
     if (typeof closeSideMenu === 'function') closeSideMenu();
 
     try {
-        console.log(`🔄 Buscando Sorte Extra para o Evento ID: ${idEvento}`);
-        const res = await fetch(`${API_BASE_URL || ''}/api/cliente/config_sorte_extra/${idEvento}`);
+        console.log(`🔄 Buscando Sorte Extra para o Evento ID: ${idEventoNaTela}`);
+        const res = await fetch(`${API_BASE_URL || ''}/api/cliente/config_sorte_extra/${idEventoNaTela}`);
        
-        if (!res.ok) throw new Error("Recurso não configurado ou offline");
+        if (!res.ok) throw new Error("Configuração não encontrada no servidor");
         
         const dados = await res.json();
 
-        // =================================================================
-        // 🛑 NOVA VALIDAÇÃO: SE O SERVIDOR RETORNAR ID ZERO, OCULTA TUDO
-        // =================================================================
-        if (!dados.id_evento || parseInt(dados.id_evento) === 0) {
-            console.log("🚫 Sorte Extra está inativo (ID 0) no servidor. Ocultando botões.");
-            
-            const btnMenu = document.getElementById('btn-open-extra');
-            if (btnMenu) btnMenu.classList.add('hidden');
-            
-            const btnFloat = document.getElementById('btn-floating-extra');
-            if (btnFloat) btnFloat.classList.add('hidden');
-
-            return; // SAI DA FUNÇÃO AQUI
+        // --- VALIDAÇÃO DE STATUS E ID (TRAVA DE SEGURANÇA DA VERSÃO NOVA) ---
+        const idConfiguradoNoBanco = parseInt(dados.id_evento);
+        
+        if (!idConfiguradoNoBanco || idConfiguradoNoBanco === 0) {
+            console.log("🚫 Sorte Extra inativo no banco.");
+            ocultarBotoesSorteExtra();
+            return;
         }
-        // =================================================================
+
+        // REGRA: Venda antecipada se o banco estiver à frente da tela ou se o Bingo já acabou
+        const isEventoFuturo = (idConfiguradoNoBanco > idEventoNaTela) || (typeof lastStatusEvento !== 'undefined' && lastStatusEvento === 'finalizado');
 
         // Salva Configuração Global
         configSorteExtra = {
             ...configSorteExtra,
             ativo: dados.ativo,
-            idEvento: parseInt(dados.id_evento),
+            idEvento: idConfiguradoNoBanco,
             qtde_dezenas: dados.qtde_dezenas,
             preco: dados.preco_cupom,
-            // Mantém o carrinho se já existir, senão zera
+            is_evento_futuro: isEventoFuturo,
             carrinho: configSorteExtra.carrinho || [],           
             numeros_selecionados: [] 
         };
 
-        const htmlBadge = gerarBadgeStatusEvento(dados);
+        // --- ATUALIZAÇÃO DA INTERFACE (MANTENDO LÓGICA INTERNA PARA EVITAR 'NOT DEFINED') ---
         
-        // Você precisa ter um <div id="container-aviso-extra"></div> no seu HTML do modal
+        // 1. Badge de Aviso
         const containerBadge = document.getElementById('container-aviso-extra');
-        
         if (containerBadge) {
-            containerBadge.innerHTML = htmlBadge;
-        } else {
-            console.log("⚠️ Nota: Crie a <div id='container-aviso-extra'></div> no modal para ver o aviso.");
+            containerBadge.innerHTML = gerarBadgeStatusEvento({
+                ativo: dados.ativo,
+                is_evento_futuro: isEventoFuturo,
+                data_hora_evento: dados.data_hora_evento
+            });
         }
 
-        // Atualiza Textos da UI com segurança (verifica se elementos existem)
+        // 2. Labels de Preço e Quantidade
         const elPreco = document.getElementById('lbl-preco');
-        if (elPreco) elPreco.innerText = `R$ ${dados.preco_cupom.toFixed(2)}`;
+        if (elPreco) elPreco.innerText = `R$ ${parseFloat(dados.preco_cupom).toFixed(2)}`;
         
         const elQtde = document.getElementById('lbl-qtde');
         if (elQtde) elQtde.innerText = dados.qtde_dezenas;
         
+        // 3. Painel de Regras (Lógica integrada aqui para evitar erros de função externa)
         const elRegras = document.getElementById('lbl-regras-resumo');
         const containerBtnHeader = document.getElementById('container-btn-regras-novo');
-
         if (containerBtnHeader) containerBtnHeader.innerHTML = '';
 
         if (elRegras) {
-            // 2. Preenche o rodapé com as informações financeiras
             elRegras.innerHTML = `
                 <div class="flex flex-col items-center justify-center gap-1">
                     <span class="font-bold text-gray-200">
-                        🏆Prêmio Máx: R$ ${dados.premio_maximo.toFixed(2)} | Base: R$ ${dados.premio_base.toFixed(2)}
+                        🏆Prêmio Máx: R$ ${parseFloat(dados.premio_maximo).toFixed(2)} | Base: R$ ${parseFloat(dados.premio_base).toFixed(2)}
                     </span>
                     <div id="conteudo-regras-extra" class="hidden mt-2 p-2 bg-gray-900/90 rounded border border-yellow-500/50 shadow-lg w-full max-w-md">
                          <p class="text-white font-medium text-sm animate-pulse text-center">
@@ -6558,7 +6555,6 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
                 </div>
             `;
 
-            // 3. Se houver regras, CRIA O BOTÃO lá no Cabeçalho (Header)
             if (dados.texto_regra_vitoria && dados.texto_regra_vitoria.trim() !== "") {
                 if (containerBtnHeader) {
                     containerBtnHeader.innerHTML = `
@@ -6571,36 +6567,37 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
             }
         }
         
-        // --- MOSTRAR BOTÕES (Só chega aqui se o ID > 0) ---
-        const btnMenu = document.getElementById('btn-open-extra');
-        if (btnMenu) btnMenu.classList.remove('hidden');
-
-        const btnFloat = document.getElementById('btn-floating-extra');
-        if (btnFloat) btnFloat.classList.remove('hidden');
-
+        // 4. Mostrar Botões e Renderizar Volante
+        mostrarBotoesSorteExtra();
         renderizarGridVolante(); 
-        
-        // Atualiza seleções visuais
         atualizarDisplaySelecao();
         atualizarCarrinhoUI();
         
-        // --- O SEGREDINHO: SÓ ABRE SE FOR SOLICITADO ---
         if (abrirTela === true) {
             const modal = document.getElementById('modal-sorte-extra');
             if (modal) modal.classList.remove('hidden');
         }
 
     } catch (e) {
-        // Se der erro, esconde os botões para não confundir o usuário
-        const btnMenu = document.getElementById('btn-open-extra');
-        if (btnMenu) btnMenu.classList.add('hidden');
-        const btnFloat = document.getElementById('btn-floating-extra');
-        if (btnFloat) btnFloat.classList.add('hidden');
-        
-        console.warn("Sorte Extra indisponível:", e.message); 
+        console.warn("Sorte Extra indisponível:", e.message);
+        ocultarBotoesSorteExtra();
     }
 }
 
+// Auxiliares para evitar erros de repetição
+function ocultarBotoesSorteExtra() {
+    ['btn-open-extra', 'btn-floating-extra'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+}
+
+function mostrarBotoesSorteExtra() {
+    ['btn-open-extra', 'btn-floating-extra'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('hidden');
+    });
+}
 
 function abrirTelaSorteExtra() {
     console.log("👆 Abrindo tela do Sorte Extra...");
