@@ -650,7 +650,7 @@ function renderEventsList(eventos) {
             // --- BLOCO DE BOTÕES (Compra + Ver Apostas) ---
             botoesAcaoHtml = `
                 <div class="mt-2 grid grid-cols-2 gap-2 border-t border-gray-700 pt-2">  
-                    <button onclick="openMyCardsPanel('${evt.id_evento}')" 
+                    <button onclick="openMyCardsPanel('${evt.id_evento}', '${evt.descricao}'))" 
                             class="bg-blue-900 hover:bg-blue-700 text-white text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
                         <span>📋</span> VER APOSTAS
                     </button>
@@ -1469,7 +1469,7 @@ function handleFullscreenChange() {
 
 
 // 15. ABRIR PAINEL DE MINHAS CARTELAS
-async function openMyCardsPanel(idEventoParam = null) {
+async function openMyCardsPanel(idEventoParam = null, descricaoParam = null) {
     const urlParams = new URLSearchParams(window.location.search);
     const idEvt = idEventoParam || eventoCarregadoAtual;
     const idCli = clienteLogadoId || urlParams.get('id_cliente') || localStorage.getItem('idCliente');
@@ -1506,11 +1506,7 @@ async function openMyCardsPanel(idEventoParam = null) {
 
         const elSubtitulo = document.getElementById('minhas_apostas_evento');
         if (elSubtitulo) {
-            // Busca o nome do prêmio/evento no cache global do Terminal
-            const nomeGlobal = (typeof premioInfo !== 'undefined' && premioInfo.descricao) 
-                       ? premioInfo.descricao 
-                       : `EVENTO ${idEvt}`;
-                       
+            const nomeGlobal = descricaoParam || `EVENTO #${idEvt}`;                        
             elSubtitulo.innerHTML = `📅 ${nomeGlobal}`;
         }
         
