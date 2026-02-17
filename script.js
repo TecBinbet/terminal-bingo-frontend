@@ -1506,7 +1506,7 @@ async function openMyCardsPanel(idEventoParam = null, descricaoParam = null) {
 
         const elSubtitulo = document.getElementById('minhas_apostas_evento');
         if (elSubtitulo) {
-            const nomeGlobal = descricaoParam || `EVENTO #${idEvt}`;                        
+            const nomeGlobal = descricaoParam || `EVENTO ${idEvt}`;                        
             elSubtitulo.innerHTML = `📅 ${nomeGlobal}`;
         }
         
