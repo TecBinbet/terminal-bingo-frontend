@@ -650,7 +650,7 @@ function renderEventsList(eventos) {
             // --- BLOCO DE BOTÕES (Compra + Ver Apostas) ---
             botoesAcaoHtml = `
                 <div class="mt-2 grid grid-cols-2 gap-2 border-t border-gray-700 pt-2">  
-                    <button onclick="openMyCardsPanel('${evt.id_evento}', '${evt.descricao}'))" 
+                    <button onclick="openMyCardsPanel('${evt.id_evento}', '${evt.descricao.replace(/'/g, "\\'")}')"
                             class="bg-blue-900 hover:bg-blue-700 text-white text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
                         <span>📋</span> VER APOSTAS
                     </button>
