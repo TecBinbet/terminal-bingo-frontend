@@ -1180,12 +1180,12 @@ async function abrirModalConfig() {
     console.log("🛠️ Abrindo Modal. Cache atual:", configuracaoServer);
 
     // SE O CACHE ESTIVER VAZIO, FORÇA A BUSCA NA ROTA NOVA
-    if (!configuracaoServer || Object.keys(configuracaoServer).length === 0) {
+    //if (!configuracaoServer || Object.keys(configuracaoServer).length === 0) {
         const dadosRecuperados = await carregarParametrosDoBanco();
         if (dadosRecuperados) {
             configuracaoServer = dadosRecuperados;
         }
-    }
+    //}
 
     modal.classList.remove('hidden');
 
@@ -1315,12 +1315,12 @@ async function salvarConfiguracoes() {
         await fetch(`${API_BASE_URL}/api/admin/salvar_config`, {
             method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
         });
-        
+// aquiiii
         vozAtiva = isVoz; cameraAtiva = isCam; modoSorteio = modoSelecionado; enviarSerialValor = checkSerial 
         aplicarVisualModoSorteio(modoSorteio);
         aplicarVisibilidadeCamera(cameraAtiva);
         aguardandoVideo = valorAtrasoFinal;
-
+        sorteio_automatizado =  isSorteioAuto;
         buscarSorteExtra = buscarExtra;
 
         fecharModal('modal-config');
@@ -1699,7 +1699,7 @@ function iniciarTimerEspera(idEvento) {
 
     atualizarDisplay();
 
-    vendasTimerInterval = setInterval(() => {
+    vendasTimerInterval = setInterval(async () => {
         tempoRestante--;
         atualizarDisplay();
 
@@ -1707,6 +1707,12 @@ function iniciarTimerEspera(idEvento) {
             clearInterval(vendasTimerInterval);
             modal.classList.add('hidden');
             modal.classList.remove('flex');
+            // Agora o await funcionará corretamente
+            try {
+                await carregarConfigSorteExtraAdmin();
+            } catch (e) {
+                console.error("Erro ao carregar config Sorte Extra:", e);
+            }
             executarCarregamentoReal(idEvento);
         }
     }, 1000);
@@ -1727,6 +1733,11 @@ async function pularEsperaVendas() {
         }
         
         if (window.eventoPendenteID) {
+            try {
+                await carregarConfigSorteExtraAdmin();
+            } catch (e) {
+                console.error("Erro ao carregar config Sorte Extra:", e);
+            }
             executarCarregamentoReal(window.eventoPendenteID);
         }
     }
@@ -2547,6 +2558,7 @@ async function carregarConfigSorteExtraAdmin() {
 // Função para abrir o modal (Atualizada para 4 Faixas de Acertos)
 function abrirModalValidacaoSorteExtra() {
     // 1. Injeta o HTML do modal se não existir
+
     if (!document.getElementById('modal-sorte-extra')) {
         const jackpotFormatado = valorPremioMaximoExtra.toLocaleString('pt-BR', { 
             minimumFractionDigits: 2, 

@@ -3108,7 +3108,6 @@ def atualizar_conferencia_extra():
         return jsonify({'error': str(e)}), 500
 
 
-
 # --- ROTA: ATUALIZAR LINHAS RESTANTES (RESOLVE O PROBLEMA DE LINHA REPETIDA) ---
 @app.route('/api/admin/atualizar_linhas_restantes', methods=['POST'])
 def atualizar_linhas():
@@ -3176,7 +3175,6 @@ def admin_limpar_conferencia():
         return jsonify({'status': 'Conferencia limpa'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 
 # --- FUNÇÃO RESETAR CORRIGIDA (COMPATÍVEL COM PYMONGO NOVO) ---

@@ -1909,9 +1909,9 @@ async function fetchAndProcessCards() {
         
         // --- FORÇAR ATUALIZAÇÃO DO TOP 10 ---
         // Se o Top 10 não estiver aparecendo, chame a renderização dele explicitamente
-        if (typeof renderMelhores === 'function') {
-            renderMelhores(cards); 
-        }
+        //if (typeof renderMelhores === 'function') {
+           // renderMelhores(cards); 
+        //}
 
     } catch (error) {
         console.error("❌ Erro fetchAndProcessCards:", error);
@@ -6997,7 +6997,7 @@ function forcarReprocessamentoVisual() {
         displayLoadedCards(bolasNumericas); 
     }
     
-    if (typeof renderMelhores === 'function') {
-        renderMelhores(cartelas);
-    }
+    //if (typeof renderMelhores === 'function') {
+       // renderMelhores(cartelas);
+    //}
 }
