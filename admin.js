@@ -1,3 +1,5 @@
+// o sistema em "modoRoboAtivo" não esta confirmando os ganhadores de bingo
+
 // =========================================================
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
@@ -33,13 +35,13 @@ let id_evento_ativo = 0;
 
 // --- CONTROLE SORTE EXTRA ---
 let sorteioExtraConfigAtivo = true;    // Se o evento atual tem Sorte Extra
-let qtdeDezenasSorteExtra = 5;          // Padrão (será atualizado pela config)
-let qtdeTopeSorteExtra = 10;          // Padrão (será atualizado pela config)
+let qtdeDezenasSorteExtra = 5;        // Padrão (será atualizado pela config)
+let qtdeTopeSorteExtra = 10;            // Padrão (será atualizado pela config)
 let cacheGanhadoresExtraFinal = [];
 let buscarSorteExtra = true;
 
-let filaSorteExtra = [];       // Onde os ganhadores vão esperar a vez
-let processandoFilaExtra = false; // Trava para saber se o timer já está rodando
+let filaSorteExtra = [];                         // Onde os ganhadores vão esperar a vez
+let processandoFilaExtra = false;     // Trava para saber se o timer já está rodando
 
 let premioPrincipalPendente = null;
 
@@ -559,110 +561,6 @@ function exibirMensagemValidacao(grid, msg) {
 }
 
 
-function renderGridConferencia_xxx(data) {
-    const grid = document.getElementById('conf-grid');
-    if (!grid) return;
-    grid.innerHTML = '';
-
-    // 1. Proteção Básica: Se não tem layout, para aqui.
-    if (!data || !data.layout) {
-        grid.innerHTML = '<span class="text-red-400 text-xs p-2">Dados da cartela indisponíveis.</span>';
-        return;
-    }
-    
-    const bolas = (data.bolas || bolasSorteadasCache || []).map(String);
-
-    let tipoJogo = data.layout.tipo;
-    if (!tipoJogo) {
-        if (data.layout.lista && data.layout.lista.length > 0) tipoJogo = 75;
-        else tipoJogo = 90;
-    }
-
-    let numerosDaCartela = [];
-    if (tipoJogo === 75) {
-        numerosDaCartela = data.layout?.lista || [];
-    } else {
-        numerosDaCartela = (data.layout?.superior || [])
-                            .concat(data.layout?.central || [])
-                            .concat(data.layout?.inferior || []);
-    }
-    
-    const ultimaBola = bolas.length > 0 ? bolas[bolas.length - 1] : null;
-    
-    console.error("bolas                        :",bolas);
-    console.error("bolas.length             :",bolas.length);
-    console.error("ultimaBola               :",ultimaBola); 
-
-    console.error("ultimaBola               :",ultimaBola); 
-    if (tipoJogo === 75 && numerosDaCartela.length === 25) { 
-        grid.className = "grid grid-cols-5 gap-1 bg-black p-2 rounded border border-gray-600 w-full max-w-[300px] mx-auto";
-        for (let linha = 0; linha < 5; linha++) {
-            for (let coluna = 0; coluna < 5; coluna++) {
-                const index = (coluna * 5) + linha;
-                const num = numerosDaCartela[index];
-                const cell = document.createElement('div');
-                const isFree = (index === 12 && num === 0);
-                
-                let marcado = bolas.includes(String(num)) || isFree; 
-                
-                const isLast = (Number(num) === Number(ultimaBola));  
-                let cssClass = "h-10 w-full flex items-center justify-center font-bold text-sm rounded border ";
-                
-                //if (isFree) {
-                //    cssClass += "bg-green-600 text-white border-green-400";
-                //    cell.textContent = "★";
-                cell.textContent = num;
-
-                if (isLast) {
-                    // DESTAQUE DA ÚLTIMA BOLA (Ex: Laranja + Piscando)
-                    cssClass += "bg-orange-600 text-white border-white animate-pulse scale-105 shadow-lg z-10";
-                } 
-                else if (marcado) {
-                    // Marcado Normal (Amarelo)
-                    cssClass += "bg-yellow-500 text-black border-yellow-300 shadow-inner";
-                } 
-                else {
-                    // Não Marcado (Cinza)
-                    cssClass += "bg-gray-800 text-white border-gray-600";
-                }                
-                cell.className = cssClass;
-                grid.appendChild(cell);
-            }
-        }
-    } 
-    else if (tipoJogo === 90 && data.layout) {
-        grid.className = "flex flex-col gap-2 bg-black p-2 rounded border border-gray-600";
-        
-        [data.layout.superior, data.layout.central, data.layout.inferior].forEach(linha => {
-            const row = document.createElement('div'); 
-            row.className = "flex justify-between gap-1";
-            
-            linha.forEach(num => { 
-                const cell = document.createElement('div');
-                const marcado = bolas.includes(String(num));
-                
-               // AQUI TAMBÉM: Verifica última bola no Bingo 90
-                const isLast = (Number(num) === Number(ultimaBola));
-                
-                let cssClass = "w-full h-9 flex items-center justify-center font-bold text-lg rounded border ";
-
-                if (isLast) {
-                     cssClass += "bg-orange-600 text-white border-white animate-pulse scale-105 shadow-lg z-10";
-                } else if (marcado) {
-                     cssClass += "bg-yellow-500 text-black border-yellow-300";
-                } else {
-                     cssClass += "bg-gray-800 text-gray-300 border-gray-600";
-                }
-
-                cell.className = cssClass;
-
-                cell.textContent = num;
-                row.appendChild(cell);
-            });
-            grid.appendChild(row);
-        });
-    }
-}
 
 function showLoading(mensagem = "Processando...") {
     const overlay = document.getElementById('loading-overlay');
@@ -1000,11 +898,9 @@ function processarMensagemWS(event) {
                 const elTitulo = document.getElementById('premio-atual'); 
                 if (elTitulo) elTitulo.textContent = premio;
             }
-
             if (payload.parametrosInfo) {
                 if (!configuracaoServer || Object.keys(configuracaoServer).length === 0) {
                     configuracaoServer = payload.parametrosInfo;
-                       
                     if (configuracaoServer.sorteio_automatizado !== undefined) {
                         sorteioAutomatizadoConfig = configuracaoServer.sorteio_automatizado;
                     }
@@ -1081,253 +977,20 @@ function verificarVitoriaPeloRanking(listaMelhores) {
         console.log("🏆 Vitória detectada! Cartelas para conferência:", cartelasPendentesAuditoria);
 
         // Dispara o alerta visual para o locutor
-        customAlert("🏆 ALERTA DE PREMIAÇÃO! Verifique os ganhadores.");
+        if (!modoRoboAtivo) {  
+            customAlert("🏆 ALERTA DE PREMIAÇÃO! Verifique os ganhadores.");
+        } else {                                  // <<< ajustando aquiiii
+            if (!processandoVitoria) {
+                processandoVitoria = true; 
+                console.log("⏳ Aguardando sincronização visual dos terminais (4s)...");
+                setTimeout(() => {
+                    processandoVitoria = false; 
+                    gerenciarVitoriaRobo(ganhadoresEncontrados);
+                }, 4000);   // aqui esta o tempo
+            }
+        } 
         jaAlertouNestaBola = true;
     }
-}
-function processarMensagemWS___(event) {
-    //console.log("📨 [SOCKET RECEBIDO] Dados brutos:", event.data);
-
-    try {
-        const payload = JSON.parse(event.data);
-        //console.log("✅ [PASSO X1] JSON Válido. Tipo:", payload.type);
-
-
-        if (payload.type === 'UPDATE') {        
-            let dadosBolas = [];
-            if (payload.bolasMesaData && payload.bolasMesaData.length > 0) {
-                dadosBolas = payload.bolasMesaData;
-            } else {
-                dadosBolas = payload.bolasData || []; 
-            }
-
-            if (dadosBolas.length > 0) {
-                const ultimoSorteio = dadosBolas[0];
-                const listaDeNumeros = ultimoSorteio.bolas_cantadas || [];
-            
-                bolasSorteadasCache = listaDeNumeros; 
-
-                if (listaDeNumeros.length > ultimoTotalBolasProcessadas || listaDeNumeros.length === 0) {
-                    ultimoTotalBolasProcessadas = listaDeNumeros.length;
-                    jaAlertouNestaBola = false;
-                }
-
-            if (typeof updateGrid === 'function') {
-                updateGrid(listaDeNumeros);
-            }
-
-            if (bolaDestaque) {
-                if (ultimoSorteio.proxima_bola && ultimoSorteio.proxima_bola !== "--") {
-                    bolaDestaque.textContent = ultimoSorteio.proxima_bola;
-                } else if (listaDeNumeros.length > 0) {
-                    bolaDestaque.textContent = listaDeNumeros[listaDeNumeros.length - 1];
-                }
-            }
-
-            // O Alerta
-            if (buscarSorteExtra) { 
-                if (sorteioExtraConfigAtivo && 
-                    listaDeNumeros.length === qtdeTopeSorteExtra && 
-                    !jaValidouSorteExtraNestaRodada) {
-        
-                    console.log("🚨 [DEBUG] CONDIÇÃO ATINGIDA! ABRINDO MODAL...");
-                    if (typeof autoSorteioAtivo !== 'undefined' && autoSorteioAtivo) {
-                        console.log("✋ Parando Avanço Automático para processar Sorte Extra...");
-                        
-                        // 1. Para o Relógio do intervalo
-                        if (typeof autoSorteioInterval !== 'undefined') clearInterval(autoSorteioInterval);
-                        
-                        // 2. Atualiza a variável de controle
-                        autoSorteioAtivo = false;
-                        
-                        // 3. Atualiza o Botão na interface (Volta para "Play") yyy
-                        const btnAuto = document.getElementById('btn-auto-toggle');
-                        if (btnAuto) {
-                            btnAuto.innerHTML = '▶ Iniciar Auto';
-                            btnAuto.classList.remove('bg-red-600', 'animate-pulse');
-                            btnAuto.classList.add('bg-blue-600');
-                        }
-                    }
-
-                    jaValidouSorteExtraNestaRodada = true; 
-
-                    if (modoRoboAtivo) {
-                        // --- CAMINHO A: ROBÔ 🤖 ---
-                        console.log("🤖 [ROBO] Modo Automático: Solicitando validação silenciosa...");
-                        dispararVerificacaoRobo(); 
-                    } else {
-                        // --- CAMINHO B: HUMANO 👤 ---
-                        console.log("👤 [MANUAL] Modo Operador: Abrindo modal...");
-                        abrirModalValidacaoSorteExtra();
-                    }
-                }
-           }
-        } else {
-           jaValidouSorteExtraNestaRodada = false; 
-        }
-
-        if (payload.rodadaData && payload.rodadaData.length > 0) {
-            const estado = payload.rodadaData[0].estado;
-            
-            // Chama a função de segurança que criamos
-            if (typeof gerenciarEstadoBotoes === 'function') {
-                gerenciarEstadoBotoes(estado);
-            }
-        }
-
-        if (payload.buscandoMesaData && payload.buscandoMesaData.length > 0) {
-            const dados = payload.buscandoMesaData[0];
-            let premio = dados?.buscando_o_premio || '...';
-            const linhas = dados?.buscando_a_linha || '';
-            
-            if (typeof MAX_BOLAS !== 'undefined' && MAX_BOLAS === 75) {
-               if (premio === 'QUADRA') premio = '4 CANTOS';
-            }
-
-            let textoCompleto = premio;
-            if (linhas && (premio === 'LINHA' || premio === '3 LINHAS')) {
-                textoCompleto += ` (${linhas})`;
-            }
-
-            const elStatus = document.getElementById('status-premio');
-            if (elStatus) elStatus.textContent = `Buscando: ${textoCompleto}`;
-    
-            const elTitulo = document.getElementById('premio-atual'); 
-            if (elTitulo) elTitulo.textContent = premio;
-        }
-
-        if (payload.parametrosInfo) {
-            configuracaoServer = payload.parametrosInfo;
-                       
-            if (configuracaoServer.sorteio_automatizado !== undefined) {
-                sorteioAutomatizadoConfig = configuracaoServer.sorteio_automatizado;
-            }
-            
-            if (configuracaoServer.aguardandoVideo !== undefined) {
-                aguardandoVideo = parseInt(configuracaoServer.aguardandoVideo) || 0; 
-            }
-
-            if (configuracaoServer.voz_ativa !== undefined) {
-                vozAtiva = configuracaoServer.voz_ativa;
-            }
-
-            if (configuracaoServer.enviar_porta_serial !== undefined) {
-                enviarPortaSerial = configuracaoServer.enviar_porta_serial;
-            }
-
-            if (configuracaoServer.modo_sorteio) {
-                modoSorteio = configuracaoServer.modo_sorteio;
-                if (typeof aplicarVisualModoSorteio === 'function') {
-                    aplicarVisualModoSorteio(modoSorteio);
-                }
-            }
-            
-            const modal = document.getElementById('modal-config');
-            if (modal && modal.classList.contains('hidden') && typeof preencherModalConfig === 'function') {
-                preencherModalConfig(configuracaoServer);
-            }
-        }
-
-        if (payload.ganhadoresLive && payload.ganhadoresLive.length > 0) {
-            if (typeof renderListaGanhadores === 'function') renderListaGanhadores(payload.ganhadoresLive);
-        } else if (payload.ganhadoresData) {
-            if (typeof renderListaGanhadores === 'function') renderListaGanhadores(payload.ganhadoresData);
-        }
-
-        if (payload.melhoresData) {
-           let tipoPremioBuscado = "BINGO";
-           if (payload.buscandoMesaData && payload.buscandoMesaData[0]) tipoPremioBuscado =        payload.buscandoMesaData[0].buscando_o_premio;
-    
-    renderRanking(payload.melhoresData, tipoPremioBuscado);
-
-    if (MAX_BOLAS === 75) {
-        paradasObrigatorias = ['QUADRA', 'LINHA', 'BINGO', 'DUPLO BINGO', '4 CANTOS', '4 CANTOS E LINHA'];
-        termosVitoria = ['BINGO', 'LINHA', 'QUADRA', '4 CANTOS', '4 CANTOS E LINHA'];
-    } else {
-        paradasObrigatorias = ['QUADRA', 'LINHA', 'FALTA UM', 'BINGO', 'DUPLO BINGO'];
-        termosVitoria = ['BINGO', 'LINHA', 'QUADRA', 'FALTA 1', 'FALTA UM', 'DUPLO BINGO'];
-    }
-    
-    const ganhadoresAtuais = payload.melhoresData.filter(item => {
-        const status = (item.premio && item.premio !== "null") ? item.premio.toUpperCase() : "";
-        return paradasObrigatorias.some(termo => status.includes(termo)); 
-    });
-
-    const novosContemplados = payload.melhoresData.filter(item => {
-        const status = (item.premio && item.premio !== "null") ? item.premio.toUpperCase() : "";
-        return termosVitoria.some(termo => status.includes(termo));              
-    });
-
-    // Buscar Sorte Extra
-    const bolasMesa = bolasSorteadasCache; // Array das bolas [15, 42, 63...]
-    
-    // Verificamos se atingiu a quantidade X
-    if (sorteioExtraConfigAtivo && bolasMesa.length === qtdeTopeSorteExtra) {
-        
-        if (!jaValidouSorteExtraNestaRodada) {
-            jaValidouSorteExtraNestaRodada = true; // Trava para não abrir 1000 vezes
-            
-            // TOCA UM SOM DE ALERTA (Opcional)
-            const audio = new Audio('/sons/sorteextra.mp3'); // Se tiver
-            audio.play().catch(e=>{});
-
-            // ABRE O MODAL AUTOMATICAMENTE
-            abrirModalValidacaoSorteExtra();
-        }
-    }
-    
-    // Se resetar o jogo (0 bolas), reseta a trava
-    if (bolasMesa.length === 0) {
-        jaValidouSorteExtraNestaRodada = false;
-    }
-// sorte extra
-
-    if (!modoRoboAtivo) {
-        novosContemplados.forEach(novo => {
-        const ID = String(novo.cartela).trim();
-        if (!idsConfirmadosNestaRodada.has(ID) && 
-            !cartelasPendentesAuditoria.some(c => String(c.cartela).trim() === ID)) {
-               cartelasPendentesAuditoria.push({
-                   cartela: ID, 
-                   nome: novo.nome === "null" ? "Balcão" : novo.nome,
-                   premio: novo.premio 
-               });
-            }
-        });
-    } else {
-         cartelasPendentesAuditoria = [];
-    }
-
-            if (ganhadoresAtuais.length > 0) {
-                if (modoRoboAtivo) {
-                    if (!processandoVitoria) {
-                        if (autoSorteioAtivo) pararAutoSorteio();
-                        processandoVitoria = true; 
-                        console.log("⏳ Aguardando sincronização visual dos terminais (4s)...");
-                        setTimeout(() => {
-                            processandoVitoria = false; 
-                            gerenciarVitoriaRobo(ganhadoresAtuais);
-                        }, 4000);   // aqui esta o tempo
-                    }
-                } else { 
-                    if (autoSorteioAtivo) {
-                        pararAutoSorteio();
-                        customAlert("Alerta de Premiação! Sorteio pausado.");
-                        jaAlertouNestaBola = true;
-                    } else if (!jaAlertouNestaBola) {
-                        customAlert("Alerta de Premiação!");
-                        jaAlertouNestaBola = true;
-                    }
-                }
-            }
-        }
-    }
-
-    } catch (e) {
-        console.error("❌ ERRO AO LER JSON:", e);
-        console.error("💀 O que quebrou o JSON:", event.data);
-    }
-
 }
 
 
@@ -1508,7 +1171,7 @@ async function carregarParametrosDoBanco() {
     }
 }
 
-// xxxx
+
 async function abrirModalConfig() {
     toggleAdminMenu();
     const modal = document.getElementById('modal-config');
@@ -2106,7 +1769,7 @@ async function executarCarregamentoReal(idEvento) {
         dadosEventoAtual = dados; 
         document.getElementById('painel-evento-ativo').classList.remove('hidden');
 
-
+        id_evento_ativo = parseInt(idEvento);
         id_rodada_ativa = parseInt(idEvento);
         console.error("🎱 Evento Configurado: id_rodada_ativa:  ",id_rodada_ativa );
 
@@ -3037,7 +2700,7 @@ function fecharValidacaoAdmin() {
     }
 }
 
-// Função de Busca (Atualiza o contador xxx)
+// Função de Busca (Atualiza o contador )
 async function buscarGanhadoresExtra() {
     const loading = document.getElementById('loading-extra');
     const content = document.getElementById('resultados-extra');
@@ -3492,10 +3155,10 @@ async function processarProximoDaFilaExtra() {
 async function validarGanhadorExtra(ganhador) {
     console.log(`🤖 [ROBO] Enviando ordem de exibição para: ${ganhador.nome}`);
 
-    // Monta o pacote igual ao que o botão manual enviaria
-    const payload = {
+    // Monta o pacote igual ao que o botão manual enviaria xxx
+    const payload = { 
         ganhadores: [ganhador], // Envia como lista de um item só
-        id_evento: ganhador.rodada || rodadaAtualId // Garante ter o ID
+        id_evento: ganhador.rodada || id_evento_ativo // Garante ter o ID
     };
 
     // Chama a rota que REALMENTE faz aparecer na TV e paga
@@ -3519,50 +3182,50 @@ async function validarGanhadorExtra(ganhador) {
     }
 }
 
-
 function dispararVerificacaoRobo() {
+    // 1. Identificação do ID do Evento
+    let idParaEnvio = id_evento_ativo;
     
-    // 1. SEGURANÇA: Verifica se temos o ID do evento
-    // (Às vezes a variável se chama 'rodadaAtualId' ou 'dadosEventoAtual.id')
-    // Ajuste conforme sua variável global real.
-    let idParaEnvio = (typeof rodadaAtualId !== 'undefined') ? rodadaAtualId : null;
-    
-    if (!idParaEnvio && typeof dadosEventoAtual !== 'undefined') {
-        idParaEnvio = dadosEventoAtual.id || dadosEventoAtual._id;
+    if (!idParaEnvio && typeof dadosEventoAtual !== 'undefined' && dadosEventoAtual) {
+        idParaEnvio = dadosEventoAtual.id || dadosEventoAtual.id_evento;
     }
 
     if (!idParaEnvio) {
-        console.error("❌ [ROBO] Erro: ID do evento não encontrado para verificação.");
+        console.error("❌ [ROBO] Erro: ID do evento não encontrado.");
         return;
     }
 
-    const payload = {
-        id_evento: idParaEnvio, 
-        bola_gatilho: qtdeTopeSorteExtra
-    };
+    // 2. Montagem dos Parâmetros na URL (Query String)
+    // Em vez de enviar no 'body', enviamos na URL para rotas GET
+    const url = `${API_BASE_URL}/api/admin/verificar_ganhadores_extra?id_evento=${idParaEnvio}&bola_gatilho=${qtdeTopeSorteExtra}`;
 
-    console.log(`🤖 [ROBO] Consultando API na URL: ${API_BASE_URL}/api/admin/verificar_ganhadores_extra`);
+    console.log(`🤖 [ROBO] Consultando API (GET): ${url}`);
 
-    // --- CORREÇÃO AQUI 👇 ---
-    // Adicionamos ${API_BASE_URL} antes do caminho.
-    fetch(`${API_BASE_URL}/api/admin/verificar_ganhadores_extra`, { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+    // 3. Chamada Fetch usando GET
+    fetch(url, { 
+        method: 'GET', // Alterado de POST para GET
+        headers: { 'Content-Type': 'application/json' }
     })
     .then(response => {
+        // Se retornar 405 aqui de novo, significa que sua rota EXIGE POST no backend.
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
     })
     .then(data => {
         if (data.ganhadores && data.ganhadores.length > 0) {
-            console.log(`🤖 [ROBO] ${data.ganhadores.length} ganhadores encontrados!`);
+            console.log(`🤖 [ROBO] 🎉 ${data.ganhadores.length} ganhadores encontrados!`);
+            // Aqui você pode disparar o alerta visual de ganhadores se desejar
         } else {
-            console.log("🤖 [ROBO] Nenhum ganhador no Sorte Extra.");
+            console.log("🤖 [ROBO] Processado: Nenhum ganhador identificado.");
         }
     })
     .catch(err => {
-        console.error("❌ [ROBO] Erro ao verificar ganhadores extra:", err);
+        console.error("❌ [ROBO] Erro na verificação:", err);
+        
+        // DICA DE DEBUG:
+        if (err.message.includes("405")) {
+            console.warn("⚠️ O servidor ainda retornou 405. Isso indica que a rota no backend deve ser alterada para POST ou a URL está incorreta.");
+        }
     });
 }
 
