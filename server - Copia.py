@@ -2376,18 +2376,15 @@ def publicar_bola():
         data = request.json
         bola = int(data.get('bola'))
         
-        # 1. CAPTURA O TEMPO DO VÍDEO (Padrão é 0 se falhar ou vier vazio)
-        tempo_video = data.get('tempo_video', 0) 
-        
-        # 2. Busca as bolas que JÁ estavam públicas antes
+        # 1. Busca as bolas que JÁ estavam públicas antes
         dados_atuais = db.bolas.find_one({}) or {}
         lista_publica = dados_atuais.get('bolas_cantadas', [])
         
-        # 3. Adiciona a nova bola na lista (se não for repetida)
+        # 2. Adiciona a nova bola na lista (se não for repetida)
         if bola not in lista_publica:
             lista_publica.append(bola)
         
-        # 4. ATUALIZA o documento existente (Não cria um novo!)
+        # 3. ATUALIZA o documento existente (Não cria um novo!)
         db.bolas.update_one({}, {
             '$set': {
                 'bolas_cantadas': lista_publica,
@@ -2398,12 +2395,11 @@ def publicar_bola():
             }
         }, upsert=True)
         
-        # 5. Avisa as TVs / Telemóveis (AGORA COM O TEMPO DO VÍDEO!)
-        print(f"📢 Enviando bola {bola} (Sync Video: {tempo_video}s) para as TVs")
+        # 4. Avisa as TVs
+        print(f"📢 Enviando bola {bola} para as TVs (Total: {len(lista_publica)})")
         broadcast_para_clientes({
             'type': 'UPDATE',
             'ultimaBola': bola,
-            'tempo_video': tempo_video, # <<< A MÁGICA AQUI!
             # Opcional: Mandar a lista toda garante que quem reconectar pegue tudo
             'bolasData': [{'bolas_cantadas': lista_publica, 'proxima_bola': bola}]
         })

@@ -127,25 +127,10 @@ let eventoSelecionadoParaCompra = 0;
 
 let filaDeMensagens = [];
 let motorSincroniaAtivo = null;
-let playerYouTube = null;
-let ytApiPronta = false;
 
-function onYouTubeIframeAPIReady() {
-    ytApiPronta = true;
-    console.log("📺 [VÍDEO] API do YouTube carregada e pronta para uso.");
-}
-// Helper para extrair o ID
-function extrairIdDoVideo(url) {
-    if (!url) return null;
-    if (url.length === 11 && !url.includes('/')) return url;
-    const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
-    const match = url.match(regex);
-    return match ? match[1] : null;
-}
-
-let cacheIdEvento = null;   // Para saber se o evento mudou
-let cacheImagem = '';        // A foto do carro
-let cacheTexto = '';             // O texto "Valendo Moto"
+let cacheIdEvento = null; // Para saber se o evento mudou
+let cacheImagem = '';     // A foto do carro
+let cacheTexto = '';      // O texto "Valendo Moto"
 
 let lastPrizeJson = "";
 let lastBuscandoJson = "";
@@ -283,6 +268,8 @@ let timeoutId = null;
 // Nova variável para o temporizador do painel de prêmios.
 let prizeTimeoutId = null;
 
+//let ws = null;
+
 let iniciandoRodada = true;
 let winnerBingo = false;
 
@@ -358,12 +345,15 @@ const releaseWakeLock = () => {
 function pegarSalaDaUrl() {
     const params = new URLSearchParams(window.location.search);
     const sala = params.get('sala');
+
     // Se a sala for nula (não existe), vazia ou indefinida, retorna '000'
     if (!sala) {
         return '000';
     }
+
     return sala;
 }
+
 
 /**
  * Converte uma lista de números [1, 2, 3, 5, 6] em objetos de faixa
@@ -375,9 +365,11 @@ function agruparNumerosEmRanges(numeros) {
     
     // Ordena numericamente (crescente)
     numeros.sort((a, b) => a - b);
+    
     const ranges = [];
     let inicio = numeros[0];
     let anterior = numeros[0];
+    
     for (let i = 1; i < numeros.length; i++) {
         if (numeros[i] === anterior + 1) {
             // É sequencial, continua a faixa
@@ -391,6 +383,7 @@ function agruparNumerosEmRanges(numeros) {
     }
     // Adiciona a última faixa
     ranges.push({ inicial: inicio, final: anterior });
+    
     return ranges;
 }
 
@@ -514,6 +507,7 @@ function renderAvisoPanel(avisosData) {
         avisoTimerContainer.classList.add('hidden');
         avisoTimerContainer.classList.remove('flex');
     }
+
     avisoPanel.classList.remove('hidden');
     avisoPanel.classList.add('flex');
 }
@@ -3951,23 +3945,21 @@ async function renderMainContent(data) {
             const newVideoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1&rel=0${paramOrigin}`;
         
             // Atualiza o player apenas se mudou
-            if (currentVideoUrl !== rawVideoID) { 
-                currentVideoUrl = rawVideoID; // Guarda o link original para referência
-                
-                if (videoID) {
-                    // MÁGICA AQUI: Chama a nova função da API do YouTube
-                    carregarVideoSincronizado(videoID); 
+            if (currentVideoUrl !== newVideoUrl) {
+                currentVideoUrl = newVideoUrl;
+                if (youtubeIframe && videoID) {
+                    youtubeIframe.src = newVideoUrl;
+                } else if (youtubeIframe) {
+                    youtubeIframe.src = ''; // Limpa se não tiver ID
                 }
 
-                const videoContainer = document.getElementById('video-container'); 
+                const videoContainer = document.getElementById('video-container'); // Confirme se o ID é esse
                 
-                // Só clica para abrir se estiver FECHADO
+                // Só clica se estiver FECHADO. Se já estiver aberto, apenas a atualização do .src acima já basta.
                 if (videoContainer && videoContainer.classList.contains('hidden')) {
                      abrirYoutubeBtn.click();
                 }
             }
-
-            
         }         // --- FIM se Manual-
 
         if (abrirYoutubeBtn) {
@@ -4350,8 +4342,6 @@ function connectWebSocket() {
 
     ws.onopen = async () => {
         console.log("✅ [FRONT] WebSocket Conectado com Sucesso!");
-        // Inicia o motor assim que conecta
-        iniciarMotorSincronia();
 
         if (reconnectInterval) {
             clearInterval(reconnectInterval);
@@ -4367,35 +4357,39 @@ function connectWebSocket() {
         ws.send(JSON.stringify({ action: "GET_INITIAL_STATE" }));
         console.log("📤 Solicitando estado inicial do Bingo.");
 
+        // B. Busca Cupom Ativo (via Arquivo/API - Segurança máxima para celular)
+        // Isso resolve o problema de não aparecer no celular ao conectar/reconect
+        //xxx setTimeout(processarParametrosURL, 500); 
     };
 
     ws.onmessage = (event) => {
         try {
             const payload = JSON.parse(event.data);
             
-            // Ignora mensagens de erro
-            if (payload.type === 'ERROR') {
-                console.error("Erro do Servidor:", payload);
-                return;
-            }
+            // --- TRATAMENTO DE ATUALIZAÇÃO DE RODADA ---
+            if (payload.type === 'UPDATE') {
+                const melhoresData = payload.melhoresData;
+                let idSocket = null;
+                if (payload.rodadaData && payload.rodadaData.length > 0) {
+                    idSocket = payload.rodadaData[0].id_evento;
+                }
+                if (!idSocket) {
+                    const params = payload.parametros || payload.parametrosInfo || {};
+                    idSocket = payload.id_evento || params.id_evento;
+                }
+                if (idSocket) { buscarImagemDoPremio(idSocket); }
 
-            // === A MÁGICA DA SINCRONIA AQUI ===
-            // Verifica o tempo que a bola deve esperar (enviado pelo admin)
-            const tempoDeEspera = payload.tempo_video || 0; 
+                renderMainContent(payload); 
+
+                if (cachedRawCards && cachedRawCards.length > 0) {
+                    console.log("🔄 WebSocket atualizou bolas. Reprocessando visual...");
+                    forcarReprocessamentoVisual(); 
+                 }
+                
+                if (melhoresData) { renderMelhores(melhoresData); }              
+                verificarNovasCompras();
+            }
             
-            if (tempoDeEspera === 0) {
-                executarRenderizacao(payload);
-                return; 
-            }
-
-            // Coloca na fila e não faz mais nada!
-            filaDeMensagens.push({
-                tempo_video: tempoDeEspera,
-                payload: payload
-            });
-
-            // console.log(`📥 [SYNC] Dado retido na fila. Aguardará até o vídeo chegar em: ${tempoDeEspera}s`);
-
         } catch (e) {
             console.error('❌ [FRONT] Erro crítico no processamento da mensagem:', e);
         }
@@ -4580,6 +4574,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 6. LÓGICA DO YOUTUBE
     const videoContainer = document.getElementById('video-container');
+    const youtubeIframe = document.getElementById('youtube-iframe'); // Certifique-se que o ID existe no HTML
     
     if (typeof abrirYoutubeBtn !== 'undefined' && abrirYoutubeBtn && videoContainer) {
         abrirYoutubeBtn.addEventListener('click', () => {
@@ -4591,13 +4586,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            let videoUrl = currentVideoUrl;
+            if (!videoUrl.includes('youtube.com/embed/')) {
+                const videoID = videoUrl.split('v=')[1]?.split('&')[0] || videoUrl.split('/').pop();
+                videoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1`;
+            }
+
             const isHidden = videoContainer.classList.toggle('hidden');
             abrirYoutubeBtn.textContent = isHidden ? '📺 Abrir YouTube' : '❌ Fechar YouTube';
-            
-            // Se abriu e a URL existe, injeta o vídeo com a nova API
-            if (!isHidden && currentVideoUrl) {
-                carregarVideoSincronizado(currentVideoUrl);
-            } 
+            if (youtubeIframe) youtubeIframe.src = isHidden ? '' : videoUrl;
             
             if (typeof updatePromocionalPanelPosition === 'function') updatePromocionalPanelPosition();
         });
@@ -7008,103 +7005,4 @@ function forcarReprocessamentoVisual() {
     //if (typeof renderMelhores === 'function') {
        // renderMelhores(cartelas);
     //}
-}
-
-
-// Função que inicia o "Vigilante"
-function iniciarMotorSincronia() {
-    if (motorSincroniaAtivo) return; // Já está a correr
-
-    motorSincroniaAtivo = setInterval(() => {
-        // Se a fila estiver vazia, ignora
-        if (filaDeMensagens.length === 0) return;
-
-        // Se o player do YouTube não estiver pronto ou não existir, forçamos a mostrar os dados
-        // (Isso garante que pessoas que minimizaram o vídeo ainda vejam o bingo)
-        let tempoAtualVideo = 0;
-        if (typeof playerYouTube !== 'undefined' && playerYouTube && typeof playerYouTube.getCurrentTime === 'function') {
-            tempoAtualVideo = playerYouTube.getCurrentTime();
-        } else {
-            // Fallback: Se não há player (ex: só áudio ou falha no YouTube), mostra tudo sem delay
-            tempoAtualVideo = 999999; 
-        }
-
-        // Verifica a primeira mensagem da fila
-        const proximaMensagem = filaDeMensagens[0];
-
-        // Se a mensagem for "imediata" (sem tempo_video) OU o vídeo já a alcançou
-        if (!proximaMensagem.tempo_video || tempoAtualVideo >= proximaMensagem.tempo_video) {
-            
-            // Retira a mensagem da fila
-            filaDeMensagens.shift();
-            
-            // Processa a mensagem normalmente no ecrã
-            executarRenderizacao(proximaMensagem.payload);
-        }
-    }, 200); // Corre a cada 200 milissegundos para não engasgar
-}
-
-// Extraímos a lógica de renderização para uma função separada
-function executarRenderizacao(payload) {
-    if (payload.type === 'UPDATE') {
-        const melhoresData = payload.melhoresData;
-        let idSocket = null;
-        if (payload.rodadaData && payload.rodadaData.length > 0) {
-            idSocket = payload.rodadaData[0].id_evento;
-        }
-        if (!idSocket) {
-            const params = payload.parametros || payload.parametrosInfo || {};
-            idSocket = payload.id_evento || params.id_evento;
-        }
-        
-        if (idSocket) { buscarImagemDoPremio(idSocket); }
-
-        renderMainContent(payload); 
-
-        if (typeof cachedRawCards !== 'undefined' && cachedRawCards && cachedRawCards.length > 0) {
-            console.log("🔄 WebSocket atualizou bolas. Reprocessando visual...");
-            forcarReprocessamentoVisual(); 
-         }
-        
-        if (melhoresData) { renderMelhores(melhoresData); }             
-        verificarNovasCompras();
-    }
-}
-
-// Função que você vai chamar quando receber o link do vídeo do seu servidor
-function carregarVideoSincronizado(linkDoYoutube) {
-    const videoId = extrairIdDoVideo(linkDoYoutube);
-    if (!videoId) return; // Se não for um link válido, ignora
-
-    // Mostra o container na tela
-    const container = document.getElementById('video-container');
-    if (container) container.classList.remove('hidden');
-
-    // Se a API ainda estiver carregando a internet, espera 1 segundo e tenta de novo
-    if (!ytApiPronta) {
-        console.warn("⏳ Aguardando API do YouTube...");
-        setTimeout(() => carregarVideoSincronizado(linkDoYoutube), 1000);
-        return;
-    }
-
-    // Se o player já existe (ex: usuário atualizou a página), apenas troca o vídeo
-    if (playerYouTube) {
-        playerYouTube.loadVideoById(videoId);
-    } else {
-        // Se é a primeira vez, cria o player do zero
-        playerYouTube = new YT.Player('player-transmissao', {
-            height: '100%',
-            width: '100%',
-            videoId: videoId,
-            playerVars: {
-                'autoplay': 1,
-                'controls': 1,
-                'rel': 0, // Não mostra vídeos recomendados no final
-                'playsinline': 1 // Permite tocar direto na tela sem abrir tela cheia no iOS
-            },
-            events: {
-                'onReady': () => console.log("🎬 [VÍDEO] Player renderizado e pronto para sincronia!")
-            }
-        });
-    }
 }

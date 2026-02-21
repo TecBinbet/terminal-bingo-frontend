@@ -17,6 +17,8 @@ const btnSortear = document.getElementById('btn-sortear');
 const contadorElement = document.getElementById('contador-bolas');
 
 // --- VARIÁVEIS DE CONTROLE ---
+let tempoInicioTransmissao = 0;
+
 let isSorting = false;
 let autoSorteioInterval = null;
 let autoSorteioAtivo = false;
@@ -154,8 +156,16 @@ async function processarMatrizEnvio() {
             // Mapeamento dos tipos para configurar a requisição
             switch (item.tipo) {
                 case 'BOLA_CLIENTE':
+                    //  <<  Ajuste Sincronismo Vídeo 
+                    let segundosDesdeOInicio = 0;
+                    if (modoSorteio === 'manual' && tempoInicioTransmissao > 0) { 
+                       segundosDesdeOInicio = (Date.now() - tempoInicioTransmissao) / 1000;
+                    }
                     urlEndpoint = `${API_BASE_URL}/api/admin/publicar_bola`;
-                    bodyData = { bola: item.valor };
+                    bodyData = { 
+                        bola: item.valor,
+                        tempo_video: segundosDesdeOInicio
+                    };
                     break;
                 case 'PREMIO_CLIENTE':
                     urlEndpoint = `${API_BASE_URL}/api/admin/definir_premio_publico`;
@@ -1396,6 +1406,7 @@ function atualizarBarraProgresso(totalSegundos) {
 // =========================================================
 
 async function sortearBola() {
+
     // 1. Verificações Básicas
     if (isSorting) return;
     if (bolasSorteadasCache.length >= MAX_BOLAS) {
@@ -1501,8 +1512,16 @@ function gerarNumeroUnicoLocal() {
     return num;
 }
 
+//  <<  Ajuste Sincronismo Vídeo
+function iniciarTransmissao() {
+    tempoInicioTransmissao = Date.now(); // Grava os milissegundos atuais
+    // Pode enviar este valor para o banco de dados para os clientes saberem quando começou
+}
 
 async function inserirBolaManual() {
+    //  <<  Ajuste Sincronismo Vídeo 
+    if (tempoInicioTransmissao === 0) return alert("Inicie a transmissão primeiro!");
+
     const input = document.getElementById('input-bola-manual');
     const erroLabel = document.getElementById('erro-manual');
     let valor = parseInt(input.value);
@@ -1525,7 +1544,7 @@ async function inserirBolaManual() {
     
     bolaDestaque.textContent = valor;
     if (vozAtiva) falarTextoLocutor(String(valor));
-    
+
     if (enviarPortaSerial) {
         // 1. Converte para string e garante 2 dígitos (ex: 5 vira "05", 15 vira "15")
         let valorFormatado = String(valor).padStart(2, '0');

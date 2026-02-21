@@ -90,11 +90,15 @@
 </section>
 
     <div id="video-container" class="hidden mt-0 mb-1 w-full h-[200px] bg-gray-900 rounded-lg shadow-xl overflow-hidden">
-        <div id="player-transmissao" class="w-full h-full"></div>  
+        <iframe id="youtube-iframe" width="100%" height="100%"
+            title="YouTube video player"
+            src=""
+            frameborder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen>
+        </iframe>  
     </div>
-
-    <script src="https://www.youtube.com/iframe_api"></script>    
-
+    
     <div id="nameUser_container" class="hidden w-full flex justify-center items-center -mt-0.5 mb-0.5 z-10 relative">
           <h2 id="nameUser" 
               class="bg-gray-900/90 border border-yellow-800 rounded-full px-6 
