@@ -239,6 +239,8 @@ const conferencePanelContainer = document.getElementById('conference-panel-conta
 const cardNumberElement = document.getElementById('card-number');
 const winnerNameElement = document.getElementById('winner-name');
 const cardGridElement = document.getElementById('card-grid');
+const btnCloseConference = document.getElementById('btn-close-conference');
+
 
 const cartelaInicialInput = document.getElementById('cartela-inicial-input');
 const cartelaFinalInput = document.getElementById('cartela-final-input');
@@ -4513,6 +4515,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (typeof btnCloseMyCards !== 'undefined' && btnCloseMyCards) btnCloseMyCards.addEventListener('click', closeMyCardsPanel);
 
+    // Botão para fechar o painel de Conferência/Sorte Extra
+    const btnCloseConference = document.getElementById('btn-close-conference');
+    const conferencePanel = document.getElementById('conference-panel-container');
+    if (btnCloseConference && conferencePanel) {
+        btnCloseConference.addEventListener('click', () => {
+            conferencePanel.classList.add('hidden');
+        });
+    }
+
+    // Botão para fechar o painel de Ganhadores Principais
+    const btnCloseWinners = document.getElementById('btn-close-winners');
+    const winnersPanel = document.getElementById('winners-panel-container');
+    if (btnCloseWinners && winnersPanel) {
+        btnCloseWinners.addEventListener('click', () => {
+            winnersPanel.classList.add('hidden');
+        });
+    }
+
     // 4. ALTERNÂNCIA VISUAL (LISTA vs TOP 10) - MOBILE E DESKTOP
     const btnIrTop10 = document.getElementById('btn-ir-para-top10');
     const btnIrLista = document.getElementById('btn-ir-para-lista');
@@ -6361,7 +6381,7 @@ async function buscarImagemDoPremio(idEvento) {
     }
 
     try {
-        console.log(`🔍 Buscando foto do prêmio para o evento ${idEvento}...`);
+        //console.log(`🔍 Buscando foto do prêmio para o evento ${idEvento}...`);
         
         const baseUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
         const urlParaBuscar = `${baseUrl}/api/verificar_status_evento?id_evento=${idEvento}`;
@@ -6997,7 +7017,7 @@ function forcarReprocessamentoVisual() {
     // 5. Ordenação para o Ranking
     cartelas.sort((a, b) => b.acertos - a.acertos);
 
-    console.log(`🎨 Renderizando ${cartelas.length} cartelas com ${bolasNumericas.length} bolas confirmadas.`);
+    //console.log(`🎨 Renderizando ${cartelas.length} cartelas com ${bolasNumericas.length} bolas confirmadas.`);
 
     // 6. Chamada de Renderização
     // Passamos o array de bolas já convertido para evitar erros de comparação no desenho
@@ -7062,7 +7082,7 @@ function executarRenderizacao(payload) {
         renderMainContent(payload); 
 
         if (typeof cachedRawCards !== 'undefined' && cachedRawCards && cachedRawCards.length > 0) {
-            console.log("🔄 WebSocket atualizou bolas. Reprocessando visual...");
+            //console.log("🔄 WebSocket atualizou bolas. Reprocessando visual...");
             forcarReprocessamentoVisual(); 
          }
         
@@ -7100,7 +7120,8 @@ function carregarVideoSincronizado(linkDoYoutube) {
                 'autoplay': 1,
                 'controls': 1,
                 'rel': 0, // Não mostra vídeos recomendados no final
-                'playsinline': 1 // Permite tocar direto na tela sem abrir tela cheia no iOS
+                'playsinline': 1, // Permite tocar direto na tela sem abrir tela cheia no iOS
+                'origin': window.location.origin
             },
             events: {
                 'onReady': () => console.log("🎬 [VÍDEO] Player renderizado e pronto para sincronia!")

@@ -412,7 +412,6 @@ def carregar_cache_evento(id_evento, sales_db):
 
     except Exception as e:
         print(f"❌ Erro cache: {e}")
-        import traceback
         traceback.print_exc()
         CACHE_JOGO['ativo'] = False
 
@@ -605,7 +604,6 @@ def fetch_data_from_mongodb():
 
     except Exception as e:
         print(f"❌ ERRO FATAL NO FETCH: {e}")
-        import traceback
         traceback.print_exc() # Mostra o erro exato no console do Docker
         return {}
 
@@ -683,7 +681,6 @@ def fetch_data_from_mongodb__():
     except Exception as e:
         # AQUI VAMOS PEGAR SE HOUVE ERRO SILENCIOSO
         print(f"❌ ERRO FATAL EM FETCH_DATA: {e}")
-        import traceback
         traceback.print_exc()
         return None
 
@@ -984,7 +981,6 @@ def recalcular_ranking_top10():
 
     except Exception as e:
         print(f"❌ [ERRO RANKING] {e}")
-        import traceback
         traceback.print_exc()
 
 
@@ -1170,7 +1166,6 @@ def recalcular_ranking_top10_75():
 
     except Exception as e:
         print(f"❌ Erro Ranking 75: {e}")
-        import traceback
         traceback.print_exc()
 
 # --- FUNÇÃO AUXILIAR PARA ACHAR O PRÓXIMO EVENTO (CORRIGIDA) ---
@@ -1350,7 +1345,6 @@ def verificar_e_sincronizar_cartelas(evento_num_max, evento_tipo_cartela):
 
     except Exception as e:
         print(f"❌ Erro ao sincronizar cartelas: {e}")
-        import traceback
         traceback.print_exc()
 
 
@@ -1516,7 +1510,6 @@ def api_stream_():
                             
                             except Exception as e_banco:
                                 print(f"🔥 [ERRO NO BANCO] Ao buscar estado inicial: {e_banco}")
-                                import traceback
                                 traceback.print_exc() # MOSTRA ONDE O CÓDIGO QUEBROU
 
                         elif acao == 'ping':
@@ -1530,7 +1523,6 @@ def api_stream_():
 
     except Exception as e_fatal:
         print(f"☠️ [FATAL] O WebSocket morreu: {e_fatal}")
-        import traceback
         traceback.print_exc()
         
     finally:
@@ -2422,27 +2414,38 @@ def admin_sortear_mesa():
     
     try:
         data = request.json or {}
-        # 1. PEGAMOS A BOLA QUE O LOCUTOR ESCOLHEU (Importante: use a chave 'bola')
+        print(f"\n📥 [API BOLA] Dados recebidos do painel: {data}")
+
+        # 1. PEGAMOS A BOLA QUE O LOCUTOR ESCOLHEU
         nova_bola = data.get('bola') 
         id_evento = data.get('id_evento')
 
+        # 🚀 FORÇA A CONVERSÃO E LOGA OS TIPOS DE DADOS
+        if id_evento is not None:
+            id_evento = int(id_evento)
+            
+        print(f"🔍 [API BOLA] Analisando: Bola={nova_bola} (Tipo: {type(nova_bola).__name__}) | Evento={id_evento} (Tipo: {type(id_evento).__name__})")
+
         if nova_bola is None:
+            print("❌ [API BOLA] ERRO: O JSON não continha a chave 'bola'!")
             return jsonify({'error': 'Nenhuma bola enviada pelo Admin'}), 400
 
         # 2. BUSCAMOS A LISTA ATUAL DA TABELA OFICIAL (bolas)
-        # Para garantir que não haja "fantasmas", vamos ler a 'bolas' e replicar na 'mesa'
-        doc_oficial = db.bolas.find_one({"id_evento": id_evento}) or {}
-        bolas_cantadas = doc_oficial.get('bolas_cantadas', [])
+        doc_oficial = db.bolas.find_one({}) or {}
+        bolas_cantadas = doc_oficial.get('bolas_cantadas', [])        
+        print(f"📋 [API BOLA] Tabela atual tem {len(bolas_cantadas)} bolas. Lista: {bolas_cantadas}")
 
-        # 3. SEGURANÇA: Se a bola já estiver lá, não duplicamos, apenas seguimos
+        # 3. SEGURANÇA: Se a bola já estiver lá, não duplicamos
         if int(nova_bola) not in bolas_cantadas:
             bolas_cantadas.append(int(nova_bola))
+            print(f"✅ [API BOLA] Bola {nova_bola} inédita. Adicionada com sucesso!")
+        else:
+            print(f"⚠️ [API BOLA] AVISO: A bola {nova_bola} já estava sorteada. Ignorando duplicata.")
 
         if len(bolas_cantadas) == 1:
             timeStart = datetime.now()
 
-        # 4. ATUALIZAÇÃO SÍNCRONA (A chave da vitória)
-        # Atualizamos as DUAS coleções com a MESMA lista exata.
+        # 4. ATUALIZAÇÃO SÍNCRONA
         update_data = {
             '$set': {
                 'bolas_cantadas': bolas_cantadas,
@@ -2453,19 +2456,22 @@ def admin_sortear_mesa():
             }
         }
 
-        # Grava na dos Terminais
-        db.bolas.update_one({"id_evento": id_evento}, update_data, upsert=True)
-        # Grava na da Mesa (Ranking) - Agora elas são gêmeas idênticas
-        db.bolas_mesa.update_one({"id_evento": id_evento}, update_data, upsert=True)
+        print(f"💾 [API BOLA] Atualizando as duas tabelas no MongoDB (bolas e bolas_mesa)...")
+
+        # Como era no original: Atualiza o único registo existente nas tabelas
+        #db.bolas.update_one({}, update_data, upsert=True)
+        db.bolas_mesa.update_one({}, update_data, upsert=True)
         
         # 5. DISPARA O RANKING
-        # Como as tabelas são idênticas, o Ranking nunca mais verá bolas fantasmas.
+        print(f"⚙️ [API BOLA] Iniciando Thread para recalcular o Ranking nas cartelas...")
         threading.Thread(target=recalcular_ranking_principal).start()
 
+        print(f"🚀 [API BOLA] Fluxo concluído! Retornando OK para o JavaScript.")
         return jsonify({'status': 'sincronizado', 'bola': nova_bola, 'total': len(bolas_cantadas)})
         
     except Exception as e:
-        print(f"❌ Erro na sincronização Rei: {e}")
+        print(f"❌ [API BOLA] ERRO CRÍTICO NA SINCRONIZAÇÃO DA BOLA: {e}")
+        traceback.print_exc() # Isso vai mostrar no terminal qual linha exata causou o erro!
         return jsonify({'error': str(e)}), 500
 
 
@@ -5623,6 +5629,92 @@ def logout_cliente():
     
     # Redireciona para a tela inicial (Login)
     return redirect('/')
+
+
+# ==============================================================================
+# 🤖 ROTA EXCLUSIVA DO ROBÔ: BUSCAR PRÓXIMO EVENTO E CALCULAR CRONÔMETRO
+# ==============================================================================
+@app.route('/api/admin/proximo_evento_robo', methods=['GET'])
+def api_proximo_evento_robo():
+    try:
+        # Pega o ID do evento que acabou de terminar (para não o buscar de novo)
+        id_atual = request.args.get('id_evento_atual')
+        
+        sales_db = get_sales_db_connection()
+        if sales_db is None:
+            return jsonify({'erro': 'Banco de Vendas offline'}), 500
+
+        # 1. FILTRO: Busca apenas eventos Ativos ou Paralisados
+        filtro = {'status': {'$in': ['ativo', 'paralizado', 'ATIVO', 'PARALIZADO']}}
+        
+        # Ignora o evento atual (se vier na URL)
+        if id_atual:
+            filtro['id_evento'] = {'$nin': [int(id_atual), str(id_atual)]}
+
+        # 2. ORDENAÇÃO CRONOLÓGICA ABSOLUTA
+        cursor = sales_db.eventos.find(filtro).sort([('data_evento', 1), ('hora_evento', 1)])
+        
+        proximo_evento = None
+        agora = hora_brasil()
+
+        # 3. VALIDAÇÃO DE DATA
+        for evt in cursor:
+            data_str = evt.get('data_evento')
+            hora_str = evt.get('hora_evento')
+            if not data_str or not hora_str:
+                continue
+                
+            try:
+                # Tenta converter a string do banco (DD/MM/YYYY HH:MM) para Objeto Tempo real
+                dt_evt = datetime.strptime(f"{data_str} {hora_str}", "%d/%m/%Y %H:%M")
+                
+                # O primeiro que passar na conversão é o nosso alvo cronológico!
+                proximo_evento = evt
+                break
+            except Exception as e:
+                print(f"⚠️ [ROBO] Evento ignorado por formato de data inválido: {data_str} {hora_str}")
+                continue
+
+        if not proximo_evento:
+            return jsonify({'status': 'fim_fila', 'msg': 'Não há mais eventos agendados.'})
+
+        # 4. CÁLCULO INTELIGENTE DO TEMPO
+        dt_alvo = datetime.strptime(f"{proximo_evento.get('data_evento')} {proximo_evento.get('hora_evento')}", "%d/%m/%Y %H:%M")
+        
+        # Diferença em Segundos (Pode ser positivo ou negativo)
+        diferenca_segundos = (dt_alvo - agora).total_seconds()
+
+        # 5. BUSCA O TEMPO DE VENDAS (Grace Period)
+        param_config = db.parametros.find_one({}) or {}
+        tempo_vendas = int(param_config.get('aviso_fim_das_vendas', 30))
+
+        # 6. A REGRA DO "ATRASO"
+        # Se a diferença for menor que o tempo de vendas (ou seja, o evento já devia ter começado),
+        # nós limitamos a espera apenas ao tempo necessário para o fechamento de vendas.
+        if diferenca_segundos <= tempo_vendas:
+            segundos_espera_real = tempo_vendas
+            status_tempo = "atrasado_ou_imediato"
+        else:
+            segundos_espera_real = int(diferenca_segundos)
+            status_tempo = "agendado"
+
+        # 7. RETORNO PARA O JAVASCRIPT
+        return jsonify({
+            'status': 'ok',
+            'id_evento': str(proximo_evento.get('id_evento')),
+            'descricao': proximo_evento.get('descricao', 'Sem Nome'),
+            'data': proximo_evento.get('data_evento'),
+            'hora': proximo_evento.get('hora_evento'),
+            'segundos_restantes': segundos_espera_real,
+            'tempo_vendas_config': tempo_vendas,
+            'status_tempo': status_tempo
+        })
+
+    except Exception as e:
+        print(f"❌ [ROBO] Erro na rota proximo_evento_robo: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
 
 
 # ==============================================================================

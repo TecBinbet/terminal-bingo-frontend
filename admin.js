@@ -1,4 +1,5 @@
-// o sistema em "modoRoboAtivo" não esta confirmando os ganhadores de bingo
+// Ajusta na tabela e "config-winner-time"
+// let tempoEspera = parseInt(document.getElementById('config-winner-time').value) || 5;
 
 // =========================================================
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
@@ -18,6 +19,8 @@ const contadorElement = document.getElementById('contador-bolas');
 
 // --- VARIÁVEIS DE CONTROLE ---
 let tempoInicioTransmissao = 0;
+
+let A_Ultima_Bola = 0;
 
 let isSorting = false;
 let autoSorteioInterval = null;
@@ -56,10 +59,8 @@ let valorBonusExtra = 0;          // 2 Acertos (Preço do Cupom)
 let jaValidouSorteExtraNestaRodada = false; // Trava para não abrir o modal 20x
 
 let jogoFoiFinalizadoComSucesso = false;
+let jogoRoboFinalizadoComSucesso = false;
 
-// let bolasProcessadasAdmin = new Set(); 
-// let ultimaBolaExibidaAdmin = null;
-// let estadoRodadaAtual = null;
 
 let cartelasPendentesAuditoria = [];
 let idsConfirmadosNestaRodada = new Set()
@@ -285,7 +286,7 @@ async function gerenciarVitoriaRobo(ganhadores) {
     console.log("🤖 Robô detectou vitória!", ganhadores);
 
     // tempo ganhador na tela
-    let tempoEspera = parseInt(document.getElementById('config-winner-time').value) || 5;
+    let tempoEspera = 4; // parseInt(document.getElementById('config-winner-time').value) || 5;
     
     for (const g of ganhadores) {
         const cartela = g.cartela;
@@ -354,8 +355,11 @@ async function decidirProximoPassoRobo() {
         console.log("🤖 Fim dos prêmios. Resetando...");
         alternarBotaoReset('finalizar');
         await new Promise(r => setTimeout(r, 3000));
-        pararModoRobo(); 
-        await resetarJogo(true); 
+        if (autoSorteioAtivo) pararAutoSorteio();
+        // coloquei aqui
+        jogoFoiFinalizadoComSucesso = true;
+        jogoRoboFinalizadoComSucesso = true; 
+        await resetarJogo(); 
     }
 }
 
@@ -398,12 +402,10 @@ function preencherCartelaEValidar(cartela) {
     validarCartelaAuditoria();
 }
 
-
 // Variáveis de controle (globais ou no escopo do arquivo)
 let loopConferencia = null;
 let tentativasIntegridade = 0;
 let ultimaCartelaAuditada = "";
-
 function renderGridConferencia(data) {
     const grid = document.getElementById('conf-grid');
     if (!grid) return;
@@ -476,7 +478,7 @@ function renderGridConferencia(data) {
     grid.innerHTML = ''; // Limpa o loading
 
     const bolas = (data.bolas || bolasSorteadasCache || []).map(String);
-    const ultimaBola = bolas.length > 0 ? bolas[bolas.length - 1] : null;
+    const ultimaBola = A_Ultima_Bola;
 
     // >>> RENDERIZAÇÃO BINGO 75 (Perfeita)
     if (tipoJogo === 75) { 
@@ -492,13 +494,13 @@ function renderGridConferencia(data) {
                 const cell = document.createElement('div');
                 const isFree = false; //(index === 12); 
                 
-                // Tratamento seguro do valor
+                // Tratamento seguro do valor  zzz
                 const valorDisplay = (num !== undefined && num !== null) ? num : '';
                 
                 let marcado = bolas.includes(String(valorDisplay));
                 if (isFree && (valorDisplay == 0 || valorDisplay == '0' || valorDisplay == '')) marcado = true;
 
-                const isLast = !isFree && (String(valorDisplay) === String(ultimaBola));
+                const isLast = !isFree && (parseInt(valorDisplay) === ultimaBola);
                 
                 let cssClass = "h-10 w-full flex items-center justify-center font-bold text-sm rounded border transition-all duration-300 ";
                 
@@ -570,8 +572,6 @@ function exibirMensagemValidacao(grid, msg) {
     grid.innerHTML = `<div class="text-yellow-500 text-xs p-4 text-center animate-pulse">${msg}</div>`;
 }
 
-
-
 function showLoading(mensagem = "Processando...") {
     const overlay = document.getElementById('loading-overlay');
     const msgEl = document.getElementById('loading-message');
@@ -594,8 +594,6 @@ function hideLoading() {
 // =========================================================
 // === 2. SISTEMA DE CONEXÃO & WEBSOCKET ===
 // =========================================================
-
-
 // --- SUA FUNÇÃO (Com leve proteção para não resetar o timer toa hora) ---
 function gerenciarEstadoConexao(online) {
     const overlay = document.getElementById('overlay-conexao');
@@ -670,11 +668,9 @@ function tentarReconexaoManual() {
         });
 }
 
-
 // =========================================================
 // === CONEXÃO WEBSOCKET (MODO SILENCIOSO) ===
 // =========================================================
-
 function connectAdminWS() { // Use o nome que você já está chamando no final do arquivo
     if (socket) {
         // Se já existe e está conectando ou aberto, não faz nada
@@ -719,46 +715,6 @@ function connectAdminWS() { // Use o nome que você já está chamando no final 
     };
 }
 
-
-function connectAdminWS___() {
-    console.log("🔌 [CONNECT] Iniciando WebSocket em:", WS_URL);
-
-    if (socket) {
-        socket.onclose = null; // Remove listeners antigos
-        socket.close();
-    }
-
-    try {
-        socket = new WebSocket(WS_URL);
-    } catch (e) {
-        console.error("❌ Erro ao criar WebSocket:", e);
-        setTimeout(connectAdminWS, 5000);
-        return;
-    }
-
-    // --- O VÍNCULO IMPORTANTE ---
-    socket.onopen = function() {
-        console.log("✅ WebSocket Conectado!");
-        gerenciarEstadoConexao(true);
-    };
-
-    // Aqui amarramos a função que processa os dados
-    socket.onmessage = processarMensagemWS;
-
-    socket.onclose = function(e) {
-        console.warn("⚠️ WebSocket Fechado. Reconectando...");
-        gerenciarEstadoConexao(false);
-        setTimeout(connectAdminWS, 5000);
-    };
-
-    socket.onerror = function(err) {
-        console.error("❌ Erro no Socket:", err);
-        socket.close();
-    };
-}
-
-
-
 function agendarReconexao() {
     if (reconnectInterval) clearTimeout(reconnectInterval);
     reconnectInterval = setTimeout(connectAdminWS, RECONNECT_DELAY);
@@ -780,6 +736,13 @@ async function carregarDadosIniciaisSilencioso() {
             if (chkExtra) {
                 chkExtra.checked = buscarSorteExtra;
             }
+
+            sorteioAutomatizadoConfig = data.parametrosInfo.sorteio_automatizado !== undefined ? data.parametrosInfo.sorteio_automatizado : false;
+            const chkSorteioAutomatizado = document.getElementById('config-sorteio-automatizado');
+            if (chkSorteioAutomatizado) {
+                chkSorteioAutomatizado.checked = sorteioAutomatizadoConfig;
+            }
+
         }
 
         if (!dadosEventoAtual && data.rodadaData && data.rodadaData.length > 0) {
@@ -795,6 +758,7 @@ async function carregarDadosIniciaisSilencioso() {
                     id_evento: idEventoInt, // <--- Mantém para outras partes do sistema
                     descricao: 'Evento Recuperado' 
                 };
+                id_evento_ativo = idEventoInt;
             }
         }
 
@@ -803,14 +767,9 @@ async function carregarDadosIniciaisSilencioso() {
              // Garante que o ID esteja setado corretamente caso tenha vindo só com id_evento
              
              if(!dadosEventoAtual.id) dadosEventoAtual.id = dadosEventoAtual.id_evento;
-             await carregarConfigSorteExtraAdmin();
+             await carregarConfigSorteExtraAdmin(dadosEventoAtual.id);
         }
 
-        if (dadosEventoAtual && (dadosEventoAtual.id || dadosEventoAtual.id_evento)) {
-             if(!dadosEventoAtual.id) dadosEventoAtual.id = dadosEventoAtual.id_evento;
-             await carregarConfigSorteExtraAdmin();
-        }
-                                                                       // zzzzzzzzzz   
         if (data.evento && parseInt(data.evento.tipo_sorteio) === 25) {
             MAX_BOLAS = 75;
         } else {
@@ -851,7 +810,6 @@ async function carregarDadosIniciaisSilencioso() {
             }
         }
 
-
     } catch(e) {
         console.error("Erro no carregamento silencioso:", e);
     }
@@ -860,7 +818,6 @@ async function carregarDadosIniciaisSilencioso() {
 // =========================================================
 // === PROCESSADOR HÍBRIDO (75/90) COM RANKING E GANHADORES ===
 // =========================================================
-
 function processarMensagemWS(event) {
     try {
         const payload = JSON.parse(event.data);
@@ -952,6 +909,11 @@ function verificarVitoriaPeloRanking(listaMelhores) {
     // 1. Definimos as paradas e termos de vitória conforme o tipo de jogo
     let paradasObrigatorias = [];
     let termosVitoria = [];
+
+    if (!listaMelhores || listaMelhores.length === 0) {
+        jaAlertouNestaBola = false;
+        return;
+    }
 
     if (MAX_BOLAS === 75) {
         paradasObrigatorias = ['QUADRA', 'LINHA', 'BINGO', 'DUPLO BINGO', '4 CANTOS', '4 CANTOS E LINHA'];
@@ -1223,6 +1185,14 @@ function preencherModalConfig(params) {
         const chkSerial = document.getElementById('config-enviar-serial');
         if (chkSerial) chkSerial.checked = params.enviar_porta_serial;
     }
+
+    if (params.sorteio_automatizado !== undefined) {
+        const chkSorteioAutomatizado = document.getElementById('config-sorteio-automatizado');
+        if (chkSorteioAutomatizado) {
+            chkSorteioAutomatizado.checked = params.sorteio_automatizado;
+        }
+    }
+
     document.getElementById('config-nome-sala').value = params.nome_sala || 'LIVE THE BET';
     document.getElementById('config-url-padrao').value = params.url_padrao || '';
     document.getElementById('config-url-live').value = params.url_live || '';
@@ -1428,7 +1398,7 @@ async function sortearBola() {
         if(btn) { btn.disabled = false; btn.textContent = "SORTEAR BOLA 🎲"; }
         return;
     }
-
+    A_Ultima_Bola = parseInt(numero);   // zzzz 
     console.log(`🎱 LOCUTOR SORTEOU: ${numero}`);
     jaAlertouNestaBola = false;
     // 3. ATUALIZA A TELA IMEDIATAMENTE (Não espera internet)
@@ -1462,8 +1432,8 @@ async function sortearBola() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                bola: numero, // Mandamos a bola que NÓS escolhemos
-                id_evento: dadosEventoAtual?.id 
+                bola: numero, 
+                id_evento: parseInt(id_evento_ativo) 
             })
         }).catch(e => console.warn("⚠️ Aviso: Envio ao servidor demorou, mas o jogo segue."));
         
@@ -1520,7 +1490,10 @@ function iniciarTransmissao() {
 
 async function inserirBolaManual() {
     //  <<  Ajuste Sincronismo Vídeo 
-    if (tempoInicioTransmissao === 0) return alert("Inicie a transmissão primeiro!");
+    if (tempoInicioTransmissao === 0) {
+        customAlert("Inicie a transmissão primeiro!");
+        return; 
+    }
 
     const input = document.getElementById('input-bola-manual');
     const erroLabel = document.getElementById('erro-manual');
@@ -1555,14 +1528,35 @@ async function inserirBolaManual() {
     }
 
     bolasCacheLocal.add(valor);
+    bolasSorteadasCache.push(valor); // 1. Grava a bola na memória local
+   
+    jaAlertouNestaBola = false;
+    
+    if(typeof updateGrid === 'function') updateGrid(bolasSorteadasCache); // 2. Acende o painel numérico
+    
+    const contador = document.getElementById('contador-bolas');
+    if(contador) contador.textContent = bolasSorteadasCache.length; // 3. Atualiza a contagem
+
+    // 4. Dá o destaque (cor verde a piscar) na bola atual no seu ecrã
+    const elBola = document.getElementById(`admin-ball-${valor}`);
+    if(elBola) {
+        document.querySelectorAll('.admin-bola').forEach(b => b.classList.remove('bg-green-600', 'text-white', 'animate-pulse', 'scale-110', 'z-10'));
+        elBola.classList.add('bg-green-600', 'text-white', 'animate-pulse', 'scale-110', 'z-10');
+    }
 
     console.log(`[DEBUG] Inserindo bola manual: ${valor}`);
 
     try {
+
+        const payload = { 
+            bola: valor,
+           id_evento: parseInt(id_evento_ativo)
+        };
+
         const response = await fetch(`${API_BASE_URL}/api/admin/sortear_mesa`, {
             method: 'POST', 
             headers: {'Content-Type': 'application/json'}, 
-            body: JSON.stringify({ bola_manual: valor })
+            body: JSON.stringify(payload)
         });
         
         const data = await response.json();
@@ -1571,6 +1565,8 @@ async function inserirBolaManual() {
             console.error("[DEBUG] Erro mesa:", data.error);
             erroLabel.textContent = data.error;
             bolasCacheLocal.delete(valor); 
+            bolasSorteadasCache.pop();
+            if(typeof updateGrid === 'function') updateGrid(bolasSorteadasCache);
             return;
         }
 
@@ -1580,12 +1576,27 @@ async function inserirBolaManual() {
             valor: valor,
             hora: Date.now()
         });
-        atualizarIndicadorFila(matrizEnvio.length);
+        if(typeof atualizarIndicadorFila === 'function') atualizarIndicadorFila(matrizEnvio.length);
+
+        // 🍀 GATILHO SORTE EXTRA (LOCAL)
+        if (buscarSorteExtra) {
+            if (sorteioExtraConfigAtivo && bolasSorteadasCache.length === qtdeTopeSorteExtra) {
+                if (!jaValidouSorteExtraNestaRodada) {
+                    jaValidouSorteExtraNestaRodada = true;      
+                    console.log("🚨 [GATILHO LOCAL] Atingiu quantidade para Sorte Extra!");
+                    if (typeof abrirModalValidacaoSorteExtra === 'function') abrirModalValidacaoSorteExtra();
+                    
+                }
+            }
+        }
+
 
     } catch (e) {
         console.error("[DEBUG] Erro conexão manual:", e);
         erroLabel.textContent = "Erro ao conectar com servidor!";
         bolasCacheLocal.delete(valor);
+        bolasSorteadasCache.pop();
+        if(typeof updateGrid === 'function') updateGrid(bolasSorteadasCache);
     }
 }
 
@@ -1728,7 +1739,7 @@ function iniciarTimerEspera(idEvento) {
             modal.classList.remove('flex');
             // Agora o await funcionará corretamente
             try {
-                await carregarConfigSorteExtraAdmin();
+                await carregarConfigSorteExtraAdmin(idEvento);
             } catch (e) {
                 console.error("Erro ao carregar config Sorte Extra:", e);
             }
@@ -1803,7 +1814,6 @@ async function executarCarregamentoReal(idEvento) {
         id_rodada_ativa = parseInt(idEvento);
         console.error("🎱 Evento Configurado: id_rodada_ativa:  ",id_rodada_ativa );
 
-                                                       // zzzz  
         const tipoCartela = parseInt(dados.tipo_sorteio || 25);
         if (tipoCartela === 25) {
             MAX_BOLAS = 75;
@@ -1850,6 +1860,13 @@ async function executarCarregamentoReal(idEvento) {
 
         definirProximoPremioAutomatico();
         bolaDestaque.textContent = "--";
+
+        if (modoSorteio === 'manual') {
+            iniciarTransmissao(); 
+            console.log("⏱️ [SYNC] Transmissão iniciada. Marco zero gravado (Modo Manual)!");
+        } else {
+            console.log("🤖 [SYNC] Sorteio Automático. Sincronia de vídeo ignorada (Via Verde ativa).");
+        }
         
         if (sorteioAutomatizadoConfig && modoSorteio === 'auto') {
            iniciarModoRobo(); 
@@ -2253,7 +2270,7 @@ async function validarCartelaAuditoria() {
 
     } catch (e) { 
         console.error(e);
-        alert("Erro de conexão ao validar."); 
+        customAlert("Erro de conexão ao validar."); 
     } finally {
         hideLoading(); 
     }
@@ -2401,35 +2418,40 @@ async function mudarPremio(tipo) {
     }
 }
 
-// --- ATUALIZE A FUNÇÃO resetarJogo ---
+// --- ATUALIZE A FUNÇÃO resetarJogo --- xxx
 async function resetarJogo(force = false) {
     let msgConfirmacao = "TEM CERTEZA? Isso limpará a tela e encerrará o jogo atual.";
     
+    const sucessoConfirmado = (jogoFoiFinalizadoComSucesso || jogoRoboFinalizadoComSucesso);
+
     // Se o jogo foi finalizado com sucesso (botão verde), muda a mensagem
-    if (jogoFoiFinalizadoComSucesso) {
+    if (sucessoConfirmado && !modoRoboAtivo) {
         msgConfirmacao = "Deseja FINALIZAR este evento, pagar os prêmios e carregar o PRÓXIMO?";
     }
 
-    if(!force && !(await customConfirm(msgConfirmacao))) { 
+    if(!force && !modoRoboAtivo && !(await customConfirm(msgConfirmacao))) { 
         devolverFocoAoJogo(); return; 
-    } 
+    }
     
     showLoading("Processando encerramento...");
 
     if (autoSorteioAtivo) pararAutoSorteio();
-    if (modoRoboAtivo) pararModoRobo();
+    if (modoRoboAtivo && !sucessoConfirmado) pararModoRobo();
 
     try {
         // =======================================================
         // 🚀 PREPARAÇÃO DO PAYLOAD (DADOS PARA O SERVIDOR)
         // =======================================================
         const payload = {
-            finalizar_sucesso: jogoFoiFinalizadoComSucesso,
+            finalizar_sucesso: sucessoConfirmado,
             // Adiciona a lista de ganhadores do Extra (se houver)
             ganhadores_extra: (typeof cacheGanhadoresExtraFinal !== 'undefined') ? cacheGanhadoresExtraFinal : []
         };
 
         console.log("📤 Enviando encerramento:", payload);
+
+        jogoFoiFinalizadoComSucesso = false;
+        jogoRoboFinalizadoComSucesso = false;
 
         // Envia o payload completo
         await fetch(`${API_BASE_URL}/api/admin/resetar`, { 
@@ -2444,17 +2466,15 @@ async function resetarJogo(force = false) {
         bolasCacheLocal = new Set(); 
         bolasSorteadasCache = [];
         matrizEnvio = [];
+        A_Ultima_Bola = 0;
         idsConfirmadosNestaRodada = new Set();
         ultimoTotalBolasProcessadas = -1; 
         jaAlertouNestaBola = false;
 
-
         // --- RESET ESPECÍFICO DO SORTE EXTRA ---
         cacheGanhadoresExtraFinal = []; // Limpa o cache para não duplicar no próximo
         modalExtraJaAberto = false;     // Destrava o modal para o próximo jogo
-        // if(typeof valorPremioMaximoExtra !== 'undefined') valorPremioMaximoExtra = 0;
-        // ---------------------------------------
-        
+         
         // Reseta o estado do botão para o próximo jogo
         alternarBotaoReset('reiniciar'); 
 
@@ -2476,24 +2496,36 @@ async function resetarJogo(force = false) {
         if(painelEvento) painelEvento.classList.add('hidden');
         
         await new Promise(r => setTimeout(r, 800));
-
         if (!force) {
             // Se finalizou com sucesso, o backend já mudou a rodada e pagou os prêmios.
-            if (jogoFoiFinalizadoComSucesso) {
-                // Mensagem de sucesso mais detalhada
-                let msgSucesso = "Evento Finalizado com Sucesso!";
-                if(payload.ganhadores_extra.length > 0) {
-                    msgSucesso += `\n\n✅ ${payload.ganhadores_extra.length} Prêmios Extras Processados/Pagos.`;
-                }
-                msgSucesso += "\nO próximo evento foi carregado.";
+console.log("📤 [ RESETANDO ]   sucessoConfirmado : ",  sucessoConfirmado);
+            if (sucessoConfirmado) {
+                // 👉 AQUI ENTRA A SUA LÓGICA PERFEITA:
+                if (modoRoboAtivo) {
+                    iniciarTransicaoRobo();
+                } else {
+                    // Mensagem de sucesso mais detalhada
+                    let msgSucesso = "Evento Finalizado com Sucesso!";
+                    if(payload.ganhadores_extra.length > 0) {
+                        msgSucesso += `\n\n✅ ${payload.ganhadores_extra.length} Prêmios Extras Processados/Pagos.`;
+                    }
+                    msgSucesso += "\nO próximo evento foi carregado.";
                 
-                customAlert(msgSucesso, "Sucesso", 5); // 5 segundos
+                    customAlert(msgSucesso, "Sucesso", 5); // 5 segundos
+console.log("📤 [ RESETANDO ]  PASSO 1");
+                    abrirModalEventos();
+                }
             } else {
+console.log("📤 [ RESETANDO ]  PASSO 2");
                 abrirModalEventos();
             }
         } else {
+            jogoRoboFinalizadoComSucesso = false;
+            if (modoRoboAtivo) pararModoRobo(); 
             customAlert("Evento finalizado pelo Sorteio Automatizado.", "Sorteio Automatizado", 3);
-            abrirModalEventos();
+console.log("📤 [ RESETANDO ]  PASSO 3");
+ 
+           abrirModalEventos();
         }
 
     } catch (e) { 
@@ -2503,8 +2535,6 @@ async function resetarJogo(force = false) {
         hideLoading();
     }
 }
-
-
 
 
 // --- ATUALIZE A FUNÇÃO alternarBotaoReset ---
@@ -2521,7 +2551,6 @@ function alternarBotaoReset(modo) {
     } else {
         // Reseta a variável
         jogoFoiFinalizadoComSucesso = false; 
-
         btn.className = "bg-red-900 hover:bg-red-700 text-white px-4 py-1 rounded font-bold border border-red-500 text-sm flex items-center gap-1 transition-colors duration-300";
         btn.innerHTML = "⚠️ REINICIAR SORTEIO";
     }
@@ -2529,25 +2558,40 @@ function alternarBotaoReset(modo) {
 
 
 // --- FUNÇÃO CORRIGIDA ---
-async function carregarConfigSorteExtraAdmin() {
+//async function carregarConfigSorteExtraAdmin() {
     // [DEBUG 1] Verifica se a função foi chamada
-    console.log("🚀 carregarConfigSorteExtraAdmin CHAMADA!"); 
+    //console.log("🚀 carregarConfigSorteExtraAdmin CHAMADA!"); 
 
     // Pega ID do evento atual
-    if(!dadosEventoAtual || !dadosEventoAtual.id) {
+    //if(!dadosEventoAtual || !dadosEventoAtual.id) {
         // [DEBUG 2] Se entrar aqui, é porque chamou cedo demais (antes do evento carregar)
-        console.warn("⚠️ Sorte Extra Abortado: 'dadosEventoAtual' está vazio ou null.");
+        //console.warn("⚠️ Sorte Extra Abortado: 'dadosEventoAtual' está vazio ou null.");
+        //return;
+    //}
+
+
+// 1. Agora aceita o 'idEventoBusca' como parâmetro!
+async function carregarConfigSorteExtraAdmin(idEventoBusca) { 
+    console.log("🚀 carregarConfigSorteExtraAdmin CHAMADA!"); 
+
+    // 2. Tenta usar o ID passado, se não houver, tenta as globais
+    const idParaBuscar = idEventoBusca || (typeof dadosEventoAtual !== 'undefined' && dadosEventoAtual ? dadosEventoAtual.id : null) || window.eventoPendenteID;
+
+    if(!idParaBuscar) {
+        console.warn("⚠️ Sorte Extra Abortado: ID do evento não encontrado.");
         return;
     }
     
     try {
-        console.log(`🍀 Sorte Extra: Iniciando fetch para Evento ${dadosEventoAtual.id}...`);
+        console.log(`🍀 Sorte Extra: Iniciando fetch para Evento ${idParaBuscar}...`);
 
-        const resp = await fetch(`${API_BASE_URL}/api/cliente/config_sorte_extra/${dadosEventoAtual.id}`);
+        const resp = await fetch(`${API_BASE_URL}/api/cliente/config_sorte_extra/${idParaBuscar}`);
         
         if(resp.ok) {
             const cfg = await resp.json();
-            
+            // DICA DE OURO: Isto vai mostrar no painel F12 como os campos se chamam realmente
+            console.log("📦 DADOS DO SORTE EXTRA RECEBIDOS:", cfg);   
+         
             if(cfg.ativo) {
                 sorteioExtraConfigAtivo = true;
                 qtdeDezenasSorteExtra = parseInt(cfg.qtde_dezenas || 5);
@@ -2578,7 +2622,7 @@ async function carregarConfigSorteExtraAdmin() {
 function abrirModalValidacaoSorteExtra() {
     // 1. Injeta o HTML do modal se não existir
 
-    if (!document.getElementById('modal-sorte-extra')) {
+    if (!document.getElementById('modal-sorte-extra')) {  
         const jackpotFormatado = valorPremioMaximoExtra.toLocaleString('pt-BR', { 
             minimumFractionDigits: 2, 
             maximumFractionDigits: 2 
@@ -2673,7 +2717,6 @@ function abrirModalValidacaoSorteExtra() {
     buscarGanhadoresExtra();
 }
 
-
 async function confirmarPagamentoSorteExtra() {
     // 1. Se não tiver ninguém pra pagar (lista vazia), apenas fecha.
     if (!cacheGanhadoresExtraFinal || cacheGanhadoresExtraFinal.length === 0) {
@@ -2706,12 +2749,12 @@ async function confirmarPagamentoSorteExtra() {
         } else {
             // Só avisamos se der ERRO, pois aí o operador precisa saber.
             console.error("Erro no pagamento automático:", data.error);
-            alert("⚠️ Atenção: Ocorreu um erro ao registrar o pagamento financeiro dos ganhadores extra.\nVerifique o console.");
+            customAlert("⚠️ Atenção: Ocorreu um erro ao registrar o pagamento financeiro dos ganhadores extra.\nVerifique o console.");
         }
 
     } catch (e) {
         console.error("Erro de comunicação no pagamento:", e);
-        alert("⚠️ Erro de conexão ao tentar pagar prêmios.");
+        customAlert("⚠️ Erro de conexão ao tentar pagar prêmios.");
     } finally {
         // 3. INDEPENDENTE DO RESULTADO, FECHA A TELA
         // A ordem do usuário foi "Fechar", então fechamos.
@@ -2869,12 +2912,12 @@ async function buscarGanhadoresExtra() {
 
             
         } else if (data.status === 'aguardando') {
-            alert(data.msg);
+            customAlert(data.msg);
         }
 
     } catch(e) {
         console.error("Erro buscarGanhadoresExtra:", e);
-        alert("Falha na validação. Verifique o console (F12).");
+        customAlert("Falha na validação. Verifique o console (F12).");
     } finally {
         if(loading) loading.classList.add('hidden');
         if(content) content.classList.remove('hidden');
@@ -2929,7 +2972,7 @@ function renderizarListaExtra(elementId, lista, tipoCodigo) {
 
 
 async function publicarGanhadorExtra(dados, tipo) {
-    const idRodada = id_evento_ativo // xxx (dadosEventoAtual && (dadosEventoAtual.id_evento || dadosEventoAtual.id)) || 0;
+    const idRodada = id_evento_ativo //  (dadosEventoAtual && (dadosEventoAtual.id_evento || dadosEventoAtual.id)) || 0;
 
     const labelPremios = {
         '5_acertos': '🏆 JACKPOT (5 ACERTOS)',
@@ -2959,13 +3002,17 @@ async function publicarGanhadorExtra(dados, tipo) {
         });
 
         if (response.ok) {
-            customAlert(`🎟️ Cupom ${dados.id} (${dados.nick}) enviado para a TV!`);
+            if (!modoRoboAtivo) { 
+                customAlert(`🎟️ Cupom ${dados.id} (${dados.nick}) enviado para a TV!`);
+            }
         } else {
             throw new Error("Falha na resposta do servidor");
         }
     } catch(e) { 
         console.error("❌ Erro ao publicar cupom:", e);
-        customAlert("Erro ao enviar para o terminal.");
+        if (!modoRoboAtivo) {
+            customAlert("Erro ao enviar para o terminal.");
+        }
     }
 }
 
@@ -3161,7 +3208,6 @@ async function processarProximoDaFilaExtra() {
 
     try {
         console.log(`▶️ [EXTRA] Processando: ${ganhadorAtual.nome} - ${ganhadorAtual.premio}`);
-
         // --- AQUI ACONTECE A MÁGICA ---
         // Aqui chamamos a função que valida/comprova no servidor (igual você faz no Bingo)
         // Isso vai fazer aparecer na TV do cliente.
@@ -3171,7 +3217,7 @@ async function processarProximoDaFilaExtra() {
         console.error("Erro ao processar ganhador extra:", e);
     }
 
-    let tempoEspera = parseInt(document.getElementById('config-winner-time').value) || 5;
+    let tempoEspera = 4; // parseInt(document.getElementById('config-winner-time').value) || 5;
 
     console.log(`⏳ [EXTRA] Aguardando ${tempoEspera} seg para o próximo...`);
 
@@ -3186,7 +3232,7 @@ async function processarProximoDaFilaExtra() {
 async function validarGanhadorExtra(ganhador) {
     console.log(`🤖 [ROBO] Enviando ordem de exibição para: ${ganhador.nome}`);
 
-    // Monta o pacote igual ao que o botão manual enviaria xxx
+    // Monta o pacote igual ao que o botão manual enviaria
     const payload = { 
         ganhadores: [ganhador], // Envia como lista de um item só
         id_evento: ganhador.rodada || id_evento_ativo // Garante ter o ID
@@ -3213,53 +3259,116 @@ async function validarGanhadorExtra(ganhador) {
     }
 }
 
-function dispararVerificacaoRobo() {
+async function dispararVerificacaoRobo() {
     // 1. Identificação do ID do Evento
     let idParaEnvio = id_evento_ativo;
-    
     if (!idParaEnvio && typeof dadosEventoAtual !== 'undefined' && dadosEventoAtual) {
         idParaEnvio = dadosEventoAtual.id || dadosEventoAtual.id_evento;
     }
 
     if (!idParaEnvio) {
         console.error("❌ [ROBO] Erro: ID do evento não encontrado.");
+        if (modoRoboAtivo) toggleAutoSorteio(true); // Retoma para não travar o jogo
         return;
     }
 
-    // 2. Montagem dos Parâmetros na URL (Query String)
-    // Em vez de enviar no 'body', enviamos na URL para rotas GET
-    const url = `${API_BASE_URL}/api/admin/verificar_ganhadores_extra?id_evento=${idParaEnvio}&bola_gatilho=${qtdeTopeSorteExtra}`;
+    console.log(`🤖 [ROBO] Iniciando conferência do Sorte Extra para evento: ${idParaEnvio}`);
 
-    console.log(`🤖 [ROBO] Consultando API (GET): ${url}`);
+    try {
+        // 2. Consulta a API CORRETA (Mesma usada pelo modo manual)
+        const resp = await fetch(`${API_BASE_URL}/api/admin/validar_sorte_extra`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id_evento: parseInt(idParaEnvio) || 0 })
+        });
 
-    // 3. Chamada Fetch usando GET
-    fetch(url, { 
-        method: 'GET', // Alterado de POST para GET
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(response => {
-        // Se retornar 405 aqui de novo, significa que sua rota EXIGE POST no backend.
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-    })
-    .then(data => {
-        if (data.ganhadores && data.ganhadores.length > 0) {
-            console.log(`🤖 [ROBO] 🎉 ${data.ganhadores.length} ganhadores encontrados!`);
-            // Aqui você pode disparar o alerta visual de ganhadores se desejar
-        } else {
-            console.log("🤖 [ROBO] Processado: Nenhum ganhador identificado.");
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        if (data.status !== 'sucesso') {
+            console.log("🤖 [ROBO] Processado, mas sem sucesso na conferência Extra.", data);
+            if (modoRoboAtivo) toggleAutoSorteio(true);
+            return;
         }
-    })
-    .catch(err => {
-        console.error("❌ [ROBO] Erro na verificação:", err);
+
+        // 3. Montagem do Cache de Pagamentos (Garante que TODOS, até os de 2 acertos, recebam o prêmio)
+        cacheGanhadoresExtraFinal = [];
         
-        // DICA DE DEBUG:
-        if (err.message.includes("405")) {
-            console.warn("⚠️ O servidor ainda retornou 405. Isso indica que a rota no backend deve ser alterada para POST ou a URL está incorreta.");
-        }
-    });
-}
+        const processarFaixa = (listaGanhadores, nomeFaixa, valorBase, ehValorFixo) => {
+            if(!listaGanhadores || listaGanhadores.length === 0) return;
+            const qtdGanhadores = listaGanhadores.length;
+            let valorIndividual = ehValorFixo ? valorBase : (valorBase / qtdGanhadores);
+            let valorTotalFaixaDisplay = ehValorFixo ? (valorBase * qtdGanhadores) : valorBase;
 
+            listaGanhadores.forEach(g => {
+                cacheGanhadoresExtraFinal.push({
+                    premio: nomeFaixa.toUpperCase(),
+                    valor_total_premio: valorTotalFaixaDisplay.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+                    cartela: g.id.toString(),
+                    nome: g.nick,
+                    valor_rateio: valorIndividual.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+                    valor_numerico: valorIndividual,
+                    dezenas_cupom: g.nums,
+                    tipo_premiacao: "Sorte Extra"
+                });
+            });
+        };
+
+        // Popula a memória com os pagamentos
+        processarFaixa(data.ganhadores.acertos_5, "5 ACERTOS", valorPremioMaximoExtra, false);
+        processarFaixa(data.ganhadores.acertos_4, "4 ACERTOS", valorPremioIntermediario, false);
+        processarFaixa(data.ganhadores.acertos_3, "3 ACERTOS", valorPremioBase, false);
+        processarFaixa(data.ganhadores.acertos_2, "2 ACERTOS", valorBonusExtra, true);
+
+        // 4. Montagem da Fila VISUAL para a TV (SOMENTE 3, 4 e 5 acertos)
+        let filaExibicao = [];
+        const adicionarAFila = (lista, tipo) => {
+            if (lista && lista.length > 0) {
+                lista.forEach(g => filaExibicao.push({ dados: g, tipo: tipo }));
+            }
+        };
+
+        // Adiciona de cima para baixo (para dar mais emoção se tiver um ganhador de 5)
+        adicionarAFila(data.ganhadores.acertos_5, '5_acertos');
+        adicionarAFila(data.ganhadores.acertos_4, '4_acertos');
+        adicionarAFila(data.ganhadores.acertos_3, '3_acertos');
+
+        // 5. Apresentação Sequencial na Tela (O Loop do Robô)
+        if (filaExibicao.length > 0) {
+            console.log(`🤖 [ROBO] 🎉 Apresentando ${filaExibicao.length} ganhadores do Sorte Extra (3+ acertos) na TV!`);
+            let tempoEspera = parseInt(document.getElementById('config-winner-time').value) || 5;
+
+            for (const item of filaExibicao) {
+                // Envia para a TV
+                await publicarGanhadorExtra(item.dados, item.tipo);
+                
+                // O Robô espera os segundos configurados antes de mostrar o próximo
+                await new Promise(r => setTimeout(r, tempoEspera * 1000));
+            }
+        } else {
+            console.log("🤖 [ROBO] Nenhum ganhador com 3 ou mais acertos para exibir na TV.");
+        }
+
+        // 6. Pagamento e Limpeza
+        if (cacheGanhadoresExtraFinal.length > 0) {
+            console.log(`🤖 [ROBO] Pagando ${cacheGanhadoresExtraFinal.length} cupons no total (incluindo Bônus de 2)...`);
+            // Esta sua função já faz o POST de pagamento E limpa a tela da TV no final
+            await confirmarPagamentoSorteExtra(); 
+        } else {
+            // Se ninguém ganhou nada, apenas garante que a TV é limpa
+            await limparTelaPublicaExtra();
+        }
+   } catch (err) {
+        console.error("❌ [ROBO] Erro na verificação do Sorte Extra:", err);
+        await limparTelaPublicaExtra(); // Limpa a TV em caso de erro por segurança
+    } finally {
+        // 7. Retoma o Bingo Normal
+        console.log("🤖 [ROBO] Verificação do Sorte Extra concluída. Retomando sorteio principal...");
+        setTimeout(() => {
+            if (modoRoboAtivo) toggleAutoSorteio(true);
+        }, 3000); // 3 Segundos de fôlego antes de voltar a atirar bolas
+    }
+}
 
 function buscarNomeDaSalaBackend() {
     // 1. Pega o ID da variável que você disse que já tem. 
@@ -3271,7 +3380,6 @@ function buscarNomeDaSalaBackend() {
         const params = new URLSearchParams(window.location.search);
         idParaBusca = params.get('sala') || '1'; // Padrão 1 se não achar nada
     }
-
     console.log("🔍 Buscando nome para a sala ID:", idParaBusca);
                                                                      
     // 2. Monta a URL correta para o Nginx direcionar (ex: /sala3/api/get_nome_sala)
@@ -3297,7 +3405,6 @@ function buscarNomeDaSalaBackend() {
 // =========================================================
 // === MÓDULO DE COMUNICAÇÃO SERIAL (HARDWARE) ===
 // =========================================================
-
 /**
  * Abre a porta serial com tratamento de erro e reconexão automática
  */
@@ -3346,16 +3453,16 @@ async function ativarSerial() {
             `;
         }        
 
-        alert("Extratora Conectada!");
+        customAlert("Extratora Conectada!");
 
     } catch (err) {
         console.error("❌ [HARDWARE] Erro ao conectar:", err);
         
         // Tratamento específico para o erro que você relatou
         if (err.message.includes("Failed to open serial port")) {
-            alert("⚠️ A porta parece estar travada!\n\nDica: Desconecte o cabo USB e conecte novamente, ou feche outras abas do navegador.");
+            customAlert("⚠️ A porta parece estar travada!\n\nDica: Desconecte o cabo USB e conecte novamente, ou feche outras abas do navegador.");
         } else {
-            alert("Erro ao conectar serial: " + err.message);
+            customAlert("Erro ao conectar serial: " + err.message);
         }
         
         portaSerial = null; // Reseta a variável para tentar de novo
@@ -3536,3 +3643,147 @@ window.addEventListener('DOMContentLoaded', () => {
     // Chama uma vez para definir o estado inicial
     atualizarVisibilidadeExtratora();
 });
+
+// ==============================================================================
+// 🤖 MOTOR DE TRANSIÇÃO AUTÓNOMA (MODO ROBÔ)
+// ==============================================================================
+
+let roboTransitionInterval = null;
+
+// 1. FUNÇÃO PRINCIPAL: Busca o próximo evento e inicia a contagem
+async function iniciarTransicaoRobo() {
+    if (!modoRoboAtivo) return; // Segurança dupla
+
+    const idAtual = id_evento_ativo || 0;
+    console.log(`🤖 [ROBO-TRANSITION] Jogo finalizado! Buscando o próximo evento na fila...`);
+
+    try {
+        const resp = await fetch(`${API_BASE_URL}/api/admin/proximo_evento_robo?id_evento_atual=${idAtual}`);
+        const data = await resp.json();
+        jogoFoiFinalizadoComSucesso = false;  
+        jogoRoboFinalizadoComSucesso = false;
+        if (data.status !== 'ok') {
+            console.log(`🤖 [ROBO-TRANSITION] Fim da linha: ${data.msg || data.erro}`);
+            modoRoboAtivo = false;
+            atualizarCheckboxRobo(false);
+            customAlert("🏁 Fim do Expediente! Não há mais eventos agendados.");
+            return;
+        }
+
+        console.log(`🤖 [ROBO-TRANSITION] Próximo Alvo: ${data.descricao} (ID: ${data.id_evento}). Inicia em ${data.segundos_restantes}s`);
+        
+        // Dispara o painel visual
+        exibirPainelTransicaoRobo(data);
+
+    } catch (e) {
+        console.error("❌ Erro de comunicação na transição do Robô:", e);
+        customAlert("Erro ao buscar próximo evento. Automação pausada.");
+        modoRoboAtivo = false;
+        atualizarCheckboxRobo(false);
+    }
+}
+
+// 2. FUNÇÃO VISUAL: Cria e controla o cronómetro na tela
+function exibirPainelTransicaoRobo(dadosEvento) {
+    // Cria a UI dinâmica (assim não precisamos alterar o HTML)
+    let painel = document.getElementById('robo-transition-panel');
+    if (!painel) {
+        painel = document.createElement('div');
+        painel.id = 'robo-transition-panel';
+        painel.className = "fixed inset-0 bg-black bg-opacity-90 z-[9999] flex flex-col items-center justify-center text-white backdrop-blur-sm transition-opacity";
+        document.body.appendChild(painel);
+    }
+
+    let tempoRestante = dadosEvento.segundos_restantes;
+    const tempoVendas = dadosEvento.tempo_vendas_config;
+
+    const atualizarTela = () => {
+        const minutos = Math.floor(tempoRestante / 60).toString().padStart(2, '0');
+        const segundos = (tempoRestante % 60).toString().padStart(2, '0');
+        
+        let statusTexto = "⏳ AGUARDANDO ABERTURA DE VENDAS...";
+        let corTexto = "text-blue-400";
+        let corBorda = "border-gray-700";
+
+        if (tempoRestante <= tempoVendas) {
+            statusTexto = `🔥 VENDAS ABERTAS! FECHANDO...`;
+            corTexto = "text-red-500 font-bold animate-pulse";
+            corBorda = "border-red-900 shadow-[0_0_30px_rgba(220,38,38,0.5)]";
+        }
+
+        painel.innerHTML = `
+            <div class="bg-gray-900 border-2 ${corBorda} rounded-2xl p-8 max-w-lg w-full text-center shadow-2xl transition-all duration-500">
+                <h2 class="text-3xl font-black text-yellow-500 mb-2 flex items-center justify-center gap-2">
+                    <span class="animate-spin-slow">⚙️</span> MODO AUTÓNOMO
+                </h2>
+                <p class="text-gray-300 text-lg mb-6">Preparando o próximo evento...</p>
+                
+                <div class="bg-gray-800 rounded-xl p-6 mb-8 border border-gray-700">
+                    <h3 class="text-2xl font-bold text-white mb-2 truncate">${dadosEvento.descricao}</h3>
+                    <p class="text-gray-400 mb-2">Iniciando em:</p>
+                    <div class="text-7xl font-mono ${corTexto} tracking-widest mb-4 font-black">
+                        ${minutos}:${segundos}
+                    </div>
+                    <div class="bg-gray-950 rounded-lg py-2">
+                        <p class="${corTexto} text-sm uppercase tracking-wider">${statusTexto}</p>
+                    </div>
+                </div>
+
+                <button onclick="cancelarTransicaoRobo()" class="bg-red-600 hover:bg-red-700 border-b-4 border-red-800 text-white font-black py-4 px-8 rounded-xl shadow-lg transition-all active:translate-y-1 active:border-b-0 w-full text-xl flex items-center justify-center gap-3">
+                    <span class="text-2xl">🛑</span> CANCELAR AUTOMAÇÃO
+                </button>
+            </div>
+        `;
+    };
+
+    atualizarTela(); // Desenha o ecrã no segundo 0
+
+    // Limpa o timer antigo por segurança
+    if (roboTransitionInterval) clearInterval(roboTransitionInterval);
+
+    // O "Coração" do relógio
+    roboTransitionInterval = setInterval(() => {
+        tempoRestante--;
+        
+        if (tempoRestante <= 0) {
+            clearInterval(roboTransitionInterval);
+            painel.classList.add('hidden'); // Esconde o painel
+            
+            console.log(`🤖 [ROBO-TRANSITION] Tempo esgotado! Carregando evento ${dadosEvento.id_evento}...`);
+            
+            // 👉 O GATILHO MESTRE: Arranca o próximo jogo!
+            if (typeof executarCarregamentoReal === 'function') {
+                executarCarregamentoReal(dadosEvento.id_evento);
+                
+                // Dá um tempinho para a tela desenhar as cartelas e solta o robô!
+                setTimeout(() => {
+                    if (modoRoboAtivo) toggleAutoSorteio(true);
+                }, 3000);
+            }
+        } else {
+            atualizarTela();
+        }
+    }, 1000);
+    
+    painel.classList.remove('hidden');
+}
+
+// 3. FUNÇÃO DE PÂNICO: Cancela tudo e devolve o controlo ao Locutor
+window.cancelarTransicaoRobo = function() {
+    if (roboTransitionInterval) clearInterval(roboTransitionInterval);
+    
+    const painel = document.getElementById('robo-transition-panel');
+    if (painel) painel.classList.add('hidden');
+    
+    modoRoboAtivo = false;
+    atualizarCheckboxRobo(false);
+    
+    console.log("🛑 Automação cancelada pelo utilizador.");
+    customAlert("Modo Autónomo Cancelado. O controlo voltou para o modo manual.");
+};
+
+// Função auxiliar para desligar o botão visual do Robô, se existir
+function atualizarCheckboxRobo(estado) {
+    const chkRobo = document.getElementById('config-sorteio-automatizado');
+    if (chkRobo) chkRobo.checked = estado;
+}
