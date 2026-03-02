@@ -1,6 +1,3 @@
-// Ajusta na tabela e "config-winner-time"
-// let tempoEspera = parseInt(document.getElementById('config-winner-time').value) || 5;
-
 // =========================================================
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
@@ -18,6 +15,9 @@ const btnSortear = document.getElementById('btn-sortear');
 const contadorElement = document.getElementById('contador-bolas');
 
 // --- VARIÁVEIS DE CONTROLE ---
+
+let tempoEsperaConferenciaRobo = 3;
+
 let tempoInicioTransmissao = 0;
 
 let A_Ultima_Bola = 0;
@@ -286,7 +286,7 @@ async function gerenciarVitoriaRobo(ganhadores) {
     console.log("🤖 Robô detectou vitória!", ganhadores);
 
     // tempo ganhador na tela
-    let tempoEspera = 4; // parseInt(document.getElementById('config-winner-time').value) || 5;
+    let tempoEspera = tempoEsperaConferenciaRobo;  // parseInt(document.getElementById('config-winner-time').value) || 5;
     
     for (const g of ganhadores) {
         const cartela = g.cartela;
@@ -2498,7 +2498,6 @@ async function resetarJogo(force = false) {
         await new Promise(r => setTimeout(r, 800));
         if (!force) {
             // Se finalizou com sucesso, o backend já mudou a rodada e pagou os prêmios.
-console.log("📤 [ RESETANDO ]   sucessoConfirmado : ",  sucessoConfirmado);
             if (sucessoConfirmado) {
                 // 👉 AQUI ENTRA A SUA LÓGICA PERFEITA:
                 if (modoRoboAtivo) {
@@ -2512,19 +2511,16 @@ console.log("📤 [ RESETANDO ]   sucessoConfirmado : ",  sucessoConfirmado);
                     msgSucesso += "\nO próximo evento foi carregado.";
                 
                     customAlert(msgSucesso, "Sucesso", 5); // 5 segundos
-console.log("📤 [ RESETANDO ]  PASSO 1");
                     abrirModalEventos();
                 }
             } else {
-console.log("📤 [ RESETANDO ]  PASSO 2");
                 abrirModalEventos();
             }
         } else {
             jogoRoboFinalizadoComSucesso = false;
             if (modoRoboAtivo) pararModoRobo(); 
             customAlert("Evento finalizado pelo Sorteio Automatizado.", "Sorteio Automatizado", 3);
-console.log("📤 [ RESETANDO ]  PASSO 3");
- 
+
            abrirModalEventos();
         }
 
@@ -3217,7 +3213,7 @@ async function processarProximoDaFilaExtra() {
         console.error("Erro ao processar ganhador extra:", e);
     }
 
-    let tempoEspera = 4; // parseInt(document.getElementById('config-winner-time').value) || 5;
+    let tempoEspera = tempoEsperaConferenciaRobo; // parseInt(document.getElementById('config-winner-time').value) || 5;
 
     console.log(`⏳ [EXTRA] Aguardando ${tempoEspera} seg para o próximo...`);
 
@@ -3336,7 +3332,7 @@ async function dispararVerificacaoRobo() {
         // 5. Apresentação Sequencial na Tela (O Loop do Robô)
         if (filaExibicao.length > 0) {
             console.log(`🤖 [ROBO] 🎉 Apresentando ${filaExibicao.length} ganhadores do Sorte Extra (3+ acertos) na TV!`);
-            let tempoEspera = parseInt(document.getElementById('config-winner-time').value) || 5;
+            let tempoEspera = tempoEsperaConferenciaRobo;     // parseInt(document.getElementById('config-winner-time').value) || 5;
 
             for (const item of filaExibicao) {
                 // Envia para a TV

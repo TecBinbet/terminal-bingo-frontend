@@ -2682,7 +2682,7 @@ function displayPrizeValues(premioData, topeData = null) {
     }
     lastPrizeJson = currentJson; // Atualiza a memória
 
-    // --- PASSO 4: DESENHO (Sua lógica original preservada) ---  xxx Erro no envio do pacote: name 'socketio' is not defined xxx
+    // --- PASSO 4: DESENHO (Sua lógica original preservada) ---   Erro no envio do pacote: name 'socketio' is not defined 
     const fragment = document.createDocumentFragment();
 
     if (validPrizes.length === 0) {
@@ -2981,7 +2981,6 @@ function displayConferencePanel(confereData, bolasCantadas) {
     
     // 1. Verificação de Dados (Suporta Array do Banco ou Objeto do Socket)
     const data = (Array.isArray(confereData) && confereData.length > 0) ? confereData[0] : confereData;
-
     if (data && data.cartao > 0) {
         const numeroDoCartao = data.cartao;
         const nomeDoGanhador = data.ganhador || 'Conferindo...';
@@ -3128,14 +3127,14 @@ console.log("Dados do ganhador individual:", ganhador);
         winnersPanelContainer.classList.remove('hidden');
         winnersPanelContainer.classList.add('flex');
     }
-
+    // tempoExibicaoGanhador // WINNERS_DISPLAY_TIME  // xxx
     // Reinicia a animação da barra de progresso
-    if (winnersProgressBar) {
+    if (winnersProgressBar) {  // timer ganhadores
         winnersProgressBar.style.transition = 'none';
         winnersProgressBar.style.width = '100%';
         // Força o navegador a recalcular o estilo (Reflow) antes de iniciar a animação
         void winnersProgressBar.offsetWidth; 
-        const emSegundos = WINNERS_DISPLAY_TIME * 1000
+        const emSegundos = tempoExibicaoGanhador * 1000
         winnersProgressBar.style.transition = `width ${emSegundos}ms linear`;
         winnersProgressBar.style.width = '0%';
     }
@@ -3145,7 +3144,7 @@ console.log("Dados do ganhador individual:", ganhador);
     if (Carregando) {
         Mille = 500        
     }   
-    winnersTimer = setTimeout(closeWinnersPanel, WINNERS_DISPLAY_TIME  * Mille);
+    winnersTimer = setTimeout(closeWinnersPanel, tempoExibicaoGanhador  * Mille);
 }
 
 function closeWinnersPanel() {
@@ -3722,8 +3721,6 @@ function temaTope10() {
 // --- VARIÁVEIS GLOBAIS NECESSÁRIAS (Coloque no topo do arquivo se não tiver) ---
 // let bolasProcessadasLocal = new Set(); 
 // let ultimaBolaExibida = null;
-// -------------------------------------------------------------------------------
-
 async function renderMainContent(data) {
     if (!data) return;
 
@@ -3902,9 +3899,6 @@ async function renderMainContent(data) {
     globalPromocionalData = promocionalData;
 
     if (parametrosInfo && Object.keys(parametrosInfo).length > 0) {
-        // ... (Mantive o código original aqui para baixo por brevidade, copie do seu original)
-        // Certifique-se de copiar o resto da função original que lida com YouTube, 
-        // Painel de Avisos, Promoção, Atualização Numérica, etc.
         const nome_da_sala = parametrosInfo.nome_sala; 
         if (nome_da_sala && salaTitleElement) salaTitleElement.textContent = nome_da_sala;
         
@@ -4009,8 +4003,8 @@ async function renderMainContent(data) {
         const limiteBola = (topeData && topeData.length > 0) ? topeData[0].bola_tope_ac : 0;
         atualizarVisualizacaoAcumulado(
                 premioInfo.premio_acumulado, // Valor do prêmio (ex: 10000 ou "R$ 10.000,00")
-                limiteBola,        // Limite de bolas (ex: 40)
-                globalBolasCantadas             // Array das bolas que já saíram
+                limiteBola,                                    // Limite de bolas (ex: 40)
+                globalBolasCantadas                  // Array das bolas que já saíram
         );
     }
 
@@ -4326,7 +4320,7 @@ function lockScreenOrientation() {
     }
 }
 
-// xxx
+
 function connectWebSocket() {
     // 1. LIMPEZA E RESET (Garante que não existam conexões fantasmas)
     if (ws) {
@@ -4343,7 +4337,7 @@ function connectWebSocket() {
     }
 
     // 2. MONTAGEM DA URL
-    //xxx const wsUrlWithRoom = `${WS_URL}${WS_URL.includes('?') ? '&' : '?'}idsala=${currentSalaId}`;
+    // const wsUrlWithRoom = `${WS_URL}${WS_URL.includes('?') ? '&' : '?'}idsala=${currentSalaId}`;
     const wsUrlWithRoom = `${WS_URL}?idsala=${currentSalaId}`;
     console.log("🔌 [FRONT] Conectando ao Servidor Independente:", wsUrlWithRoom);
 
@@ -4360,7 +4354,7 @@ function connectWebSocket() {
             reconnectInterval = null;
         }
         
-        //xxx try { requestWakeLock(); } catch(e) { console.warn("WakeLock não suportado."); }
+        // try { requestWakeLock(); } catch(e) { console.warn("WakeLock não suportado."); }
         try { if(navigator.wakeLock) navigator.wakeLock.request('screen'); } catch(e){}
 
         // --- SINCRONIZAÇÃO DUPLA (BINGO + ARQUIVO DO CUPOM) ---
@@ -4434,6 +4428,38 @@ document.addEventListener('visibilitychange', () => {
 
 
 document.addEventListener('DOMContentLoaded', () => {
+
+    const btnTesteAviso = document.getElementById('btn-carteira-mobil');
+    
+    if (btnTesteAviso) {
+        btnTesteAviso.addEventListener('click', (e) => {
+            e.preventDefault(); // Impede que a carteira abra de verdade
+            
+            console.log("🛠️ TESTE: Disparando painel de aviso fixo no rodapé...");
+            
+            // Criamos um pacote de dados falso, igual ao que o Python enviaria
+            const dadosFalsos = [{
+                timestamp: Math.floor(Date.now() / 1000), // Hora exata de agora (em segundos Unix)
+                tempo: "45", // Duração do aviso: 120 segundos (2 minutos)
+                titulo: "PRÓXIMO EVENTO",
+                mensagem: "O Especial de Sexta vai começar! Prepare as suas cartelas, a sorte está lançada."
+            }];
+            
+            // Forçamos a variável global (caso exista) a esquecer o último aviso para ele abrir sempre que clicarmos
+            if (typeof lastAvisoTimestamp !== 'undefined') {
+                lastAvisoTimestamp = 0; 
+            }
+            
+            // Chamamos a sua função de renderização
+            if (typeof renderAvisoPanel === 'function') {
+                renderAvisoPanel(dadosFalsos);
+            } else {
+                console.error("Função renderAvisoPanel não encontrada!");
+            }
+        });
+    }
+
+
 
     // 1. ORIENTAÇÃO DA TELA (MOBILE)
     if (isMobileDevice()) {
