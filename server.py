@@ -1979,7 +1979,7 @@ def proximos_eventos():
         # ==================================================================
         # 🌟 REGRA DE NEGÓCIO: DESTAQUE DO EVENTO ESPECIAL
         # ==================================================================
-        indice_especial = -1    /// ajuste aqui xxxxxx
+        indice_especial = -1    #/// ajuste aqui xxxxxx
         
         # 1. Procura o primeiro evento Especial na fila completa
         for i, evento_dict in enumerate(lista):
