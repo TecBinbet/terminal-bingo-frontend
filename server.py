@@ -1915,61 +1915,48 @@ def proximos_eventos():
             return jsonify([]), 200
 
         lista = []
-        # FILTRO: Só traz ATIVO ou PARALIZADO
+        # ⚠️ RETIRAMOS O .limit(5) DAQUI para podermos varrer toda a agenda!
         cursor = sales_db.eventos.find({
             'status': {'$in': ['ativo', 'paralizado', 'ATIVO', 'PARALIZADO']}
-        }).sort([('data_evento', 1), ('hora_evento', 1)]).limit(5)
+        }).sort([('data_evento', 1), ('hora_evento', 1)])
+
+        # --- FUNÇÕES AUXILIARES SEGURAS ---
+        def to_float(val):
+            if val is None: return 0.0
+            try:
+                return float(str(val))
+            except:
+                return 0.0
+
+        def fmt_money(val_float):
+            return f"R$ {val_float:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        # ----------------------------------
         
         for evt in cursor:
             try:
-                # --- FUNÇÕES AUXILIARES SEGURAS ---
-                
-                # 1. Converte qualquer coisa (Decimal128, Decimal, String) para float puro
-                def to_float(val):
-                    if val is None: return 0.0
-                    try:
-                        # Se for Decimal128 ou outro objeto complexo, converte para string primeiro
-                        return float(str(val))
-                    except:
-                        return 0.0
-
-                # 2. Formata dinheiro (R$ 1.000,00)
-                def fmt_money(val_float):
-                    return f"R$ {val_float:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                
-                # ----------------------------------
 
                 valor_safe = converter_decimal(evt.get('valor_de_venda'))
                 
-                # CONSTRUÇÃO DA LISTA DE PRÊMIOS (Agora usando to_float)
+                # CONSTRUÇÃO DA LISTA DE PRÊMIOS
                 lista_premios_dinamica = []
 
-                # Quadra
                 val = to_float(evt.get('premio_quadra'))
                 if val > 0: lista_premios_dinamica.append(f"Quadra: {fmt_money(val)}")
 
-                # Linha
                 val = to_float(evt.get('premio_linha'))
                 qtd_linhas = int(evt.get('quantidade_de_linhas', 1))
                 if val > 0:
                     nome = "Linha" if qtd_linhas == 1 else f"{qtd_linhas} Linhas"
                     lista_premios_dinamica.append(f"{nome}: {fmt_money(val)}")
 
-                # 2º Bingo
                 val = to_float(evt.get('premio_segundobingo'))
                 if val > 0: lista_premios_dinamica.append(f"2º Bingo: {fmt_money(val)}")
                 
-                # Bingo Principal
                 val = to_float(evt.get('premio_bingo'))
                 if val > 0: lista_premios_dinamica.append(f"Bingo: {fmt_money(val)}")
 
-                # Falta Um
                 val = to_float(evt.get('premio_faltaum'))
                 if val > 0: lista_premios_dinamica.append(f"Falta 1: {fmt_money(val)}")
-
-                # Acumulado
-                #val = to_float(evt.get('premio_acumulado'))
-                #if val > 0: lista_premios_dinamica.append(f"Acumulado: {fmt_money(val)}")
 
                 lista.append({
                     'id_evento': str(evt.get('id_evento')),
@@ -1980,12 +1967,34 @@ def proximos_eventos():
                     'valor_cartela': valor_safe,
                     'unidade_venda': evt.get('unidade_de_venda', 1),
                     
-                    # Envia a lista gerada dinamicamente
+                    # 👉 ADICIONADO: Mandamos o tipo_de_evento para o Front-End
+                    'tipo_de_evento': str(evt.get('tipo_de_evento', '')).strip().lower(),
+                    
                     'premios_desc': lista_premios_dinamica 
                 })
             except Exception as e: 
                 print(f"Erro ao processar evento na lista: {e}")
                 continue
+
+        # ==================================================================
+        # 🌟 REGRA DE NEGÓCIO: DESTAQUE DO EVENTO ESPECIAL
+        # ==================================================================
+        indice_especial = -1    /// ajuste aqui xxxxxx
+        
+        # 1. Procura o primeiro evento Especial na fila completa
+        for i, evento_dict in enumerate(lista):
+            if evento_dict.get('tipo_de_evento') == 'especial':
+                indice_especial = i
+                break
+
+        # 2. Se encontrou e ele está abaixo da posição 2, nós o movemos!
+        if indice_especial > 2:
+            evento_super = lista.pop(indice_especial)
+            lista.insert(2, evento_super)
+
+        # 3. Agora sim, cortamos a lista para exibir apenas os 5 no telemóvel!
+        lista = lista[:8]
+        # ==================================================================
 
         return jsonify(lista)
 
@@ -2015,7 +2024,7 @@ def admin_fechar_vendas():
         except: pass
 
         # 2. Calcula Hora Final (Ajustado para Fuso Brasil -3h)
-        # Usamos UTC agora e subtraímos 3 horas para garantir horário de Brasília no Log
+
         agora_br = hora_brasil()
         hora_final_obj = agora_br + timedelta(seconds=tempo_espera_seg)
         hora_final_str = hora_final_obj.strftime("%H:%M:%S")
@@ -3440,235 +3449,7 @@ def admin_resetar():
         return jsonify({'error': str(e)}), 500
 
 
-# apagar xxxx
-@app.route('/api/admin/resetar2', methods=['POST'])
-def admin_resetar2():
-    global db, timeStart
-    if db is None: return jsonify({'error': 'Sem conexão com DB'}), 500
-    
-    data = request.json or {}
-    finalizar_com_sucesso = data.get('finalizar_sucesso', False)
-
-    try:
-        # --- 0. PREPARAÇÃO (Mantida) ---
-        rodada_info = db.rodada.find_one({}) or {}
-        raw_id = rodada_info.get('id_evento')
-        id_evento = int(raw_id) if raw_id else 0 
-
-        descricao = f"Evento {id_evento}" # Valor padrão caso falhe
-        try:
-        # Conecta no banco de vendas para pegar o nome original (ex: "Notebook...")
-            s_db = get_sales_db_connection()
-            if s_db:
-                # Busca o evento (tenta como número ou string para garantir)
-                evt_original = s_db.eventos.find_one({
-                    'id_evento': {'$in': [id_evento, str(id_evento)]}
-                })
-                
-                if evt_original:
-                    descricao = evt_original.get('descricao', descricao)
-                else:
-                    # Fallback: Se não achar no vendas, tenta o nome da sala local
-                    p_local = db.parametros.find_one({}) or {}
-                    descricao = p_local.get('nome_sala', descricao)
-
-        except Exception as e_desc:
-            print(f"⚠️ Erro ao buscar descrição original: {e_desc}")
-            # Fallback em caso de erro de conexão
-            p_local = db.parametros.find_one({}) or {}
-            descricao = p_local.get('nome_sala', descricao)
-        # ======================================================================
-
-        dados_bolas = db.bolas_mesa.find_one({}) or {}
-        bolas_lista = dados_bolas.get('bolas_cantadas', [])
-        total_bolas = len(bolas_lista)
-        
-        now = datetime.now(ZoneInfo('America/Sao_Paulo'))
-        data_hoje = now.strftime("%d/%m/%Y")
-        hora_atual = now.strftime("%H:%M")
-        hora_inicial = timeStart.strftime("%H:%M") if timeStart else hora_atual
-
-        # --- 1. PROCESSAMENTO DOS GANHADORES (CORRIGIDO) ---
-        ganhadores_ativos = list(db.ganhadores.find({}))
-        tabela_premios = db.premio.find_one({}) or {}
-        
-        lista_osganhadores = []      
-        lista_resultados_ganhadores = [] 
-
-        if ganhadores_ativos:
-            grupos_rateio = {}
-            for g in ganhadores_ativos:
-                raw_premio = g.get('premio', '').upper()
-                
-                # --- AGRUPAMENTO INTELIGENTE ---
-                # Aqui está o segredo: Criamos chaves diferentes para cada linha
-                if 'LINHA' in raw_premio:
-                    if 'SUP' in raw_premio or 'SUPERIOR' in raw_premio:
-                        chave_base = "LINHA SUPERIOR"
-                    elif 'CEN' in raw_premio or 'CENTRAL' in raw_premio:
-                        chave_base = "LINHA CENTRAL"
-                    elif 'INF' in raw_premio or 'INFERIOR' in raw_premio:
-                        chave_base = "LINHA INFERIOR"
-                    else:
-                        chave_base = "LINHA" # Caso genérico (jogo de 1 linha só)
-                        
-                elif 'DUPLO' in raw_premio or 'SEGUNDO' in raw_premio: chave_base = "DUPLO BINGO"
-                elif 'BINGO' in raw_premio: chave_base = "BINGO"
-                elif 'QUADRA' in raw_premio: chave_base = "QUADRA"
-                elif 'FALTA' in raw_premio: chave_base = "FALTA UM"
-                elif 'ACUMULADO' in raw_premio: chave_base = "ACUMULADO"
-                else: chave_base = raw_premio # Fallback
-
-                if chave_base not in grupos_rateio: grupos_rateio[chave_base] = []
-                grupos_rateio[chave_base].append(g)
-
-            # Calcula Rateios
-            for chave, lista_vencedores in grupos_rateio.items():
-                qtde_ganhadores = len(lista_vencedores)
-                val_total_float = 0.0
-                
-                # --- SELEÇÃO DE VALORES ---
-                # Usamos "in" para pegar qualquer variação (LINHA SUPERIOR, LINHA CENTRAL, etc)
-                # E atribuímos o valor CHEIO para cada grupo.
-                if "LINHA" in chave:
-                    val_total_float = converter_decimal(tabela_premios.get('premio_linha'))
-                elif chave == "QUADRA":
-                    val_total_float = converter_decimal(tabela_premios.get('premio_quadra'))
-                elif chave == "BINGO":
-                    val_total_float = converter_decimal(tabela_premios.get('premio_bingo'))
-                elif chave == "DUPLO BINGO":
-                    val_total_float = converter_decimal(tabela_premios.get('premio_duplo_bingo'))
-                elif chave == "FALTA UM":
-                    val_total_float = converter_decimal(tabela_premios.get('premio_falta_Um'))
-                elif chave == "ACUMULADO":
-                    val_total_float = converter_decimal(tabela_premios.get('premio_acumulado'))
-                
-                # Fallback de segurança
-                if val_total_float == 0.0 and len(lista_vencedores) > 0:
-                     val_str_temp = lista_vencedores[0].get('valor_total_premio', '0')
-                     val_total_float = parse_brl(val_str_temp)
-
-                # Divisão: Se houver 2 ganhadores da MESMA linha (ex: 2 na Superior), eles dividem.
-                val_rateio_float = val_total_float / qtde_ganhadores if qtde_ganhadores > 0 else 0
-                
-                str_total = f"R$ {format_brl(val_total_float)}"
-                str_rateio = f"R$ {format_brl(val_rateio_float)}"
-
-                # Atualiza no Banco
-                db.ganhadores.update_many(
-                    {'_id': {'$in': [w['_id'] for w in lista_vencedores]}},
-                    {'$set': {'valor_total_premio': str_total, 'valor_rateio': str_rateio}}
-                )
-                
-                # Monta lista final
-                for w in lista_vencedores:
-                    # Normaliza o nome para ficar bonito no histórico
-                    nome_exibicao = chave 
-                    
-                    obj_ganhador = {
-                        "premio": nome_exibicao,
-                        "valor_total_premio": str_total,
-                        "cartela": str(w.get('cartela', '0')),
-                        "nome": str(w.get('nome', '---')),
-                        "valor_rateio": str_rateio
-                    }
-                    
-                    item_local = obj_ganhador.copy()
-                    item_local['rodada'] = id_evento
-                    lista_osganhadores.append(item_local)
-                    lista_resultados_ganhadores.append(obj_ganhador)
-
-        # --- 2. GRAVAÇÃO E LIMPEZA (Mantido igual) ---
-        db.osganhadores.delete_many({})
-        if lista_osganhadores:
-            db.osganhadores.insert_many(lista_osganhadores)
-
-        if total_bolas > 0 and len(lista_resultados_ganhadores) > 0:
-            try:
-                sales_db = get_sales_db_connection()
-                if sales_db is not None:
-                    doc_resultado = {
-                        "id_evento": id_evento,
-                        "descricao" : descricao, 
-                        "data_evento": data_hoje,
-                        "hora_inicial": hora_inicial,
-                        "hora_final": hora_atual,
-                        "total_de_bolas": total_bolas,
-                        "bolas_sorteadas": str(bolas_lista), 
-                        "ganhadores": lista_resultados_ganhadores
-                    }
-                    sales_db.resultados.insert_one(doc_resultado)
-                    print(f"✅ Histórico salvo no Sales DB.")
-            except Exception as e_sales:
-                print(f"⚠️ Erro salvar Sales DB: {e_sales}")
-
-        # ... (RESTANTE DO CÓDIGO DE LIMPEZA E RESET IGUAL AO ANTERIOR) ...
-        # Copie aqui o restante da função admin_resetar que trata a limpeza, 
-        # troca de ID e lógica de próximo evento que fizemos anteriormente.
-        
-        # --- ETAPA A: LIMPEZA RADICAL ---
-        timeStart = None 
-        db.bolas.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': [], 'ordem':0}}, upsert=True)
-        db.bolas_mesa.update_one({}, {'$set': {'bolas_cantadas': [], 'proxima_bola': "--", 'ultimas_bolas': []}}, upsert=True)
-        db.ganhadores.delete_many({})
-        db.melhores.delete_many({})
-        db.confere.delete_many({})
-        db.confere.insert_one({"rodada": int(id_evento), "cartao": 0, "numeros": "null", "ganhador": "null"})
-
-        # --- ETAPA B: FORCE RESET NOS TERMINAIS ---
-        print(f"🔄 Forçando limpeza do evento {id_evento} nos terminais...")
-        db.rodada.update_one({}, {
-            '$set': {
-                'id_evento': str(id_evento),
-                'estado': 'resetando',
-                'ordem': 0,
-                'data_sorteio': datetime.now(ZoneInfo('America/Sao_Paulo'))
-            }
-        }, upsert=True)
-
-        print("⏳ Aguardando limpeza nos terminais (4s)...")
-        time.sleep(4.0)
-
-        # --- ETAPA C: PRÓXIMO EVENTO ---
-        proximo_id_str = "0"
-        if finalizar_com_sucesso:
-            print(f"✅ Finalizando evento {id_evento} com sucesso. Buscando próximo...")
-            prox_evento = buscar_proximo_evento_automatico(id_evento)
-            if prox_evento:
-                proximo_id_str = str(prox_evento.get('id_evento'))
-                desc_prox = prox_evento.get('descricao', 'Próximo Evento')
-                db.parametros.update_one({}, {'$set': {'nome_sala': desc_prox}}, upsert=True)
-
-                #aqui ajustar a tabela "sorte_extra_config"
-                print(f"🔄 Configurando Rodada para Próximo Evento: {desc_prox} (ID: {proximo_id_str})")
-            else:
-                proximo_id_str = str(id_evento) 
-        else:
-            proximo_id_str = str(id_evento)
-
-        db.rodada.update_one({}, {
-            '$set': {
-                'id_evento': proximo_id_str,
-                'estado': 'intervalo',
-                'ordem': 0,
-                'data_sorteio': datetime.now(ZoneInfo('America/Sao_Paulo'))
-            }
-        }, upsert=True)
-
-        return jsonify({
-            'status': 'Reset concluído', 
-            'proximo_evento': proximo_id_str,
-            'modo': 'sucesso' if finalizar_com_sucesso else 'cancelamento'
-        })
-        
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-
-
-# --- ROTA DE DETALHES (COM SINCRONIZAÇÃO AUTOMÁTICA DE CARTELAS) xxx ---
+# --- ROTA DE DETALHES (COM SINCRONIZAÇÃO AUTOMÁTICA DE CARTELAS)  ---
 @app.route('/api/admin/detalhes_evento', methods=['GET'])
 def get_event_details():
     id_evt = request.args.get('id_evento')
@@ -4031,7 +3812,7 @@ def registrar_transacao_cliente_mesa(db_vendas, id_cliente, valor, tipo, descric
             {
                 '$inc': {'saldo_atual': Decimal128(str(valor))}, # Ajuste: Usa o valor do incremento direto ou define o novo saldo
                 # Se preferir setar o saldo calculado: '$set': {'saldo_atual': Decimal128(str(saldo_novo))},
-                '$set': {'ultima_movimentacao': datetime.now()}
+                '$set': {'ultima_movimentacao': hora_brasil()}
             }
         )
         
@@ -4046,7 +3827,7 @@ def registrar_transacao_cliente_mesa(db_vendas, id_cliente, valor, tipo, descric
             {
                 '$set': {
                     'saldo_atual': Decimal128(str(saldo_novo)),
-                    'ultima_movimentacao': datetime.now()
+                    'ultima_movimentacao': hora_brasil()
                 }
             }
         )
@@ -4407,8 +4188,7 @@ def api_comprar_cartelas():
             "nome_cliente": nome_do_cliente_db,                          
             "nick_colaborador": "AUTO-ATENDIMENTO",
             "id_colaborador": id_colaborador_indicacao,
-            # Ajustado para usar sua função de hora certa ou ZoneInfo direto
-            "data_venda": datetime.now(ZoneInfo('America/Sao_Paulo')), 
+            "data_venda": hora_brasil(),  
             "quantidade_unidades": qtd_desejada,
             "quantidade_cartelas": qtd_desejada, 
             "numero_inicial": num_inicial_real, # Usando o ajustado
@@ -4422,7 +4202,21 @@ def api_comprar_cartelas():
         col_vendas_nome = f"vendas{id_evento_oficial}"
         sales_db[col_vendas_nome].insert_one(venda_doc)
         print(f"💾 Venda gravada em: {col_vendas_nome}")
+
+        # ==================================================================
+        # --- ATUALIZAÇÃO DO BUFFER PARA O ROBÔ DE PRÊMIOS ---
+        # Adiciona o valor desta venda ao acumulador invisível do evento
+        # SOMENTE se o evento for do tipo 'porcentagem'
+        tipo_premiacao = str(evento.get('tipo_premiacao', '')).lower().strip()
         
+        if tipo_premiacao == 'porcentagem':
+            sales_db.eventos.update_one(
+                {"id_evento": id_evento_oficial},
+                {"$inc": {"valor_pendente_telemovel": Decimal128(str(custo_total))}}
+            )
+            print(f"📈 Buffer de prêmios atualizado em +R$ {float(custo_total):.2f}")
+        # ==================================================================
+
         # Debita e finaliza
         registrar_transacao_cliente_mesa(
             sales_db, id_cli, -abs(custo_total), 'compra', 

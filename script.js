@@ -641,34 +641,76 @@ function renderEventsList(eventos) {
         const isFuture = eventDate >= now;
         const isActive = evt.status === 'ativo';
         const isFutureOrActive = (isFuture || isActive) && !isFinalizado;
+        
+        // 👉 IDENTIFICADOR DO EVENTO ESPECIAL
+        const isEspecial = evt.tipo_de_evento === 'especial';
 
-        // --- 3. Definição de Estilos e Badges ---
+        // --- 3. Definição de Estilos e Badges Dinâmicos ---
         let cardClass = 'rounded-xl p-3 border shadow-lg flex flex-col gap-1 relative overflow-hidden transition-all duration-300';
         let statusBadge = '';
+        let superPremioBadge = '';
         let botoesAcaoHtml = '';
+
+        // Variáveis de Cor (Padrão: Dark Mode)
+        let corTitulo = 'text-yellow-500';
+        let corData = 'text-blue-300';
+        let bgPremios = 'bg-black/40 border-gray-700/50';
+        let corTituloPremio = 'text-green-400';
+        let corListaPremio = 'text-yellow-300 font-medium';
+        let corEstrela = 'text-yellow-500';
+        let corID = 'text-gray-400';
+        let corLabelPreco = 'text-gray-500';
+        let corPreco = 'text-green-400';
 
         if (isFinalizado) {
             cardClass += ' bg-gray-800 border-gray-600 opacity-60 grayscale';
             statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-gray-600 text-gray-300 px-3 py-1 rounded-bl-lg">ENCERRADO</span>';
         } 
         else if (isFutureOrActive) {
-            cardClass += ' bg-gradient-to-br from-gray-900 to-gray-800 border-blue-500 hover:border-blue-400 transform hover:scale-[1.02]';
             
-            if (isActive) {
-                statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-green-600 text-white px-3 py-1 rounded-bl-lg animate-pulse">🔴 AO VIVO / ATIVO</span>';
+            if (isEspecial) {
+                // 🌟 TEMA ESPECIAL (Amarelo Claro / Premium)
+                cardClass += ' bg-gradient-to-br from-yellow-100 to-yellow-50 border-2 border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.4)] transform hover:scale-[1.02]';
+                
+                // Badge Super Prémio na Direita
+                superPremioBadge = '<div class="absolute top-0 right-0 bg-gradient-to-r from-yellow-500 to-yellow-600 text-white text-[10px] font-black px-3 py-1 rounded-bl-xl shadow-md flex items-center gap-1 z-10 uppercase tracking-widest border-b border-l border-yellow-400"><span class="animate-pulse">⭐</span> SUPER PRÊMIO</div>';
+                
+                // Ajuste de cores para leitura no fundo claro
+                corTitulo = 'text-yellow-900 font-black';
+                corData = 'text-yellow-800 font-bold';
+                bgPremios = 'bg-yellow-200/50 border-yellow-400/50';
+                corTituloPremio = 'text-green-800 font-black';
+                corListaPremio = 'text-yellow-900 font-bold';
+                corEstrela = 'text-yellow-600';
+                corID = 'text-gray-700';
+                corLabelPreco = 'text-gray-600';
+                corPreco = 'text-green-700';
+
+                // Status Badge move-se para a Esquerda
+                if (isActive) {
+                    statusBadge = '<span class="absolute top-0 left-0 text-[10px] font-black bg-green-600 text-white px-3 py-1 rounded-br-lg animate-pulse z-10 shadow-sm">🔴 AO VIVO</span>';
+                } else {
+                    statusBadge = '<span class="absolute top-0 left-0 text-[10px] font-black bg-blue-600 text-white px-3 py-1 rounded-br-lg z-10 shadow-sm">EM BREVE</span>';
+                }
             } else {
-                statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-blue-600 text-white px-3 py-1 rounded-bl-lg">EM BREVE</span>';
+                // 🌑 TEMA NORMAL (Dark Mode)
+                cardClass += ' bg-gradient-to-br from-gray-900 to-gray-800 border-blue-500 hover:border-blue-400 transform hover:scale-[1.02]';
+                if (isActive) {
+                    statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-green-600 text-white px-3 py-1 rounded-bl-lg animate-pulse z-10">🔴 AO VIVO / ATIVO</span>';
+                } else {
+                    statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-blue-600 text-white px-3 py-1 rounded-bl-lg z-10">EM BREVE</span>';
+                }
             }
 
-            // --- BLOCO DE BOTÕES (Compra + Ver Apostas) ---
+            // --- BLOCO DE BOTÕES ---
             botoesAcaoHtml = `
-                <div class="mt-2 grid grid-cols-2 gap-2 border-t border-gray-700 pt-2">  
+                <div class="mt-2 grid grid-cols-2 gap-2 border-t border-gray-700/30 pt-2">  
                     <button onclick="openMyCardsPanel('${evt.id_evento}', '${evt.descricao.replace(/'/g, "\\'")}')"
-                            class="bg-blue-900 hover:bg-blue-700 text-white text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
+                            class="bg-blue-900 hover:bg-blue-800 text-white text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
                         <span>📋</span> VER APOSTAS
                     </button>
                     <button onclick="abrirModalCompra('${evt.id_evento}')" 
-                            class="bg-green-700 hover:bg-green-500 text-white text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
+                            class="bg-green-600 hover:bg-green-500 text-white text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
                         <span>🛒</span> COMPRAR
                     </button>
                 </div>
@@ -684,36 +726,37 @@ function renderEventsList(eventos) {
         
         let rawPremios = evt.premios_desc || evt.premios || [];
         let listaPremios = Array.isArray(rawPremios) ? rawPremios : (typeof rawPremios === 'string' ? rawPremios.split(',').map(p => p.trim()) : []);
-        const premiosHtml = listaPremios.filter(p => p).map(p => `<li class="flex items-start gap-0"><span class="text-yellow-500">★</span> ${p}</li>`).join('');
+        const premiosHtml = listaPremios.filter(p => p).map(p => `<li class="flex items-start gap-0"><span class="${corEstrela}">★</span> ${p}</li>`).join('');
 
-        // --- 5. Montagem do Card ---
+        // --- 5. Montagem do Card HTML Dinâmico ---
         const card = document.createElement('div');
         card.className = cardClass;
         card.innerHTML = `
             ${statusBadge}
+            ${superPremioBadge}
             
             <div class="pr-2 mt-3">
-                <h3 class="text-[15px] font-bold text-yellow-500 leading-tight drop-shadow-sm -mb-0.5">${evt.descricao}</h3>
-                <p class="text-[13px] font-semibold text-blue-300 font-mono -mb-0.5 flex items-center gap-1">
+                <h3 class="text-[15px] ${corTitulo} leading-tight drop-shadow-sm -mb-0.5">${evt.descricao}</h3>
+                <p class="text-[13px] ${corData} font-mono -mb-0.5 flex items-center gap-1">
                      ${evt.data} <span class="mx-1">|</span> <span>⏰</span> ${evt.hora}
                 </p>
             </div>
 
-            <div class="bg-black/40 rounded-lg p-1 border border-gray-700/50">
-                <p class="text-[10px] text-center text-green-400 font-bold uppercase -mb-1 -mt-1 tracking-wider">Premiação Prevista:</p>
-                <ul class="grid grid-cols-2 gap-x-2 text-[11px] text-yellow-300 font-medium leading-tight mt-0.5">
+            <div class="${bgPremios} rounded-lg p-1 border">
+                <p class="text-[10px] text-center ${corTituloPremio} uppercase -mb-1 -mt-1 tracking-wider">Premiação Prevista:</p>
+                <ul class="grid grid-cols-2 gap-x-2 text-[11px] ${corListaPremio} leading-tight mt-0.5">
                     ${premiosHtml}
                 </ul>
             </div>
 
             <div class="flex justify-between items-end mt-1">
-                <div class="text-gray-400">
-                    <span class="block text-[9px] font-bold text-gray-500">ID: ${evt.id_evento}</span>
+                <div class="${corID}">
+                    <span class="block text-[9px] font-bold uppercase">ID: ${evt.id_evento}</span>
                     <span class="text-[11px]">Kit c/ <strong>${evt.unidade_venda}</strong> cartelas</span>
                 </div>
                 <div class="text-right">
-                    <span class="block text-[9px] font-bold text-gray-400 uppercase">Valor do Kit</span>
-                    <span class="text-lg font-bold text-green-400 tracking-tighter">${preco}</span>
+                    <span class="block text-[9px] font-bold uppercase ${corLabelPreco}">Valor do Kit</span>
+                    <span class="text-lg font-bold ${corPreco} tracking-tighter">${preco}</span>
                 </div>
             </div>
 
