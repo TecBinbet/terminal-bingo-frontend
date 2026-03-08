@@ -702,9 +702,9 @@ function renderEventsList(eventos) {
                 }
             }
 
-            // --- BLOCO DE BOTÕES ---
+            // --- BLOCO DE BOTÕES --- // xyx mt-2   pt-2    (mb-0)
             botoesAcaoHtml = `
-                <div class="mt-2 grid grid-cols-2 gap-2 border-t border-gray-700/30 pt-2">  
+                <div class="-mt-0.5 grid grid-cols-2 gap-2 border-t border-gray-700/30 pt-0.5 -mb-1">  
                     <button onclick="openMyCardsPanel('${evt.id_evento}', '${evt.descricao.replace(/'/g, "\\'")}')"
                             class="bg-blue-900 hover:bg-blue-800 text-white text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
                         <span>📋</span> VER APOSTAS
@@ -749,7 +749,7 @@ function renderEventsList(eventos) {
                 </ul>
             </div>
 
-            <div class="flex justify-between items-end mt-1">
+            <div class="flex justify-between items-end -mt-1.5 -mb-2">  // xyx mt-1 (mb-0)
                 <div class="${corID}">
                     <span class="block text-[9px] font-bold uppercase">ID: ${evt.id_evento}</span>
                     <span class="text-[11px]">Kit c/ <strong>${evt.unidade_venda}</strong> cartelas</span>
