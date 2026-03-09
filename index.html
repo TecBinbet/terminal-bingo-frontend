@@ -885,7 +885,13 @@
                 <div class="flex-[1.14] flex flex-col bg-gray-950 overflow-hidden border-r border-gray-800 h-full">
     
                     <div class="bg-gray-900/50 -mt-0.5 text-center border-b border-gray-800 shrink-0">
-                        <p class="text-gray-300 text-lg">Selecione <span id="lbl-qtde" class="text-yellow-400 font-bold">3</span> números:</p>
+
+                        <div class="flex items-center justify-center gap-3">
+                            <p class="text-gray-300 text-lg">Selecione <span id="lbl-qtde" class="text-yellow-400 font-bold">3</span> números:</p>
+                            <button onclick="gerarCupomAleatorio()" class="bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold  px-3 rounded-lg shadow-md flex items-center gap-1 transition-all active:scale-95 border border-purple-500">
+                                <span class="text-lg">🎲</span> Aleatório
+                            </button>
+                        </div>
                         <div id="display-selecao" class="flex justify-center gap-2 mt-1 min-h-[30px]"></div>
                     </div>
     
@@ -950,6 +956,6 @@
 </button>
 
     <script src="config.js"></script>
-    <script src="script.js?v=6"></script>
+    <script src="script.js?v=7"></script>
 </body>
 </html>

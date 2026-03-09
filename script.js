@@ -6609,7 +6609,7 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
         const statusFinalDoEvento = dados.status_evento || dados.status || statusDetectado;
 
         // REGRA BLINDADA: Venda antecipada se o banco estiver à frente da tela ou se o Bingo já acabou
-        const isEventoFuturo = (idConfiguradoNoBanco > idEventoNaTela) || (statusFinalDoEvento === 'finalizado');
+        const isEventoFuturo = (statusFinalDoEvento === 'finalizado')  || (idConfiguradoNoBanco !== idEventoNaTela) ;
         // Salva Configuração Global
 
         configSorteExtra = {
@@ -6783,10 +6783,10 @@ function atualizarDisplaySelecao() {
         const el = document.createElement('div');
         
         if (num !== undefined) {
-            el.className = "w-8 h-8 rounded-full bg-yellow-500 -mt-2 text-black font-bold flex items-center justify-center shadow border-2 border-white animate-pop";
+            el.className = "w-8 h-8 rounded-full bg-yellow-500 -mt-1 text-black font-bold flex items-center justify-center shadow border-2 border-white animate-pop";
             el.innerText = num;
         } else {
-            el.className = "w-8 h-8 rounded-full border-2 border-dashed border-gray-600 -mt-2 flex items-center justify-center text-gray-500 text-xs";
+            el.className = "w-8 h-8 rounded-full border-2 border-dashed border-gray-600 -mt-1 flex items-center justify-center text-gray-500 text-xs";
             el.innerText = i+1;
         }
         container.appendChild(el);
@@ -6888,6 +6888,91 @@ function removerCupom(index) {
     configSorteExtra.carrinho.splice(index, 1);
     atualizarCarrinhoUI();
 }
+
+
+/**
+ * Gera dezenas aleatórias para o Sorte Extra garantindo que não haja duplicatas
+ * no mesmo cupom e que o cupom gerado não exista no carrinho.
+ */
+function gerarCupomAleatorio() {
+    // 1. Pega as regras atuais
+    const qtdeNecessaria = parseInt(configSorteExtra.qtde_dezenas);
+    // Usa a MAX_BOLAS global se existir, senão usa 90 como padrão de segurança
+    const limiteBolas = typeof MAX_BOLAS !== 'undefined' ? MAX_BOLAS : 90; 
+
+    let novaSelecao = [];
+    let tentativas = 0;
+    const MAX_TENTATIVAS = 1000; 
+    let cupomValido = false;
+
+    // 2. Loop de Sorteio
+    while (!cupomValido && tentativas < MAX_TENTATIVAS) {
+        tentativas++;
+        novaSelecao = [];
+        
+        // 2.1 Sorteia dezenas sem repetir DENTRO do cupom
+        while (novaSelecao.length < qtdeNecessaria) {
+            const numAleatorio = Math.floor(Math.random() * limiteBolas) + 1;
+            if (!novaSelecao.includes(numAleatorio)) {
+                novaSelecao.push(numAleatorio);
+            }
+        }
+
+        // 2.2 Ordena as dezenas geradas (ex: [15, 2, 8] vira [2, 8, 15])
+        novaSelecao.sort((a, b) => a - b);
+        const novaSelecaoString = JSON.stringify(novaSelecao);
+
+        // 2.3 Verifica se este cupom já existe no carrinho (ignorando a ordem)
+        const cupomJaExiste = configSorteExtra.carrinho.some(cupomExistente => {
+            // 👉 CORREÇÃO: Descobre onde estão os números dentro do item do carrinho
+            let numerosDoCarrinho = [];
+            
+            if (Array.isArray(cupomExistente)) {
+                numerosDoCarrinho = cupomExistente; // Se for array direto
+            } else if (cupomExistente && cupomExistente.numeros) {
+                numerosDoCarrinho = cupomExistente.numeros; // Se for objeto com .numeros
+            } else if (cupomExistente && cupomExistente.dezenas) {
+                numerosDoCarrinho = cupomExistente.dezenas; // Se for objeto com .dezenas
+            } else if (cupomExistente && cupomExistente.numeros_selecionados) {
+                numerosDoCarrinho = cupomExistente.numeros_selecionados; 
+            }
+
+            if (!numerosDoCarrinho || numerosDoCarrinho.length === 0) return false;
+
+            // Agora sim ordenamos apenas a lista de números extraída do carrinho!
+            const cupomOrdenado = [...numerosDoCarrinho].sort((a, b) => a - b);
+            return JSON.stringify(cupomOrdenado) === novaSelecaoString;
+        });
+
+        // Se não existe no carrinho, achamos o cupom perfeito!
+        if (!cupomJaExiste) {
+            cupomValido = true;
+        }
+    }
+
+    // 3. Aplicação do Resultado
+    if (cupomValido) {
+        // Joga a seleção para a variável global
+        configSorteExtra.numeros_selecionados = [...novaSelecao];
+        
+        // Atualiza os visuais na tela
+        atualizarDisplaySelecao();
+        renderizarGridVolante();
+        
+        // Joga direto para o carrinho!
+        if (typeof adicionarCupomAoCarrinho === 'function') {
+            adicionarCupomAoCarrinho();
+        }
+        
+    } else {
+        if (typeof customAlert === 'function') {
+            customAlert("Você já possui muitas combinações! Tente escolher manualmente.", "Aviso", 3);
+        } else {
+            alert("Não foi possível gerar combinação única.");
+        }
+    }
+}
+
 
 // 7. FECHAR MODAL
 function fecharModalSorteExtra() {
