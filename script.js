@@ -702,7 +702,7 @@ function renderEventsList(eventos) {
                 }
             }
 
-            // --- BLOCO DE BOTÕES --- // xyx mt-2   pt-2    (mb-0)
+            // --- BLOCO DE BOTÕES --- // 
             botoesAcaoHtml = `
                 <div class="-mt-0.5 grid grid-cols-2 gap-2 border-t border-gray-700/30 pt-0.5 -mb-1">  
                     <button onclick="openMyCardsPanel('${evt.id_evento}', '${evt.descricao.replace(/'/g, "\\'")}')"
@@ -6544,11 +6544,16 @@ function gerarBadgeStatusEvento(config) {
 async function carregarSorteExtra(abrirTela = true, idOverride = null) {
     let rawId = idOverride; 
 
+    let statusDetectado = 'ativo';
+
     // 2ª Prioridade: Variável global (Detetive de ID)
     if (!rawId) {
         if (typeof eventoCarregadoAtual !== 'undefined' && eventoCarregadoAtual) {
             // Aceita tanto se for objeto {id_evento: X} quanto se for o ID direto
             rawId = eventoCarregadoAtual.id_evento || eventoCarregadoAtual;
+            if (eventoCarregadoAtual.status) {
+                statusDetectado = eventoCarregadoAtual.status.toLowerCase();
+            }
         }
     }
 
@@ -6562,6 +6567,10 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
     if (!rawId || rawId === 'padrao') {
         if (typeof premioInfo !== 'undefined' && premioInfo && premioInfo.id_evento) {
             rawId = premioInfo.id_evento;
+            // 🕵️ Captura o status do fallback também
+            if (premioInfo.status) {
+                statusDetectado = premioInfo.status.toLowerCase();
+            }
         } else if (typeof currentSalaId !== 'undefined' && currentSalaId !== 'padrao') {
             rawId = currentSalaId;
         }
@@ -6595,10 +6604,14 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
             return;
         }
 
-        // REGRA: Venda antecipada se o banco estiver à frente da tela ou se o Bingo já acabou
-        const isEventoFuturo = (idConfiguradoNoBanco > idEventoNaTela) || (typeof lastStatusEvento !== 'undefined' && lastStatusEvento === 'finalizado');
+        // 👉 SEGURANÇA MÁXIMA: Se a API trouxer o status do evento, ele tem prioridade. 
+        // Se não trouxer, usamos o statusDetectado no Frontend.
+        const statusFinalDoEvento = dados.status_evento || dados.status || statusDetectado;
 
+        // REGRA BLINDADA: Venda antecipada se o banco estiver à frente da tela ou se o Bingo já acabou
+        const isEventoFuturo = (idConfiguradoNoBanco > idEventoNaTela) || (statusFinalDoEvento === 'finalizado');
         // Salva Configuração Global
+
         configSorteExtra = {
             ...configSorteExtra,
             ativo: dados.ativo,
