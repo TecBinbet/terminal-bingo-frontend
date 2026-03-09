@@ -7296,3 +7296,142 @@ function carregarVideoSincronizado(linkDoYoutube) {
         });
     }
 }
+
+// ============================================================================
+// 💸 MÓDULO DE PAGAMENTOS PIX
+// ============================================================================
+
+// 1. Abre a tela inicial do PIX
+function abrirModalPix() {
+    fecharModal('modal-carteira'); // Fecha a carteira antiga para não encavalar
+    
+    // Reseta o visual para o Passo 1
+    document.getElementById('pix-step-1').classList.remove('hidden');
+    document.getElementById('pix-step-2').classList.add('hidden');
+    document.getElementById('pix-step-2').classList.remove('flex');
+    document.getElementById('valor-deposito-pix').value = '';
+    
+    const modal = document.getElementById('modal-pagamento-pix');
+    if (modal) modal.classList.remove('hidden');
+}
+
+// 2. Chama a API Python para gerar a transação
+async function gerarPagamentoPix() {
+    const valorInput = document.getElementById('valor-deposito-pix').value;
+    const valor = parseFloat(valorInput);
+
+    if (isNaN(valor) || valor <= 0) {
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Por favor, digite um valor válido.", "Valor Inválido", "💸");    
+        } else {
+            alert("Por favor, digite um valor válido.");
+        }
+        return;
+    }
+   // xyx apagar termo "_simulador"  / no html adcionar "hidden" no final da linha "<button id="btn-simular-pix" onclick="" cl..."
+    try {
+        const response = await fetch('/api/pagamento/gerar_pix_simulador', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ valor: valor }) 
+            // Não precisamos mandar o ID, o Python já pega da Sessão!
+        });
+
+        const data = await response.json();
+
+        if (data.sucesso) {
+            // Preenche o QR Code e o Copia e Cola na tela
+            document.getElementById('pix-qr-code').src = "data:image/png;base64," + data.qr_code_base64;
+            document.getElementById('pix-copia-cola').value = data.copia_e_cola;
+            
+            // "Ensina" o botão de simular qual é a transação que ele vai pagar
+            const btnSimular = document.getElementById('btn-simular-pix');
+            btnSimular.setAttribute('onclick', `simularPagamentoConfirmado('${data.transacao_id}')`);
+
+            // Avança para o Passo 2
+            document.getElementById('pix-step-1').classList.add('hidden');
+            document.getElementById('pix-step-2').classList.remove('hidden');
+            document.getElementById('pix-step-2').classList.add('flex');
+        } else {
+            if (typeof showCustomAlert === 'function') {  
+                // CORREÇÃO 1: Voltei com o data.error para mostrar o motivo da falha
+                showCustomAlert("Erro ao gerar PIX: " + (data.error || "Desconhecido"), "Erro na Geração", "🚫");    
+            } else {            
+                alert("Erro ao gerar PIX: " + (data.error || "Desconhecido"));
+            }
+        }
+    } catch (err) {
+        console.error(err);
+        // CORREÇÃO 2: Apliquei a verificação de segurança e removi o alert() vazio
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Falha de conexão com o servidor de pagamentos.", "Falha na Conexão", "📶");
+        } else {
+            alert("Falha de conexão com o servidor de pagamentos.");
+        }
+    }
+}
+
+// 3. Botão simples de Copiar
+function copiarPix() {
+    const inputCopiaCola = document.getElementById('pix-copia-cola');
+    inputCopiaCola.select();
+    document.execCommand('copy');
+    
+    // CORREÇÃO 3: Troquei o número "2" pelo emoji "📋" para manter o seu padrão
+    if (typeof showCustomAlert === 'function') {
+        showCustomAlert("Código PIX copiado para a área de transferência!", "Sucesso", "📋");
+    } else {
+        alert("Código PIX copiado!");
+    }
+}
+
+// 4. O BOTÃO MÁGICO: Dispara o nosso próprio Webhook falso
+async function simularPagamentoConfirmado(transacaoId) {
+    try {
+        // Isso simula EXATAMENTE o que o Mercado Pago faria nos bastidores
+        const response = await fetch('/api/webhook/pix_confirmado_simulador', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transacao_id: transacaoId })
+        });
+
+        const data = await response.json();
+
+        if (data.sucesso) {
+            fecharModal('modal-pagamento-pix');
+            
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert("Pagamento Confirmado! Seu saldo já foi atualizado.", "PIX Aprovado", "🚀");
+            } else {
+                alert("Pagamento Confirmado! Saldo Atualizado.");
+            }
+            
+            // 👉 CORREÇÃO: Chama a sua função real para atualizar o saldo sem recarregar a tela
+            if (typeof atualizarDadosCliente === 'function') {
+                atualizarDadosCliente();
+            } else {
+                setTimeout(() => window.location.reload(), 1500);
+            }
+            
+        } else {
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert(data.error || data.mensagem, "Aviso", "⚠️");
+            } else {
+                alert("Aviso: " + (data.error || data.mensagem));
+            }
+        }
+    } catch (err) {
+        console.error(err);
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Erro ao tentar confirmar o pagamento.", "Erro de Conexão", "🚫");
+        } else {
+            alert("Erro ao tentar confirmar o pagamento.");
+        }
+    }
+}
+// FIM DO SEU SCRIPT.JS - Certifique-se de que não existem mais chaves "}" soltas debaixo disto!
+
+//  APP_USR-4102968123853317-030915-554488ce7119ab34a742fafc45b0f1e9-3255401766
+
+// assinatura secreta
+// 8c15f904a323ba454216c66259525175573b6a8796c7dd28bcddbd837b18b947

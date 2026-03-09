@@ -1321,7 +1321,7 @@ function toggleAutoSorteio(forceStart = false) {
         pararAutoSorteio();
     } else {
         const segundos = parseInt(inputTempo.value);
-        if (segundos < 3) { customAlert("Tempo mínimo é 3 segundos!"); return; }
+        if (segundos < 4) { customAlert("Tempo mínimo é 4 segundos!"); return; }
         autoSorteioAtivo = true;
         btn.innerHTML = '<span>⏸️</span> PARAR AUTOMÁTICO';
         btn.className = 'w-full bg-red-900 hover:bg-red-700 text-white font-bold py-2 rounded border border-red-500 transition-colors flex items-center justify-center gap-2 animate-pulse';
