@@ -749,7 +749,7 @@ function renderEventsList(eventos) {
                 </ul>
             </div>
 
-            <div class="flex justify-between items-end -mt-1.5 -mb-2">  // xyx mt-1 (mb-0)
+            <div class="flex justify-between items-end -mt-1.5 -mb-2"> 
                 <div class="${corID}">
                     <span class="block text-[9px] font-bold uppercase">ID: ${evt.id_evento}</span>
                     <span class="text-[11px]">Kit c/ <strong>${evt.unidade_venda}</strong> cartelas</span>
