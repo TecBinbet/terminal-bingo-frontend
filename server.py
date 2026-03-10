@@ -3903,6 +3903,24 @@ def api_login_cliente():
 
                 admin_quer_pix = parametros.get('receber_pix', False)
 
+                # 👉 NOVO 1: Puxa o texto de saque personalizado (se não existir, usa o padrão)
+                texto_padrao_saque = "ℹ️ O valor solicitado ficará pendente de aprovação. Seu saldo continuará disponível para jogo até o pagamento ser processado pelo operador."
+                texto_saque = parametros.get('texto_requisicao_saque', texto_padrao_saque)
+
+                # 👉 NOVO 2: Verifica se o cliente tem saques pendentes
+                tem_saque_pendente = False
+                try:
+                    # Procure na sua tabela de saques. Adapte 'saques' para o nome real da sua tabela!
+                    busca_saque = sales_db.saques.find_one({
+                        'id_cliente': int(cli['id_cliente']), 
+                        'status': 'pendente' 
+                    })
+                    if busca_saque:
+                        tem_saque_pendente = True
+                except Exception as e_saque:
+                    print(f"⚠️ Aviso ao buscar saques: {e_saque}")
+
+
                 # 2. Olha para o sistema (A capacidade técnica do servidor)
                 # (Lembrando que lá no topo do ficheiro deixámos mp_sdk = None se não houver .env)
                 servidor_tem_token = (mp_sdk is not None)
@@ -3918,7 +3936,9 @@ def api_login_cliente():
                     'saldo': saldo,
                     'id': str(cli['id_cliente']),
                     'id_evento_ativo': id_evento_ativo,
-                    'receber_pix': receberemos_pix  # 👉 NOVO: Envia para o frontend!
+                    'receber_pix': receberemos_pix,
+                    'texto_saque': texto_saque,              # 👉 Envia para o Front
+                    'tem_saque_pendente': tem_saque_pendente # 👉 Envia para o Front
                 })
             else:
                 print("⛔ [DEBUG] Senha incorreta.")
@@ -5782,6 +5802,40 @@ def webhook_mercado_pago():
     except Exception as e:
         print(f"❌ Erro no Webhook MP: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/saques_pendentes', methods=['GET'])
+def api_saques_pendentes():
+    if 'id_cliente' not in session:
+        return jsonify({'erro': 'Usuário não logado.'}), 401
+
+    try:
+        sales_db = get_sales_db_connection()
+        
+        # 👉 TRATAMENTO DE EXCEÇÃO: Converte para string e elimina espaços vazios
+        id_cliente_limpo = str(session['id_cliente']).strip()
+
+        # Faz a busca na tabela requisao_saque
+        cursor = sales_db.requisao_saque.find({
+            'id_cliente': id_cliente_limpo,
+            'status': 'pendente'
+        }).sort('data_requisicao', -1) # Ordena do mais novo para o mais antigo
+
+        lista_pendentes = []
+        for req in cursor:
+            lista_pendentes.append({
+                'id_requisicao': str(req.get('_id')),
+                'valor_requerido': float(req.get('valor_requerido', 0.0)),
+                'saldo_no_momento': float(req.get('saldo_no_momento', 0.0)),
+                'data_requisicao': str(req.get('data_requisicao', '')),
+                'status': str(req.get('status', 'pendente'))
+            })
+
+        return jsonify({'sucesso': True, 'dados': lista_pendentes})
+
+    except Exception as e:
+        print(f"❌ Erro ao buscar saques pendentes: {e}")
+        return jsonify({'erro': 'Erro interno ao processar a requisição.'}), 500
 
 
 # ==============================================================================

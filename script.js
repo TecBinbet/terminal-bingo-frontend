@@ -5852,6 +5852,12 @@ async function fazerLogin() {
         const data = await res.json();
 
         // xyx
+        const pTextoSaque = document.getElementById('texto-aviso-saque');
+        if (pTextoSaque && data.texto_saque) {
+            // Substitui o texto pelo que veio do banco de dados
+            pTextoSaque.innerHTML = data.texto_saque;
+        }
+
         const btnPix = document.getElementById('btn-depositar-pix');
         if (btnPix) {
             // Se receber_pix for exatamente 'true', tira o hidden e mostra o botão
@@ -5979,6 +5985,12 @@ async function realizarLogin() {
             // ===========================================
 
            // xyx
+           const pTextoSaque = document.getElementById('texto-aviso-saque');
+           if (pTextoSaque && data.texto_saque) {
+               // Substitui o texto pelo que veio do banco de dados
+               pTextoSaque.innerHTML = data.texto_saque;
+           }
+
            const btnPix = document.getElementById('btn-depositar-pix');
            if (btnPix) {
                // Se receber_pix for exatamente 'true', tira o hidden e mostra o botão
@@ -7452,6 +7464,79 @@ async function simularPagamentoConfirmado(transacaoId) {
         }
     }
 }
+
+
+// 👉 FUNÇÃO PARA BUSCAR E ABRIR O MODAL
+async function abrirModalSaquesPendentes() {
+    // Mostra o loading se a função existir no seu sistema
+    if (typeof showFullLoading === 'function') showFullLoading("Buscando requisições...");
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/saques_pendentes`, {
+            method: 'GET',
+            credentials: 'include'
+        });
+        
+        const data = await response.json();
+
+        if (data.sucesso) {
+            const container = document.getElementById('lista-saques-pendentes');
+            container.innerHTML = ''; // Limpa a lista anterior
+
+            if (data.dados.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-500 py-8 font-bold">Nenhuma requisição pendente.</div>';
+            } else {
+                // Monta um card para cada requisição
+                data.dados.forEach(req => {
+                    const valorReq = parseFloat(req.valor_requerido).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                    const saldoMomento = parseFloat(req.saldo_no_momento).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+                    const card = `
+                        <div class="bg-gray-800 rounded-xl p-2 mb-3 border border-gray-700 shadow-md relative overflow-hidden">
+                            <div class="absolute top-0 right-0 bg-yellow-600 text-white text-[9px] font-black px-3 py-1 rounded-bl-lg uppercase tracking-wider">
+                                PENDENTE
+                            </div>
+                            
+                            <div class="text-xs font-bold text-gray-400 mb-2 font-mono">📅 ${req.data_requisicao}</div>
+                            
+                            <div class="flex justify-between items-end mt-1.5 border-t border-gray-700 pt-2">
+                                <div>
+                                    <div class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Valor Requerido</div>
+                                    <div class="text-xl font-black text-yellow-500">${valorReq}</div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Saldo na Época</div>
+                                    <div class="text-sm font-bold text-gray-300">${saldoMomento}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    container.insertAdjacentHTML('beforeend', card);
+                });
+            }
+
+            // Exibe o modal na tela
+            const modal = document.getElementById('modal-saques-pendentes');
+            if (modal) modal.classList.remove('hidden');
+
+        } else {
+            if (typeof showCustomAlert === 'function') showCustomAlert(data.erro, "Atenção", "⚠️");
+            else alert(data.erro);
+        }
+    } catch (error) {
+        console.error("Erro ao buscar pendentes:", error);
+        if (typeof showCustomAlert === 'function') showCustomAlert("Falha na conexão.", "Erro", "❌");
+    } finally {
+        if (typeof hideFullLoading === 'function') hideFullLoading();
+    }
+}
+
+// 👉 FUNÇÃO PARA FECHAR O MODAL
+function fecharModalSaquesPendentes() {
+    const modal = document.getElementById('modal-saques-pendentes');
+    if (modal) modal.classList.add('hidden');
+}
+
 // FIM DO SEU SCRIPT.JS - Certifique-se de que não existem mais chaves "}" soltas debaixo disto!
 
 //  APP_USR-4102968123853317-030915-554488ce7119ab34a742fafc45b0f1e9-3255401766
