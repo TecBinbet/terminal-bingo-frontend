@@ -12,14 +12,15 @@ import mercadopago
 import uuid
 import os
 
-
+mp_sdk = None
 # Busca o token de forma segura no arquivo .env
 MERCADO_PAGO_ACCESS_TOKEN = os.getenv("MERCADO_PAGO_ACCESS_TOKEN")
 
 # Trava de segurança: avisa no terminal se você esquecer de colocar a chave no .env
 if not MERCADO_PAGO_ACCESS_TOKEN:
     print("⚠️ AVISO CRÍTICO: MERCADO_PAGO_ACCESS_TOKEN não encontrado no arquivo .env! Os pagamentos PIX não vão funcionar.")
-mp_sdk = mercadopago.SDK(MERCADO_PAGO_ACCESS_TOKEN)
+else:
+    mp_sdk = mercadopago.SDK(MERCADO_PAGO_ACCESS_TOKEN)
 
 import json
 import traceback
@@ -316,6 +317,8 @@ if 'clients' not in globals():
 comandos_pendentes = {}
 
 CUPOM_FILE = "cupom_atual.json"
+
+receberemos_pix = False;
 
 local_data = {}
 mongo_data = {}
@@ -3897,7 +3900,16 @@ def api_login_cliente():
                 
                 # 👉 NOVO: Busca o parâmetro receber_pix da tabela parametros
                 parametros = sales_db.parametros.find_one({}) or {}
-                receber_pix = parametros.get('receber_pix', False)
+
+                admin_quer_pix = parametros.get('receber_pix', False)
+
+                # 2. Olha para o sistema (A capacidade técnica do servidor)
+                # (Lembrando que lá no topo do ficheiro deixámos mp_sdk = None se não houver .env)
+                servidor_tem_token = (mp_sdk is not None)
+
+                # 3. A SUA VARIÁVEL GLOBAL UNIFICADA:
+                # Só mostra o PIX se o Admin quiser E o servidor tiver a chave!
+                receberemos_pix = (admin_quer_pix == True) and servidor_tem_token
 
                 return jsonify({
                     'status': 'ok', 
@@ -3906,7 +3918,7 @@ def api_login_cliente():
                     'saldo': saldo,
                     'id': str(cli['id_cliente']),
                     'id_evento_ativo': id_evento_ativo,
-                    'receber_pix': receber_pix  # 👉 NOVO: Envia para o frontend!
+                    'receber_pix': receberemos_pix  # 👉 NOVO: Envia para o frontend!
                 })
             else:
                 print("⛔ [DEBUG] Senha incorreta.")
