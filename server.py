@@ -10,10 +10,14 @@ from gevent import pool
 
 import mercadopago
 import uuid
-# (Dica de segurança: No futuro, o ideal é colocar esta chave num ficheiro .env, mas por agora,
-MERCADO_PAGO_ACCESS_TOKEN = "APP_USR-4102968123853317-030915-554488ce7119ab34a742fafc45b0f1e9-3255401766" 
-mp_sdk = mercadopago.SDK(MERCADO_PAGO_ACCESS_TOKEN)
 
+# Busca o token de forma segura no arquivo .env
+MERCADO_PAGO_ACCESS_TOKEN = os.getenv("MERCADO_PAGO_ACCESS_TOKEN")
+
+# Trava de segurança: avisa no terminal se você esquecer de colocar a chave no .env
+if not MERCADO_PAGO_ACCESS_TOKEN:
+    print("⚠️ AVISO CRÍTICO: MERCADO_PAGO_ACCESS_TOKEN não encontrado no arquivo .env! Os pagamentos PIX não vão funcionar.")
+mp_sdk = mercadopago.SDK(MERCADO_PAGO_ACCESS_TOKEN)
 
 import os
 import json
@@ -613,83 +617,6 @@ def fetch_data_from_mongodb():
         print(f"❌ ERRO FATAL NO FETCH: {e}")
         traceback.print_exc() # Mostra o erro exato no console do Docker
         return {}
-
-
-def fetch_data_from_mongodb__():
-    global db
-    if db is None: return {}
-    try:
-        # Helper para converter ObjectId
-        def clean(cursor):
-            l = list(cursor)
-            for i in l: i['_id'] = str(i['_id'])
-            return l
-
-        bolas_mesa = clean(db.bolas_mesa.find({}))
-        buscando_mesa = clean(db.buscando_mesa.find({}))
-
-        bolas = clean(db.bolas.find({}))
-        buscando = clean(db.buscando.find({}))
-        premios_raw = clean(db.premio.find({}))
-        rodada = clean(db.rodada.find({}))
-        confere = clean(db.confere.find({}))
-        parametros = clean(db.parametros.find({}))
-
-        if not parametros:
-            print("⚠️ Erro Crítico: Tabela 'parametros' vazia ou ilegível. Mantendo estado anterior.")
-            return None
-
-        melhores = list(db['melhores'].find({}, {'_id':0}).sort('id_posicao', 1).limit(25))
-        
-        # --- 1. LISTA PARA O TERMINAL (PÓS-JOGO) ---
-        ganhadores_terminal_raw = list(db.osganhadores.find({}))        
-        ganhadores_terminal_dict = {}
-        for g in ganhadores_terminal_raw:
-            k = f"{g.get('premio')}|{g.get('valor_total_premio')}"
-            if k not in ganhadores_terminal_dict:
-                ganhadores_terminal_dict[k] = {"premio": g.get('premio'), "valor": g.get('valor_total_premio'), "ganhadores": []}
-            ganhadores_terminal_dict[k]["ganhadores"].append({"cartela": g.get('cartela'), "nome": g.get('nome'), "valor_rateio": g.get('valor_rateio')})
-        
-        lista_terminal = list(ganhadores_terminal_dict.values())
-
-        # --- 2. LISTA PARA A MESA ADMIN (TEMPO REAL) ---
-        ganhadores_live_raw = list(db.ganhadores.find({}))
-        ganhadores_live_dict = {}
-        for g in ganhadores_live_raw:
-            k = f"{g.get('premio')}|{g.get('valor_total_premio')}"
-            if k not in ganhadores_live_dict:
-                ganhadores_live_dict[k] = {"premio": g.get('premio'), "valor": g.get('valor_total_premio'), "ganhadores": []}
-            ganhadores_live_dict[k]["ganhadores"].append({"cartela": g.get('cartela'), "nome": g.get('nome'), "valor_rateio": g.get('valor_rateio')})
-            
-        lista_live = list(ganhadores_live_dict.values())
-        
-        premio_data, tope_data, card_ranges, premio_info = process_prizes(premios_raw)
-        
-        param_doc = parametros[0]   
-        
-        avisos = clean(db.avisos.find({}))
-   
-        if 'tipo_entrada_de_cartelas' not in param_doc: param_doc['tipo_entrada_de_cartelas'] = 1
-
-        return {
-            'bolasData': bolas, 'buscandoData': buscando, 'premioData': premio_data,
-            'premioInfo': premio_info, 'rodadaData': rodada, 'confereData': confere,
-            'topeData': tope_data, 'cardRanges': card_ranges, 'promocionalData': [],
-            'parametrosInfo': param_doc, 'melhoresData': melhores, 
-            
-            'bolasMesaData': bolas_mesa, 
-            'buscandoMesaData': buscando_mesa,
-           
-            # ENVIA AS DUAS LISTAS
-            'ganhadoresData': lista_terminal, 
-            'ganhadoresLive': lista_live,
-            'avisosData' : avisos     
-        }
-    except Exception as e:
-        # AQUI VAMOS PEGAR SE HOUVE ERRO SILENCIOSO
-        print(f"❌ ERRO FATAL EM FETCH_DATA: {e}")
-        traceback.print_exc()
-        return None
 
 
 # --- FUNÇÃO DE SEQUÊNCIA DE VENDA (Portada do app.py) ---
@@ -3967,13 +3894,18 @@ def api_login_cliente():
                 except Exception as e_evt:
                     print(f"⚠️ Aviso no evento: {e_evt}")
                 
+                # 👉 NOVO: Busca o parâmetro receber_pix da tabela parametros
+                parametros = sales_db.parametros.find_one({}) or {}
+                receber_pix = parametros.get('receber_pix', False)
+
                 return jsonify({
                     'status': 'ok', 
                     'msg': 'Logado com sucesso!',
                     'nick': cli['nick'],
                     'saldo': saldo,
                     'id': str(cli['id_cliente']),
-                    'id_evento_ativo': id_evento_ativo
+                    'id_evento_ativo': id_evento_ativo,
+                    'receber_pix': receber_pix  # 👉 NOVO: Envia para o frontend!
                 })
             else:
                 print("⛔ [DEBUG] Senha incorreta.")
@@ -4456,24 +4388,45 @@ def cadastrar_cliente():
 #  FUNÇÃO AUXILIAR: NOTIFICAÇÃO TELEGRAM
 # ==============================================================================
 def enviar_notificacao_telegram(mensagem):
-    # Substitua pelos seus dados reais ou carregue de variáveis de ambiente/banco
-    BOT_TOKEN = "8259951624:AAHWIOmfvS69ZSNVuJrP6HuZowh3Xb6Rddg"         # "SEU_TOKEN_AQUI" 
-    CHAT_ID = "8374012769" # "SEU_CHAT_ID_AQUI"
-    
-    if BOT_TOKEN == "SEU_TOKEN_AQUI":
-        print("⚠️ Telegram não configurado. Pulei o envio.")
-        return
-
     try:
+        # 1. Tenta aceder à base de dados de vendas
+        sales_db = get_sales_db_connection()
+        
+        if sales_db is None:
+            print("⚠️ [TELEGRAM] Sem ligação à base de dados. Notificação ignorada.")
+            return
+
+        # 2. Procura os parâmetros da sala
+        parametros = sales_db.parametros.find_one({}) or {}
+        
+        # 3. Extrai as chaves (se não existirem, retorna None)
+        BOT_TOKEN = parametros.get('token_telegram')
+        CHAT_ID = parametros.get('chat_id_telegram')
+
+        # 4. Validação: Só prossegue se ambos estiverem preenchidos na base de dados
+        if not BOT_TOKEN or not CHAT_ID:
+            print("⚠️ [TELEGRAM] Token ou Chat ID não configurados na tabela 'parametros'. Pulei o envio.")
+            return
+
+        # Limpa possíveis espaços em branco acidentais no cadastro
+        BOT_TOKEN = str(BOT_TOKEN).strip()
+        CHAT_ID = str(CHAT_ID).strip()
+
+        # 5. Envia a notificação
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         payload = {
             "chat_id": CHAT_ID,
             "text": mensagem,
             "parse_mode": "Markdown"
         }
-        requests.post(url, json=payload, timeout=5)
+        
+        resposta = requests.post(url, json=payload, timeout=5)
+        
+        if resposta.status_code != 200:
+            print(f"⚠️ [TELEGRAM] Falha ao enviar. Código: {resposta.status_code} - Erro: {resposta.text}")
+            
     except Exception as e:
-        print(f"❌ Erro ao enviar Telegram: {e}")
+        print(f"❌ Erro crítico ao enviar Telegram: {e}")
 
 
 # ==============================================================================
@@ -5518,7 +5471,6 @@ def api_proximo_evento_robo():
         return jsonify({'erro': str(e)}), 500
 
 
-
 # ==============================================================================
 # 💸 MÓDULO DE PAGAMENTOS (PIX) - FASE DE SIMULAÇÃO
 # ==============================================================================
@@ -5734,6 +5686,7 @@ def gerar_pix_real():
     except Exception as e:
         print(f"❌ Erro crítico ao gerar PIX Real: {e}")
         return jsonify({'error': 'Erro interno ao processar pagamento.'}), 500
+
 
 @app.route('/api/webhook/pix_confirmado', methods=['POST'])
 def webhook_mercado_pago():

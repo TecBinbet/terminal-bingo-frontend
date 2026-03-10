@@ -5851,6 +5851,18 @@ async function fazerLogin() {
 
         const data = await res.json();
 
+        // xyx
+        const btnPix = document.getElementById('btn-depositar-pix');
+        if (btnPix) {
+            // Se receber_pix for exatamente 'true', tira o hidden e mostra o botão
+            if (data.receber_pix === true) {
+                btnPix.classList.remove('hidden');
+            } else {
+                // Se for false, undefined, ou não existir, garante que continua escondido
+                btnPix.classList.add('hidden');
+            }
+        }
+
         if (data.status === 'ok') {
             clienteLogado = true;
 
@@ -5966,6 +5978,18 @@ async function realizarLogin() {
             }
             // ===========================================
 
+           // xyx
+           const btnPix = document.getElementById('btn-depositar-pix');
+           if (btnPix) {
+               // Se receber_pix for exatamente 'true', tira o hidden e mostra o botão
+               if (data.receber_pix === true) {
+                   btnPix.classList.remove('hidden');
+               } else {
+                   // Se for false, undefined, ou não existir, garante que continua escondido
+                   btnPix.classList.add('hidden');
+               }
+           }
+
             // 1. GRAVA DADOS
             const idSeguro = data.id_cliente || data.id || data._id || data.userId;
             
@@ -6014,7 +6038,6 @@ async function realizarLogin() {
         if (typeof hideFullLoading === 'function') hideFullLoading();
     }
 }
-
 
 
 // 4. ATUALIZAR SALDO NA TELA (Busca os IDs corretos do seu HTML)
@@ -7328,7 +7351,7 @@ async function gerarPagamentoPix() {
         }
         return;
     }
-   // xyx apagar termo "_simulador"  / no html adcionar "hidden" no final da linha "<button id="btn-simular-pix" onclick="" cl..."
+   // xyx apagar termo "_simulador"  / no html adcionar "hidden" no final da linha "<button id="btn-simular-pix" onclick="" cl
     try {
         const response = await fetch('/api/pagamento/gerar_pix_simulador', {
             method: 'POST',
