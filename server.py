@@ -10,6 +10,8 @@ from gevent import pool
 
 import mercadopago
 import uuid
+import os
+
 
 # Busca o token de forma segura no arquivo .env
 MERCADO_PAGO_ACCESS_TOKEN = os.getenv("MERCADO_PAGO_ACCESS_TOKEN")
@@ -19,7 +21,6 @@ if not MERCADO_PAGO_ACCESS_TOKEN:
     print("⚠️ AVISO CRÍTICO: MERCADO_PAGO_ACCESS_TOKEN não encontrado no arquivo .env! Os pagamentos PIX não vão funcionar.")
 mp_sdk = mercadopago.SDK(MERCADO_PAGO_ACCESS_TOKEN)
 
-import os
 import json
 import traceback
 import threading
