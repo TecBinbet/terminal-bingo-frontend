@@ -5588,7 +5588,7 @@ async function atualizarDadosCliente() {
                     // Ícones bonitinhos
                     let icone = '💰';
                     if (item.tipo === 'compra') icone = '🛒';
-                    if (item.tipo === 'ganho') icone = '🏆';
+                    if (item.tipo === 'premio') icone = '🏆';
                     if (item.tipo === 'saque') icone = '💸';
 
                     // Converte valor para float seguro
@@ -5596,8 +5596,10 @@ async function atualizarDadosCliente() {
                     if (isNaN(valorItem)) valorItem = 0;
 
                     // Cria o HTML do item
+                    const saldoPosterior = parseFloat(item.saldo_posterior || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
                     const li = `
-                        <li class="flex justify-between items-center bg-gray-800 p-0 rounded-lg border border-gray-700 shadow-sm hover:bg-gray-750 transition-colors">
+                        <li class="flex justify-between items-center bg-gray-800 p-1 rounded-lg border border-gray-700 shadow-sm hover:bg-gray-750 transition-colors">
                             <div class="flex items-center gap-3">
                                 <span class="text-xl bg-gray-900 p-1.5 rounded-full">${icone}</span>
                                 <div class="flex flex-col text-left">
@@ -5609,11 +5611,18 @@ async function atualizarDadosCliente() {
                                     </span>
                                 </div>
                             </div>
-                            <span class="font-bold text-lg ${corValor} whitespace-nowrap">
-                                ${sinal}R$ ${valorItem.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
-                            </span>
+                            
+                            <div class="flex flex-col items-end pr-1">
+                                <span class="font-bold text-lg ${corValor} whitespace-nowrap">
+                                    ${sinal}R$ ${valorItem.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                                </span>
+                                <span class="text-xs text-gray-500 whitespace-nowrap">
+                                    Saldo: R$ ${saldoPosterior}
+                                </span>
+                            </div>
                         </li>
                     `;
+
                     listaContainer.innerHTML += li;
                 });
             }

@@ -4002,6 +4002,8 @@ def api_dados_cliente():
                                                  
             for t in cursor:
                 val_t = converter_decimal(t.get('valor', 0))
+                # 👉 NOVO: Extrai e converte o saldo posterior de forma segura
+                saldo_post = converter_decimal(t.get('saldo_posterior', 0))
                 
                 # Tratamento seguro de data
                 data_raw = t.get('data_hora')
@@ -4012,7 +4014,6 @@ def api_dados_cliente():
                     # Se for string (ex: ISO format)
                     else:
                         data_str = str(data_raw)
-                        # Tenta pegar dia/mes hora:min de uma string ISO "2023-10-25T14:30:00"
                         # Slice simples: Pega chars 8 a 10 (dia), 5 a 7 (mes), 11 a 16 (hora)
                         if len(data_str) >= 16:
                              data_fmt = f"{data_str[8:10]}/{data_str[5:7]} {data_str[11:16]}"
@@ -4025,7 +4026,8 @@ def api_dados_cliente():
                     'data': data_fmt,
                     'tipo': t.get('tipo', '?'),
                     'desc': t.get('descricao', ''),
-                    'valor': val_t
+                    'valor': val_t,
+                    'saldo_posterior': saldo_post
                 })
             
         return jsonify({
@@ -4560,9 +4562,9 @@ def solicitar_saque():
         # 👉 NOVO: REGISTRA A TRANSAÇÃO NO EXTRATO (AUDITORIA)
         doc_transacao = {
             'id_transacao': f"SQ{int(time.time()*1000)}", # Ex: SQ171025...
-            'id_cliente': id_sessao,
+            'id_cliente': int(id_sessao),
             'data_hora': hora_brasil(),
-            'tipo': 'debito',
+            'tipo': 'saque',
             'valor': Decimal128(str(valor_solicitado)),
             'saldo_anterior': Decimal128(str(saldo_atual)),
             'saldo_posterior': Decimal128(str(novo_saldo)),
