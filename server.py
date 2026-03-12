@@ -4450,7 +4450,7 @@ def enviar_notificacao_telegram(mensagem):
         payload = {
             "chat_id": CHAT_ID,
             "text": mensagem,
-            "parse_mode": "Markdown"
+            "parse_mode": "HTML"
         }
         
         resposta = requests.post(url, json=payload, timeout=5)
@@ -4465,6 +4465,7 @@ def enviar_notificacao_telegram(mensagem):
 # ==============================================================================
 #  ROTA DE SOLICITAÇÃO DE SAQUE (COM LOGS DE DEBUG)
 # ==============================================================================
+
 @app.route('/api/solicitar_saque', methods=['POST'])
 def solicitar_saque():
     print("\n--- 🔍 INICIANDO DEBUG DE SAQUE ---") # Log Visual
@@ -4479,7 +4480,7 @@ def solicitar_saque():
         id_sessao = session['id_cliente']
         print(f"DEBUG: ID na Sessão: {id_sessao} | Tipo: {type(id_sessao)}")
 
-        data = request.json
+        data = request.get_json() # get_json() é mais seguro
         valor_solicitado = float(data.get('valor', 0))
         
         # Conexão com Banco
@@ -4491,39 +4492,29 @@ def solicitar_saque():
         # 2. TENTATIVA DE BUSCA (COM CORREÇÃO DE TIPO)
         print(f"DEBUG: Buscando cliente na coleção 'clientes'...")
         
-        # Tenta buscar exato
         cliente = sales_db.clientes.find_one({'id_cliente': id_sessao})
         
-        # Se falhou, tenta inverter o tipo (String <-> Int) para garantir
         if not cliente:
             print("DEBUG: ⚠️ Busca exata falhou. Tentando conversão de tipo...")
             try:
                 if isinstance(id_sessao, str):
-                    # Se é string, tenta como int
                     cliente = sales_db.clientes.find_one({'id_cliente': int(id_sessao)})
                     print(f"DEBUG: Sucesso buscando como INT: {int(id_sessao)}")
                 else:
-                    # Se é int, tenta como string
                     cliente = sales_db.clientes.find_one({'id_cliente': str(id_sessao)})
                     print(f"DEBUG: Sucesso buscando como STRING: {str(id_sessao)}")
             except Exception as e_conv:
                 print(f"DEBUG: Falha na conversão de tipo: {e_conv}")
 
-        # LOG DO RESULTADO DA BUSCA
         if not cliente:
             print(f"DEBUG: ❌ ERRO CRÍTICO - Cliente não encontrado no banco. ID buscado: {id_sessao}")
-            # Dica: Lista um cliente qualquer para ver como os IDs são salvos
-            exemplo = sales_db.clientes.find_one()
-            if exemplo:
-                print(f"DEBUG: Exemplo de cliente no banco (para comparar ID): {exemplo.get('id_cliente')} (Tipo: {type(exemplo.get('id_cliente'))})")
             return jsonify({'erro': 'Cliente não encontrado.'}), 404
 
         print(f"DEBUG: ✅ Cliente encontrado: {cliente.get('nick')}")
         
-        # 2. CORREÇÃO DO DECIMAL128 (AQUI ESTAVA O ERRO)
+        # 3. CORREÇÃO DO DECIMAL128 E CÁLCULO DE SALDO
         raw_saldo = cliente.get('saldo_atual', 0.0)
         
-        # Verifica se é Decimal128 do Mongo e converte corretamente
         if hasattr(raw_saldo, 'to_decimal'):
             saldo_atual = float(raw_saldo.to_decimal())
         else:
@@ -4537,16 +4528,10 @@ def solicitar_saque():
             print(f"DEBUG: Saldo insuficiente. Tem: {saldo_atual}, Pediu: {valor_solicitado}")
             return jsonify({'erro': 'Saldo insuficiente para esta solicitação.'}), 400
 
-        # Verifica Saque Pendente
-        ped_pendente = sales_db.requisao_saque.find_one({
-           'id_cliente': id_sessao, # Usa a variável local
-           'status': 'pendente'
-        })
-        #if ped_pendente:
-        #    print("DEBUG: Já existe saque pendente.")
-        #    return jsonify({'erro': 'Você já possui um saque pendente. Aguarde.'}), 400
+        # 👉 NOVO: CALCULA O NOVO SALDO APÓS O SAQUE
+        novo_saldo = saldo_atual - valor_solicitado
 
-        # Criação do Registro de Saque
+        # 4. Criação do Registro de Saque
         novo_saque = {
             'id_cliente': id_sessao,
             'nick': cliente.get('nick', 'Desconhecido'),
@@ -4561,16 +4546,43 @@ def solicitar_saque():
             'valor_pgto': 0.0,
             'saldo_atual_pgto': 0.0
         }
+        
+        # Insere o pedido de saque
+        resultado_saque = sales_db.requisao_saque.insert_one(novo_saque)
+        id_novo_saque = str(resultado_saque.inserted_id)
 
-        sales_db.requisao_saque.insert_one(novo_saque)
+        # 👉 NOVO: DEBITA O SALDO DO CLIENTE NA BASE DE DADOS
+        sales_db.clientes.update_one(
+            {'_id': cliente['_id']}, # Usamos o _id interno do Mongo que é à prova de falhas
+            {'$set': {'saldo_atual': Decimal128(str(novo_saldo))}}
+        )
 
-        # Envia Notificação
+        # 👉 NOVO: REGISTRA A TRANSAÇÃO NO EXTRATO (AUDITORIA)
+        doc_transacao = {
+            'id_transacao': f"SQ{int(time.time()*1000)}", # Ex: SQ171025...
+            'id_cliente': id_sessao,
+            'data_hora': hora_brasil(),
+            'tipo': 'debito',
+            'valor': Decimal128(str(valor_solicitado)),
+            'saldo_anterior': Decimal128(str(saldo_atual)),
+            'saldo_posterior': Decimal128(str(novo_saldo)),
+            'descricao': f"Requisição de Saque (ID: {id_novo_saque[-6:]})",
+            'id_evento': 'SAQUE',
+            'origem': 'WEB_AUTO',
+            'registrado_por': 'SISTEMA_SAQUE'
+        }
+        # Se a sua tabela chamar transacoes_clientes, mude abaixo:
+        sales_db.transacoes_clientes.insert_one(doc_transacao)
+
+        # Envia Notificação ao Telegram
         try:
+            data_formatada = hora_brasil().strftime('%d/%m/%Y às %H:%M:%S')
             msg_telegram = (
-                f"💰 *NOVA SOLICITAÇÃO DE SAQUE*\n"
-                f"👤 Usuário: {cliente.get('nick')}\n"
-                f"💲 Valor: R$ {valor_solicitado:.2f}\n"
-                f"🏦 Saldo Atual: R$ {saldo_atual:.2f}\n"
+                f"💰 <b>NOVA SOLICITAÇÃO DE SAQUE</b>\n"
+                f"🔄 Data: {data_formatada}\n"
+                f"👤 <b>Usuário: {cliente.get('nick')}</b>\n"
+                f"💲 Valor Solicitado: R$ {valor_solicitado:.2f}\n"
+                f"🏦 Saldo Restante: R$ {novo_saldo:.2f}\n"
                 f"🔑 PIX: {novo_saque['chave_pix']}"
             )
             enviar_notificacao_telegram(msg_telegram)
@@ -4578,15 +4590,19 @@ def solicitar_saque():
         except Exception as e_msg:
             print(f"Erro ao notificar Telegram: {e_msg}")
 
-        print(f"✅ Saque solicitado com sucesso: {cliente.get('nick')} - R$ {valor_solicitado}")
+        print(f"✅ Saque solicitado e saldo atualizado: {cliente.get('nick')} - R$ {valor_solicitado}")
         print("--- FIM DEBUG ---\n")
 
-        return jsonify({'status': 'ok', 'msg': 'Solicitação enviada para análise!'})
+        return jsonify({
+            'status': 'ok', 
+            'msg': 'Solicitação enviada! O valor foi retido para análise.',
+            'novo_saldo': novo_saldo # Devolvemos o novo saldo para o Front atualizar a tela!
+        })
 
     except Exception as e:
         print(f"❌ Erro EXCEPTION no saque: {e}")
         import traceback
-        traceback.print_exc() # Imprime a linha exata do erro
+        traceback.print_exc()
         return jsonify({'erro': 'Erro interno ao processar saque.'}), 500
 
 

@@ -7537,9 +7537,11 @@ function fecharModalSaquesPendentes() {
     if (modal) modal.classList.add('hidden');
 }
 
+
+
+
 // FIM DO SEU SCRIPT.JS - Certifique-se de que não existem mais chaves "}" soltas debaixo disto!
 
 //  APP_USR-4102968123853317-030915-554488ce7119ab34a742fafc45b0f1e9-3255401766
-
 // assinatura secreta
 // 8c15f904a323ba454216c66259525175573b6a8796c7dd28bcddbd837b18b947
