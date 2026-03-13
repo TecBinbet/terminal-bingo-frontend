@@ -5616,7 +5616,7 @@ async function atualizarDadosCliente() {
                                 <span class="font-bold text-lg ${corValor} whitespace-nowrap">
                                     ${sinal}R$ ${valorItem.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
                                 </span>
-                                <span class="text-xs text-gray-500 whitespace-nowrap">
+                                <span class="text-xs text-gray-400 whitespace-nowrap">
                                     Saldo: R$ ${saldoPosterior}
                                 </span>
                             </div>

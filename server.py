@@ -4579,13 +4579,17 @@ def solicitar_saque():
         # Envia Notificação ao Telegram
         try:
             data_formatada = hora_brasil().strftime('%d/%m/%Y às %H:%M:%S')
+            valor_str = f"{valor_solicitado:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            saldo_str = f"{novo_saldo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
             msg_telegram = (
                 f"💰 <b>NOVA SOLICITAÇÃO DE SAQUE</b>\n"
-                f"🔄 Data: {data_formatada}\n"
-                f"👤 <b>Usuário: {cliente.get('nick')}</b>\n"
-                f"💲 Valor Solicitado: R$ {valor_solicitado:.2f}\n"
-                f"🏦 Saldo Restante: R$ {novo_saldo:.2f}\n"
-                f"🔑 PIX: {novo_saque['chave_pix']}"
+                f"\n"
+                f"👤 <b>ID: {cliente.get('id_cliente')} - {cliente.get('nick')}</b>\n"
+                f"💲 Valor Solicitado: R$ {valor_str}\n" 
+                f"🏦 Saldo Restante: R$ {saldo_str}\n"
+                f"🔑 <b>PIX: {novo_saque['chave_pix']}</b>\n"
+                f"🔄 Data: {data_formatada}"
             )
             enviar_notificacao_telegram(msg_telegram)
 
