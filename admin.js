@@ -1398,7 +1398,7 @@ async function sortearBola() {
         if(btn) { btn.disabled = false; btn.textContent = "SORTEAR BOLA 🎲"; }
         return;
     }
-    A_Ultima_Bola = parseInt(numero);   // zzzz 
+    A_Ultima_Bola = parseInt(numero);  
     console.log(`🎱 LOCUTOR SORTEOU: ${numero}`);
     jaAlertouNestaBola = false;
     // 3. ATUALIZA A TELA IMEDIATAMENTE (Não espera internet)

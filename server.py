@@ -922,8 +922,7 @@ def recalcular_ranking_top10():
         traceback.print_exc()
 
 
-
-def recalcular_ranking_top10_75():
+def recalcular_ranking_top10_75():    # xyx
     """
     Calcula ranking para BINGO 75 (Lógica Rígida de Fluxo).
     """
@@ -977,12 +976,13 @@ def recalcular_ranking_top10_75():
             novo_nome_premio = '4 CANTOS E LINHA'
 
         # --- ATUALIZA O NOME DO PRÊMIO ---
-        print(f"novo_nome_premio                                              > {novo_nome_premio}")
-        print(f"dados_premio.get('buscando_o_premio')          > {dados_premio.get('buscando_o_premio')}")
+        #print(f"novo_nome_premio                                              > {novo_nome_premio}")
+        #print(f"dados_premio.get('buscando_o_premio')          > {dados_premio.get('buscando_o_premio')}")
 
         if novo_nome_premio != dados_premio.get('buscando_o_premio'):
              db.buscando.update_one({}, {'$set': {'buscando_o_premio': novo_nome_premio}}, upsert=True)
              db.buscando_mesa.update_one({}, {'$set': {'buscando_o_premio': novo_nome_premio}}, upsert=True)
+             print(f"Nome Premio                                       > {novo_nome_premio}")
              # broadcast_para_clientes({'type': 'UPDATE_PREMIO'}) # Opcional
 
         # --- EXCLUSÃO DE DUPLO BINGO ---
@@ -1077,7 +1077,7 @@ def recalcular_ranking_top10_75():
 
         # --- GRAVAÇÃO ---
         resultados.sort(key=lambda x: (x['qtde'], x['cartela']))
-        top_10 = resultados[:10]   # aquix 10
+        top_10 = resultados[:10]   
         
         rodada_info = db.rodada.find_one({})
         id_evt = rodada_info.get('id_evento', 0) if rodada_info else 0
@@ -2450,7 +2450,7 @@ def admin_sortear_mesa():
         #db.bolas.update_one({}, update_data, upsert=True)
         db.bolas_mesa.update_one({}, update_data, upsert=True)
         
-        # 5. DISPARA O RANKING
+        # 5. DISPARA O RANKING   # aqui demora
         print(f"⚙️ [API BOLA] Iniciando Thread para recalcular o Ranking nas cartelas...")
         threading.Thread(target=recalcular_ranking_principal).start()
 

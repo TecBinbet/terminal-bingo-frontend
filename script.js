@@ -118,6 +118,8 @@ let globalUserNick = null;
 let globalUserSaldo = 0.0;
 var globalPrecoCartela = 0;
 
+let ultima_bola_render = -1;
+
 var currentEventoId = null;   // ID do Evento ativo (usado para buscar cartelas)
 var globalIdCliente = null;   // ID do Cliente logado
 var globalMinhasCartelas = { cartelas: [], cupons_extra: [] }; // Cache de jogos
@@ -887,7 +889,8 @@ async function carregarCartelasAutomaticas(idEvento) {
             cartelasEmJogo = data.cartelas.length; 
             renderizarListaMinhasCartelas(data.cartelas);
             
-            // Baixa a matriz de números
+            // Baixa a matriz de números  tst1
+            ultima_bola_render = -1;
             await fetchAndProcessCards(); 
 
         } else {
@@ -1751,6 +1754,7 @@ function setupCartelasEmJogo(maxCardNumber) {
         // O 'true' indica que foi um clique do usuário (para disparar timers)
         if (adicionarFaixaDeCartelas(true)) {
             // 2. Se a faixa foi adicionada com sucesso, busca no servidor
+            ultima_bola_render = -1;
             fetchAndProcessCards();
         }
     });
@@ -1963,12 +1967,6 @@ async function fetchAndProcessCards() {
         // Chama o processador
         processCards(cards, bolas, premio, linhas);
         
-        // --- FORÇAR ATUALIZAÇÃO DO TOP 10 ---
-        // Se o Top 10 não estiver aparecendo, chame a renderização dele explicitamente
-        //if (typeof renderMelhores === 'function') {
-           // renderMelhores(cards); 
-        //}
-
     } catch (error) {
         console.error("❌ Erro fetchAndProcessCards:", error);
     } finally {
@@ -1976,75 +1974,7 @@ async function fetchAndProcessCards() {
         if (loader) loader.style.display = 'none';
     }
 }
-// --------------------------
 
-async function f_etchAndProcessCards() {
-    if (isFetchingCards) return;
-    isFetchingCards = true;
-    const isMobile = isMobileDevice();
-    const totalSpan = isMobile ? mobileTotalCartelasSpan : totalCartelasSpan;
-    const validationMessageCurrent = isMobile ? mobileValidationMessage : validationMessage;
-
-    const total = parseInt(totalSpan.textContent);
-
-    if (total < minCartelas || total > maxCartelas) {
-        if (cartelaRanges.length > 0) {
-            validationMessageCurrent.textContent = `Erro: O total de cartelas (${total}) está fora do intervalo permitido (${minCartelas} - ${maxCartelas}). O processamento foi interrompido.`;
-            validationMessageCurrent.classList.remove('hidden');
-        }
-        loadedCards = [];
-        displayLoadedCards([]);
-        isFetchingCards = false;
-        return;
-    } else {
-        validationMessageCurrent.classList.add('hidden');
-    }
-
-    if (cartelaRanges.length === 0) {
-        loadedCards = [];
-        displayLoadedCards([]);
-        isFetchingCards = false;
-        return;
-    }
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/cartelas`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ranges: cartelaRanges })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Falha ao buscar as cartelas. Status: ${response.status}`);
-        }
-
-        const cards = await response.json();
-
-        if (cards.length === 0) {
-            validationMessageCurrent.textContent = 'Nenhuma cartela encontrada na faixa selecionada. Por favor, verifique os números e tente novamente.';
-            validationMessageCurrent.classList.remove('hidden');
-            loadedCards = [];
-            displayLoadedCards([]);
-            isFetchingCards = false;
-            updateDigitalBola("--");  // xx
-            return;
-        }
-
-        const initialData = await fetchDataFromCollections();
-        
-        const premioBuscadoAPI = initialData.buscandoData[0]?.buscando_o_premio || '';
-        const premioBuscadoNormalized = premioBuscadoAPI.replace(/\s+/g, '').trim();
-        processCards(cards, initialData.bolasData[0]?.bolas_cantadas || [], premioBuscadoNormalized, initialData.buscandoData[0]?.buscando_a_linha || '');
-        
-        validationMessageCurrent.classList.add('hidden');
-    } catch (error) {
-        console.error("Erro ao buscar e processar cartelas:", error);
-        validationMessageCurrent.textContent = `Erro ao carregar cartelas. Detalhes: ${error.message}. Verifique a conexão com o servidor e tente novamente.`;
-        validationMessageCurrent.classList.remove('hidden');
-    } finally {
-        isFetchingCards = false;
-    }
-}
 
 // --- FUNÇÃO PRINCIPAL (Dispatcher) ---
 // Essa é a função que o fetchAndProcessCards chama.
@@ -2287,9 +2217,20 @@ function finalizeProcessing(processedCards, premioBuscado) {
     displayLoadedCards([]); // Passa array vazio pois 'processCards' já calculou missing
 }
 
-
-
+// xyx
 function displayLoadedCards(bolasCantadas) {
+    // Conta quantas bolas temos agora (proteção caso venha undefined)
+    const qtdBolasAtuais = bolasCantadas ? bolasCantadas.length : 0;
+
+    // 👉 A SUA TRAVA DE PERFORMANCE!
+    // Se a quantidade de bolas não mudou desde a última renderização, cancela tudo.
+    if (qtdBolasAtuais === ultima_bola_render) {
+        return; // Sai da função silenciosamente e poupa 100% do processamento!
+    }
+
+    // Atualiza a memória para a próxima chamada
+    ultima_bola_render = qtdBolasAtuais;
+
     loader.style.display = 'none';
     const isMobile = isMobileDevice();
     const container = document.getElementById('loaded-cards-container'); 
@@ -2308,6 +2249,20 @@ function displayLoadedCards(bolasCantadas) {
     }
  
     cardsList.innerHTML = '';
+
+    if (!bolasCantadas || bolasCantadas.length === 0) {
+        cardsList.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-8 opacity-90 animate-fade-in">
+                <span class="text-5xl mb-3 animate-pulse">🎱</span>
+                <p class="text-gray-200 font-bold text-lg">Aguardando o Sorteio...</p>
+                <p class="text-yellow-500 text-sm mt-1">Suas <b>${formattedCount}</b> cartelas estão na mesa e armadas!</p>
+            </div>
+        `;
+        // Chama os "Oscartões" para desenhar apenas o TOP 10 (que é leve) vazio e sai.
+        renderOscartoes(bolasCantadas);
+        return; 
+    }
+
     
     const isLinePrize = buscando_o_premio.includes('QUADRA') || buscando_o_premio.includes('LINHA');
     const isMultiLinePrize = isLinePrize && !!buscando_a_linha;
@@ -2465,6 +2420,7 @@ function clearPanels() {
     closeAvisoPanel(); // <--- Adicione 
     lastAvisoTimestamp = 0; // Reseta para permitir novos avisos iguais
 
+    ultima_bola_render = -1;
     updateDigitalBola("--");  
 
     precoSerie.textContent = '';    
@@ -3918,7 +3874,7 @@ async function renderMainContent(data) {
         falarTexto(`${ultimaBolaDaLista}`);
         ultimaBolaCantada = ultimaBolaDaLista;
         ultimaBolaExibida = ultimaBolaDaLista; 
-    
+        
         // Pequeno delay para garantir que o DOM não esteja ocupado
         setTimeout(() => {
              if (cachedRawCards.length > 0) {
@@ -3933,9 +3889,11 @@ async function renderMainContent(data) {
     // --- REPROCESSAMENTO LOCAL ---
     if ((premioMudou || bolaMudou) && cachedRawCards.length > 0) {
         const premioNormalizado = premioBuscadoDaAPI.replace(/\s+/g, '').trim();
+        ultima_bola_render = -1;
         processCards(cachedRawCards, bolasCantadas, premioNormalizado, linhasAtivasDaAPI);
     } 
     else if (cartelaRanges && cartelaRanges.length > 0 && cachedRawCards.length === 0 && !isFetchingCards) {
+          ultima_bola_render = -1;
           fetchAndProcessCards();
     }
     
@@ -4808,6 +4766,7 @@ async function processarParametrosURL() {
         loader.style.display = 'flex';
         
         // Chama a função de busca
+        ultima_bola_render = -1;
         await fetchAndProcessCards();
         
         // fetchAndProcessCards() já esconde o loader no 'finally'
