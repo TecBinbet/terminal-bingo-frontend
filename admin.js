@@ -3679,9 +3679,22 @@ async function iniciarTransicaoRobo() {
     }
 }
 
-// 2. FUNÇÃO VISUAL: Cria e controla o cronómetro na tela
+// 2. FUNÇÃO VISUAL: Cria e controla o cronómetro na tela xyx
 function exibirPainelTransicaoRobo(dadosEvento) {
+    let tempoRestante = dadosEvento.segundos_restantes;
+    let id_proximo_evento = dadosEvento.id_evento;
+
+// 👉 A SUA IDEIA AQUI: O Maestro avisa os terminais!
+    console.log("📢 [ROBÔ] Disparando aviso de transição para todos os terminais...");
+    fetch(`${API_BASE_URL}/api/admin/avisar_transicao_robo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tempo_restante: tempoRestante })
+    })
+    .catch(e => console.error("❌ Erro ao avisar os terminais:", e));
+
     // Cria a UI dinâmica (assim não precisamos alterar o HTML)
+
     let painel = document.getElementById('robo-transition-panel');
     if (!painel) {
         painel = document.createElement('div');
@@ -3689,8 +3702,7 @@ function exibirPainelTransicaoRobo(dadosEvento) {
         painel.className = "fixed inset-0 bg-black bg-opacity-90 z-[9999] flex flex-col items-center justify-center text-white backdrop-blur-sm transition-opacity";
         document.body.appendChild(painel);
     }
-
-    let tempoRestante = dadosEvento.segundos_restantes;
+ 
     const tempoVendas = dadosEvento.tempo_vendas_config;
 
     const atualizarTela = () => {
@@ -3738,7 +3750,27 @@ function exibirPainelTransicaoRobo(dadosEvento) {
     if (roboTransitionInterval) clearInterval(roboTransitionInterval);
 
     // O "Coração" do relógio
+    let vendasFechadasPeloRobo = false;
+
     roboTransitionInterval = setInterval(() => {
+
+        // 👉 GATILHO BLINDADO: Se chegou na hora (ou passou) E ainda não fechou...
+        if (tempoRestante <= dadosEvento.tempo_vendas_config && !vendasFechadasPeloRobo) {
+            
+            vendasFechadasPeloRobo = true; // 2. Levanta a bandeira para NUNCA mais repetir!
+            
+            console.log(`🤖 [ROBÔ] Faltam ${tempoRestante}s. Trancando as vendas do evento ${dadosEvento.id_evento}!`);
+    
+            fetch(`${API_BASE_URL}/api/admin/fechar_vendas_evento`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id_evento: dadosEvento.id_evento })
+            })
+            .then(res => res.json())
+            .then(data => console.log("🤖 [ROBÔ] Resposta do fechamento:", data))
+            .catch(e => console.error("❌ Erro ao fechar vendas pelo robô:", e));
+        }
+
         tempoRestante--;
         
         if (tempoRestante <= 0) {

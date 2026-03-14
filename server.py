@@ -1942,37 +1942,32 @@ def proximos_eventos():
 
 
 # --- ROTA ATUALIZADA: FECHAR VENDAS (CORREÇÃO DE FUSO E MEIA-NOITE) ---
-@app.route('/api/admin/fechar_vendas_evento', methods=['POST'])
-def admin_fechar_vendas():
-    data = request.json
-    id_evt = data.get('id_evento')
-    
-    if not id_evt: return jsonify({'error': 'ID do evento necessário'}), 400
-
+def finalizar_evento_interno(id_evt):
+    """
+    Função central que finaliza as vendas de um evento.
+    Pode ser chamada pelo botão do Admin ou pelo Robô automático.
+    """
     sales_db = get_sales_db_connection()
-    if sales_db is None: return jsonify({'error': 'Sem conexão com DB Vendas'}), 500
+    if sales_db is None: 
+        return False, "Sem conexão com DB Vendas", 500
 
     try:
         # 1. Busca configuração de tempo (grace period)
         tempo_espera_seg = 120 # Padrão
         try:
+            # Nota: Certifique-se de que a variável 'db' está acessível aqui
             param = db.parametros.find_one({})
             if param and 'aviso_fim_das_vendas' in param:
                 tempo_espera_seg = int(param['aviso_fim_das_vendas'])
         except: pass
 
         # 2. Calcula Hora Final (Ajustado para Fuso Brasil -3h)
-
         agora_br = hora_brasil()
         hora_final_obj = agora_br + timedelta(seconds=tempo_espera_seg)
         hora_final_str = hora_final_obj.strftime("%H:%M:%S")
 
-        # 3. Envia o Aviso para a tabela (Para o Terminal ler)
+        # 3. Envia o Aviso para a tela (Para o Frontend iniciar o cronômetro)
         msg_aviso = "Atenção, em instantes o sorteio irá iniciar, Boa Sorte!"
-        
-        # --- CORREÇÃO AQUI ---
-        # Enviamos os SEGUNDOS (str) em vez da hora. 
-        # Isso evita que o frontend se perca na virada do dia (ex: 23:59 -> 00:01).
         tempo_para_envio = str(tempo_espera_seg) 
         
         threading.Thread(target=enviar_aviso_sistema, args=("Vendas Encerradas", msg_aviso, tempo_para_envio)).start()
@@ -1985,20 +1980,66 @@ def admin_fechar_vendas():
         if not sales_db.eventos.find_one(filtro):
             filtro = {'id_evento': str(id_evt)}
 
-        # finalizar as vendas
-        #  finalizar eventos ao abrir rodada
-        result = sales_db.eventos.update_one(filtro, {'$set': {'status': 'finalizado'}})
+        # Finalizar o evento
+        result = sales_db.eventos.update_one(filtro, {'$set': {'status': 'finalizado'}})        
         
         if result.modified_count > 0:
             if is_ativo_extra_global: 
                atualizar_ponteiro_sorte_extra(int(id_evt))
-            print(f"🔒 Evento {id_evt} FINALIZADO. Aviso enviado. Vendas até aprox: {hora_final_str} (BRT)")
-            return jsonify({'status': 'ok', 'msg': 'Vendas encerradas e aviso enviado.'})
+            print(f"🤖/👨‍💻 Evento {id_evt} FINALIZADO. Aviso enviado. Vendas até aprox: {hora_final_str} (BRT)")
+            return True, "Vendas encerradas e aviso enviado.", 200
         else:
-            return jsonify({'status': 'warning', 'msg': 'Evento já finalizado (Aviso atualizado).'})     
+            return False, "Evento já finalizado (Aviso atualizado).", 200 # 200 porque não é um erro crítico, só um aviso
 
     except Exception as e:
-        print(f"Erro fechar vendas: {e}")
+        print(f"Erro interno ao fechar vendas: {e}")
+        return False, str(e), 500	
+
+
+
+@app.route('/api/admin/fechar_vendas_evento', methods=['POST'])
+def admin_fechar_vendas():
+    data = request.json
+    id_evt = data.get('id_evento')
+    
+    if not id_evt: 
+        return jsonify({'error': 'ID do evento necessário'}), 400
+
+    # 👉 CHAMA O NOSSO "MOTOR"
+    sucesso, mensagem, codigo_http = finalizar_evento_interno(id_evt)
+
+    if sucesso:
+        return jsonify({'status': 'ok', 'msg': mensagem}), codigo_http
+    elif codigo_http == 200: # É o caso do "Evento já finalizado"
+        return jsonify({'status': 'warning', 'msg': mensagem}), 200
+    else:
+        return jsonify({'error': mensagem}), codigo_http0
+
+
+@app.route('/api/admin/avisar_transicao_robo', methods=['POST'])
+def rota_avisar_transicao_robo():
+    try:
+        data = request.json
+        tempo_restante = data.get('tempo_restante', 0)
+        
+        if not tempo_restante:
+            return jsonify({'error': 'Tempo não informado'}), 400
+
+        # O título e a mensagem exata que você sugeriu!
+        titulo = "Intervalo" # Use o título que o seu terminal de cliente já reconhece
+        msg_aviso = "Intervalo restante para o início do próximo Sorteio"
+        tempo_para_envio = str(tempo_restante) 
+        
+        # Dispara o aviso para todos os clientes via Thread (não trava o servidor)
+        threading.Thread(
+            target=enviar_aviso_sistema, 
+            args=(titulo, msg_aviso, tempo_para_envio)
+        ).start()
+
+        return jsonify({'status': 'ok', 'msg': 'Clientes avisados!'})
+
+    except Exception as e:
+        print(f"Erro ao avisar transição: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -4583,7 +4624,7 @@ def solicitar_saque():
             saldo_str = f"{novo_saldo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
             msg_telegram = (
-                f"💰 <b>NOVA SOLICITAÇÃO DE SAQUE</b>\n"
+                f"💰 <b>SOLICITAÇÃO DE SAQUE</b>\n"
                 f"\n"
                 f"👤 <b>ID: {cliente.get('id_cliente')} - {cliente.get('nick')}</b>\n"
                 f"💲 Valor Solicitado: R$ {valor_str}\n" 
