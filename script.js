@@ -398,6 +398,30 @@ function agruparNumerosEmRanges(numeros) {
     return ranges;
 }
 
+function formatarTempoInteligente(totalSegundos) {
+    if (totalSegundos <= 0) return "0:00";
+
+    // Calcula os pedaços do tempo
+    const dias = Math.floor(totalSegundos / (24 * 3600));
+    const horas = Math.floor((totalSegundos % (24 * 3600)) / 3600);
+    const minutos = Math.floor((totalSegundos % 3600) / 60);
+    const segundos = Math.floor(totalSegundos % 60);
+
+    // Garante que segundos sempre tenham 2 dígitos (ex: "05" em vez de "5")
+    const segStr = segundos.toString().padStart(2, '0');
+    // Garante que minutos tenham 2 dígitos quando houver horas (ex: "1:04:30")
+    const minStrPadded = minutos.toString().padStart(2, '0');
+
+    // Monta a string baseada no tamanho do tempo
+    if (dias > 0) {
+        return `${dias} dia(s) e ${horas}:${minStrPadded}:${segStr}`;
+    } else if (horas > 0) {
+        return `${horas}:${minStrPadded}:${segStr}`;
+    } else {
+        // Se for menos de 1 hora, mostra apenas MM:SS (ex: "3:15")
+        return `${minutos}:${segStr}`; 
+    }
+}
 
 /**
  * Abre o painel de Próximos Eventos e carrega os dados do servidor.
@@ -486,8 +510,7 @@ function renderAvisoPanel(avisosData) {
             // Tempo Restante = (Hora Criação + Duração) - Hora Atual
             const duracao = parseInt(aviso.tempo);
             const agoraUnix = Date.now() / 1000;
-            const expiracao = criacao + duracao;
-            
+            const expiracao = criacao + duracao;          
             segundosRestantes = Math.floor(expiracao - agoraUnix);
         }
     }
@@ -501,7 +524,7 @@ function renderAvisoPanel(avisosData) {
         return; // <--- NÃO ABRE O PAINEL
     }
 
-    // Se chegou aqui, o aviso ainda é válido
+    // 👉 CORREÇÃO AQUI: Salva o TIMESTAMP real para o sistema não bugar
     lastAvisoTimestamp = aviso.timestamp;
 
     // 3. Preenche Conteúdo
@@ -512,6 +535,7 @@ function renderAvisoPanel(avisosData) {
     if (aviso.tempo) {
         avisoTimerContainer.classList.remove('hidden');
         avisoTimerContainer.classList.add('flex');
+        
         // Passamos o timestamp de criação para o timer saber quando começou
         startAvisoCountdown(aviso.tempo, aviso.timestamp);
     } else {
@@ -573,9 +597,9 @@ function updateAvisoTimerLogic(tempoStr) {
 
     if (segundosRestantes < 0) segundosRestantes = 0;
 
-    const m = Math.floor(segundosRestantes / 60);
-    const s = segundosRestantes % 60;
-    const formatado = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    // 👉 AQUI ACONTECE A MÁGICA DA FORMATAÇÃO INTELIGENTE
+    // O sistema pega os segundos crus e converte para dias, horas ou minutos perfeitamente!
+    const formatado = formatarTempoInteligente(segundosRestantes);
     
     if (avisoTimerDisplay) avisoTimerDisplay.textContent = formatado;
     
@@ -584,7 +608,6 @@ function updateAvisoTimerLogic(tempoStr) {
         setTimeout(() => { closeAvisoPanel(); }, 1000);
     }
 }
-
 
 function closeAvisoPanel() {
     if (avisoPanel) {
@@ -2643,14 +2666,12 @@ function displayPrizeInfo(buscandoData, premioData = null) {
     prizeInfoContainerCurrent.appendChild(prizeItem);
 }
 
+
 function displayPrizeValues(premioData, topeData = null) {
-    const isMobile = isMobileDevice(); // Mantido do seu código
     const prizeValuesContainerCurrent = mobilePrizeValuesContainer;
-    
     if (!prizeValuesContainerCurrent) return;
 
-    // --- PASSO 1: FILTRAGEM PRÉVIA (Para saber se temos dados reais) ---
-    // Fazemos a limpeza e filtro ANTES de decidir se vamos desenhar
+    // --- 1. FILTRAGEM DE PRÊMIOS VÁLIDOS ---
     let validPrizes = [];
     if (premioData && Array.isArray(premioData)) {
         validPrizes = premioData.filter(premio => {
@@ -2660,90 +2681,106 @@ function displayPrizeValues(premioData, topeData = null) {
         });
     }
 
-    // --- PASSO 2: A CURA DO "NENHUM PRÊMIO" (Blindagem Visual) ---
-    // Se a nova lista de prêmios válidos é VAZIA (0), 
-    // MAS a tela JÁ TEM prêmios desenhados (e não é a msg de "Nenhum")...
-    // ENTÃO: O sistema IGNORA essa atualização vazia e mantém os prêmios na tela.
     const temPremiosNaTela = prizeValuesContainerCurrent.children.length > 0 && 
                              !prizeValuesContainerCurrent.textContent.includes('Nenhum prêmio');
     
-    if (validPrizes.length === 0 && temPremiosNaTela) {
-        // Retorna silenciosamente. O usuário continua vendo os prêmios antigos.
-        return; 
-    }
+    if (validPrizes.length === 0 && temPremiosNaTela) return;
 
-    // --- PASSO 3: O FIM DO PISCA-PISCA (Cache JSON) ---
-    // Compara os dados atuais (Prêmios + Tope) com a memória.
-    // Se for EXATAMENTE IGUAL, não redesenha nada.
-    const currentJson = JSON.stringify({ p: validPrizes, t: topeData });
-    if (currentJson === lastPrizeJson) {
-        return; 
-    }
-    lastPrizeJson = currentJson; // Atualiza a memória
+    // --- 2. TRAVA ANTI-PISCAR (Atualizada para rastrear cartelas também) ---
+    const currentJson = JSON.stringify({ p: validPrizes, t: topeData, c: cartelasEmJogo, r: cartelaRanges });
+    if (currentJson === lastPrizeJson) return; 
+    lastPrizeJson = currentJson;
 
-    // --- PASSO 4: DESENHO (Sua lógica original preservada) ---   Erro no envio do pacote: name 'socketio' is not defined 
-    const fragment = document.createDocumentFragment();
-
+    // Se estiver realmente vazio
     if (validPrizes.length === 0) {
-        // Só entra aqui se a tela estava vazia ou se realmente não tem prêmios
-        const defaultMessage = document.createElement('span');
-        defaultMessage.className = 'text-lg text-white';
-        defaultMessage.textContent = 'Nenhum prêmio cadastrado.';
-        fragment.appendChild(defaultMessage);
-    } else {
-        const prizeOrder = ['QUADRA', 'LINHA', '3 LINHAS', 'FALTA 1', 'BINGO', 'DUPLO BINGO', 'TRIPLO BINGO', 'SUPER BINGO', 'ACUMULADO'];
-
-        validPrizes.sort((a, b) => {
-            const indexA = prizeOrder.indexOf(a.tipo_premio);
-            const indexB = prizeOrder.indexOf(b.tipo_premio);
-            const aIsValid = indexA > -1;
-            const bIsValid = indexB > -1;
-            if (aIsValid && !bIsValid) return -1;
-            if (!aIsValid && !bIsValid) return 1;
-            if (!aIsValid && !bIsValid) return 0;
-            return indexA - indexB;
-        });
-
-        validPrizes.forEach(premio => {
-            let prizeText = `${premio.tipo_premio}: ${premio.valor}`;   
-            
-            // Sua lógica de Mobile/Promocional
-            if (typeof iniciandoRodada !== 'undefined' && iniciandoRodada && premio.tipo_premio === 'BINGO') {
-                const valorLimpo = premio.valor.replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
-                if (parseFloat(valorLimpo) > 0 && mobilePrizesContent && mobilePrizesContent.classList.contains('hidden')) {
-                     if (typeof seePromocoes !== 'undefined') seePromocoes = false; 
-                     if (typeof hidePromocionalPanel === 'function') hidePromocionalPanel();
-                     if (mobilePrizesContent) mobilePrizesContent.classList.remove('hidden'); 
-                     
-                     if (typeof togglePrizesButton !== 'undefined' && togglePrizesButton) {
-                         //togglePrizesButton.textContent = 'Ocultar Prêmios';
-                         //togglePrizesButton.classList.remove('bg-gray-700');
-                         //togglePrizesButton.classList.add('bg-red-800'); 
-                     }
-                }
-            }     
-            
-            // Sua lógica de Tope
-            if (topeData && topeData.length > 0) {
-                const currentTopeData = topeData[0];
-                if (premio.tipo_premio.includes('SUPER BINGO') && currentTopeData.bola_tope_sb) {
-                    prizeText += ` (TOPE: ${currentTopeData.bola_tope_sb})`;
-                } else if (premio.tipo_premio.includes('ACUMULADO') && currentTopeData.bola_tope_ac) {
-                    prizeText += ` (TOPE: ${currentTopeData.bola_tope_ac})`;
-                }
-            }
-
-            const prizeItem = document.createElement('div');
-            prizeItem.className = 'text-sm font-bold text-green-600 text-center -mt-1';
-            prizeItem.textContent = prizeText;
-            fragment.appendChild(prizeItem);
-        });
+        prizeValuesContainerCurrent.innerHTML = '<span class="text-sm text-gray-500 italic py-4">Painel Inativo</span>';
+        return;
     }
 
-    // Limpa e Atualiza (Atomicamente)
+    // --- 3. SEPARAÇÃO DAS COLUNAS ---
+    const esquerdaOrdem = ['QUADRA', 'LINHA', '3 LINHAS', 'FALTA 1', 'BINGO', 'DUPLO BINGO', 'TRIPLO BINGO'];
+    const direitaOrdem = ['SUPER BINGO', 'ACUMULADO'];
+
+    const premiosEsquerda = validPrizes.filter(p => esquerdaOrdem.includes(p.tipo_premio))
+                                       .sort((a, b) => esquerdaOrdem.indexOf(a.tipo_premio) - esquerdaOrdem.indexOf(b.tipo_premio));
+    
+    const premiosDireita = validPrizes.filter(p => direitaOrdem.includes(p.tipo_premio) || !esquerdaOrdem.includes(p.tipo_premio))
+                                      .sort((a, b) => direitaOrdem.indexOf(a.tipo_premio) - direitaOrdem.indexOf(b.tipo_premio));
+
+    // --- 4. FUNÇÃO AUXILIAR PARA CRIAR "VISOR DIGITAL" ---
+    const criarCaixaDigital = (titulo, valor, corTitulo, corValor) => {
+        return `
+            <div class="flex flex-col bg-black p-1 rounded border border-gray-800 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]">
+                <span class="text-[9px] ${corTitulo} mb-1 font-bold uppercase tracking-wider leading-none">${titulo}</span>
+                <span class="font-digital text-[14px] ${corValor} text-right leading-none -mt-3 truncate" style="text-shadow: 0 0 8px currentColor;">
+                    ${valor}
+                </span>
+            </div>
+        `;
+    };
+
+    // --- 5. MONTAGEM DA COLUNA ESQUERDA (O JOGO) ---
+    let htmlEsquerda = '<div class="flex flex-col gap-0.5 w-1/2 pr-1 -mt-2 border-r border-gray-700/50">';
+    premiosEsquerda.forEach(premio => {
+        htmlEsquerda += criarCaixaDigital(premio.tipo_premio, premio.valor, 'text-yellow-500', 'text-green-400');
+    });
+    htmlEsquerda += '</div>';
+
+
+    // --- 6. MONTAGEM DA COLUNA DIREITA (ESPECIAIS E ESTATÍSTICAS) ---
+    let htmlDireita = '<div class="flex flex-col gap-0.5 w-1/2 pl-1 -mt-2">';
+    
+    // Prêmios Topes (Acumulado etc)
+    premiosDireita.forEach(premio => {
+        let titulo = premio.tipo_premio;
+        let corValor = 'text-yellow-300';
+        
+        if (topeData && topeData.length > 0) {
+            if (titulo.includes('SUPER BINGO') && topeData[0].bola_tope_sb) titulo += ` (T:${topeData[0].bola_tope_sb})`;
+            if (titulo.includes('ACUMULADO') && topeData[0].bola_tope_ac) titulo += ` (T:${topeData[0].bola_tope_ac})`;
+        }
+        htmlDireita += criarCaixaDigital(titulo, premio.valor, 'text-purple-400', corValor);
+    });
+
+    // Visor de Séries/Período
+    let seriesHtml = '';
+    if (cartelaRanges && cartelaRanges.length > 0) {
+        cartelaRanges.forEach(r => {
+            if (r.inicial > 0 && r.final > 0) {
+                seriesHtml += `<div class="font-digital text-[12px] text-cyan-400 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">[${r.inicial}-${r.final}]</div>`;
+            }
+        });
+    } else {
+        seriesHtml = `<div class="font-digital text-[14px] text-gray-600 text-right leading-tight">--</div>`;
+    }
+    htmlDireita += `
+        <div class="flex flex-col bg-black p-1.5 rounded border border-gray-800 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]">
+            <span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider -mb-3 leading-none">PERÍODO(S) EM JOGO</span>
+            ${seriesHtml}
+        </div>
+    `;
+
+    // Visor de Cartelas Totais
+    const totalCartelasFmt = new Intl.NumberFormat('pt-BR').format(cartelasEmJogo || 0);
+    htmlDireita += criarCaixaDigital('CARTELAS EM JOGO', totalCartelasFmt, 'text-gray-400', 'text-blue-400');
+
+    htmlDireita += '</div>';
+
+    // --- 7. APLICA NA TELA ---
     prizeValuesContainerCurrent.innerHTML = '';
-    prizeValuesContainerCurrent.appendChild(fragment);
+    prizeValuesContainerCurrent.className = 'w-full flex flex-row p-1'; 
+    prizeValuesContainerCurrent.innerHTML = htmlEsquerda + htmlDireita;
+
+    // Tratamento de visibilidade para quando a rodada inicia
+    if (typeof iniciandoRodada !== 'undefined' && iniciandoRodada) {
+        if (mobilePrizesContent && mobilePrizesContent.classList.contains('hidden')) {
+            if (typeof seePromocoes !== 'undefined') seePromocoes = false; 
+            if (typeof hidePromocionalPanel === 'function') hidePromocionalPanel();
+            mobilePrizesContent.classList.remove('hidden'); 
+        }
+    }
 }
+
 
 function displayPrizeValuesB(premioData, topeData = null) {
     const isMobile = isMobileDevice();
@@ -3085,7 +3122,7 @@ function displayWinnersPanel(ganhadoresData) {
 
     // O Backend já manda os dados agrupados. Iteramos sobre os grupos.
     ganhadoresData.forEach(grupo => {
-console.log("Grupo recebido:", grupo);
+        //console.log("Grupo recebido:", grupo);
         // Container do Grupo (Prêmio)
         const groupDiv = document.createElement('div');
         groupDiv.className = 'bg-gray-800 rounded-lg p-1 border border-gray-700 mb-1';
@@ -3102,9 +3139,9 @@ console.log("Grupo recebido:", grupo);
 
         // Lista de Ganhadores deste prêmio
         if (grupo.ganhadores && Array.isArray(grupo.ganhadores)) {
-console.log("Ganhadores encontrados:", grupo.ganhadores);
+            //console.log("Ganhadores encontrados:", grupo.ganhadores);
             grupo.ganhadores.forEach(ganhador => {
-console.log("Dados do ganhador individual:", ganhador);
+                //console.log("Dados do ganhador individual:", ganhador);
                 const row = document.createElement('div');
                 row.className = 'flex justify-between items-center text-sm py-1 hover:bg-gray-700 rounded px-1';
                 row.innerHTML = `

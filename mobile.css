@@ -246,3 +246,9 @@ html, body {
     background: #4b5563; /* Cor cinza */
     border-radius: 10px;
 }
+
+/* Fonte para o painel digital */
+.font-digital {
+    font-family: 'Share Tech Mono', monospace;
+    letter-spacing: 1px;
+}
