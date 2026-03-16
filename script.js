@@ -23,7 +23,6 @@ var WS_URL = `${protocolWS}${host}/stream`;
 var ws = null;
 var reconnectInterval = null;
 
-
 console.log(`🚀 Conectado ao Servidor: ${host}`);
 console.log(`🔧 Sala identificada no Front: ${currentSalaId}`);
 console.log(`🔌 WebSocket Alvo: ${WS_URL}`);
@@ -242,7 +241,6 @@ const cardNumberElement = document.getElementById('card-number');
 const winnerNameElement = document.getElementById('winner-name');
 const cardGridElement = document.getElementById('card-grid');
 const btnCloseConference = document.getElementById('btn-close-conference');
-
 
 const cartelaInicialInput = document.getElementById('cartela-inicial-input');
 const cartelaFinalInput = document.getElementById('cartela-final-input');
@@ -2667,7 +2665,7 @@ function displayPrizeInfo(buscandoData, premioData = null) {
 }
 
 
-function displayPrizeValues(premioData, topeData = null) {
+function displayPrizeValues(premioData, topeData = null, rawData = null) {
     const prizeValuesContainerCurrent = mobilePrizeValuesContainer;
     if (!prizeValuesContainerCurrent) return;
 
@@ -2675,6 +2673,7 @@ function displayPrizeValues(premioData, topeData = null) {
     let validPrizes = [];
     if (premioData && Array.isArray(premioData)) {
         validPrizes = premioData.filter(premio => {
+            if (!premio.valor) return false;
             const cleanedValue = premio.valor.toString().replace('R$', '').replace('.', '').trim();
             const numericValue = parseFloat(cleanedValue.replace(',', '.'));
             return numericValue > 0 && !isNaN(numericValue);
@@ -2686,12 +2685,12 @@ function displayPrizeValues(premioData, topeData = null) {
     
     if (validPrizes.length === 0 && temPremiosNaTela) return;
 
-    // --- 2. TRAVA ANTI-PISCAR (Atualizada para rastrear cartelas também) ---
-    const currentJson = JSON.stringify({ p: validPrizes, t: topeData, c: cartelasEmJogo, r: cartelaRanges });
+    // --- 2. TRAVA ANTI-PISCAR ---
+    // Incluímos premioData no JSON para rastrear mudanças nas séries do evento
+    const currentJson = JSON.stringify({ p: validPrizes, t: topeData, r: rawData, c: cartelasEmJogo });
     if (currentJson === lastPrizeJson) return; 
     lastPrizeJson = currentJson;
 
-    // Se estiver realmente vazio
     if (validPrizes.length === 0) {
         prizeValuesContainerCurrent.innerHTML = '<span class="text-sm text-gray-500 italic py-4">Painel Inativo</span>';
         return;
@@ -2707,11 +2706,11 @@ function displayPrizeValues(premioData, topeData = null) {
     const premiosDireita = validPrizes.filter(p => direitaOrdem.includes(p.tipo_premio) || !esquerdaOrdem.includes(p.tipo_premio))
                                       .sort((a, b) => direitaOrdem.indexOf(a.tipo_premio) - direitaOrdem.indexOf(b.tipo_premio));
 
-    // --- 4. FUNÇÃO AUXILIAR PARA CRIAR "VISOR DIGITAL" ---
+    // --- 4. FUNÇÃO AUXILIAR COM TRAVA DE TEXTO (TRUNCATE) ---
     const criarCaixaDigital = (titulo, valor, corTitulo, corValor) => {
         return `
             <div class="flex flex-col bg-black p-1 rounded border border-gray-800 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]">
-                <span class="text-[9px] ${corTitulo} mb-1 font-bold uppercase tracking-wider leading-none">${titulo}</span>
+                <span class="text-[9px] ${corTitulo} mb-1 font-bold uppercase tracking-wider leading-none truncate w-full" title="${titulo}">${titulo}</span>
                 <span class="font-digital text-[14px] ${corValor} text-right leading-none -mt-3 truncate" style="text-shadow: 0 0 8px currentColor;">
                     ${valor}
                 </span>
@@ -2719,18 +2718,16 @@ function displayPrizeValues(premioData, topeData = null) {
         `;
     };
 
-    // --- 5. MONTAGEM DA COLUNA ESQUERDA (O JOGO) ---
+    // --- 5. MONTAGEM DA COLUNA ESQUERDA ---
     let htmlEsquerda = '<div class="flex flex-col gap-0.5 w-1/2 pr-1 -mt-2 border-r border-gray-700/50">';
     premiosEsquerda.forEach(premio => {
         htmlEsquerda += criarCaixaDigital(premio.tipo_premio, premio.valor, 'text-yellow-500', 'text-green-400');
     });
     htmlEsquerda += '</div>';
 
-
-    // --- 6. MONTAGEM DA COLUNA DIREITA (ESPECIAIS E ESTATÍSTICAS) ---
+    // --- 6. MONTAGEM DA COLUNA DIREITA ---
     let htmlDireita = '<div class="flex flex-col gap-0.5 w-1/2 pl-1 -mt-2">';
     
-    // Prêmios Topes (Acumulado etc)
     premiosDireita.forEach(premio => {
         let titulo = premio.tipo_premio;
         let corValor = 'text-yellow-300';
@@ -2742,40 +2739,61 @@ function displayPrizeValues(premioData, topeData = null) {
         htmlDireita += criarCaixaDigital(titulo, premio.valor, 'text-purple-400', corValor);
     });
 
-    // Visor de Séries/Período
+    // --- DEBUG: LOGS PARA RASTREAR O ERRO ---
+    const info = rawData || (premioData && premioData.length > 0 ? premioData[0] : {});
     let seriesHtml = '';
-    if (cartelaRanges && cartelaRanges.length > 0) {
-        cartelaRanges.forEach(r => {
-            if (r.inicial > 0 && r.final > 0) {
-                seriesHtml += `<div class="font-digital text-[12px] text-cyan-400 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">[${r.inicial}-${r.final}]</div>`;
-            }
-        });
-    } else {
+    let somaCartelasEvento = 0;
+
+    // Período 1 (inicial1 e final1 vêm do Python agora)
+    const i1 = parseInt(info.inicial1 || 0);
+    const f1 = parseInt(info.final1 || 0);
+    
+    if (i1 > 0 && f1 > 0) {
+        seriesHtml += `<div class="font-digital text-[14px] text-cyan-400 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">[${i1}-${f1}]</div>`;
+        somaCartelasEvento += (f1 - i1) + 1;
+    }
+
+    // Período 2 (inicial2 e final2)
+    const i2 = parseInt(info.inicial2 || 0);
+    const f2 = parseInt(info.final2 || 0);
+    
+    if (i2 > 0 && f2 > 0) {
+        seriesHtml += `<div class="font-digital text-[14px] text-cyan-400 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">[${i2}-${f2}]</div>`;
+        somaCartelasEvento += (f2 - i2) + 1;
+    }
+
+    if (seriesHtml === '') {
         seriesHtml = `<div class="font-digital text-[14px] text-gray-600 text-right leading-tight">--</div>`;
     }
+
+    // Injeção do Visor de Períodos
     htmlDireita += `
-        <div class="flex flex-col bg-black p-1.5 rounded border border-gray-800 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]">
-            <span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider -mb-3 leading-none">PERÍODO(S) EM JOGO</span>
+        <div class="flex flex-col bg-black p-1 rounded border border-gray-800 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]">
+            <span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider -mb-3.0 leading-none truncate w-full">EM JOGO</span>
             ${seriesHtml}
         </div>
     `;
 
-    // Visor de Cartelas Totais
-    const totalCartelasFmt = new Intl.NumberFormat('pt-BR').format(cartelasEmJogo || 0);
+    // CÁLCULO DO TOTAL DE CARTELAS EM JOGO
+    // Se o cálculo pelos períodos deu zero, usamos o total_cartelas_em_jogo que o Python mandou
+    let totalReal = somaCartelasEvento;
+    if (totalReal <= 0) {
+        totalReal = info.total_cartelas_em_jogo || cartelasEmJogo || 0;
+    }
+    
+    const totalCartelasFmt = new Intl.NumberFormat('pt-BR').format(totalReal);
     htmlDireita += criarCaixaDigital('CARTELAS EM JOGO', totalCartelasFmt, 'text-gray-400', 'text-blue-400');
+    
+    htmlDireita += '</div>'; // Fecha htmlDireita
 
-    htmlDireita += '</div>';
-
-    // --- 7. APLICA NA TELA ---
+    // --- 7. RENDERIZAÇÃO ---
     prizeValuesContainerCurrent.innerHTML = '';
-    prizeValuesContainerCurrent.className = 'w-full flex flex-row p-1'; 
+    prizeValuesContainerCurrent.className = 'w-full flex flex-row p-1 bg-gray-900/50 rounded-lg'; // Pequeno ajuste de fundo para destacar o painel
     prizeValuesContainerCurrent.innerHTML = htmlEsquerda + htmlDireita;
 
-    // Tratamento de visibilidade para quando a rodada inicia
+    // Sincronismo de UI
     if (typeof iniciandoRodada !== 'undefined' && iniciandoRodada) {
         if (mobilePrizesContent && mobilePrizesContent.classList.contains('hidden')) {
-            if (typeof seePromocoes !== 'undefined') seePromocoes = false; 
-            if (typeof hidePromocionalPanel === 'function') hidePromocionalPanel();
             mobilePrizesContent.classList.remove('hidden'); 
         }
     }
@@ -4055,7 +4073,7 @@ async function renderMainContent(data) {
     const dadosParaDisplay = usarDadosFake ? [dadosBuscando] : buscandoData;
     displayPrizeInfo(dadosParaDisplay, premioData);
 
-    displayPrizeValues(premioData, topeData);
+    displayPrizeValues(premioData, topeData, premioInfo);
    
     if (ganhadoresData && ganhadoresData.length > 0) {
         displayWinnersPanel(ganhadoresData);

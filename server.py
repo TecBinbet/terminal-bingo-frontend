@@ -3558,6 +3558,26 @@ def get_event_details():
              # aa db.premio.delete_many({})
              
              serie_max = evento.get('numero_maximo', 72000) 
+
+             # === AJUSTE DE LÓGICA DE PERÍODOS (INICIAL vs FINAL) ===
+             inicial_evento = evento.get('numero_inicial', 1)
+             final_evento = 0
+        
+             # Busca o ponteiro de vendas na tabela controle_venda
+             controle = sales_db.controle_venda.find_one({
+                'id_evento': {'$in': [int(id_evt), str(id_evt)]}
+             })
+
+             if controle and controle.get('inicial_proxima_venda'):
+                 try:
+                     # O "Final" é sempre o próximo que seria vendido menos 1
+                     final_evento = int(controle['inicial_proxima_venda']) - 1
+                 except (TypeError, ValueError):
+                     final_evento = ultimo_cartao
+             else:
+                 # Se não houver registro no controle_venda para este ID, 
+                 # usamos o 'ultimo_cartao' calculado pelo aggregate das vendas
+                 final_evento = ultimo_cartao
              
              dados_premio = {
                  'premio_quadra': response_data['premios']['quadra'],
@@ -3574,10 +3594,45 @@ def get_event_details():
                  'serie_em_jogo': serie_max,
                  'minimo_de_cartelas': 1,
                  'maximo_de_cartelas': 6000,
-                 'inicial1': 1,
-                 'final1': serie_max,
                  'total_cartelas_em_jogo': qtde_vendida
              }
+
+             # --- LOGS DE DEBUG (PARA CAÇAR O ERRO DE COMPARAÇÃO) ---
+             print(f"DEBUG: id_evt type={type(id_evt)} value={id_evt}")
+             print(f"DEBUG: inicial_evento type={type(inicial_evento)} value={inicial_evento}")
+             print(f"DEBUG: final_evento type={type(final_evento)} value={final_evento}")
+             print(f"DEBUG: serie_max type={type(serie_max)} value={serie_max}")
+
+             # 👉 LÓGICA DOS PERÍODOS (Blindada contra Tipos Diferentes)
+             try:
+                 # Forçamos a conversão para int para garantir que a comparação < funcione
+                 v_final = int(final_evento) if final_evento is not None else 0
+                 v_inicial = int(inicial_evento) if inicial_evento is not None else 1
+                
+                 if v_final < v_inicial:
+                     # 2 PERÍODOS: O sorteio "deu a volta" no número máximo
+                     print(f"🔄 [EVENTO {id_evt}] 2 períodos detectados: {v_inicial}-{serie_max} e 1-{v_final}")
+                     dados_premio['inicial1'] = v_inicial
+                     dados_premio['final1'] = int(serie_max)
+                     dados_premio['inicial2'] = 1
+                     dados_premio['final2'] = v_final
+                 else:
+                     # 1 PERÍODO: Sorteio linear simples
+                     print(f"✅ [EVENTO {id_evt}] 1 período detectado: {v_inicial}-{v_final}")
+                     dados_premio['inicial1'] = v_inicial
+                     dados_premio['final1'] = v_final
+                     dados_premio['inicial2'] = 0
+                     dados_premio['final2'] = 0
+                    
+             except Exception as e_comp:
+                 print(f"❌ ERRO CRÍTICO NA COMPARAÇÃO: {e_comp}")
+                 # Fallback de segurança para não travar o servidor
+                 dados_premio['inicial1'] = 1
+                 dados_premio['final1'] = int(serie_max)
+                 dados_premio['inicial2'] = 0
+                 dados_premio['final2'] = 0
+
+             # Atualiza o banco com o dicionário montado
 
              db.premio.update_one({}, {'$set': dados_premio}, upsert=True)
              threading.Thread(target=carregar_cache_evento, args=(id_evt, sales_db)).start()
