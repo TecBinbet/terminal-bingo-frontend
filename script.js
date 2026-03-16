@@ -7576,11 +7576,86 @@ function fecharModalSaquesPendentes() {
     if (modal) modal.classList.add('hidden');
 }
 
+// --- FUNÇÕES DE AUDITORIA ---
 
+// Use o prefixo window. para garantir que o botão no index.html a encontre
+window.abrirAuditoria = async function(idEvento) {
+    // Sua nova lógica de variável
+    closeSideMenu();
+    const idParaConsulta = idEvento || eventoCarregadoAtual;
+    
+    console.log("🔍 Tentando abrir auditoria do evento:", idParaConsulta);
+
+    if (!idParaConsulta) {
+        // Se o eventoCarregadoAtual for 0 ou null, avisa o usuário
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Aguardando início do evento para liberar auditoria.", "Atenção", "⚠️");
+        } else {
+            alert("Aguardando início do evento.");
+        }
+        return;
+    }
+
+    const modal = document.getElementById('modal-auditoria');
+    const corpo = document.getElementById('lista-auditoria-corpo');
+    
+    if (!modal || !corpo) return;
+
+    modal.classList.remove('hidden');
+    corpo.innerHTML = '<div class="p-10 text-center text-gray-500 animate-pulse font-mono">Carregando lista oficial...</div>';
+
+    try {
+        const response = await fetch(`/api/public/lista_vendas?id_evento=${idParaConsulta}`);
+        if (!response.ok) throw new Error("Snapshot não encontrado");
+        
+        const dados = await response.json();
+
+        let html = '';
+        dados.forEach((v, index) => {
+            const qtd = (parseInt(v.f) - parseInt(v.i)) + 1;
+    
+            // Define a cor de fundo com base na paridade (par ou ímpar)
+            // Se o resto da divisão por 2 for 0, usa gray-950, senão usa gray-800
+            const bgColor = (index % 2 === 0) ? 'bg-gray-950' : 'bg-gray-800';
+
+            html += `
+                <div class="grid grid-cols-6 px-2 py-1 border-b border-gray-900 items-center ${bgColor} hover:bg-gray-600 transition-colors">
+                    <div class="col-span-2 flex flex-col">
+                        <span class="text-cyan-400 font-digital text-[13px] tracking-tighter" style="text-shadow: 0 0 5px rgba(34, 211, 238, 0.3);">
+                            ${v.i.toString().padStart(5, '0')} - ${v.f.toString().padStart(5, '0')}
+                        </span>
+                    </div>
+                    <span class="col-span-1 text-center text-green-500 font-digital font-bold text-[13px]">
+                        ${qtd}
+                    </span>
+                    <span class="col-span-3 text-right text-yellow-500/90 font-semibold truncate uppercase text-[11px] tracking-tight">
+                        ${v.n}
+                    </span>
+                </div>
+            `;
+        });
+
+        corpo.innerHTML = html || '<div class="p-10 text-center text-gray-600 font-mono">Nenhuma cartela vendida.</div>';
+
+    } catch (error) {
+        console.error("Erro auditoria:", error);
+        corpo.innerHTML = `
+            <div class="p-10 text-center">
+                <div class="text-gray-500 text-sm mb-2 italic font-mono">Auditoria indisponível</div>
+                <div class="text-[10px] text-gray-600 uppercase font-mono">A lista será publicada após o encerramento das vendas.</div>
+            </div>
+        `;
+    }
+};
+
+// Faça o mesmo para a função de fechar
+window.fecharAuditoria = function() {
+    const modal = document.getElementById('modal-auditoria');
+    if (modal) modal.classList.add('hidden');
+}
 
 
 // FIM DO SEU SCRIPT.JS - Certifique-se de que não existem mais chaves "}" soltas debaixo disto!
-
 //  APP_USR-4102968123853317-030915-554488ce7119ab34a742fafc45b0f1e9-3255401766
 // assinatura secreta
 // 8c15f904a323ba454216c66259525175573b6a8796c7dd28bcddbd837b18b947

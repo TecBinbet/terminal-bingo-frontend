@@ -1302,8 +1302,49 @@ def safe_serializer(obj):
     except:
         return ""
 
+# Gravar tabela auditoria cliente
+def gerar_snapshot_vendas(id_evt, sales_db):
+    col_vendas_name = f"vendas{id_evt}"
+    col_snapshot_name = f"snapshot_vendas_{id_evt}"
+    
+    # 1. Busca todas as vendas da rodada
+    vendas_cursor = sales_db[col_vendas_name].find({}, {
+        'numero_inicial': 1, 
+        'numero_final': 1, 
+        'nome_cliente': 1,
+        'numero_inicial2': 1,
+        'numero_final2': 1
+    })
+
+    lista_snapshot = []
+    
+    for v in vendas_cursor:
+        # Primeiro Período
+        lista_snapshot.append({
+            'i': v.get('numero_inicial'),
+            'f': v.get('numero_final'),
+            'n': v.get('nome_cliente', 'Anônimo')[:15] # Nick curto
+        })
+        
+        # Segundo Período (se existir)
+        if v.get('numero_inicial2') and v.get('numero_inicial2') > 0:
+            lista_snapshot.append({
+                'i': v.get('numero_inicial2'),
+                'f': v.get('numero_final2'),
+                'n': v.get('nome_cliente', 'Anônimo')[:15]
+            })
+
+    # 2. Salva na coleção de snapshot (limpando antes se já existir)
+    sales_db[col_snapshot_name].drop()
+    if lista_snapshot:
+        sales_db[col_snapshot_name].insert_many(lista_snapshot)
+        # Opcional: Criar índice para busca rápida por número inicial
+        sales_db[col_snapshot_name].create_index([("i", 1)])
+        
+    print(f"✅ Snapshot gerado para Evento {id_evt}: {len(lista_snapshot)} registros.")
 
 
+###### Inicio das Rotas
 # --- ROTAS HTTP ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -1317,10 +1358,6 @@ connected_clients = set()
 def serve_index():
     # Não mistura mais socket aqui. Apenas entrega o site.
     return send_from_directory('.', 'index.html')
-
-
-
-
 
 
 # ==============================================================================
@@ -1486,6 +1523,22 @@ def initial_data():
     
     # Se ainda assim for vazio (início do sistema), manda {}
     return jsonify(dados if dados else {})
+
+# ==============================================================================
+#  ROTA DE AUDITORIA cliente
+# ==============================================================================
+@app.route('/api/public/lista_vendas', methods=['GET'])
+def get_lista_vendas():
+    id_evt = request.args.get('id_evento')
+    sales_db = get_sales_db_connection()
+    
+    col_snapshot = f"snapshot_vendas_{id_evt}"
+    
+    # Busca o snapshot ordenado pelo número inicial
+    vendas = list(sales_db[col_snapshot].find({}, {'_id': 0}).sort('i', 1))
+    
+    # Retorna o JSON ultra-compacto
+    return jsonify(vendas)
 
 
 # ==============================================================================
@@ -1986,10 +2039,13 @@ def finalizar_evento_interno(id_evt):
         if result.modified_count > 0:
             if is_ativo_extra_global: 
                atualizar_ponteiro_sorte_extra(int(id_evt))
-            print(f"🤖/👨‍💻 Evento {id_evt} FINALIZADO. Aviso enviado. Vendas até aprox: {hora_final_str} (BRT)")
-            return True, "Vendas encerradas e aviso enviado.", 200
-        else:
-            return False, "Evento já finalizado (Aviso atualizado).", 200 # 200 porque não é um erro crítico, só um aviso
+            try:
+                gerar_snapshot_vendas(id_evt, sales_db)
+            except Exception as e_snap:
+                print(f"⚠️ Erro ao gerar snapshot de auditoria: {e_snap}")
+
+            print(f"🤖/👨‍💻 Evento {id_evt} FINALIZADO. Snapshot gerado. Vendas até aprox: {hora_final_str} (BRT)")
+            return True, "Vendas encerradas, snapshot gerado e aviso enviado.", 200
 
     except Exception as e:
         print(f"Erro interno ao fechar vendas: {e}")
