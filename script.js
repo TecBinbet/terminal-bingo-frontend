@@ -2721,7 +2721,16 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
     // --- 5. MONTAGEM DA COLUNA ESQUERDA ---
     let htmlEsquerda = '<div class="flex flex-col gap-0.5 w-2/5 pr-1 -mt-2 border-r border-gray-700/50">';
     premiosEsquerda.forEach(premio => {
-        htmlEsquerda += criarCaixaDigital(premio.tipo_premio, premio.valor, 'text-yellow-500', 'text-green-400');
+        // 1. Limpa o valor para converter em número real
+        const numLimpo = parseFloat(premio.valor.toString().replace('R$', '').replace('.', '').replace(',', '.').trim());
+    
+        // 2. Formata com ponto de milhar e 2 casas decimais (Ex: 5.000,00)
+        const valorFormatado = new Intl.NumberFormat('pt-BR', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(numLimpo);
+
+        htmlEsquerda += criarCaixaDigital(premio.tipo_premio, valorFormatado, 'text-yellow-500', 'text-green-400');
     });
     htmlEsquerda += '</div>';
 
@@ -2736,7 +2745,14 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
             if (titulo.includes('SUPER BINGO') && topeData[0].bola_tope_sb) titulo += ` (T:${topeData[0].bola_tope_sb})`;
             if (titulo.includes('ACUMULADO') && topeData[0].bola_tope_ac) titulo += ` (T:${topeData[0].bola_tope_ac})`;
         }
-        htmlDireita += criarCaixaDigital(titulo, premio.valor, 'text-purple-400', corValor);
+        // Mesma formatação para a direita
+        const numLimpo = parseFloat(premio.valor.toString().replace('R$', '').replace('.', '').replace(',', '.').trim());
+        const valorFormatado = new Intl.NumberFormat('pt-BR', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(numLimpo);
+
+        htmlDireita += criarCaixaDigital(titulo, valorFormatado, 'text-purple-400', 'text-yellow-300');
     });
 
     // --- DEBUG: LOGS PARA RASTREAR O ERRO ---
@@ -2749,7 +2765,7 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
     const f1 = parseInt(info.final1 || 0);
     
     if (i1 > 0 && f1 > 0) {
-        seriesHtml += `<div class="font-digital text-[14px] text-cyan-400 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">[ ${i1}-${f1} ]</div>`;
+        seriesHtml += `<div class="font-digital text-[14px] text-cyan-400 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">${i1} - ${f1}</div>`;
         somaCartelasEvento += (f1 - i1) + 1;
     }
 
@@ -2758,7 +2774,7 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
     const f2 = parseInt(info.final2 || 0);
     
     if (i2 > 0 && f2 > 0) {
-        seriesHtml += `<div class="font-digital text-[14px] text-cyan-400 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">[ ${i2}-${f2} ]</div>`;
+        seriesHtml += `<div class="font-digital text-[14px] text-cyan-400 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">${i2} - ${f2}</div>`;
         somaCartelasEvento += (f2 - i2) + 1;
     }
 
