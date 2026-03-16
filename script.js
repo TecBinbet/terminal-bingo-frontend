@@ -2719,14 +2719,14 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
     };
 
     // --- 5. MONTAGEM DA COLUNA ESQUERDA ---
-    let htmlEsquerda = '<div class="flex flex-col gap-0.5 w-1/3 pr-1 -mt-2 border-r border-gray-700/50">';
+    let htmlEsquerda = '<div class="flex flex-col gap-0.5 w-2/5 pr-1 -mt-2 border-r border-gray-700/50">';
     premiosEsquerda.forEach(premio => {
         htmlEsquerda += criarCaixaDigital(premio.tipo_premio, premio.valor, 'text-yellow-500', 'text-green-400');
     });
     htmlEsquerda += '</div>';
 
     // --- 6. MONTAGEM DA COLUNA DIREITA ---
-    let htmlDireita = '<div class="flex flex-col gap-0.5 w-2/3 pl-1 -mt-2">';
+    let htmlDireita = '<div class="flex flex-col gap-0.5 w-3/5 pl-1 -mt-2">';
     
     premiosDireita.forEach(premio => {
         let titulo = premio.tipo_premio;
