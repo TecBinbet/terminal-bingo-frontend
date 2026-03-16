@@ -2719,14 +2719,14 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
     };
 
     // --- 5. MONTAGEM DA COLUNA ESQUERDA ---
-    let htmlEsquerda = '<div class="flex flex-col gap-0.5 w-1/2 pr-1 -mt-2 border-r border-gray-700/50">';
+    let htmlEsquerda = '<div class="flex flex-col gap-0.5 w-1/3 pr-1 -mt-2 border-r border-gray-700/50">';
     premiosEsquerda.forEach(premio => {
         htmlEsquerda += criarCaixaDigital(premio.tipo_premio, premio.valor, 'text-yellow-500', 'text-green-400');
     });
     htmlEsquerda += '</div>';
 
     // --- 6. MONTAGEM DA COLUNA DIREITA ---
-    let htmlDireita = '<div class="flex flex-col gap-0.5 w-1/2 pl-1 -mt-2">';
+    let htmlDireita = '<div class="flex flex-col gap-0.5 w-2/3 pl-1 -mt-2">';
     
     premiosDireita.forEach(premio => {
         let titulo = premio.tipo_premio;
@@ -2749,7 +2749,7 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
     const f1 = parseInt(info.final1 || 0);
     
     if (i1 > 0 && f1 > 0) {
-        seriesHtml += `<div class="font-digital text-[14px] text-cyan-400 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">[${i1}-${f1}]</div>`;
+        seriesHtml += `<div class="font-digital text-[14px] text-cyan-400 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">[ ${i1}-${f1} ]</div>`;
         somaCartelasEvento += (f1 - i1) + 1;
     }
 
@@ -2758,7 +2758,7 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
     const f2 = parseInt(info.final2 || 0);
     
     if (i2 > 0 && f2 > 0) {
-        seriesHtml += `<div class="font-digital text-[14px] text-cyan-400 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">[${i2}-${f2}]</div>`;
+        seriesHtml += `<div class="font-digital text-[14px] text-cyan-400 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">[ ${i2}-${f2} ]</div>`;
         somaCartelasEvento += (f2 - i2) + 1;
     }
 
