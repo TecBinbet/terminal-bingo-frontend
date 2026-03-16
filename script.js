@@ -2769,7 +2769,7 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
     // Injeção do Visor de Períodos
     htmlDireita += `
         <div class="flex flex-col bg-black p-1 rounded border border-gray-800 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]">
-            <span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider -mb-3.0 leading-none truncate w-full">EM JOGO</span>
+            <span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider -mb-3 leading-none truncate w-full">EM JOGO</span>
             ${seriesHtml}
         </div>
     `;
