@@ -2824,17 +2824,19 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
                 'hora': hora_brasil().strftime("%H:%M:%S")
             })
 
-            if val_total_float > 0:
-                def processar_pagamento_75_bg(evt_id, c_id, val, desc):
-                    try:
-                        s_db = get_sales_db_connection()
-                        id_cli = buscar_id_cliente_por_cartela(s_db, evt_id, int(c_id)) # int() garante busca correta
-                        if id_cli:
-                            registrar_transacao_cliente_mesa(s_db, id_cli, val, 'premio', desc, evt_id)
-                    except Exception as e: print(f"❌ Erro thread pagto 75: {e}")
+             # 2. --- PAGAMENTO AUTOMÁTICO 75 ---
 
-                threading.Thread(target=processar_pagamento_75_bg, 
-                               args=(int(id_evento_ativo), cartela_id, val_total_float, f"Prêmio {tag_premio} - Evento {id_evento_ativo}")).start()
+            #if val_total_float > 0:
+                #def processar_pagamento_75_bg(evt_id, c_id, val, desc):
+                    #try:
+                        #s_db = get_sales_db_connection()
+                        #id_cli = buscar_id_cliente_por_cartela(s_db, evt_id, int(c_id)) # int() garante busca correta
+                        #if id_cli:
+                            #registrar_transacao_cliente_mesa(s_db, id_cli, val, 'premio', desc, evt_id)
+                    #except Exception as e: print(f"❌ Erro thread pagto 75: {e}")
+
+                #threading.Thread(target=processar_pagamento_75_bg, 
+                               #args=(int(id_evento_ativo), cartela_id, val_total_float, f"Prêmio {tag_premio} - Evento {id_evento_ativo}")).start()
             # -----------------------------------
 
     return {
@@ -3092,22 +3094,22 @@ def admin_validar_cartela():
                     'hora': hora_brasil().strftime("%H:%M:%S")
                 }) # brasil
 
-                # 2. --- PAGAMENTO AUTOMÁTICO ---
-                if raw_val > 0:
+                # 2. --- PAGAMENTO AUTOMÁTICO 90 ---
+                #if raw_val > 0:
                     # Thread para não travar a validação visual
-                    def processar_pagamento_bg(evt_id, c_id, val, desc):
-                        try:
-                            s_db = get_sales_db_connection() # Conecta no banco de vendas
-                            id_cli = buscar_id_cliente_por_cartela(s_db, evt_id, c_id)
-                            if id_cli:
-                                registrar_transacao_cliente_mesa(s_db, id_cli, val, 'premio', desc, evt_id)
-                            else:
-                                print(f"⚠️ Aviso: Cartela {c_id} sem dono identificado nas vendas.")
-                        except Exception as e:
-                            print(f"❌ Erro thread pagto: {e}")
+                    #def processar_pagamento_bg(evt_id, c_id, val, desc):
+                        #try:
+                            #s_db = get_sales_db_connection() # Conecta no banco de vendas
+                            #id_cli = buscar_id_cliente_por_cartela(s_db, evt_id, c_id)
+                            #if id_cli:
+                                #registrar_transacao_cliente_mesa(s_db, id_cli, val, 'premio', desc, evt_id)
+                            #else:
+                                #print(f"⚠️ Aviso: Cartela {c_id} sem dono identificado nas vendas.")
+                        #except Exception as e:
+                            #print(f"❌ Erro thread pagto: {e}")
 
-                    threading.Thread(target=processar_pagamento_bg, 
-                                   args=(int(id_evento_ativo), cartela_id, raw_val, f"Prêmio {premio_registro} - Ev. {id_evento_ativo}")).start()  
+                    #threading.Thread(target=processar_pagamento_bg, 
+                                   #args=(int(id_evento_ativo), cartela_id, raw_val, f"Prêmio {premio_registro} - Ev. {id_evento_ativo}")).start()  
 
         return jsonify({
             'status_code': status_code,
@@ -3336,7 +3338,15 @@ def admin_resetar():
                      val_str_temp = lista_vencedores[0].get('valor_total_premio', '0')
                      val_total_float = parse_brl(val_str_temp)
 
-                val_rateio_float = val_total_float / qtde_ganhadores if qtde_ganhadores > 0 else 0
+                if qtde_ganhadores > 0:
+                    # 1. Divide normalmente (Ex: 50 / 3 = 16.666...)
+                    divisao_bruta = val_total_float / qtde_ganhadores
+                    # 2. O int() corta tudo depois da vírgula (Fica 16)
+                    # 3. O float() transforma de volta para dinheiro (Fica 16.0)
+                    val_rateio_float = float(int(divisao_bruta))
+                else:
+                    val_rateio_float = 0.0
+
                 str_total = f"R$ {format_brl(val_total_float)}"
                 str_rateio = f"R$ {format_brl(val_rateio_float)}"
 
@@ -3359,6 +3369,24 @@ def admin_resetar():
                     item_local['rodada'] = id_evento
                     lista_osganhadores.append(item_local)
                     lista_resultados_ganhadores.append(obj_ganhador)
+
+                    # ====================================================================
+                    # 👉 NOVO: PAGAMENTO DO RATEIO NO FECHAMENTO DO EVENTO
+                    # Só paga se o evento for finalizado com SUCESSO (botão verde)
+                    # ====================================================================
+                    if finalizar_com_sucesso and val_rateio_float > 0 and sales_db is not None:
+                        try:
+                            id_cli_pagto = buscar_id_cliente_por_cartela(sales_db, id_evento, int(w.get('cartela', 0)))
+                            if id_cli_pagto:
+                                desc_pagto = f"Prêmio {chave} - Evento {id_evento}"
+                                registrar_transacao_cliente_mesa(sales_db, id_cli_pagto, val_rateio_float, 'premio', desc_pagto, id_evento)
+                                print(f"✅ [PAGAMENTO RATEIO] R$ {val_rateio_float:.2f} creditado ao cliente {id_cli_pagto} (Cartela {w.get('cartela')})")
+                            else:
+                                print(f"⚠️ [PAGAMENTO RATEIO] Cartela {w.get('cartela')} sem dono identificado nas vendas.")
+                        except Exception as err_pagto:
+                            print(f"❌ [PAGAMENTO RATEIO] Erro ao pagar cartela {w.get('cartela')}: {err_pagto}")
+                    # ====================================================================
+
 
         # ======================================================================
         # 🔥 PROCESSAMENTO DOS GANHADORES SORTE EXTRA
@@ -4263,10 +4291,10 @@ def api_comprar_cartelas():
         if saldo_cliente < custo_total:
              return jsonify({'erro': 'Saldo insuficiente para esta compra.'}), 400
 
-        # --- CONTROLE DE NUMERAÇÃO ---
+        # --- CONTROLE DE NUMERAÇÃO ---   xyx adicionei + 1
         retorno_sequencia = sales_db.controle_venda.find_one_and_update(
             {'id_evento': id_evento_oficial}, 
-            {'$inc': {'inicial_proxima_venda': qtd_desejada}}, 
+            {'$inc': {'inicial_proxima_venda': qtd_desejada }}, 
             upsert=True, 
             return_document=ReturnDocument.AFTER
         )
@@ -4287,11 +4315,11 @@ def api_comprar_cartelas():
         # Banco vira 15. num_inicial = 15 - 5 = 10.
         # Minhas cartelas: 10, 11, 12, 13, 14. (Isso repetiria a cartela 10 anterior).
         # AJUSTE FINO DE LÓGICA DE SEQUENCIA:
-        # Geralmente num_inicial deve ser (valor_antigo + 1).
+        # Geralmente num_inicial deve ser (valor_antigo).
         # Valor antigo = valor_pos_incremento - qtd_desejada.
-        # Então num_inicial REAL = (valor_pos_incremento - qtd_desejada) + 1.
+        # Então num_inicial REAL = (valor_pos_incremento - qtd_desejada).
         
-        num_inicial_real = (valor_pos_incremento - qtd_desejada) + 1
+        num_inicial_real = (valor_pos_incremento - qtd_desejada)  # Excluir o + 1
         num_final = num_inicial_real + qtd_desejada - 1
         
         if num_final > limite:

@@ -1560,6 +1560,22 @@ async function openMyCardsPanel(idEventoParam = null, descricaoParam = null) {
         return;
     }
 
+
+    // 👉 NOVO: Se a descrição não veio pelo clique (ex: abriu pelo menu lateral), busca no servidor!
+    if (!descricaoParam) {
+        try {
+            const resDesc = await fetch(`${API_BASE_URL}/api/dados_evento?id_evento=${idEvt}`);
+            if (resDesc.ok) {
+                const dataDesc = await resDesc.json();
+                if (dataDesc.descricao) {
+                    descricaoParam = dataDesc.descricao;
+                }
+            }
+        } catch (e) {
+            console.warn("⚠️ Não foi possível buscar o nome do evento.", e);
+        }
+    }
+
     // --- LÓGICA DO LOADER EXISTENTE ---
     const loaderContainer = document.getElementById('loader');
     const loaderMsg = document.getElementById('loader-message');
@@ -1587,7 +1603,7 @@ async function openMyCardsPanel(idEventoParam = null, descricaoParam = null) {
         const elSubtitulo = document.getElementById('minhas_apostas_evento');
         if (elSubtitulo) {
             const nomeGlobal = descricaoParam || `EVENTO ${idEvt}`;                        
-            elSubtitulo.innerHTML = `📅 ${nomeGlobal}`;
+            elSubtitulo.innerHTML = `📅 ${nomeGlobal.toUpperCase()}`;
         }
         
         // Renderiza os dados recebidos
@@ -2730,7 +2746,7 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
             maximumFractionDigits: 2
         }).format(numLimpo);
 
-        htmlEsquerda += criarCaixaDigital(premio.tipo_premio, valorFormatado, 'text-yellow-500', 'text-green-400');
+        htmlEsquerda += criarCaixaDigital(premio.tipo_premio, valorFormatado, 'text-yellow-600', 'text-green-500');
     });
     htmlEsquerda += '</div>';
 
@@ -2739,7 +2755,7 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
     
     premiosDireita.forEach(premio => {
         let titulo = premio.tipo_premio;
-        let corValor = 'text-yellow-300';
+        let corValor = 'text-yellow-500';
         
         if (topeData && topeData.length > 0) {
             if (titulo.includes('SUPER BINGO') && topeData[0].bola_tope_sb) titulo += ` (T:${topeData[0].bola_tope_sb})`;
@@ -2752,7 +2768,7 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
             maximumFractionDigits: 2
         }).format(numLimpo);
 
-        htmlDireita += criarCaixaDigital(titulo, valorFormatado, 'text-purple-400', 'text-yellow-300');
+        htmlDireita += criarCaixaDigital(titulo, valorFormatado, 'text-purple-500', 'text-yellow-500');
     });
 
     // --- DEBUG: LOGS PARA RASTREAR O ERRO ---
@@ -2765,7 +2781,7 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
     const f1 = parseInt(info.final1 || 0);
     
     if (i1 > 0 && f1 > 0) {
-        seriesHtml += `<div class="font-digital text-[14px] text-cyan-400 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">${i1} - ${f1}</div>`;
+        seriesHtml += `<div class="font-digital font-bold text-[14px] text-cyan-500 text-right leading-tight" style="text-shadow: 0 0 5px currentColor;">${i1} - ${f1}</div>`;
         somaCartelasEvento += (f1 - i1) + 1;
     }
 
@@ -3300,7 +3316,7 @@ function renderMelhores(melhoresData) {
         row.className = `grid ${gridClasses} text-[8px] leading-none text-white rounded hover:bg-gray-800`;
         // 1. Cartela
         const cartela = document.createElement('span');
-        cartela.className = 'text-[9px] text-center font-bold text-yellow-500';
+        cartela.className = 'text-[9px] text-center font-bold text-yellow-600';
         cartela.textContent = item.cartela;
         // 2. Posição
         const posicao = document.createElement('span');
@@ -3337,14 +3353,14 @@ function renderMelhores(melhoresData) {
         
         // Se houver prêmio (winnerPremio), adiciona ao final
         numerosFaltantes.textContent = `${numerosFormatados} ${winnerPremio || ''}`;
-        numerosFaltantes.className = 'text-[9px] text-green-400';  
+        numerosFaltantes.className = 'text-[9px] text-green-600';  
 
         // 4. Nome (Player)
         const nome = document.createElement('span');
         if  (haGanhador) {
            nome.className = 'truncate text-[9px] text-yellow-300 font-bold';     
         } else {   
-           nome.className = 'truncate  text-[10px]  text-yellow-400 font-semibold';
+           nome.className = 'truncate  text-[10px]  text-yellow-500 font-semibold';
         }
         nome.textContent = item.nome;
 
