@@ -5599,23 +5599,18 @@ async function atualizarDadosCliente() {
             if (el) el.textContent = saldoFormatado;
         });
 
-        // 2. ATUALIZA O EXTRATO (AQUI ESTÁ A CORREÇÃO)
-        // Tenta achar a lista (<ul>). Se não achar, tenta achar o container e criar a lista.
+        // 2. ATUALIZA O EXTRATO (COM OTIMIZAÇÃO DE PERFORMANCE)
         let listaContainer = document.getElementById('lista-transacoes');
         
         if (!listaContainer) {
             const wrapper = document.getElementById('tabela-extrato-container');
             if (wrapper) {
-                // Se achou o container vazio, cria a lista dentro dele
                 wrapper.innerHTML = '<ul id="lista-transacoes" class="space-y-2 max-h-85 overflow-y-auto"></ul>';
                 listaContainer = document.getElementById('lista-transacoes');
             }
         }
 
-        // Se achou onde desenhar, desenha!
         if (listaContainer && data.extrato) {
-            listaContainer.innerHTML = ''; // Limpa lista antiga
-
             if (data.extrato.length === 0) {
                 listaContainer.innerHTML = `
                     <li class="text-center text-gray-500 py-4 italic flex flex-col items-center">
@@ -5623,28 +5618,27 @@ async function atualizarDadosCliente() {
                         <span>Nenhuma movimentação.</span>
                     </li>`;
             } else {
+                // --- INÍCIO DO AJUSTE DE PERFORMANCE ---
+                let htmlAcumulado = ''; // Variável para guardar o HTML temporariamente
+
                 data.extrato.forEach(item => {
-                    // Define se é Entrada (Verde) ou Saída (Vermelho)
-                    // Tipos comuns: 'compra' (saída), 'saque' (saída), 'ganho' (entrada), 'deposito' (entrada)
-                    const isSaida = ['compra', 'saque'].includes(item.tipo);
-                    
+                    const isSaida = ['SAIDA'].includes(item.natureza);
                     const corValor = isSaida ? "text-red-400" : "text-green-400";
                     const sinal = isSaida ? "- " : "+ ";
                     
-                    // Ícones bonitinhos
                     let icone = '💰';
-                    if (item.tipo === 'compra') icone = '🛒';
-                    if (item.tipo === 'premio') icone = '🏆';
-                    if (item.tipo === 'saque') icone = '💸';
-
-                    // Converte valor para float seguro
-                    let valorItem = parseFloat(item.valor);
-                    if (isNaN(valorItem)) valorItem = 0;
-
-                    // Cria o HTML do item
+                    if (item.tipo === 'compra_cartela' || item.tipo === 'compra_sorte_extra') icone = '🛒';
+                    if (item.tipo === 'premio_bingo'  || item.tipo === 'premio_sorte_extra') icone = '🏆';
+                    if (item.tipo === 'saque_solicitado') icone = '💸';
+                    if (item.tipo === 'compra_credito_pix') icone = '⚡';
+                    if (item.tipo === 'estorno_saque') icone = '↩️';
+                    
+                    let valorItem = parseFloat(item.valor || 0);
+                    const valorExibicao = Math.abs(valorItem);
                     const saldoPosterior = parseFloat(item.saldo_posterior || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
-                    const li = `
+                    // Acumula o HTML na string em vez de injetar no DOM agora
+                    htmlAcumulado += `
                         <li class="flex justify-between items-center bg-gray-800 p-1 rounded-lg border border-gray-700 shadow-sm hover:bg-gray-750 transition-colors">
                             <div class="flex items-center gap-3">
                                 <span class="text-xl bg-gray-900 p-1.5 rounded-full">${icone}</span>
@@ -5660,7 +5654,7 @@ async function atualizarDadosCliente() {
                             
                             <div class="flex flex-col items-end pr-1">
                                 <span class="font-bold text-lg ${corValor} whitespace-nowrap">
-                                    ${sinal}R$ ${valorItem.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                                    ${sinal}R$ ${valorExibicao.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
                                 </span>
                                 <span class="text-xs text-gray-400 whitespace-nowrap">
                                     Saldo: R$ ${saldoPosterior}
@@ -5668,11 +5662,13 @@ async function atualizarDadosCliente() {
                             </div>
                         </li>
                     `;
-
-                    listaContainer.innerHTML += li;
                 });
+
+                // Injeta todo o conteúdo de uma só vez (Muito mais rápido!)
+                listaContainer.innerHTML = htmlAcumulado;
+                // --- FIM DO AJUSTE DE PERFORMANCE ---
             }
-        }
+        } 
 
     } catch (error) {
         console.error("Erro ao atualizar extrato:", error);

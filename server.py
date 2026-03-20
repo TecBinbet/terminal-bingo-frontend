@@ -623,70 +623,78 @@ def fetch_data_from_mongodb():
         return {}
 
 
-# --- FUNÇÃO DE SEQUÊNCIA DE VENDA (Portada do app.py) ---
-def get_next_bilhete_sequence(db, id_evento, nome_campo, qtd=1, maximo=999999):
+# ==============================================================================
+# 🎫 MOTOR DE SEQUÊNCIA DE BILHETES (ATÓMICO E UNIFICADO)
+# ==============================================================================
+def get_next_bilhete_sequence(db, id_evento, increment_field, qtd, limite_maximo):
     """
-    Gera o próximo número de sequência de forma segura e auto-curável.
-    Se o campo estiver nulo/quebrado no banco, ele reseta para 1 automaticamente.
+    Incrementa o campo de sequência (inicial_proxima_venda) por `qtd`
+    e aplica um rollover se atingir `limite_maximo`.
+    Usa Aggregation Pipeline dentro do Update para garantir 100% de atomicidade.
     """
+    VALOR_INICIAL_PADRAO = 1 
+    now_utc = hora_brasil()
+    data_hora_formatada = now_utc.strftime("%d-%m/%Y %H:%M:%S")
+
+    # Pipeline que o Mongo processa internamente de uma só vez.
+    # Faz a matemática "Se (Atual + Qtd) >= Maximo, subtrai Maximo. Senão, soma Qtd."
+    update_pipeline = [
+        {
+            '$set': {
+                increment_field: {
+                    '$cond': {
+                        'if': { 
+                            '$gte': [ 
+                                { '$add': [f"${increment_field}", qtd] }, 
+                                limite_maximo 
+                            ] 
+                        },
+                        'then': { 
+                            '$subtract': [ 
+                                { '$add': [f"${increment_field}", qtd] }, 
+                                limite_maximo 
+                            ] 
+                        },
+                        'else': { 
+                            '$add': [f"${increment_field}", qtd] 
+                        }
+                    }
+                },
+                "data_hora": data_hora_formatada
+            }
+        }
+    ]
+    
     try:
-        # Tenta identificar a coleção de contadores (pode ser 'counters', 'config' ou 'rodada')
-        col_name = 'counters'
-        if 'config' in db.list_collection_names():
-            col_name = 'config'
-        elif 'rodada' in db.list_collection_names() and id_evento != 'global':
-            # As vezes o contador do evento fica na propria coleção dele
-            pass 
-
-        col = db[col_name]
-
-        # Define o filtro de busca
-        filtro = {'id_evento': id_evento}
-        if id_evento == 'global':
-             filtro = {'id_evento': 'global'}
-
-        # Tenta incrementar atomicamente
-        ret = col.find_one_and_update(
-            filtro,
-            {'$inc': {nome_campo: qtd}},
-            upsert=True, # Cria se não existir
-            return_document=True
+        query = {'id_evento': id_evento}
+        
+        # ALERTA: Aqui estávamos a tentar 'adivinhar' a tabela antes. 
+        # Agora forçamos o uso da tabela oficial: 'controle_venda'
+        update_result = db.controle_venda.find_one_and_update(
+            query,
+            update_pipeline, 
+            return_document=ReturnDocument.BEFORE, # Retorna o número ANTES da soma (é o que vamos usar para a cartela 1 da venda)
+            upsert=True,
+            projection={increment_field: 1} 
         )
-        
-        # Se retornou algo, pega o valor
-        if ret and nome_campo in ret:
-            val = int(ret[nome_campo])
-            # Se passou do máximo (loop do bingo), reseta
-            if maximo > 0 and val > maximo:
-                col.update_one(filtro, {'$set': {nome_campo: 1}})
-                return 1
-            return val
-        else:
-            # Se criou agora mas veio vazio
-            col.update_one(filtro, {'$set': {nome_campo: qtd}})
-            return qtd
 
+        if update_result and increment_field in update_result:
+            return update_result[increment_field] 
+        else:
+            if update_result is None:
+                return VALOR_INICIAL_PADRAO
+            return None 
+            
     except Exception as e:
-        print(f"⚠️ Erro na sequência ({nome_campo}): {e}")
-        
-        # --- AUTO-CURA DO BANCO DE DADOS ---
-        # Se o erro for de "non-numeric type" (o erro que você teve), forçamos o conserto
+        print(f"❌ [ERRO CRÍTICO] Falha ao obter sequência atómica para Evento {id_evento}: {e}")
+        # Auto-cura básica: Se a pipeline falhar (ex: campo não é numérico), tentamos forçar o reset.
         try:
-            print(f"🔧 Tentando consertar o campo '{nome_campo}' automaticamente...")
-            col_name = 'counters'
-            if 'config' in db.list_collection_names(): col_name = 'config'
-            
-            # Força o valor para 1 (Reinicia a contagem para destravar)
-            filtro = {'id_evento': id_evento}
-            if id_evento == 'global': filtro = {'id_evento': 'global'}
-            
-            db[col_name].update_one(filtro, {'$set': {nome_campo: 1}})
-            print("✅ Campo corrigido para 1. Tentando novamente...")
+            print(f"🔧 Tentando consertar o campo '{increment_field}' para 1...")
+            db.controle_venda.update_one({'id_evento': id_evento}, {'$set': {increment_field: 1}})
             return 1
         except Exception as e2:
-            print(f"❌ Falha crítica ao consertar banco: {e2}")
-            # Em último caso, usa timestamp para não travar a venda
-            return int(time.time())
+            print(f"☠️ [FALHA FATAL] Impossível consertar banco: {e2}")
+            return None
 
 
 def process_prizes(premios_raw):
@@ -4248,6 +4256,7 @@ def api_dados_cliente():
                 extrato.append({
                     'data': data_fmt,
                     'tipo': t.get('tipo', '?'),
+                    'natureza':t.get('natureza','SAIDA'),
                     'desc': t.get('descricao', ''),
                     'valor': val_t,
                     'saldo_posterior': saldo_post
@@ -4336,12 +4345,13 @@ def api_comprar_cartelas():
         # O MongoDB garante a exclusividade das sequências via find_one_and_update
         # ==============================================================================
         
+        # (Dentro da api_comprar_cartelas no server.py)
         numero_inicial_atual = get_next_bilhete_sequence(
             db=sales_db, 
             id_evento=id_evento_oficial, 
-            nome_campo='inicial_proxima_venda', 
+            increment_field='inicial_proxima_venda', # <-- Veja se diz 'increment_field'
             qtd=qtd_desejada,
-            maximo=limite_maximo_cartelas
+            limite_maximo=limite_maximo_cartelas # <-- Veja se diz 'limite_maximo'
         )
                                                    
         if numero_inicial_atual is None:
