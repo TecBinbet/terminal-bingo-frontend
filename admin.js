@@ -1257,6 +1257,7 @@ async function salvarConfiguracoes() {
     for (const radio of radios) { if (radio.checked) { modoSelecionado = radio.value; break; } }
 
     const nomeSala = document.getElementById('config-nome-sala').value;
+    const plataformaStreaming =  document.getElementById('config-plataforma-streaming').value; // <-- Adicione esta linha
     const urlPadrao = document.getElementById('config-url-padrao').value;
     const urlLive = document.getElementById('config-url-live').value;
     const urlMongo = document.getElementById('config-url-mongo').value;
@@ -1267,6 +1268,9 @@ async function salvarConfiguracoes() {
 
     let atrasoVideoInput = document.getElementById('config-atraso-video').value;
     let valorAtrasoFinal = parseInt(atrasoVideoInput) || 0;
+    if (valorAtrasoFinal >= 100) {
+        valorAtrasoFinal = valorAtrasoFinal / 1000;
+    }
 
     if (modoSelecionado !== 'manual') {
         valorAtrasoFinal = 0;
@@ -1279,6 +1283,7 @@ async function salvarConfiguracoes() {
         voz_ativa: isVoz, 
         camera_ativa: isCam,
         nome_sala: nomeSala, 
+        plataforma_streaming: plataformaStreaming,
         url_padrao: urlPadrao, 
         url_live: urlLive, 
         url_mongo_vendas: urlMongo,
@@ -1295,7 +1300,7 @@ async function salvarConfiguracoes() {
         await fetch(`${API_BASE_URL}/api/admin/salvar_config`, {
             method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
         });
-// aquiiii
+
         vozAtiva = isVoz; cameraAtiva = isCam; modoSorteio = modoSelecionado; enviarSerialValor = checkSerial 
         aplicarVisualModoSorteio(modoSorteio);
         aplicarVisibilidadeCamera(cameraAtiva);

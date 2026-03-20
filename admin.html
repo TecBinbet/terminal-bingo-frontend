@@ -201,7 +201,16 @@
 
                 <div class="space-y-2 bg-gray-700/20 p-2 rounded border border-gray-700">
                     <h4 class="text-xs font-bold text-yellow-600 uppercase mb-1">🔗 Integrações Externas</h4>
-                    
+      
+                    <!-- Plataforma de Transmissão -->
+                    <div>
+                        <label class="block text-[10px] font-bold text-blue-400 uppercase">Plataforma de Transmissão</label>
+                        <select id="config-plataforma-streaming" class="w-full bg-gray-900 border border-gray-600 rounded p-1.5 text-white text-xs focus:border-yellow-500 focus:outline-none">
+                            <option value="youtube">YouTube (Gratuito / Delay Alto)</option>
+                            <option value="ant_media">Ant Media Server (Tempo Real / Low Latency)</option>
+                        </select>
+                    </div>
+              
                     <div>
                         <label class="block text-[10px] font-bold text-gray-400 uppercase">Vídeo Promocional (Padrão)</label>
                         <input type="text" id="config-url-padrao" class="w-full bg-gray-900 border border-gray-600 rounded p-1.5 text-blue-300 text-xs truncate focus:text-white focus:outline-none" placeholder="Link do YouTube...">
@@ -213,9 +222,9 @@
                     </div>
 
                     <div class="mb-1">
-                       <label class="block text-gray-400 text-xs mb-0 uppercase">Atraso para Sincronia Vídeo x Dados (ms)</label>
-                       <input type="number" id="config-atraso-video" class="w-full bg-gray-800 border border-gray-600 rounded px-2 py-0 text-white" value="2000">
-                       <small class="text-gray-500 -mt-2">Aumente se o dado chegar antes da imagem no YouTube.</small>
+                        <label class="block text-gray-400 text-[10px] font-bold mb-0 uppercase">Atraso para Sincronia Vídeo x Dados (Segundos)</label>
+                               <input type="number" id="config-atraso-video" class="w-full bg-gray-900 border border-gray-600 rounded p-1.5 text-white text-xs" value="2">
+                               <small class="text-gray-500 block leading-tight mt-1" style="font-size: 9px;">Configure o tempo que o dado deve esperar o vídeo aparecer para o cliente.</small>   
                     </div>
 
                     <div>

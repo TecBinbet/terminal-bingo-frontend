@@ -27,6 +27,7 @@ import traceback
 import threading
 import time
 import requests
+import math
 
 import bcrypt # Necessário para validar a senha
 from flask import Flask, jsonify, request, send_from_directory, session, redirect, url_for, render_template, flash
@@ -1978,7 +1979,7 @@ def proximos_eventos():
         # ==================================================================
         # 🌟 REGRA DE NEGÓCIO: DESTAQUE DO EVENTO ESPECIAL
         # ==================================================================
-        indice_especial = -1    #/// ajuste aqui xxxxxx
+        indice_especial = -1    #
         
         # 1. Procura o primeiro evento Especial na fila completa
         for i, evento_dict in enumerate(lista):
@@ -2281,6 +2282,9 @@ def admin_salvar_config():
     if 'url_live' in data:
         update_fields['url_live'] = str(data['url_live']).strip()
 
+    # 👉 NOVO: PLATAFORMA DE STREAMING
+    if 'plataforma_streaming' in data:
+        update_fields['plataforma_streaming'] = str(data['plataforma_streaming']).strip().lower()
 
     # --- 3. Link do Banco de Dados de Vendas ---
     # Se vier vazio, aplica a URL padrão do cluster tecbin_db_vendas
@@ -3314,12 +3318,13 @@ def admin_resetar():
                      val_str_temp = lista_vencedores[0].get('valor_total_premio', '0')
                      val_total_float = parse_brl(val_str_temp)
 
-                if qtde_ganhadores > 0:
-                    # 1. Divide normalmente (Ex: 50 / 3 = 16.666...)
+                if qtde_ganhadores > 0: 
                     divisao_bruta = val_total_float / qtde_ganhadores
-                    # 2. O int() corta tudo depois da vírgula (Fica 16)
-                    # 3. O float() transforma de volta para dinheiro (Fica 16.0)
-                    val_rateio_float = float(int(divisao_bruta))
+                    # Arredonda para baixo  
+                    #val_rateio_float = float(int(divisao_bruta))
+
+                    # Arredonda para baixo
+                    val_rateio_float = float(math.ceil(divisao_bruta))
                 else:
                     val_rateio_float = 0.0
 
@@ -3361,27 +3366,69 @@ def admin_resetar():
                                 print(f"⚠️ [PAGAMENTO RATEIO] Cartela {w.get('cartela')} sem dono identificado nas vendas.")
                         except Exception as err_pagto:
                             print(f"❌ [PAGAMENTO RATEIO] Erro ao pagar cartela {w.get('cartela')}: {err_pagto}")
-                    # ====================================================================
-
-
+                
         # ======================================================================
-        # 🔥 PROCESSAMENTO DOS GANHADORES SORTE EXTRA
+        # 🔥 PROCESSAMENTO DOS GANHADORES SORTE EXTRA (COM RATEIO CEIL)
         # ======================================================================
-        # CORREÇÃO 2: Uso de 'is not None' aqui também
         if ganhadores_extra and sales_db is not None:
             print(f"🍀 [DEBUG] Processando {len(ganhadores_extra)} ganhadores do Sorte Extra...")
             
+            # 1. Primeiro passamos um "pente fino" para contar quantos ganharam cada prêmio
+            contagem_por_premio = {}
+            for g in ganhadores_extra:
+                nome_p = g.get('premio')
+                contagem_por_premio[nome_p] = contagem_por_premio.get(nome_p, 0) + 1
+
+            # 2. Agora processamos a lista real aplicando a matemática de arredondamento
             for g_extra in ganhadores_extra:
+                nome_premio = g_extra.get('premio')
+                
+                # Pegamos o valor total bruto enviado pelo front/admin
+                # (Ex: "R$ 50,00" vira 50.0)
+                valor_total_bruto = parse_brl(g_extra.get('valor_total_premio'))
+                qtd_vencedores = contagem_por_premio.get(nome_premio, 1)
+
+                # CÁLCULO CEIL: Divide, arredonda para cima e remove centavos
+                rateio_float = float(math.ceil(valor_total_bruto / qtd_vencedores))
+                str_rateio_formatado = f"R$ {format_brl(rateio_float)}"
+
                 obj_extra = {
-                    "premio": g_extra.get('premio'),
+                    "premio": nome_premio,
                     "valor_total_premio": g_extra.get('valor_total_premio'),
                     "cartela": str(g_extra.get('cartela')),
                     "nome": g_extra.get('nome'),
-                    "valor_rateio": g_extra.get('valor_rateio'),
+                    "valor_rateio": str_rateio_formatado, # Valor agora arredondado para cima
                     "tipo_premiacao": "Sorte Extra",
                     "dezenas_cupom": g_extra.get('dezenas_cupom', [])
                 }
+                
                 lista_resultados_ganhadores.append(obj_extra)
+
+                # 3. PAGAMENTO DO SORTE EXTRA (Seguindo a nova regra de pagar no reset)
+                if finalizar_com_sucesso and rateio_float > 0:
+                    try:
+                        # No Sorte Extra, o nick já costuma ser o identificador. 
+                        # Buscamos o cliente pelo nick para garantir o ID correto.
+                        cli_extra = sales_db.clientes.find_one({"nick": g_extra.get('nome')})
+                        if cli_extra:
+                            id_cli_extra = cli_extra.get('id_cliente')
+                            desc_extra = f"Sorte Extra: {nome_premio} - Evento {id_evento}"
+                            
+                            # Usando sua nova função centralizada e atômica
+                            registrar_transacao_cliente(
+                                db_vendas=sales_db,
+                                id_cliente=id_cli_extra,
+                                valor=rateio_float,
+                                tipo='premio_sorte_extra',
+                                descricao=desc_extra,
+                                id_evento=id_evento,
+                                origem="MESA_ADMIN",
+                                registrado_por="SISTEMA_SORTE_EXTRA"
+                            )
+                            print(f"✅ [PAGTO EXTRA] R$ {rateio_float:.2f} para {g_extra.get('nome')}")
+                    except Exception as e_p_extra:
+                        print(f"❌ [PAGTO EXTRA] Erro ao pagar: {e_p_extra}")
+
         else:
             print("ℹ️ [DEBUG] Sem ganhadores extra ou sem DB de vendas.")
 
@@ -3393,10 +3440,10 @@ def admin_resetar():
         # ======================================================================
         # 🚨 PONTO CRÍTICO: TENTATIVA DE SALVAR NO HISTÓRICO
         # ======================================================================
-        print(f"💾 [DEBUG] Verificando condições de salvamento no Histórico:")
-        print(f"   -> Total Bolas: {total_bolas}")
-        print(f"   -> Total Ganhadores (Unificado): {len(lista_resultados_ganhadores)}")
-        print(f"   -> Ganhadores Extra: {len(ganhadores_extra)}")
+        #print(f"💾 [DEBUG] Verificando condições de salvamento no Histórico:")
+        #print(f"   -> Total Bolas: {total_bolas}")
+        #print(f"   -> Total Ganhadores (Unificado): {len(lista_resultados_ganhadores)}")
+        #print(f"   -> Ganhadores Extra: {len(ganhadores_extra)}")
         
         condition_met = (total_bolas > 0 and len(lista_resultados_ganhadores) > 0) or len(ganhadores_extra) > 0
         print(f"   -> Condição aceita? {'SIM' if condition_met else 'NÃO'}")
@@ -5133,17 +5180,6 @@ def comprar_extra():
             "origem": "web_sorte_extra"
         }
         sales_db[nome_colecao_vendas].insert_one(nova_venda)
-
-        # zzz 
-        #sales_db.clientes.update_one({'id_cliente': id_cli}, {'$inc': {'saldo_atual': -custo_total}})
-        #sales_db.transacoes_clientes.insert_one({
-            #"id_cliente": id_cli,
-            #"data_hora": hora_brasil(),
-            #"tipo": "compra",  
-            #"valor": -abs(custo_total),
-            #"descricao": f"Sorte Extra - Ev. {id_evento_int} ({qtd_cupons} cupons)",
-            #"id_evento": id_evento_int
-        #})
 
         # 3. Debita e Registra no Extrato
         registrar_transacao_cliente(

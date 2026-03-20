@@ -4004,54 +4004,60 @@ async function renderMainContent(data) {
         const rawVideoID =parametrosInfo.url_live || parametrosInfo.url_padrao || '';
         video_local =  parametrosInfo.video_local;
         
-        if (tipoSorteio === "manual") {             // --- INÍCIO SE MANUAL ---
-       
-            // 1. Extrai APENAS o ID (11 caracteres) de qualquer link
-            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-            const match = rawVideoID.match(regExp);
+        if (tipoSorteio === "manual") {             // --- INÍCIO SE MANUAL ---          
+            // 👉 NOVO: Lê a plataforma escolhida no painel admin (Padrão é youtube)
+            const plataformaStreaming = parametrosInfo.plataforma_streaming || 'youtube';
+            if (plataformaStreaming === 'youtube') {
+                // ==========================================
+                // LÓGICA ATUAL DO YOUTUBE
+                // ==========================================
+                const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+                const match = rawVideoID.match(regExp);
 
-            if (match && match[2].length === 11) {
-                videoID = match[2];
-            } else if (rawVideoID.length === 11) {
-                videoID = rawVideoID;
-            }
+                if (match && match[2].length === 11) {
+                    videoID = match[2];
+                } else if (rawVideoID.length === 11) {
+                    videoID = rawVideoID;
+                }
 
-            if (!videoID) videoID = ''; 
+                if (!videoID) videoID = ''; 
 
-            // 2. O GRANDE TRUQUE PARA FILE://
-            let paramOrigin = '';
-        
-            // Verifica se está rodando localmente (arquivo)
-            if (window.location.protocol === 'file:') {
-                 // Força a origem como sendo o próprio YouTube para enganar a trava
-                 paramOrigin = '&origin=https://www.youtube.com';
+                let paramOrigin = '';
+                if (window.location.protocol === 'file:') {
+                     paramOrigin = '&origin=https://www.youtube.com';
+                } else if (window.location.protocol.startsWith('http')) {
+                     paramOrigin = `&origin=${window.location.origin}`;
+                }
+
+                // Se o link mudou, atualiza o player
+                if (currentVideoUrl !== rawVideoID) { 
+                    currentVideoUrl = rawVideoID; 
+                    if (videoID) carregarVideoSincronizado(videoID); 
+                    
+                    const videoContainer = document.getElementById('video-container'); 
+                    if (videoContainer && videoContainer.classList.contains('hidden')) {
+                         abrirYoutubeBtn.click();
+                    }
+                }
             } 
-            else if (window.location.protocol.startsWith('http')) {
-                 // Se estiver em servidor real, usa a origem real
-                 paramOrigin = `&origin=${window.location.origin}`;
-            }
-
-            // Monta a URL Final
-            const newVideoUrl = `https://www.youtube.com/embed/${videoID}?autoplay=1&rel=0${paramOrigin}`;
-        
-            // Atualiza o player apenas se mudou
-            if (currentVideoUrl !== rawVideoID) { 
-                currentVideoUrl = rawVideoID; // Guarda o link original para referência
-                
-                if (videoID) {
-                    // MÁGICA AQUI: Chama a nova função da API do YouTube
-                    carregarVideoSincronizado(videoID); 
-                }
-
-                const videoContainer = document.getElementById('video-container'); 
-                
-                // Só clica para abrir se estiver FECHADO
-                if (videoContainer && videoContainer.classList.contains('hidden')) {
-                     abrirYoutubeBtn.click();
+            else if (plataformaStreaming === 'ant_media' || plataformaStreaming === 'antmedia') {
+                // ==========================================
+                // NOVA LÓGICA PREPARADA PARA O ANT MEDIA
+                // ==========================================
+                if (currentVideoUrl !== rawVideoID) {
+                    currentVideoUrl = rawVideoID;
+                    // Chama a futura função do Ant Media passando o link do seu servidor
+                    console.log("🚀 Iniciando player do Ant Media Server...");
+                    if (typeof carregarVideoAntMedia === 'function') {
+                        carregarVideoAntMedia(rawVideoID);
+                    }
+                    
+                    const videoContainer = document.getElementById('video-container'); 
+                    if (videoContainer && videoContainer.classList.contains('hidden')) {
+                         abrirYoutubeBtn.click();
+                    }
                 }
             }
-
-            
         }         // --- FIM se Manual-
 
         if (abrirYoutubeBtn) {
@@ -7666,6 +7672,14 @@ window.fecharAuditoria = function() {
     if (modal) modal.classList.add('hidden');
 }
 
+// Função preparada para expansão futura para Ant Media Server
+function carregarVideoAntMedia(url) {
+    console.log("📺 Tentando conectar ao Ant Media Server:", url);
+    // showCustomAlert("O player Ant Media será integrado nesta área em breve.", "Aviso", "🚀");
+    
+    // Aqui entrará o SDK da Ant Media (webrtc_adaptor.js) quando você contratar o serviço.
+    // Por enquanto, o sistema apenas reconhece a mudança sem quebrar.
+}
 
 // FIM DO SEU SCRIPT.JS - Certifique-se de que não existem mais chaves "}" soltas debaixo disto!
 //  APP_USR-4102968123853317-030915-554488ce7119ab34a742fafc45b0f1e9-3255401766
