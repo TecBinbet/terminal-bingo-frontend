@@ -2824,6 +2824,21 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
                 'hora': hora_brasil().strftime("%H:%M:%S")
             })
 
+             # 2. --- PAGAMENTO AUTOMÁTICO 75 ---
+
+            #if val_total_float > 0:
+                #def processar_pagamento_75_bg(evt_id, c_id, val, desc):
+                    #try:
+                        #s_db = get_sales_db_connection()
+                        #id_cli = buscar_id_cliente_por_cartela(s_db, evt_id, int(c_id)) # int() garante busca correta
+                        #if id_cli:
+                            #registrar_transacao_cliente_mesa(s_db, id_cli, val, 'premio', desc, evt_id)
+                    #except Exception as e: print(f"❌ Erro thread pagto 75: {e}")
+
+                #threading.Thread(target=processar_pagamento_75_bg, 
+                               #args=(int(id_evento_ativo), cartela_id, val_total_float, f"Prêmio {tag_premio} - Evento {id_evento_ativo}")).start()
+            # -----------------------------------
+
     return {
         'status_code': status_code,
         'valid': eh_valido,
@@ -3078,6 +3093,23 @@ def admin_validar_cartela():
                     'linha_ganha_tag': linha_ganha,
                     'hora': hora_brasil().strftime("%H:%M:%S")
                 }) # brasil
+
+                # 2. --- PAGAMENTO AUTOMÁTICO 90 ---
+                #if raw_val > 0:
+                    # Thread para não travar a validação visual
+                    #def processar_pagamento_bg(evt_id, c_id, val, desc):
+                        #try:
+                            #s_db = get_sales_db_connection() # Conecta no banco de vendas
+                            #id_cli = buscar_id_cliente_por_cartela(s_db, evt_id, c_id)
+                            #if id_cli:
+                                #registrar_transacao_cliente_mesa(s_db, id_cli, val, 'premio', desc, evt_id)
+                            #else:
+                                #print(f"⚠️ Aviso: Cartela {c_id} sem dono identificado nas vendas.")
+                        #except Exception as e:
+                            #print(f"❌ Erro thread pagto: {e}")
+
+                    #threading.Thread(target=processar_pagamento_bg, 
+                                   #args=(int(id_evento_ativo), cartela_id, raw_val, f"Prêmio {premio_registro} - Ev. {id_evento_ativo}")).start()  
 
         return jsonify({
             'status_code': status_code,
@@ -3870,7 +3902,7 @@ def admin_preparar_evento():
 
 
 # --- FUNÇÃO PARA CREDITAR PRÊMIO AUTOMATICAMENTE ---
-def registrar_transacao_cliente_mesa2(db_vendas, id_cliente, valor, tipo, descricao, id_evento):
+def registrar_transacao_cliente_mesa(db_vendas, id_cliente, valor, tipo, descricao, id_evento):
     """
     Registra movimentação financeira e atualiza saldo.
     Retorna True se sucesso, False se erro 
@@ -3941,81 +3973,6 @@ def registrar_transacao_cliente_mesa2(db_vendas, id_cliente, valor, tipo, descri
         import traceback
         traceback.print_exc()
         return False
-
-
-# ==============================================================================
-# 🛡️ MOTOR FINANCEIRO CENTRALIZADO E ATÓMICO (SERVER.PY)
-# ==============================================================================
-def registrar_transacao_cliente(db_vendas, id_cliente, valor, tipo, descricao, id_evento=None, id_venda=None, origem="WEB_CLIENTE", registrado_por="SISTEMA"):
-    """
-    Centraliza TODA movimentação financeira do cliente no terminal.
-    Usa Operação Atômica ($inc) para evitar corrupção de saldo em acessos simultâneos.
-    """
-    from pymongo import ReturnDocument
-    try:
-        valor_float = float(valor)
-        if valor_float == 0:
-            return True, "Transação de valor zero ignorada."
-
-        # 1. Classificação
-        natureza = "ENTRADA" if valor_float > 0 else "SAIDA"
-        valor_decimal = Decimal128(str(valor_float))
-
-        # 2. OPERAÇÃO ATÔMICA (Soma e retorna o saldo já atualizado)
-        # Tenta buscar como INT primeiro (Padrão novo)
-        cliente_atualizado = db_vendas.clientes.find_one_and_update(
-            {'id_cliente': int(id_cliente) if str(id_cliente).isdigit() else id_cliente},
-            {
-                '$inc': {'saldo_atual': valor_decimal},
-                '$set': {'ultima_movimentacao': hora_brasil()}
-            },
-            return_document=ReturnDocument.AFTER
-        )
-
-        # Fallback de segurança caso o ID no banco esteja como String
-        if not cliente_atualizado:
-            cliente_atualizado = db_vendas.clientes.find_one_and_update(
-                {'id_cliente': str(id_cliente)},
-                {
-                    '$inc': {'saldo_atual': valor_decimal},
-                    '$set': {'ultima_movimentacao': hora_brasil()}
-                },
-                return_document=ReturnDocument.AFTER
-            )
-            
-        if not cliente_atualizado:
-            print(f"⚠️ [FINANCEIRO] Cliente {id_cliente} não encontrado para a transação: {descricao}")
-            return False, "Cliente não encontrado."
-
-        # 3. Matemática Reversa (Descobrir o saldo anterior)
-        saldo_posterior_float = converter_decimal(cliente_atualizado.get('saldo_atual', 0.0))
-        saldo_anterior_float = saldo_posterior_float - valor_float
-
-        # 4. Gravação no Livro-Razão (Extrato)
-        doc_transacao = {
-            'id_transacao': f"TRX{int(time.time()*1000)}",
-            'id_cliente': cliente_atualizado['id_cliente'],
-            'data_hora': hora_brasil(),
-            'natureza': natureza,
-            'tipo': tipo,
-            'valor': valor_decimal,
-            'saldo_anterior': Decimal128(str(saldo_anterior_float)),
-            'saldo_posterior': Decimal128(str(saldo_posterior_float)),
-            'descricao': descricao,
-            'id_evento': id_evento,
-            'id_venda': id_venda,
-            'origem': origem,
-            'registrado_por': registrado_por
-        }
-        
-        db_vendas.transacoes_clientes.insert_one(doc_transacao)
-        return True, "Sucesso"
-
-    except Exception as e:
-        print(f"❌ [ERRO CRÍTICO FINANCEIRO] Falha ao registrar transação do cliente {id_cliente}: {e}")
-        import traceback
-        traceback.print_exc()
-        return False, str(e)
 
 
 def buscar_id_cliente_por_cartela(sales_db, id_evento, cartela_id):
@@ -4266,7 +4223,7 @@ def api_dados_cliente():
 
 @app.route('/api/comprar_cartelas', methods=['POST'])
 def api_comprar_cartelas():
-    """Processa a compra de forma ATÓMICA e com Rollover perfeito."""
+    """Processa a compra APENAS se o evento estiver 'ativo'."""
     if 'id_cliente' not in session:
         return jsonify({'erro': 'Sessão expirada. Faça login novamente.'}), 401
         
@@ -4292,6 +4249,7 @@ def api_comprar_cartelas():
             rodada_info = db.rodada.find_one({})
             raw_id = rodada_info.get('id_evento') if rodada_info else None
 
+        # Busca o evento (Int ou Str)
         busca_ids = [raw_id, str(raw_id)]
         if isinstance(raw_id, str) and raw_id.isdigit():
             busca_ids.append(int(raw_id))
@@ -4302,8 +4260,9 @@ def api_comprar_cartelas():
             return jsonify({'erro': f'Evento {raw_id} não encontrado.'}), 400
             
         # ==================================================================
-        # 🚫 VALIDAÇÃO DE STATUS
+        # 🚫 NOVA VALIDAÇÃO DE STATUS
         # ==================================================================
+        # Converte para minúsculo e remove espaços para evitar erros de digitação
         status_atual = str(evento.get('status', '')).lower().strip()
         
         if status_atual != 'ativo':
@@ -4312,11 +4271,11 @@ def api_comprar_cartelas():
                 'erro': 'Vendas encerradas!', 
                 'detalhe': f'O evento está {status_atual}. Aguarde o próximo.'
             }), 400
+        # ==================================================================
 
         id_evento_oficial = evento.get('id_evento')
-        limite_maximo_cartelas = int(evento.get('numero_maximo', 72000))
-        numero_inicial_evento = int(evento.get('numero_inicial', 1))
-        
+        print(f"✅ Processando compra para Evento ID Oficial: {id_evento_oficial}")
+
         cliente = sales_db.clientes.find_one({'id_cliente': id_cli})
         if not cliente: return jsonify({'erro': 'Cliente não encontrado.'}), 400
 
@@ -4326,47 +4285,47 @@ def api_comprar_cartelas():
         # Verifica Saldo
         valor_unit = converter_decimal(evento.get('valor_de_venda', 0))
         custo_total = valor_unit * qtd_desejada
+        limite = int(evento.get('numero_maximo', 72000))
         
         saldo_cliente = converter_decimal(cliente.get('saldo_atual', 0))
         if saldo_cliente < custo_total:
              return jsonify({'erro': 'Saldo insuficiente para esta compra.'}), 400
 
-        # ==============================================================================
-        # 🚀 MOTOR DE VENDAS ATÓMICO (SEM LOCKS EM PYTHON, PARTILHADO COM APP.PY)
-        # O MongoDB garante a exclusividade das sequências via find_one_and_update
-        # ==============================================================================
-        
-        numero_inicial_atual = get_next_bilhete_sequence(
-            db=sales_db, 
-            id_evento=id_evento_oficial, 
-            nome_campo='inicial_proxima_venda', 
-            qtd=qtd_desejada,
-            maximo=limite_maximo_cartelas
+        # --- CONTROLE DE NUMERAÇÃO ---   xyx adicionei + 1
+        retorno_sequencia = sales_db.controle_venda.find_one_and_update(
+            {'id_evento': id_evento_oficial}, 
+            {'$inc': {'inicial_proxima_venda': qtd_desejada }}, 
+            upsert=True, 
+            return_document=ReturnDocument.AFTER
         )
-                                                   
-        if numero_inicial_atual is None:
-            return jsonify({'erro': 'Falha interna ao gerar número do bilhete.'}), 500
-
-        # Lógica de Rollover / Reinício (Igual ao app.py)
-        if numero_inicial_atual == 1: 
-            numero_inicial_atual = numero_inicial_evento
-            sales_db.controle_venda.update_one(
-                {'id_evento': id_evento_oficial},
-                {'$set': {'inicial_proxima_venda': numero_inicial_atual + qtd_desejada}}
-            )
-
-        numero_final_atual = numero_inicial_atual + qtd_desejada - 1
         
-        numero_inicial2_atual = 0 
-        numero_final2_atual = 0 
+        valor_pos_incremento = retorno_sequencia.get('inicial_proxima_venda')
+        num_inicial = valor_pos_incremento - qtd_desejada
         
-        # Tratamento perfeito de se a compra "atravessar" o limite máximo
-        if numero_final_atual > limite_maximo_cartelas:
-            numero_inicial2_atual = 1
-            numero_final2_atual = numero_final_atual - limite_maximo_cartelas
-            numero_final_atual = limite_maximo_cartelas
+        # Ajuste para não começar do zero se for a primeira venda
+        if num_inicial == 0: 
+            # Se a conta deu 0, significa que o banco estava vazio e somou a qtd.
+            # Então as cartelas são de 1 até qtd.
+            num_inicial = 1
+            # O num_final será recalculado corretamente abaixo?
+            # Ex: comprei 10. Banco virou 10. num_inicial = 0 -> virou 1.
+            # num_final = 1 + 10 - 1 = 10. Correto.
+        
+        # Mas atenção: Se o banco já tinha 10 e eu compro 5.
+        # Banco vira 15. num_inicial = 15 - 5 = 10.
+        # Minhas cartelas: 10, 11, 12, 13, 14. (Isso repetiria a cartela 10 anterior).
+        # AJUSTE FINO DE LÓGICA DE SEQUENCIA:
+        # Geralmente num_inicial deve ser (valor_antigo).
+        # Valor antigo = valor_pos_incremento - qtd_desejada.
+        # Então num_inicial REAL = (valor_pos_incremento - qtd_desejada).
+        
+        num_inicial_real = (valor_pos_incremento - qtd_desejada)  # Excluir o + 1
+        num_final = num_inicial_real + qtd_desejada - 1
+        
+        if num_final > limite:
+            return jsonify({'erro': 'Limite de cartelas esgotado.'}), 400
 
-        # --- CONTADOR GLOBAL DE VENDAS (Seguro) ---
+        # --- CONTADOR GLOBAL DE VENDAS ---
         retorno_global = sales_db.contadores.find_one_and_update(
             {'_id': 'global'}, 
             {'$inc': {'id_vendas_global': 1}},
@@ -4386,53 +4345,47 @@ def api_comprar_cartelas():
             "data_venda": hora_brasil(),  
             "quantidade_unidades": qtd_desejada,
             "quantidade_cartelas": qtd_desejada, 
-            "numero_inicial": numero_inicial_atual,
-            "numero_final": numero_final_atual,
-            "numero_inicial2": numero_inicial2_atual,
-            "numero_final2": numero_final2_atual,
+            "numero_inicial": num_inicial_real, # Usando o ajustado
+            "numero_final": num_final,
+            "numero_inicial2": 0,
+            "numero_final2": 0,
             "valor_total": Decimal128(str(custo_total)),
             "origem": "terminal_cliente"
         }
         
         col_vendas_nome = f"vendas{id_evento_oficial}"
         sales_db[col_vendas_nome].insert_one(venda_doc)
-        print(f"💾 Venda WEB gravada: {col_vendas_nome} | Cartelas: {numero_inicial_atual}-{numero_final_atual}")
+        print(f"💾 Venda gravada em: {col_vendas_nome}")
 
         # ==================================================================
         # --- ATUALIZAÇÃO DO BUFFER PARA O ROBÔ DE PRÊMIOS ---
+        # Adiciona o valor desta venda ao acumulador invisível do evento
+        # SOMENTE se o evento for do tipo 'porcentagem'
         tipo_premiacao = str(evento.get('tipo_premiacao', '')).lower().strip()
+        
         if tipo_premiacao == 'porcentagem':
             sales_db.eventos.update_one(
                 {"id_evento": id_evento_oficial},
-                {"$inc": {"valor_pendente_telemovel": float(custo_total)}} # Corrigido para float p/ o Mongo aceitar no $inc sem erro Decimal
+                {"$inc": {"valor_pendente_telemovel": Decimal128(str(custo_total))}}
             )
             print(f"📈 Buffer de prêmios atualizado em +R$ {float(custo_total):.2f}")
         # ==================================================================
 
-        # Debita e finaliza com o nosso motor financeiro seguro
-        registrar_transacao_cliente(
-            db_vendas=sales_db, 
-            id_cliente=id_cli, 
-            valor=-abs(custo_total), 
-            tipo='compra_cartela', 
-            descricao=f"Compra Web - {qtd_desejada} kit(s) - {evento.get('descricao')}", 
-            id_evento=id_evento_oficial,
-            id_venda=f"WEB{id_venda_global}",
-            origem="WEB_CLIENTE",
-            registrado_por="AUTO-ATENDIMENTO"
+        # Debita e finaliza
+        registrar_transacao_cliente_mesa(
+            sales_db, id_cli, -abs(custo_total), 'compra', 
+            f"Compra Web - {qtd_desejada} kit(s) - {evento.get('descricao')}", id_evento_oficial
         )
         
-        saldo_atual_novo = saldo_cliente - custo_total
+        # threading.Thread(target=carregar_cache_evento, args=(id_evento_oficial, sales_db)).start()
         
-        cartelas_txt = f"{numero_inicial_atual} a {numero_final_atual}"
-        if numero_inicial2_atual > 0:
-            cartelas_txt += f" e {numero_inicial2_atual} a {numero_final2_atual}"
+        saldo_atual_novo = saldo_cliente - custo_total
 
         return jsonify({
             'status': 'ok',
             'msg': 'Compra realizada!',
             'novo_saldo': saldo_atual_novo,
-            'cartelas': cartelas_txt
+            'cartelas': f"{num_inicial_real} a {num_final}"
         })
 
     except Exception as e:
@@ -4780,17 +4733,28 @@ def solicitar_saque():
         resultado_saque = sales_db.requisao_saque.insert_one(novo_saque)
         id_novo_saque = str(resultado_saque.inserted_id)
 
-        # 👉 NOVO: Debita o saldo e registra no extrato de forma segura
-        registrar_transacao_cliente(
-            db_vendas=sales_db,
-            id_cliente=id_sessao,
-            valor=-abs(valor_solicitado), # Saque é negativo
-            tipo='saque_solicitado',
-            descricao=f"Requisição de Saque (ID: {id_novo_saque[-6:]})",
-            id_evento='SAQUE',
-            origem="WEB_CLIENTE",
-            registrado_por="SISTEMA_SAQUE"
+        # 👉 NOVO: DEBITA O SALDO DO CLIENTE NA BASE DE DADOS
+        sales_db.clientes.update_one(
+            {'_id': cliente['_id']}, # Usamos o _id interno do Mongo que é à prova de falhas
+            {'$set': {'saldo_atual': Decimal128(str(novo_saldo))}}
         )
+
+        # 👉 NOVO: REGISTRA A TRANSAÇÃO NO EXTRATO (AUDITORIA)
+        doc_transacao = {
+            'id_transacao': f"SQ{int(time.time()*1000)}", # Ex: SQ171025...
+            'id_cliente': int(id_sessao),
+            'data_hora': hora_brasil(),
+            'tipo': 'saque',
+            'valor': Decimal128(str(valor_solicitado)),
+            'saldo_anterior': Decimal128(str(saldo_atual)),
+            'saldo_posterior': Decimal128(str(novo_saldo)),
+            'descricao': f"Requisição de Saque (ID: {id_novo_saque[-6:]})",
+            'id_evento': 'SAQUE',
+            'origem': 'WEB_AUTO',
+            'registrado_por': 'SISTEMA_SAQUE'
+        }
+        # Se a sua tabela chamar transacoes_clientes, mude abaixo:
+        sales_db.transacoes_clientes.insert_one(doc_transacao)
 
         # Envia Notificação ao Telegram
         try:
@@ -5124,28 +5088,17 @@ def comprar_extra():
         }
         sales_db[nome_colecao_vendas].insert_one(nova_venda)
 
-        # zzz 
-        #sales_db.clientes.update_one({'id_cliente': id_cli}, {'$inc': {'saldo_atual': -custo_total}})
-        #sales_db.transacoes_clientes.insert_one({
-            #"id_cliente": id_cli,
-            #"data_hora": hora_brasil(),
-            #"tipo": "compra",  
-            #"valor": -abs(custo_total),
-            #"descricao": f"Sorte Extra - Ev. {id_evento_int} ({qtd_cupons} cupons)",
-            #"id_evento": id_evento_int
-        #})
-
-        # 3. Debita e Registra no Extrato
-        registrar_transacao_cliente(
-            db_vendas=sales_db,
-            id_cliente=id_cli,
-            valor=-abs(custo_total),
-            tipo='compra_sorte_extra',
-            descricao=f"Sorte Extra - Ev. {id_evento_int} ({qtd_cupons} cupons)",
-            id_evento=id_evento_int,
-            origem="WEB_CLIENTE",
-            registrado_por="AUTO-ATENDIMENTO"
-        )
+        # 3. Debita e Registra
+        sales_db.clientes.update_one({'id_cliente': id_cli}, {'$inc': {'saldo_atual': -custo_total}})
+        
+        sales_db.transacoes_clientes.insert_one({
+            "id_cliente": id_cli,
+            "data_hora": hora_brasil(),
+            "tipo": "compra",  
+            "valor": -abs(custo_total),
+            "descricao": f"Sorte Extra - Ev. {id_evento_int} ({qtd_cupons} cupons)",
+            "id_evento": id_evento_int
+        })
 
         return jsonify({'status': 'ok', 'msg': 'Sucesso!', 'novo_saldo': saldo_cliente - custo_total}), 200
 
@@ -5519,25 +5472,47 @@ def pagar_ganhadores_imediato():
                 logs.append(f"⚠️ {nick} já recebeu. Ignorado.")
                 continue
 
-            # ==============================================================================
-            # 2. ATUALIZAÇÃO ATÔMICA E GERAÇÃO DE EXTRATO CENTRALIZADA
-            # ==============================================================================
-            sucesso, msg = registrar_transacao_cliente(
-                db_vendas=sales_db,
-                id_cliente=id_cliente_db,
-                valor=valor, # Valor positivo = ENTRADA/CRÉDITO
-                tipo='premio_sorte_extra', # Conforme o nosso dicionário
-                descricao=descricao_formatada,
-                id_evento=id_evento_int,
-                origem="MESA_ADMIN",
-                registrado_por="MESA_ADMIN"
+            # 2. ATUALIZAÇÃO ATÔMICA + CÁLCULO DE SALDOS
+            # Usamos find_one_and_update para garantir atomicidade e retorno dos valores
+            cliente_atualizado = sales_db.clientes.find_one_and_update(
+                {"_id": cliente['_id']},
+                {
+                    "$inc": {"saldo_atual": Decimal128(str(valor))},
+                    "$set": {"ultima_movimentacao": hora_brasil()}
+                },
+                return_document=ReturnDocument.AFTER # Retorna o documento JÁ com o saldo novo
             )
 
-            if sucesso:
-                pagos_count += 1
-                logs.append(f"✅ Pago R$ {valor:.2f} para {nick}")
-            else:
-                logs.append(f"❌ Erro ao atualizar saldo de {nick}: {msg}")
+            if not cliente_atualizado:
+                logs.append(f"❌ Erro ao atualizar saldo de {nick}")
+                continue
+
+            # Cálculos matemáticos precisos
+            saldo_posterior_dec = cliente_atualizado.get('saldo_atual').to_decimal()
+            saldo_anterior_dec = saldo_posterior_dec - Decimal(str(valor))
+            
+            # Gera ID Transação Único (TR + Timestamp)
+            id_transacao_gen = f"TR{int(time.time() * 1000)}"
+
+            # 3. GERA TRANSAÇÃO (Estrutura Nova Solicitada)
+            transacao_doc = {
+                "id_transacao": id_transacao_gen,
+                "id_cliente": id_cliente_db,        # Ex: 41
+                "data_hora": hora_brasil(),
+                "tipo": "premio",                   # Minúsculo
+                "valor": float(valor),              # Float (100.0)
+                "saldo_anterior": float(saldo_anterior_dec), # Float (5253.3)
+                "saldo_posterior": float(saldo_posterior_dec), # Float (5353.3)
+                "descricao": descricao_formatada,   # "Sorte Extra..."
+                "id_evento": id_evento_int,         # 22
+                "origem": "MESA_ADMIN",
+                "registrado_por": "MESA_ADMIN"
+            }
+
+            sales_db.transacoes_clientes.insert_one(transacao_doc)
+            
+            pagos_count += 1
+            logs.append(f"✅ Pago R$ {valor:.2f} para {nick}")
 
         return jsonify({'status': 'sucesso', 'pagos': pagos_count, 'logs': logs})
 
@@ -5816,33 +5791,58 @@ def webhook_pix_simulado():
             }}
         )
 
-        # ==============================================================================
-        # 3. MÁGICA FINANCEIRA: Adiciona Saldo e Grava no Extrato (Atómico e Seguro)
-        # ==============================================================================
+        # 3. MÁGICA FINANCEIRA: Adiciona Saldo e Grava no Extrato
         cliente_id_int = int(transacao['cliente_id'])
         valor_creditado = float(transacao['valor'])
+        valor_decimal = Decimal128(str(valor_creditado))
 
-        sucesso, msg = registrar_transacao_cliente(
-            db_vendas=sales_db,
-            id_cliente=cliente_id_int,
-            valor=valor_creditado,
-            tipo='compra_credito_pix', # Categoria oficial do nosso dicionário
-            descricao=f"Depósito via PIX ({transacao_id})",
-            id_evento='RECARGA_CARTEIRA', 
-            origem="WEB_PIX_SIMULADO",
-            registrado_por="SISTEMA_PIX"
-        )
+        # Busca o cliente para descobrir o Saldo Anterior
+        cliente = sales_db.clientes.find_one({'id_cliente': cliente_id_int})
+        
+        if cliente:
+            # 3.1 Calcula a matemática do saldo
+            # O get pega o valor atual ou 0.00 se estiver vazio
+            saldo_anterior = float(str(cliente.get('saldo_atual', 0.00))) 
+            saldo_novo = saldo_anterior + valor_creditado
+            
+            # 3.2 Atualiza a carteira do cliente usando o SET (como você faz no bingo)
+            sales_db.clientes.update_one(
+                {'id_cliente': cliente_id_int}, 
+                {
+                    '$set': {
+                        'saldo_atual': Decimal128(str(saldo_novo)),
+                        'ultima_movimentacao': hora_brasil()
+                    }
+                }
+            )
 
-        if sucesso:
-            print(f"✅ PIX SIMULADO CONFIRMADO E REGISTRADO! R$ {valor_creditado:.2f} creditados para o cliente {cliente_id_int}.")
+            # 3.3 REGISTRA O HISTÓRICO (Extrato do Cliente)
+            doc_transacao = {
+                'id_transacao': f"TR{int(time.time()*1000)}",
+                'id_cliente': cliente_id_int,
+                'data_hora': hora_brasil(),
+                'tipo': 'credito',
+                'valor': valor_decimal,
+                'saldo_anterior': Decimal128(str(saldo_anterior)),
+                'saldo_posterior': Decimal128(str(saldo_novo)),
+                'descricao': f"Depósito via PIX ({transacao_id})",
+                'id_evento': 'RECARGA_CARTEIRA', # Diferencia de um ganho de bingo
+                'origem': 'WEB_AUTO',
+                'registrado_por': 'SISTEMA_PIX'
+            }
+            
+            sales_db.transacoes_clientes.insert_one(doc_transacao)
+
+            print(f"✅ PIX CONFIRMADO E REGISTRADO! R$ {valor_creditado:.2f} creditados para o cliente {cliente_id_int}.")
         else:
-            print(f"⚠️ AVISO CRÍTICO: PIX simulado recebido, mas falha ao creditar cliente {cliente_id_int}: {msg}")
+            print(f"⚠️ AVISO CRÍTICO: PIX recebido, mas o cliente {cliente_id_int} sumiu do banco de dados!")
 
         return jsonify({'sucesso': True, 'mensagem': 'Saldo creditado e histórico registrado com sucesso!'}), 200
 
     except Exception as e:
         print(f"❌ Erro no Webhook PIX: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 
 #2. A Rota Ouvinte (O Webhook de Confirmação)
@@ -5965,27 +5965,38 @@ def webhook_mercado_pago():
             {'$set': {'status': 'PAGO', 'data_pagamento': hora_brasil()}}
         )
 
-        # ==============================================================================
-        # 4. A MÁGICA DO SALDO (Totalmente segura e atómica agora)
-        # ==============================================================================
+        # 4. A MÁGICA DO SALDO (Mantemos a mesma matemática perfeita que você fez!)
         cliente_id_int = int(transacao['cliente_id'])
         valor_creditado = float(transacao['valor'])
+        valor_decimal = Decimal128(str(valor_creditado))
 
-        sucesso, msg = registrar_transacao_cliente(
-            db_vendas=sales_db,
-            id_cliente=cliente_id_int,
-            valor=valor_creditado,
-            tipo='compra_credito_pix', # Categoria oficial do nosso dicionário
-            descricao=f"Depósito via PIX ({transacao_id})",
-            id_evento='RECARGA_CARTEIRA',
-            origem="WEB_PIX",
-            registrado_por="SISTEMA_PIX"
-        )
+        cliente = sales_db.clientes.find_one({'id_cliente': cliente_id_int})
+        
+        if cliente:
+            saldo_anterior = float(str(cliente.get('saldo_atual', 0.00))) 
+            saldo_novo = saldo_anterior + valor_creditado
+            
+            sales_db.clientes.update_one(
+                {'id_cliente': cliente_id_int}, 
+                {'$set': {'saldo_atual': Decimal128(str(saldo_novo)), 'ultima_movimentacao': hora_brasil()}}
+            )
 
-        if sucesso:
+            doc_transacao = {
+                'id_transacao': f"TR{int(time.time()*1000)}",
+                'id_cliente': cliente_id_int,
+                'data_hora': hora_brasil(),
+                'tipo': 'credito',
+                'valor': valor_decimal,
+                'saldo_anterior': Decimal128(str(saldo_anterior)),
+                'saldo_posterior': Decimal128(str(saldo_novo)),
+                'descricao': f"Depósito via PIX ({transacao_id})",
+                'id_evento': 'RECARGA_CARTEIRA',
+                'origem': 'WEB_AUTO',
+                'registrado_por': 'SISTEMA_PIX'
+            }
+            sales_db.transacoes_clientes.insert_one(doc_transacao)
+
             print(f"✅🤑 PIX DE R$ {valor_creditado:.2f} RECEBIDO E CREDITADO PARA O CLIENTE {cliente_id_int}!")
-        else:
-            print(f"⚠️ AVISO CRÍTICO: PIX recebido, mas falha ao creditar cliente {cliente_id_int}: {msg}")
 
         # Tem que devolver 200 pro MP ou ele fica tentando mandar a mesma notificação infinitamente
         return jsonify({'sucesso': True}), 200
