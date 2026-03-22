@@ -555,7 +555,20 @@ def fetch_data_from_mongodb():
         
         # 2. Parâmetros
         lista_parametros = clean(db.parametros.find({}))
-        param_doc = lista_parametros[0] if lista_parametros else { "texto_sorteio": "SISTEMA ONLINE", "id_sala": "001" }
+      
+        # Dicionário padrão caso o banco esteja vazio
+        default_params = { 
+            "texto_sorteio": "SISTEMA ONLINE", 
+            "id_sala": PARAM_ID_SALA,
+            "em_treinamento": False, # Segurança: Padrão é sempre produção (OFF)
+            "nome_sala": "BINGO TESTE",
+            "tipo_sorteio": 25,
+            "tempo_ganhador": 20
+        }
+ 
+        param_doc = lista_parametros[0] if lista_parametros else default_params
+  
+        modo_treino = param_doc.get('em_treinamento', False)
 
         # 3. TRATAMENTO DOS GANHADORES (Agrupamento Restaurado)
         ganhadores_terminal_raw = list(db.osganhadores.find({}))        
@@ -4612,8 +4625,6 @@ def checar_nick():
         return jsonify({'erro': str(e)}), 500
 
 
-# Não esqueça do import no topo: from pymongo import ReturnDocument
-
 @app.route('/api/cadastrar_cliente', methods=['POST'])
 def cadastrar_cliente():
     """
@@ -4669,25 +4680,55 @@ def cadastrar_cliente():
         novo_id_cliente = int(contador['sequence_value'])
         # -------------------------------------------
 
+        # --- VERIFICAÇÃO DE MODO TREINAMENTO ---
+        # Lê o parâmetro em tempo real do banco de vendas
+        params_vendas = sales_db.parametros.find_one({})
+        modo_treino = params_vendas.get('em_treinamento', False) if params_vendas else False
+        
+        valor_inicial = Decimal128("1000.00") if modo_treino else Decimal128("0.00")
+        # ---------------------------------------
+
         # 5. Montagem do Documento
         novo_cliente = {
-            'id_cliente': novo_id_cliente, # Salva como Int (ex: 30)
+            'id_cliente': novo_id_cliente, 
             'nome_cliente': nome,
             'telefone': celular,
             'chave_pix': pix,
             'nick': nick,
             'senha': senha_hash,
-            'saldo_atual': 0.0,
-            'data_cadastro': hora_brasil().strftime('%Y-%m-%d %H:%M:%S'),
+            'saldo_atual': valor_inicial,
+            'data_cadastro': hora_brasil(),
             'origem': 'auto_cadastro_site',
             'cidade': cidade,
-            'id_colaborador': 0
+            'id_colaborador': 0,
+            'em_treinamento': modo_treino
         }
 
         # 6. Inserção no Banco
         sales_db.clientes.insert_one(novo_cliente)
 
-        print(f"✅ Novo cliente cadastrado: {nick} (ID: {novo_id_cliente}) [Int32]")
+        # Se for modo treinamento, registra a transação de bônus no extrato
+        if modo_treino:
+            try:
+                doc_transacao = {
+                    'id_transacao': f"TRX_TREINO_{int(time.time())}",
+                    'id_cliente': novo_id_cliente,
+                    'data_hora': hora_brasil(),
+                    'tipo': 'bonus_treinamento',
+                    'natureza': 'ENTRADA',
+                    'valor': Decimal128("1000.00"),
+                    'saldo_anterior': Decimal128("0.00"),
+                    'saldo_posterior': Decimal128("1000.00"),
+                    'descricao': "Bônus de Boas-vindas (MODO TREINAMENTO)",
+                    'origem': 'SISTEMA',
+                    'registrado_por': 'SISTEMA'
+                }
+                sales_db.transacoes_clientes.insert_one(doc_transacao)
+            except Exception as e_trans:
+                print(f"⚠️ Erro ao gerar extrato de treino para {nick}: {e_trans}")
+
+            tipo_log = "TREINAMENTO" if modo_treino else "REAL"
+            print(f"✅ [{tipo_log}] Novo cliente: {nick} (ID: {novo_id_cliente})")
 
         return jsonify({
             'status': 'ok',

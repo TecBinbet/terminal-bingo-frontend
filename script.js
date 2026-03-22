@@ -3998,6 +3998,23 @@ async function renderMainContent(data) {
         const tipoSorteio = parametrosInfo.modo_sorteio;
         updateMenuSoundVisuals();
 
+        if (parametrosInfo && parametrosInfo.em_treinamento) {
+            const badge = document.getElementById('badge-treinamento');
+            if (badge) badge.classList.remove('hidden');
+    
+            // Opcional: Mudar a cor do saldo para diferenciar do real
+            const saldoEl = document.getElementById('mobile-user-balance');
+            if (saldoEl) saldoEl.classList.add('text-yellow-500'); 
+        } else {
+            // RECOMENDAÇÃO: Adicione um 'else' para esconder o badge 
+            // caso o modo treino seja desligado sem atualizar a página
+            const badge = document.getElementById('badge-treinamento');
+            if (badge) badge.classList.add('hidden');
+            
+            const saldoEl = document.getElementById('mobile-user-balance');
+            if (saldoEl) saldoEl.classList.remove('text-yellow-500');
+        }
+
         tipoDoSorteio = tipoSorteio;
     
         let videoID = '';
