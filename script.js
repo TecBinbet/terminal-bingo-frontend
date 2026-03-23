@@ -71,6 +71,7 @@ const btnMenuFullscreen = document.getElementById('menu-btn-fullscreen');
 const statusFullscreen = document.getElementById('menu-status-fullscreen');
 const iconFullscreen = document.getElementById('icon-fullscreen');
 
+
 // Cores
 let corFundoCartela = "bg-gray-900";                 
 let corBordaCartela = "border-gray-700";             
@@ -5462,13 +5463,24 @@ function selecionarQtd(n) {
 
 // Calculo visual do total (Auxiliar)
 function calcularTotalCompra() {
-    const input = document.getElementById('qtd-manual');
-    const display = document.getElementById('total-compra-display');
-    if (input && display) {
-        const total = (parseInt(input.value) || 0) * globalPrecoCartela;
-        display.textContent = `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    const inputQtd = document.getElementById('qtd-manual');
+    const displayTotal = document.getElementById('total-compra-display');
+    
+    if (!inputQtd || !displayTotal) return;
+
+    const qtd = parseInt(inputQtd.value) || 0;
+    const total = qtd * globalPrecoCartela;
+
+    displayTotal.textContent = `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+
+    // Feedback de cor no total se ultrapassar o saldo
+    if (total > globalUserSaldo) {
+        displayTotal.classList.add('text-red-500');
+    } else {
+        displayTotal.classList.remove('text-red-500');
     }
 }
+
 
 // CONFIRMAR COMPRA (COM RECARREGAMENTO FORÇADO)
 async function confirmarCompra() {
@@ -5534,9 +5546,53 @@ async function confirmarCompra() {
 
         if (res.ok) {
             // SUCESSO
-            if (typeof showCustomAlert === 'function') showCustomAlert(`Sucesso! ${data.msg}`, "Compra Confirmada", "✅");
-            else alert(data.msg);
+// --- INÍCIO DA CORREÇÃO DO ALERTA ---
             
+            // 1. Garantimos que os números sejam tratados como String para o padStart funcionar
+            const nInicial = String(data.inicial || '0').padStart(6, '0');
+            const nFinal = String(data.final || '0').padStart(6, '0');
+
+            // 2. Montamos o HTML do primeiro intervalo
+            let infoSeries = `
+                <div class="p-1 bg-gray-950/50 rounded-lg border border-gray-800">
+                    <span class="text-[12px] text-gray-500 uppercase font-bold tracking-widest">Período Adquirido</span><br>
+                    <b class="text-yellow-400 font-mono text-lg">
+                        ${nInicial} 
+                        <span class="text-white text-xs mx-1">até</span> 
+                        ${nFinal}
+                    </b>
+                </div>`;
+
+            // 3. Adicionamos o segundo intervalo apenas se ele existir (Rollover)
+            if (data.inicial2 && parseInt(data.inicial2) > 0) {
+                const nInicial2 = String(data.inicial2).padStart(6, '0');
+                const nFinal2 = String(data.final2).padStart(6, '0');
+                
+                infoSeries += `
+                <div class="mt-1 p-1 bg-gray-950/50 rounded-lg border border-gray-800 border-t-0">
+                    <span class="text-[12px] text-gray-500 uppercase font-bold tracking-widest">Período Adicional (Lote Novo)</span><br>
+                    <b class="text-cyan-400 font-mono text-lg">
+                        ${nInicial2} 
+                        <span class="text-white text-xs mx-1">até</span> 
+                        ${nFinal2}
+                    </b>
+                </div>`;
+            }
+
+            // 4. DISPARAMOS O ALERTA IMEDIATAMENTE
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert(
+                    `<div class="text-center">
+                        <p class="text-gray-300">Sua compra de <b>${qtd}</b> cartelas foi processada!</p>
+                        ${infoSeries}
+                        <p class="text-[16px] text-gray-500 mt-2 uppercase font-bold">Boa sorte! 🍀</p>
+                    </div>`, 
+                    "COMPRA CONFIRMADA", 
+                    "✅"
+                );
+            }
+
+            // --- FIM DA CORREÇÃO DO ALERTA ---            
             // Atualiza Saldo e Extrato (sempre deve acontecer)
             if (typeof atualizarDadosCliente === 'function') await atualizarDadosCliente(); 
             
@@ -6287,6 +6343,36 @@ async function abrirModalCompra(idEventoEspecifico = 0) {
             }
             return; // O bloco 'finally' cuidará de restaurar o botão
         } 
+
+        // 1. ATUALIZAÇÃO DO PREÇO GLOBAL IMEDIATA
+        // Garante que o cálculo use o preço real vindo do banco de vendas
+        globalPrecoCartela = parseFloat(dadosEvento.preco_cartela || 2.0);
+
+        const elPrecoUnit = document.getElementById('preco-unitario-modal');
+        if (elPrecoUnit) {
+                elPrecoUnit.textContent = `Preço Unitário: R$ ${globalPrecoCartela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+        }
+
+        // 2. FORÇA O CÁLCULO INICIAL (Zera o total antes de abrir)
+        if (typeof calcularTotalCompra === 'function') {
+            const inputQtd = document.getElementById('qtd-manual');
+            if (inputQtd) inputQtd.value = ''; // Limpa a quantidade anterior
+            calcularTotalCompra(); // Renderiza R$ 0,00 com o novo preço base
+        }
+
+        // 3. EXIBIÇÃO DO SALDO ATUALIZADO
+        const saldoModal = document.getElementById('saldo-modal-compra');
+        if (saldoModal) {
+            // Usa a globalUserSaldo que o seu WebSocket mantém viva
+            saldoModal.textContent = `R$ ${globalUserSaldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    
+            // Dica extra: Feedback visual se o saldo for insuficiente
+            if (globalUserSaldo <= 0) {
+                saldoModal.classList.replace('text-green-400', 'text-red-400');
+            } else {
+                saldoModal.classList.replace('text-red-400', 'text-green-400');
+            }
+        }
 
         // 8. Abre o modal de compra
         const modal = document.getElementById('modal-comprar-cartelas');
@@ -7657,6 +7743,66 @@ function fecharModalSaquesPendentes() {
     if (modal) modal.classList.add('hidden');
 }
 
+
+// --- FUNÇÕES ADICÇÃO BOTÃO TELA CELULAR ---
+let deferredPrompt;
+
+// Escuta o evento de instalação do Chrome
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    console.log("✅ PWA: App pronto para instalação no Android.");
+});
+
+async function realizarInstalacao() {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+}
+
+window.mostrarAjudaInstalacao = function() {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+
+    if (isStandalone) {
+        showCustomAlert("Você já está usando o aplicativo oficial!", "Bingo Premiado", "✅");
+        return;
+    }
+
+    if (isIOS) {
+        showCustomAlert(
+            `<div class="text-left text-sm space-y-3 p-1">
+                <p class="font-bold text-yellow-500">Siga os passos para instalar:</p>
+                <div class="flex items-start gap-3">
+                    <span class="bg-gray-700 px-2 rounded-full">1</span>
+                    <span>Toque no botão <b>Compartilhar</b> na barra inferior do Safari (o ícone é um quadrado com uma seta para cima <span class="text-blue-500">⎋</span>).</span>
+                </div>
+                <div class="flex items-start gap-3">
+                    <span class="bg-gray-700 px-2 rounded-full">2</span>
+                    <span>Role a lista para baixo e toque em <b>'Adicionar à Tela de Início'</b>.</span>
+                </div> 
+                <div class="flex items-start gap-3">
+                    <span class="bg-gray-700 px-2 rounded-full">3</span>
+                    <span>Confirme clicando em <b>'Adicionar'</b> no canto superior direito.</span>
+                </div>
+            </div>`, 
+            "Instalar no iPhone", 
+            "📱"
+        );
+    } else if (deferredPrompt) {
+        realizarInstalacao();
+    } else {
+        // Se o prompt ainda não disparou ou o usuário já recusou antes
+        showCustomAlert(
+            "Para instalar:<br><br>1. Clique nos <b>3 pontinhos</b> do Chrome.<br>2. Selecione <b>'Instalar Aplicativo'</b>.", 
+            "Instalar App", 
+            "🤖"
+        );
+    }
+}
+
+
 // --- FUNÇÕES DE AUDITORIA ---
 
 // Use o prefixo window. para garantir que o botão no index.html a encontre
@@ -7728,6 +7874,7 @@ window.abrirAuditoria = async function(idEvento) {
         `;
     }
 };
+
 
 // Faça o mesmo para a função de fechar
 window.fecharAuditoria = function() {

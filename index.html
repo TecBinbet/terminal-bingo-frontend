@@ -5,7 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gerenciador de Bingo</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍀</text></svg>">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="favicon.png">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>🍀</text></svg>">
+
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22%23111827%22/><text y=%22.85em%22 x=%22.1em%22 font-size=%2270%22>🍀</text></svg>">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -574,6 +582,15 @@
                             <span id="menu-status-fullscreen" class="text-xs font-bold text-gray-500">OFF</span>
                         </button>
                     </li>
+                    <li>
+                        <button id="btn-instalar-app" onclick="mostrarAjudaInstalacao()" class="w-full flex items-center justify-between                                         p-2 rounded-lg hover:bg-blue-900/30 hover:text-blue-400 transition-colors text-gray-200 border border-transparent hover:border-blue-500/50">
+                            <div class="flex items-center gap-2">
+                                <span id="icon-instalar">📲</span>
+                                <span class="font-medium">Baixar Aplicativo</span>
+                            </div>
+                            <span class="text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded animate-pulse">NOVO</span>
+                        </button>
+                    </li>
                 </ul>
                 <ul>
                      <li onclick="fazerLogout()" class="cursor-pointer p-2 hover:bg-red-600 hover:text-white rounded-lg transition-colors flex items-center gap-3 mt-4 border-t border-gray-700/30">
@@ -656,7 +673,10 @@
         <div class="p-4 overflow-y-auto">
             
             <div class="bg-gray-800/50 p-0.5 rounded-lg border border-gray-700 mb-2 -mt-1 flex justify-between items-center">
-                <span class="text-gray-300 text-sm">Seu Saldo:</span>
+                <div class="flex flex-col">
+                    <span class="text-gray-300 text-sm">Seu Saldo:</span>
+                    <span id="preco-unitario-modal" class="text-[10px] text-gray-300 uppercase">Preço Unitário: R$ 0,00</span>
+                </div>
                 <span id="saldo-modal-compra" class="text-green-400 font-bold text-lg">R$ 0,00</span>
             </div>
 
@@ -1092,6 +1112,6 @@
 </button>
 
     <script src="config.js"></script>
-    <script src="script.js?v=3"></script>
+    <script src="script.js?v=1"></script>
 </body>
 </html>

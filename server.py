@@ -4584,7 +4584,11 @@ def api_comprar_cartelas():
             'status': 'ok',
             'msg': 'Compra realizada!',
             'novo_saldo': saldo_atual_novo,
-            'cartelas': cartelas_txt
+            'cartelas': cartelas_txt,
+            'inicial': numero_inicial_atual,
+            'final': numero_final_atual,
+            'inicial2': numero_inicial2_atual,
+            'final2': numero_final2_atual
         })
 
     except Exception as e:
