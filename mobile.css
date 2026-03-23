@@ -252,3 +252,22 @@ html, body {
     font-family: 'Share Tech Mono', monospace;
     letter-spacing: 1px;
 }
+
+.loader-spinner {
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Classe para travar o botão durante o loading */
+.btn-disabled {
+    pointer-events: none;
+    opacity: 0.7;
+}

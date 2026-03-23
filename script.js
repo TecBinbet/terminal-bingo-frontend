@@ -3998,21 +3998,25 @@ async function renderMainContent(data) {
         const tipoSorteio = parametrosInfo.modo_sorteio;
         updateMenuSoundVisuals();
 
+        // --- DENTRO DA FUNÇÃO DE RENDERIZAÇÃO ---
+        const badge = document.getElementById('badge-treinamento');
+        const saldoEl = document.getElementById('mobile-user-balance');
+
         if (parametrosInfo && parametrosInfo.em_treinamento) {
-            const badge = document.getElementById('badge-treinamento');
+            console.error("🛠️ Ativa Modo Treino");
             if (badge) badge.classList.remove('hidden');
-    
-            // Opcional: Mudar a cor do saldo para diferenciar do real
-            const saldoEl = document.getElementById('mobile-user-balance');
-            if (saldoEl) saldoEl.classList.add('text-yellow-500'); 
+            if (saldoEl) {
+                saldoEl.classList.add('text-yellow-500');
+                saldoEl.classList.remove('text-green-400'); // Garante que a cor real saia
+            }
         } else {
-            // RECOMENDAÇÃO: Adicione um 'else' para esconder o badge 
-            // caso o modo treino seja desligado sem atualizar a página
-            const badge = document.getElementById('badge-treinamento');
+            console.error("🚀 Volta para Modo Real");
+            // 🚀 Volta para Modo Real
             if (badge) badge.classList.add('hidden');
-            
-            const saldoEl = document.getElementById('mobile-user-balance');
-            if (saldoEl) saldoEl.classList.remove('text-yellow-500');
+            if (saldoEl) {
+                saldoEl.classList.remove('text-yellow-500');
+                saldoEl.classList.add('text-green-400'); // Garante que a cor verde volte
+            }
         }
 
         tipoDoSorteio = tipoSorteio;
@@ -6172,63 +6176,79 @@ function atualizarInterfaceAposLogin(dados) {
             containerUser.classList.remove('hidden');
         }
     }
-    // =========================================================
 
 }
 
 
-// --- BUSCA O PREÇO E DETALHES DO EVENTO ---
-async function atualizarPrecoDoEvento() {
-    const idAlvo =obterIdEventoAlvo();
+// Adicionamos o parâmetro idForcado aqui na definição!
+async function atualizarPrecoDoEvento(idForcado = 0) {
+    // 1. Tenta pegar o ID forçado ou busca o do locutor
+    const idAlvo = idForcado > 0 ? idForcado : (typeof obterIdEventoAlvo === 'function' ? obterIdEventoAlvo() : 0);
 
-    if (idAlvo === 0) return;
+    if (!idAlvo || idAlvo === 0) {
+        console.warn(`⚠️ Evento ${idAlvo} não existe no banco de vendas A1.`);
+        return null;
+    }
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/dados_evento?id_evento=${idAlvo}`, {
+        // 2. ATENÇÃO: Verifique se no Python a rota é 'verificar_status_evento' ou 'dados_evento'
+        // Para garantir, use a que definimos por último no Python:
+        const response = await fetch(`${API_BASE_URL}/api/verificar_status_evento?id_evento=${idAlvo}`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
         });
 
-        if (response.ok) {
-            const data = await response.json();
-            
-            // 1. Atualiza Preço Global
-            if (data.preco_cartela) {
-                globalPrecoCartela = parseFloat(data.preco_cartela);
-                
-                // 2. ATUALIZA O TÍTULO DO MODAL (Com 3 linhas)
-                const tituloModal = document.querySelector('#modal-comprar-cartelas h3');
-                
-                if (tituloModal) {
-                    const desc = data.descricao || `Evento #${idAlvo}`;
-                    const dataHora = (data.data_evento && data.hora_evento) 
-                                     ? `${data.data_evento} às ${data.hora_evento}` 
-                                     : '';
+        // 3. Trata o 404 (Evento 94 fantasma) graciosamente
+        if (!response.ok) {
+            console.warn(`⚠️ Evento ${idAlvo} não existe no banco de vendas A2.`);
+            return null; 
+        }
 
-                    // Aqui criamos a estrutura com quebras de linha e tamanhos diferentes
-                    tituloModal.innerHTML = `
-                        <div class="flex flex-col items-center leading-tight">
-                            <div class="flex items-center gap-2 text-xl">
-                                <span>🛒</span> Comprar Cartelas
-                            </div>
-                            <span class="text-base text-yellow-500 font-bold  uppercase">${desc}</span>
-                            ${dataHora ? `<span class="text-base' text-blue-400 font-semibold -mt-0.5">📅 ${dataHora}</span>` : ''}
-                        </div>
-                    `;
-                }
-                
-                // Recalcula total
-                calcularTotalCompra();
+        const data = await response.json();
+        
+        // 4. Se o servidor retornou o objeto, atualizamos a interface
+        if (data) {
+            // Atualiza preço global (se vier no JSON)
+            if (data.preco_cartela !== undefined) {
+                globalPrecoCartela = parseFloat(data.preco_cartela);
             }
+            
+            // Atualiza o Título do Modal
+            const tituloModal = document.querySelector('#modal-comprar-cartelas h3');
+            if (tituloModal) {
+                const desc = data.descricao || `Evento #${idAlvo}`;
+                const dataHora = (data.data_evento && data.hora_evento) 
+                                 ? `${data.data_evento} às ${data.hora_evento}` 
+                                 : '';
+
+                tituloModal.innerHTML = `
+                    <div class="flex flex-col items-center leading-tight">
+                        <div class="flex items-center gap-2 text-xl">
+                            <span>🛒</span> Comprar Cartelas
+                        </div>
+                        <span class="text-base text-yellow-500 font-bold uppercase">${desc}</span>
+                        ${dataHora ? `<span class="text-base text-blue-400 font-semibold -mt-0.5">📅 ${dataHora}</span>` : ''}
+                    </div>
+                `;
+            }
+            
+            if (typeof calcularTotalCompra === 'function') calcularTotalCompra();
+            
+            return data; // Retorna o objeto (importante para o abrirModalCompra)
         }
     } catch (error) {
-        console.error("Erro ao buscar preço:", error);
+        console.error("❌ Erro ao buscar preço/detalhes:", error);
     }
+    return null;
 }
 
-// ABRIR MODAL COMPRA (CORRIGIDA: FECHA O MODAL DE EVENTOS ANTES)
+
 async function abrirModalCompra(idEventoEspecifico = 0) {
-    // 1. Verifica Login
+    // 1. Identifica o botão que foi clicado para aplicar o loading
+    const btnCompra = document.querySelector('.btn-comprar-principal') || document.activeElement;
+    const originalHTML = btnCompra ? btnCompra.innerHTML : "";
+
+    // 2. Verifica Login
     if (!isUsuarioLogado()) {
         if (typeof showCustomAlert === 'function') {
             showCustomAlert("Você precisa fazer login para comprar cartelas.", "Login Necessário", "🔒");
@@ -6237,47 +6257,73 @@ async function abrirModalCompra(idEventoEspecifico = 0) {
         return;
     }
 
-    // 2. Define qual evento será comprado
-    if (idEventoEspecifico > 0) {
-        eventoSelecionadoParaCompra = idEventoEspecifico;
-    } else {
-        eventoSelecionadoParaCompra = 0; 
+    // 3. Ativa o estado de Loading no botão
+    if (btnCompra) {
+        btnCompra.style.pointerEvents = "none"; // Impede cliques duplos
+        btnCompra.style.opacity = "0.7";
+        // Adiciona um spinner simples ou apenas troca o texto
+        btnCompra.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Carregando...`;
     }
 
-    // --- 3. FECHA OUTROS MODAIS (AQUI ESTÁ A CORREÇÃO) ---
-    // Fecha a carteira e tenta fechar o modal de lista de eventos
+    console.log("🛒 Iniciando processo de compra para evento:", idEventoEspecifico);
+
+    // 4. Define qual evento será comprado
+    eventoSelecionadoParaCompra = idEventoEspecifico > 0 ? idEventoEspecifico : 0;
+
+    // 5. Fecha outros modais
     if (typeof fecharModal === 'function') {
         fecharModal('modal-carteira');
-        
-        // Tenta fechar possíveis nomes do seu modal de eventos
-        // (Verifique no seu HTML qual é o ID correto da div principal da lista de eventos)
         fecharModal('events-panel-container');
     }
 
-    // Feedback visual
-    const btnCompra = document.querySelector('a[onclick="abrirModalCompra()"]');
-    if(btnCompra) btnCompra.style.opacity = "0.5";
+    try {
+        // 6. Busca dados do evento (Aguardando resposta da API)
+        const dadosEvento = await atualizarPrecoDoEvento(idEventoEspecifico);
+   
+        // 7. Validação de Segurança
+        if (!dadosEvento || dadosEvento.status === 'nao_encontrado') {
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert("Este evento não está disponível ou o ID é inválido.", "Aviso", "⚠️");
+            }
+            return; // O bloco 'finally' cuidará de restaurar o botão
+        } 
 
-    // 4. Busca preço
-    await atualizarPrecoDoEvento(); 
-    
-    if(btnCompra) btnCompra.style.opacity = "1";
+        // 8. Abre o modal de compra
+        const modal = document.getElementById('modal-comprar-cartelas');
+        if (modal) {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
 
-    // 5. Abre o modal de compra
-    const modal = document.getElementById('modal-comprar-cartelas');
-    if (modal) {
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-        
-        const saldoModal = document.getElementById('saldo-modal-compra');
-        if (saldoModal) {
-            saldoModal.textContent = `R$ ${globalUserSaldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+            // Preenche a numeração atual
+            const elNum = document.getElementById('numeracao_atual_venda');
+            if (elNum && dadosEvento.numeracao_atual_venda !== undefined) {
+                elNum.textContent = dadosEvento.numeracao_atual_venda.toString().padStart(6, '0');
+            }
+           
+            // Atualização do Saldo
+            const saldoModal = document.getElementById('saldo-modal-compra');
+            if (saldoModal) {
+                saldoModal.textContent = `R$ ${globalUserSaldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+            }
+            
+            // Limpa campos para nova compra
+            const input = document.getElementById('qtd-manual');
+            const totalDisplay = document.getElementById('total-compra-display');
+            if(input) input.value = '';
+            if(totalDisplay) totalDisplay.textContent = 'R$ 0,00';
+            
+            console.log("✅ Modal de compra aberto com numeração:", dadosEvento.numeracao_atual_venda);
         }
-        
-        const input = document.getElementById('qtd-manual');
-        const totalDisplay = document.getElementById('total-compra-display');
-        if(input) input.value = '';
-        if(totalDisplay) totalDisplay.textContent = 'R$ 0,00';
+
+    } catch (error) {
+        console.error("Erro ao carregar dados para compra:", error);
+    } finally {
+        // 9. RESTAURAÇÃO VITAL: Sempre volta o botão ao normal, com sucesso ou erro
+        if (btnCompra) {
+            btnCompra.style.pointerEvents = "auto";
+            btnCompra.style.opacity = "1";
+            btnCompra.innerHTML = originalHTML;
+        }
     }
 }
 

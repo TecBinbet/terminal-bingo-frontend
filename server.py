@@ -47,6 +47,7 @@ import sys
 sys.stdout.reconfigure(line_buffering=True)
 from pymongo import ReturnDocument # Certifique-se de importar isso no topo do arquivo
 from decimal import Decimal
+MODO_TREINAMENTO_ATIVO = False
 
 # ==============================================================================
 # 🛠️ CONFIGURAÇÃO INICIAL DA SALA (PRIORIDADE: ARGUMENTO > ENV > PADRÃO)
@@ -100,6 +101,22 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7) # Mantém logado po
 # 1. Lista Global para guardar as TVs conectadas
 clientes_conectados = []
 
+
+def carregar_configuracao_treinamento():
+    global MODO_TREINAMENTO_ATIVO
+    try:
+        # Tenta ler do banco de Vendas apenas no BOOT do servidor
+        from database import get_sales_db_connection # Garante que a função de conexão exista
+        s_db = get_sales_db_connection()
+        if s_db:
+            conf = s_db.parametros.find_one({}, {"em_treinamento": 1})
+            if conf:
+                MODO_TREINAMENTO_ATIVO = bool(conf.get("em_treinamento", False))
+                print(f"⚙️ [BOOT] Modo Treinamento inicial: {MODO_TREINAMENTO_ATIVO}")
+    except Exception as e:
+        print(f"⚠️ Erro no boot de treinamento: {e}")
+
+
 # --- FUNÇÃO DE ENVIO ---xx
 def broadcast_para_clientes(data):
     global clients
@@ -121,21 +138,33 @@ def broadcast_para_clientes(data):
 
 # --- WATCHER ---
 def watch_collections():
-    global local_data, mongo_data
-    print("👀 Watcher iniciado...")
+    global local_data, mongo_data, MODO_TREINAMENTO_ATIVO
+    print("👀 Watcher iniciado (Monitorando Sorteio e Ambiente)...")
     last_data_json = ""
     
     while True:
         try:
-            current_data = fetch_data()
+            current_data = fetch_data() # Esta função já busca a tabela 'parametros'
             if not current_data: 
                 gevent.sleep(1)
                 continue
+
+            # --- SINCRONIA AUTOMÁTICA DE AMBIENTE ---
+            # Buscamos o campo 'modo_treinamento' que você vai criar na tabela parametros (Sorteio)
+            params_jogo = current_data.get('parametrosInfo', {})
+            if 'modo_treinamento' in params_jogo:
+                novo_status = bool(params_jogo['modo_treinamento'])
+                if MODO_TREINAMENTO_ATIVO != novo_status:
+                    MODO_TREINAMENTO_ATIVO = novo_status        
+            current_data['parametrosInfo']['em_treinamento'] = MODO_TREINAMENTO_ATIVO
 
             current_json = json.dumps(current_data, default=str)
             
             if current_json != last_data_json:
                 last_data_json = current_json
+                
+                # Injeta a global atualizada para que o front-end receba o Badge correto
+                current_data['parametrosInfo']['em_treinamento'] = MODO_TREINAMENTO_ATIVO
                 
                 if is_local_mode: local_data = current_data
                 else: mongo_data = current_data
@@ -157,6 +186,20 @@ def broadcast(data):
             client.send(msg)
         except:
             clients.discard(client)
+
+
+
+def atualizar_status_treinamento():
+    global MODO_TREINAMENTO_ATIVO
+    try:
+        s_db = get_sales_db_connection()
+        if s_db:
+            params = s_db.parametros.find_one({}, {'em_treinamento': 1})
+            MODO_TREINAMENTO_ATIVO = params.get('em_treinamento', False) if params else False
+            print(f"⚙️ [CONFIG] Modo Treinamento definido como: {MODO_TREINAMENTO_ATIVO}")
+    except Exception as e:
+        print(f"⚠️ Erro ao carregar status de treinamento: {e}")
+        MODO_TREINAMENTO_ATIVO = Fals
 
 
 def hora_brasil():
@@ -560,15 +603,14 @@ def fetch_data_from_mongodb():
         default_params = { 
             "texto_sorteio": "SISTEMA ONLINE", 
             "id_sala": PARAM_ID_SALA,
-            "em_treinamento": False, # Segurança: Padrão é sempre produção (OFF)
             "nome_sala": "BINGO TESTE",
             "tipo_sorteio": 25,
             "tempo_ganhador": 20
         }
  
         param_doc = lista_parametros[0] if lista_parametros else default_params
-  
-        modo_treino = param_doc.get('em_treinamento', False)
+ 
+        param_doc["em_treinamento"] = MODO_TREINAMENTO_ATIVO
 
         # 3. TRATAMENTO DOS GANHADORES (Agrupamento Restaurado)
         ganhadores_terminal_raw = list(db.osganhadores.find({}))        
@@ -1546,6 +1588,22 @@ def initial_data():
     # Se ainda assim for vazio (início do sistema), manda {}
     return jsonify(dados if dados else {})
 
+
+@app.route('/api/admin/reload_treino')
+def reload_treino():
+    carregar_configuracao_treinamento()
+    return "Configuração Atualizada!"
+
+# ==============================================================================
+#  ROTA DE CONFIGURAÇÃO DE AMBIENTE
+# ==============================================================================
+@app.route('/api/config_ambiente')
+def config_ambiente():
+    return jsonify({
+        "em_treinamento": MODO_TREINAMENTO_ATIVO,
+        "versao": "1.0.4-stable"
+    })
+
 # ==============================================================================
 #  ROTA DE AUDITORIA cliente
 # ==============================================================================
@@ -1893,14 +1951,28 @@ def verificar_status_evento():
         #print(f"🔎 Buscando Evento {id_evento} no banco '{sales_db.name}'...")
         evento = sales_db.eventos.find_one({'id_evento': id_evento})
 
+        if not evento:
+            # Retornamos 200 (Sucesso de rede) mas com status 'erro' no JSON
+            return jsonify({
+                'status': 'nao_encontrado', 
+                'msg': f'Evento {id_evento} nao existe no banco de vendas',
+                'numeracao_atual_venda': 1 # Valor padrão de segurança
+            }), 200
+
+        controle = sales_db.controle_venda.find_one({'id_evento': id_evento})
+        
+        proximo_numero = controle.get('inicial_proxima_venda', 1) if controle else 1
+
         # 4. Retorna o Resultado
         if evento:
             print(f"✅ SUCESSO! Foto encontrada: {evento.get('imagem_premio')}")
             return jsonify({
                 'id': str(id_evento),
                 'status': evento.get('status', 'indefinido'),
+                'numeracao_atual_venda': proximo_numero, # Adicionado para o modal
                 'imagem_premio': evento.get('imagem_premio', ''),
-                'premio_atual': evento.get('premio_atual', 'BINGO')
+                'premio_atual': evento.get('premio_atual', 'BINGO'),
+                'descricao': evento.get('descricao', f'Evento {id_evento}')
             })
         else:
             print(f"❌ Evento {id_evento} não encontrado em '{sales_db.name}'.")
@@ -3789,6 +3861,14 @@ def get_dados_evento():
         if not evento:
              evento = sales_db.config.find_one({'rodada_atual': id_evento})
 
+        controle = sales_db.controle_venda.find_one({'id_evento': id_evento})
+        
+        if controle:
+            proximo_numero = controle.get('inicial_proxima_venda', 1)
+        else:
+            # Caso não exista o registro específico, tenta um global ou padrão 1
+            proximo_numero = 1
+
         if evento:
             # 1. Pega o valor bruto do banco
             val_bruto = evento.get('valor_de_venda', 1.00)
@@ -3808,6 +3888,7 @@ def get_dados_evento():
                 'status': 'ok',
                 'id_evento': evento.get('id_evento'), 
                 'preco_cartela': preco_final, 
+                'numeracao_atual_venda': proximo_numero, # Valor vindo da controle_venda
                 'descricao': evento.get('descricao', f'Evento {id_evento}'),
                 'data_evento': evento.get('data_evento', ''),
                 'hora_evento': evento.get('hora_evento', '')
@@ -3818,6 +3899,7 @@ def get_dados_evento():
                 'status': 'ok', 
                 'id_evento': id_evento, 
                 'preco_cartela': 2.00, # PREÇO PADRÃO DE EMERGÊNCIA
+                'numeracao_atual_venda': proximo_numero,
                 'obs': 'Evento não encontrado no banco, usando padrão'
             })
 
@@ -4642,13 +4724,11 @@ def cadastrar_cliente():
         senha_formatada = senha_raw.capitalize() 
 
         cidade = data.get('cidade', '').strip().title()
-
  
         # --- NOVO TRECHO DE VALIDAÇÃO --- aquix
         valido, erro_msg = nick_eh_valido(nick)
         if not valido:
             return jsonify({'erro': erro_msg}), 400
-        # -------------------------------
 
         # 1. Validação Básica
         if not nome or not celular or not nick or not senha_raw or not pix or not cidade:
@@ -4657,6 +4737,18 @@ def cadastrar_cliente():
         sales_db = get_sales_db_connection()
         if sales_db is None:
             return jsonify({'erro': 'Erro interno: Banco inacessível'}), 500
+
+        # --- VERIFICAÇÃO DE MODO TREINAMENTO ---
+        # A. Busca a regra de treinamento NO BANCO DE VENDAS
+        # Usamos find_one porque geralmente só existe um documento de configuração
+        params_vendas = sales_db.parametros.find_one({})
+        
+        # Se não achar o documento ou o campo, o padrão é False (Segurança em 1º lugar)
+        modo_treino = params_vendas.get('em_treinamento', False) if params_vendas else False
+
+        # B. Define o saldo inicial baseado na regra acima
+        # Importante: Usamos Decimal128 para manter a precisão que o seu motor financeiro exige
+        valor_inicial = Decimal128("1000.00") if modo_treino else Decimal128("0.00")
 
         # 2. Verificação de Duplicidade
         if sales_db.clientes.find_one({'nick': {'$regex': f'^{nick}$', '$options': 'i'}}):
@@ -4678,15 +4770,6 @@ def cadastrar_cliente():
         
         # --- ALTERAÇÃO AQUI: Mantém como Inteiro ---
         novo_id_cliente = int(contador['sequence_value'])
-        # -------------------------------------------
-
-        # --- VERIFICAÇÃO DE MODO TREINAMENTO ---
-        # Lê o parâmetro em tempo real do banco de vendas
-        params_vendas = sales_db.parametros.find_one({})
-        modo_treino = params_vendas.get('em_treinamento', False) if params_vendas else False
-        
-        valor_inicial = Decimal128("1000.00") if modo_treino else Decimal128("0.00")
-        # ---------------------------------------
 
         # 5. Montagem do Documento
         novo_cliente = {
@@ -4727,8 +4810,8 @@ def cadastrar_cliente():
             except Exception as e_trans:
                 print(f"⚠️ Erro ao gerar extrato de treino para {nick}: {e_trans}")
 
-            tipo_log = "TREINAMENTO" if modo_treino else "REAL"
-            print(f"✅ [{tipo_log}] Novo cliente: {nick} (ID: {novo_id_cliente})")
+        tipo_log = "TREINAMENTO" if modo_treino else "REAL"
+        print(f"✅ [{tipo_log}] Novo cliente: {nick} (ID: {novo_id_cliente})")
 
         return jsonify({
             'status': 'ok',
@@ -6129,6 +6212,10 @@ def main():
         # 1. Banco de Dados
         connect_main_db()
         print(f"🚩 [2] Banco Conectado com sucesso!")
+
+        # --- ADICIONE ESTA LINHA AQUI ---
+        carregar_configuracao_treinamento() 
+        # -------------------------------
 
         # 2. Watcher (Monitora o banco em paralelo)
         print("🚩 [3] Iniciando Watcher...")
