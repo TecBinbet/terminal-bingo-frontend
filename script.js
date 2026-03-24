@@ -2539,6 +2539,7 @@ function clearPanels() {
         //togglePrizesButton.textContent = 'Apresentar Prêmios';
     }   //  2
     displayPrizeInfo([{ buscando_o_premio: null }],[]);
+    mostrarBotoesSorteExtra()
     iniciandoRodada = true;
     startPromocionalTimer();     
     seePromocoes = true;
@@ -4666,6 +4667,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     if (typeof openEventsPanel === 'function') openEventsPanel();
                 }
+                btnCompraMobile.style.opacity = "1";
+                btnCompraMobile.textContent = "🛒 Comprar"; 
             } catch (err) {
                 console.error("Erro ao checar status:", err);
                 if (typeof openEventsPanel === 'function') openEventsPanel();
@@ -4995,7 +4998,7 @@ function alternarPainelMobile(modo) {
         botoesAcao.forEach(btn => {
             if (btn) {
                 // Volta ao normal (py-1.5 e text-xs)
-                btn.classList.remove('py-3', 'text-xl');
+                btn.classList.remove('py-2.5', 'text-xl');
                 btn.classList.add('py-1.5', 'text-xs');
             }
         });
@@ -5005,9 +5008,9 @@ function alternarPainelMobile(modo) {
     const aumentarBotoesAcao = () => {
         botoesAcao.forEach(btn => {
             if (btn) {
-                // Fica maior (py-3 e text-xl)
+                // Fica maior (py-2.5 e text-xl)
                 btn.classList.remove('py-1.5', 'text-xs');
-                btn.classList.add('py-3', 'text-xl');
+                btn.classList.add('py-2.5', 'text-xl');
             }
         });
     };
