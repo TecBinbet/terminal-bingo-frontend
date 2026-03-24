@@ -2,6 +2,8 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
+const VERSAO_ATUAL = "1.0";
+
 // --- REFERÊNCIAS DE UI ---
 const modalOverlay = document.getElementById('custom-modal-overlay');
 const modalBox = document.getElementById('custom-modal-box');
@@ -1842,6 +1844,9 @@ async function executarCarregamentoReal(idEvento) {
         }
 
         dadosEventoAtual = dados; 
+
+        forcarAtualizacaoClientes();
+
         document.getElementById('painel-evento-ativo').classList.remove('hidden');
 
         id_evento_ativo = parseInt(idEvento);
@@ -4013,4 +4018,14 @@ window.cancelarTransicaoRobo = function() {
 function atualizarCheckboxRobo(estado) {
     const chkRobo = document.getElementById('config-sorteio-automatizado');
     if (chkRobo) chkRobo.checked = estado;
+}
+
+// Exemplo de envio pelo Admin
+function forcarAtualizacaoClientes() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'FORCE_RELOAD',
+            versao_obrigatoria: VERSAO_ATUAL
+        }));
+    }
 }
