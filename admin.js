@@ -480,6 +480,8 @@ function renderGridConferencia(data) {
     const bolas = (data.bolas || bolasSorteadasCache || []).map(String);
     const ultimaBola = A_Ultima_Bola;
 
+    console.error("[ TESTE ] ultimaBola      :",ultimaBola);
+
     // >>> RENDERIZAÇÃO BINGO 75 (Perfeita)
     if (tipoJogo === 75) { 
         grid.className = "grid grid-cols-5 gap-1 bg-black p-2 rounded border border-gray-600 w-full max-w-[300px] mx-auto shadow-2xl";
@@ -501,7 +503,7 @@ function renderGridConferencia(data) {
                 if (isFree && (valorDisplay == 0 || valorDisplay == '0' || valorDisplay == '')) marcado = true;
 
                 const isLast = !isFree && (parseInt(valorDisplay) === ultimaBola);
-                
+   
                 let cssClass = "h-10 w-full flex items-center justify-center font-bold text-sm rounded border transition-all duration-300 ";
                 
                 if (isFree) {
@@ -1404,7 +1406,7 @@ async function sortearBola() {
         return;
     }
     A_Ultima_Bola = parseInt(numero);  
-    console.log(`🎱 LOCUTOR SORTEOU: ${numero}`);
+    console.log(`🎱 LOCUTOR SORTEOU: ${numero} AUTO`);
     jaAlertouNestaBola = false;
     // 3. ATUALIZA A TELA IMEDIATAMENTE (Não espera internet)
     bolasSorteadasCache.push(numero); // Adiciona na Matriz Local
@@ -1504,6 +1506,12 @@ async function inserirBolaManual() {
     const erroLabel = document.getElementById('erro-manual');
     let valor = parseInt(input.value);
 
+    if (!valor || isNaN(valor)) {
+        if(erroLabel) erroLabel.textContent = "⚠️ Valor inválido!";
+        input.value = ""; 
+        return;
+    }
+
     if (isNaN(valor) || valor < 1 || valor > MAX_BOLAS) { 
         erroLabel.textContent = `Digite entre 1 e ${MAX_BOLAS}`; 
         input.value = ""; 
@@ -1520,7 +1528,10 @@ async function inserirBolaManual() {
     input.value = ''; 
     devolverFocoAoJogo();
     
-    bolaDestaque.textContent = valor;
+    bolaDestaque.textContent = valor;  
+    A_Ultima_Bola = parseInt(valor);  
+    console.log(`🎱 LOCUTOR DIGITOU: ${valor} MANUAL`);
+
     if (vozAtiva) falarTextoLocutor(String(valor));
 
     if (enviarPortaSerial) {
@@ -1594,7 +1605,6 @@ async function inserirBolaManual() {
                 }
             }
         }
-
 
     } catch (e) {
         console.error("[DEBUG] Erro conexão manual:", e);
@@ -1697,6 +1707,25 @@ async function carregarEvento(idEvento) {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ id_evento: idEvento })
         });
+
+        // ============================================================
+        // 👉 AJUSTE CRUCIAL: INICIALIZAÇÃO DA DESCRIÇÃO DO PRÊMIO
+        // ============================================================
+        // Aqui verificamos se é um evento de 25 números (geralmente identificado 
+        // pela configuração do evento vinda do banco ou pelo id)
+        
+        let premioInicial = "4 Cantos e Linha"; // Valor padrão para sua configuração de 25 números
+        
+        // Se o seu dadosPrep ou uma busca ao banco trouxer os prêmios ativos, 
+        // você pode montar a string dinamicamente aqui.
+        
+        console.log(`[DEBUG] Inicializando prêmio para: ${premioInicial}`);
+        
+        // Chamamos a função mudarPremio que acabamos de ajustar (aquela que limpa o texto)
+        // Isso já envia para o servidor e sincroniza todos os terminais dos clientes.
+        if (typeof mudarPremio === 'function') {
+            await mudarPremio(premioInicial);
+        }
 
     } catch(e) {
         console.error("[DEBUG] Erro carregarEvento:", e);
@@ -1888,20 +1917,58 @@ async function executarCarregamentoReal(idEvento) {
 
 async function definirProximoPremioAutomatico() {
     if (!dadosEventoAtual || !dadosEventoAtual.premios) return;
-    const ordem = ['quadra', 'linha', 'falta_um', 'bingo', 'segundo_bingo'];
+
+    // 1. Identifica o nome do primeiro prêmio na interface (Mesa)
+    // Buscamos o label que você definiu na carregarEvento/executarCarregamentoReal
+    const labelQuadraElement = document.querySelector('#container-premios-lista span');
+    const textoPrimeiroPremio = labelQuadraElement ? labelQuadraElement.textContent.toUpperCase() : "";
+    
+    // 2. Verifica se o sorteio está no "Marco Zero" (Nenhuma bola sorteada)
+    const sorteioNaoIniciado = (bolasSorteadasCache.length === 0);
+
     let premioAlvo = '';
-    for (const key of ordem) {
-        if (parseFloat(dadosEventoAtual.premios[key] || 0) > 0) {
-            if (key === 'quadra') premioAlvo = 'QUADRA'; 
-            else if (key === 'linha') premioAlvo = 'LINHA'; 
-            else if (key === 'falta_um') premioAlvo = 'FALTAUM';
-            else if (key === 'bingo') premioAlvo = 'BINGO'; 
-            else if (key === 'segundo_bingo') premioAlvo = 'DUPLO BINGO'; 
-            break; 
+
+    // --- LÓGICA DE DECISÃO ---
+    
+    // Se o primeiro prêmio diz "4 CANTOS" e o jogo não começou, 
+    // assumimos a busca simultânea de 25 números.
+    if (textoPrimeiroPremio.includes("4 CANTOS") && sorteioNaoIniciado) {
+        
+        // Verificamos se a LINHA também tem valor configurado
+        const temLinha = parseFloat(dadosEventoAtual.premios['linha'] || 0) > 0;
+        
+        if (temLinha) {
+            premioAlvo = '4 CANTOS E LINHA';
+        } else {
+            premioAlvo = '4 CANTOS';
+        }
+
+    } else {
+        // Lógica de queda normal (para Bingo 90 ou quando o sorteio já está em andamento)
+        const ordem = ['quadra', 'linha', 'falta_um', 'bingo', 'segundo_bingo'];
+        const nomes = {
+            'quadra': (MAX_BOLAS === 75) ? '4 CANTOS' : 'QUADRA',
+            'linha': 'LINHA',
+            'falta_um': 'FALTA UM',
+            'bingo': 'BINGO',
+            'segundo_bingo': 'DUPLO BINGO'
+        };
+
+        for (const key of ordem) {
+            if (parseFloat(dadosEventoAtual.premios[key] || 0) > 0) {
+                premioAlvo = nomes[key];
+                break; 
+            }
         }
     }
-    if (premioAlvo) await mudarPremio(premioAlvo);
+
+    // 3. Dispara a atualização para Mesa e Terminais
+    if (premioAlvo) {
+        console.log(`[AUTO-PREMIO] Status confirmado: ${premioAlvo}`);
+        await mudarPremio(premioAlvo);
+    }
 }
+
 
 // --- FUNÇÕES DE GRID E RANKING ---
 function initGrid() {
@@ -2236,14 +2303,20 @@ async function validarCartelaAuditoria() {
 
         let msgExibicao = data.msg;
         const elStatus = document.getElementById('status-premio');
-        const premioBuscado = elStatus ? elStatus.textContent.replace('Buscando: ', '').toUpperCase() : "";
-        
+
+        // 1. Captura o texto e remove "Buscando: " (case-insensitive) e espaços extras
+        const premioBuscado = elStatus ? elStatus.textContent.replace(/Buscando:\s*/i, '').trim().toUpperCase() : "";
+
         if (data.status_code === 'LOSS' && data.msg.includes("Faltam")) {
-             if (premioBuscado.includes("LINHA")) {
-                 msgExibicao = `❌ ${data.msg} para a LINHA.`;
-             } else if (premioBuscado.includes("QUADRA") || premioBuscado.includes("CANTOS")) {
-                 msgExibicao = `❌ ${data.msg} para a ${premioBuscado}.`;
-             }
+            // 2. Se o prêmio limpo contiver LINHA
+            if (premioBuscado.includes("LINHA")) {
+                msgExibicao = `❌ ${data.msg} para a LINHA.`;
+            } 
+            // 3. Se contiver QUADRA ou CANTOS (ajustado para aceitar ambos)
+            else if (premioBuscado.includes("QUADRA") || premioBuscado.includes("CANTOS")) {
+                // Aqui ele vai exibir "para a 4 CANTOS" ou "para a QUADRA" dependendo do que estiver no elStatus
+                msgExibicao = `❌ ${data.msg} para a ${premioBuscado}.`;
+            }
         }
 
         const resDiv = document.getElementById('auditoria-resultado');
@@ -2281,7 +2354,52 @@ async function validarCartelaAuditoria() {
     }
 }
 
+
 async function confirmarGanhadorAtual() {
+    houveGanhadorNaSessao = true; 
+    const input = document.getElementById('input-auditoria');
+    const cartelaConfirmada = String(input.value).trim(); 
+
+    if (!cartelaConfirmada) return;
+
+    // --- LÓGICA DE ATUALIZAÇÃO DE LISTAS (MANTÉM) ---
+    idsConfirmadosNestaRodada.add(cartelaConfirmada);
+    cartelasPendentesAuditoria = cartelasPendentesAuditoria.filter(c => 
+        String(c.cartela).trim() !== cartelaConfirmada
+    );
+    renderListaPendentes(cartelasPendentesAuditoria);
+
+    const listaSessao = document.getElementById('lista-auditoria-session');
+    if (listaSessao) {
+        if (listaSessao.innerText.trim() === 'Nenhum' || listaSessao.children.length === 0) {
+            listaSessao.innerHTML = '';
+        }
+        const tag = document.createElement('span');
+        tag.className = "inline-block bg-green-900 text-green-300 px-2 py-1 rounded border border-green-700 text-xs font-bold mr-2 mb-1";
+        tag.textContent = `Cartão: ${cartelaConfirmada}`;
+        listaSessao.appendChild(tag);
+    }
+
+    // --- PARTE LIMPA E SINCRONIZADA ---
+    
+    // Limpamos o valor do input antes de fechar para a próxima abertura estar vazia
+    input.value = ''; 
+    
+    // Escondemos o resultado da auditoria anterior
+    const resDiv = document.getElementById('auditoria-resultado');
+    if (resDiv) resDiv.classList.add('hidden');
+
+    console.log(`[AUDITORIA] Cartela ${cartelaConfirmada} confirmada. Finalizando sessão...`);
+
+    // ESTA LINHA ABAIXO SUBSTITUI TODO O BLOCO QUE VOCÊ PERGUNTOU:
+    // 1. Limpa a conferência no servidor.
+    // 2. Fecha o modal.
+    // 3. Devolve o foco ao jogo.
+    // 4. Avança o prêmio (ex: 4 Cantos -> Linha).
+    await encerrarSessaoConferencia(false); 
+}
+
+async function confirmarGanhadorAtual2() {
     houveGanhadorNaSessao = true; 
     const input = document.getElementById('input-auditoria');
     const cartelaConfirmada = String(input.value).trim(); 
@@ -2328,12 +2446,90 @@ async function encerrarSessaoConferencia(modoSilencioso = false) {
     try { await fetch(`${API_BASE_URL}/api/admin/atualizar_linhas_restantes`, { method: 'POST' }); } catch(e) {}
     try { await fetch(`${API_BASE_URL}/api/admin/limpar_conferencia`, { method: 'POST' }); } catch(e) {}
 
+    // O log que faltava para você debugar no F12
+    console.log(`[CONFERÊNCIA] Sessão encerrada. Houve ganhador: ${houveGanhadorNaSessao}`);
+
     if (!modoSilencioso && houveGanhadorNaSessao) {
         processarProximoPremio(); 
     }
 }
 
+
 async function processarProximoPremio() {
+    console.log("[DEBUG] Iniciando processamento do próximo prêmio...");
+    
+    const elStatus = document.getElementById('status-premio');
+    if (!elStatus) return;
+
+    // 1. Pegamos o que está na tela agora (ex: "4 CANTOS E LINHA")
+    let premioAtualNaTela = elStatus.textContent.toUpperCase();
+    
+    // 2. Ordem de progressão lógica
+    const ordem = ['4 CANTOS', 'LINHA', 'FALTAUM', 'BINGO', 'DUPLO BINGO'];
+    let proximoKey = null;
+
+    // --- CASO ESPECIAL: BUSCA SIMULTÂNEA (25 NÚMEROS) ---
+    if (premioAtualNaTela.includes("4 CANTOS") && premioAtualNaTela.includes("LINHA")) {
+        // Se estávamos buscando os dois e houve ganhador, agora buscamos apenas o que sobrou.
+        // Como a conferência acabou de validar um ganhador, o servidor já sabe quem ganhou.
+        // Vamos assumir que se alguém ganhou algo na busca simultânea, agora focamos na LINHA (que é o prêmio maior)
+        // ou verificamos se a linha ainda possui ganhadores pendentes.
+        
+        console.log("[DEBUG] Saída de busca simultânea detectada.");
+        proximoKey = "LINHA"; 
+
+    } else {
+        // --- LÓGICA DE QUEDA NORMAL ---
+        // Padronização para bater com o array 'ordem'
+        let chaveBusca = premioAtualNaTela.replace('4 CANTOS', '4 CANTOS'); 
+        if (chaveBusca.includes("FALTA 1")) chaveBusca = "FALTAUM";
+        if (chaveBusca.includes("3 LINHAS")) chaveBusca = "LINHA";
+        if (chaveBusca.includes("QUADRA")) chaveBusca = "4 CANTOS";
+
+        const indexAtual = ordem.indexOf(chaveBusca);
+        console.log(`[DEBUG] Index Atual: ${indexAtual} para chave: ${chaveBusca}`);
+
+        if (indexAtual !== -1) {
+            let dadosPremios = dadosEventoAtual ? dadosEventoAtual.premios : null;
+            
+            for (let i = indexAtual + 1; i < ordem.length; i++) {
+                const keyTeste = ordem[i];
+                let keyDados = keyTeste.toLowerCase().replace(' ', '_');
+                if (keyTeste === '4 CANTOS') keyDados = 'quadra';
+                if (keyTeste === 'FALTAUM') keyDados = 'falta_um';
+                if (keyTeste === 'DUPLO BINGO') keyDados = 'segundo_bingo';
+
+                if (dadosPremios && parseFloat(dadosPremios[keyDados] || 0) > 0) {
+                    proximoKey = keyTeste;
+                    break;
+                }
+            }
+        }
+    }
+
+    // 3. EXECUÇÃO DA MUDANÇA
+    if (proximoKey && proximoKey !== premioAtualNaTela) {
+        setTimeout(async () => {
+            await customAlert(
+                `Conferência finalizada!\n\nAvançando para: ${proximoKey}`, 
+                "Próximo Passo", 
+                3
+            );            
+            await mudarPremio(proximoKey);
+        }, 500);
+    } else if (!proximoKey) {
+        // Se não houver próximo, verifica se deve finalizar o bingo
+        setTimeout(async () => {
+            alternarBotaoReset('finalizar');
+            if (await customConfirm(`⚠️ Fim dos prêmios ativos!\n\nDeseja FINALIZAR o evento agora?`)) {
+                if (typeof finalizarEvento === 'function') finalizarEvento();
+                else if (typeof resetarJogo === 'function') resetarJogo();
+            }
+        }, 500);
+    }
+}
+
+async function processarProximoPremio2() {
     let info = null;
     let dadosEvento = null;
     try {
@@ -2384,7 +2580,7 @@ async function processarProximoPremio() {
                 3
             );            
             await mudarPremio(proximoKey);
-        }, 500);
+        }, 500);    ///  aqui premio
     } else {
         setTimeout(async () => {
             alternarBotaoReset('finalizar');
@@ -2397,6 +2593,48 @@ async function processarProximoPremio() {
 
 
 async function mudarPremio(tipo) {
+    const elStatus = document.getElementById('status-premio');
+    const elTitulo = document.getElementById('premio-atual'); 
+
+    // 1. Limpeza e Padronização do Nome do Prêmio
+    // Remove "Buscando:", "(Mesa)", troca "Quadra" por "4 Cantos" e limpa espaços
+    let tipoLimpo = tipo.replace(/Buscando:\s*/i, "")
+                        .replace(/\(Mesa\)/i, "")
+                        .replace(/Quadra/i, "4 Cantos")
+                        .trim();
+
+    // 2. Atualização visual na Mesa Controladora (Sem os prefixos)
+    if (elStatus) elStatus.textContent = tipoLimpo;
+    if (elTitulo) elTitulo.textContent = tipoLimpo;
+
+    console.log(`[DEBUG] Mudando prêmio para: ${tipoLimpo}`);
+
+    try {
+        // 3. Envio para o Servidor (API)
+        await fetch(`${API_BASE_URL}/api/admin/definir_premio_mesa`, {
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ premio: tipoLimpo }) // Envia o nome limpo
+        });
+        
+        // 4. Sincronização com os Terminais dos Clientes
+        // Enviamos o valor limpo para que o cliente veja "4 CANTOS E LINHA"
+        matrizEnvio.push({
+            tipo: 'PREMIO_CLIENTE',
+            valor: tipoLimpo,
+            hora: Date.now()
+        });
+        
+        if (typeof atualizarIndicadorFila === 'function') {
+            atualizarIndicadorFila(matrizEnvio.length);
+        }
+        
+    } catch(e) {
+        console.error("[DEBUG] Erro ao mudar prêmio:", e);
+    }
+}
+
+async function mudarPremio2(tipo) {
     const elStatus = document.getElementById('status-premio');
     if (elStatus) elStatus.textContent = `Buscando: ${tipo} (Mesa)`;
     const elTitulo = document.getElementById('premio-atual'); 
@@ -2413,7 +2651,7 @@ async function mudarPremio(tipo) {
         
         matrizEnvio.push({
             tipo: 'PREMIO_CLIENTE',
-            valor: tipo,
+            valor: tipo,confirmarGanhadorAtual,
             hora: Date.now()
         });
         atualizarIndicadorFila(matrizEnvio.length);

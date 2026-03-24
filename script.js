@@ -2266,6 +2266,18 @@ function displayLoadedCards(bolasCantadas) {
         return; // Sai da função silenciosamente e poupa 100% do processamento!
     }
 
+    if (qtdBolasAtuais > 0 && !window.primeiraBolaDetectada) {
+        // Verifica se o painel ainda está oculto antes de mudar
+        const painelAtual = document.getElementById('painel-numerico');
+        const estaOculto = painelAtual && painelAtual.classList.contains('hidden');
+        
+        if (estaOculto) {
+            //console.log("🎯 Primeira bola detectada! Mudando painel para NUMÉRICO.");
+            alternarPainelMobile('numerico');
+        }
+        window.primeiraBolaDetectada = true;
+    }
+
     // Atualiza a memória para a próxima chamada
     ultima_bola_render = qtdBolasAtuais;
 
@@ -2460,6 +2472,10 @@ function clearPanels() {
 
     ultima_bola_render = -1;
     updateDigitalBola("--");  
+    if (typeof alternarPainelMobile === 'function') {
+        alternarPainelMobile('ocultar');
+    }
+    window.primeiraBolaDetectada = false;
 
     precoSerie.textContent = '';    
     cartelaRanges = [];
@@ -3267,7 +3283,7 @@ async function fetchDataFromCollections() {
         const elementRodada = document.getElementById('mobile-last-round');
         const localRodada = parseInt(elementRodada ? elementRodada.textContent : '0') || 0;
         
-        // 2. Pega dados que vieram do servidor
+        // 2. Pega dados que vieram do servidor  xxx
         const novaRodada = data.parametros ? data.parametros.rodada : 0;
         const bolasNovas = data.bolas_sorteadas ? data.bolas_sorteadas.length : 0;
         
@@ -4918,21 +4934,48 @@ function controlarPainelMobileEntrada() {
 
 // --- CONTROLE DE ABAS (NUMÉRICO / INFORMATIVO / ESTATÍSTICAS) ---
 function alternarPainelMobile(modo) {
-    // 1. Elementos dos Painéis Principais
+    // 1. Elementos dos Painéis
     const panelNumerico = document.getElementById('mobile-panels-container');
     const panelInformativo = document.getElementById('mobile-prizes-panel');
     const panelEstatisticas = document.getElementById('estatisticas-panel');
-    
-    // 1.1 Elemento Interno de Prêmios (Correção para exibir prêmios)
     const mobilePrizesContent = document.getElementById('mobile-prizes-content');
 
-    // 2. Elementos dos Botões
+    // 2. Elementos dos Botões de Aba (Menu)
     const btnNumerico = document.getElementById('btn-tab-numerico');
     const btnInformativo = document.getElementById('btn-tab-informativo');
     const btnEstatisticas = document.getElementById('btn-tab-estatisticas');
-    
-    // Função auxiliar para resetar botões
-    const resetBotoes = () => {
+
+    // 3. Botões de Ação (Os que vão aumentar/diminuir)
+    const botoesAcao = [
+        document.getElementById('btn-comprar-cartelas-mobile'),
+        document.getElementById('btn-carteira-mobile'),
+        document.getElementById('btn-minhas-cartelas-mobile-view')
+    ];
+
+    // Função interna para resetar tamanho dos botões de ação
+    const resetTamanhoBotoesAcao = () => {
+        botoesAcao.forEach(btn => {
+            if (btn) {
+                // Volta ao normal (py-1.5 e text-xs)
+                btn.classList.remove('py-3', 'text-xl');
+                btn.classList.add('py-1.5', 'text-xs');
+            }
+        });
+    };
+
+    // Função interna para aumentar tamanho (Modo Ocultar)
+    const aumentarBotoesAcao = () => {
+        botoesAcao.forEach(btn => {
+            if (btn) {
+                // Fica maior (py-3 e text-xl)
+                btn.classList.remove('py-1.5', 'text-xs');
+                btn.classList.add('py-3', 'text-xl');
+            }
+        });
+    };
+
+    // Função para resetar cores dos botões do menu
+    const resetBotoesMenu = () => {
         [btnNumerico, btnInformativo, btnEstatisticas].forEach(btn => {
             if(btn) {
                 btn.classList.remove('bg-gray-700', 'text-white', 'border-green-500');
@@ -4941,53 +4984,43 @@ function alternarPainelMobile(modo) {
         });
     };
 
-    // 3. PRIMEIRO: ESCONDE TUDO
-    // Usamos setProperty('display', 'none', 'important') para vencer o mobile.css
-    if (panelNumerico) {
-        panelNumerico.style.setProperty('display', 'none', 'important');
-    }
-    
+    // --- EXECUÇÃO ---
+
+    // Esconde todos os painéis primeiro
+    if (panelNumerico) panelNumerico.style.setProperty('display', 'none', 'important');
     if (panelInformativo) {
         panelInformativo.classList.add('hidden');
-        panelInformativo.classList.remove('flex'); // Garante que saia do flex
+        panelInformativo.classList.remove('flex');
     }
-    
     if (panelEstatisticas) {
         panelEstatisticas.classList.add('hidden');
         panelEstatisticas.classList.remove('flex');
     }
-    
-    resetBotoes();
 
-    // 4. DEPOIS: MOSTRA O ESCOLHIDO
+    resetBotoesMenu();
+
+    // Lógica do Modo Escolhido
     switch(modo) {
         case 'numerico':
-            if (panelNumerico) {
-                // Remove o inline style para que o CSS do mobile.css (display: flex) volte a funcionar
-                panelNumerico.style.removeProperty('display');
-                // Se o CSS não tiver flex, garantimos com classe, mas removemos o hidden
-                panelNumerico.classList.remove('hidden');
-            }
+            if (panelNumerico) panelNumerico.style.removeProperty('display');
             if (btnNumerico) {
                 btnNumerico.classList.remove('bg-gray-800', 'text-gray-400', 'border-transparent');
                 btnNumerico.classList.add('bg-gray-700', 'text-white', 'border-green-500');
             }
+            resetTamanhoBotoesAcao(); // Volta ao normal
             break;
 
         case 'informativo':
             if (panelInformativo) {
                 panelInformativo.classList.remove('hidden');
-                panelInformativo.classList.add('flex'); // Força layout flex
-                
-                // CORREÇÃO CRÍTICA: Garante que o conteúdo interno também apareça
-                if (mobilePrizesContent) {
-                    mobilePrizesContent.classList.remove('hidden');
-                }
+                panelInformativo.classList.add('flex');
+                if (mobilePrizesContent) mobilePrizesContent.classList.remove('hidden');
             }
             if (btnInformativo) {
                 btnInformativo.classList.remove('bg-gray-800', 'text-gray-400', 'border-transparent');
                 btnInformativo.classList.add('bg-gray-700', 'text-white', 'border-green-500');
             }
+            resetTamanhoBotoesAcao(); // Volta ao normal
             break;
 
         case 'estatisticas':
@@ -4999,13 +5032,15 @@ function alternarPainelMobile(modo) {
                 btnEstatisticas.classList.remove('bg-gray-800', 'text-gray-400', 'border-transparent');
                 btnEstatisticas.classList.add('bg-gray-700', 'text-white', 'border-green-500');
             }
+            resetTamanhoBotoesAcao(); // Volta ao normal
             break;
-            
+
         case 'ocultar':
-            // Tudo já foi ocultado no passo 3.
+            aumentarBotoesAcao(); // Aumenta os botões quando tudo some
             break;
     }
 }
+
 
 function atualizarVisualizacaoAcumulado(valorAcumulado, bolaTope, bolasCantadas) {
     const container = document.getElementById('quadro-premio-acumulado');
