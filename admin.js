@@ -3,6 +3,7 @@
 // =========================================================
 
 const VERSAO_ATUAL = "1.0";
+let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
 const modalOverlay = document.getElementById('custom-modal-overlay');
@@ -1845,7 +1846,7 @@ async function executarCarregamentoReal(idEvento) {
 
         dadosEventoAtual = dados; 
 
-        forcarAtualizacaoClientes();
+        // forcarAtualizacaoClientes();
 
         document.getElementById('painel-evento-ativo').classList.remove('hidden');
 
@@ -4022,10 +4023,34 @@ function atualizarCheckboxRobo(estado) {
 
 // Exemplo de envio pelo Admin
 function forcarAtualizacaoClientes() {
+    // 1. Se o socket já estiver aberto, envia imediatamente
     if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type: 'FORCE_RELOAD',
-            versao_obrigatoria: VERSAO_ATUAL
-        }));
+        try {
+            ws.send(JSON.stringify({
+                type: 'FORCE_RELOAD',
+                versao_obrigatoria: VERSAO_ATUAL
+            }));
+            console.log(`🚀 [UPDATE] Comando enviado com sucesso (Versão ${VERSAO_ATUAL})`);
+        } catch (e) {
+            console.error("❌ Erro ao enviar comando via WS:", e);
+        }
+    } 
+    // 2. Se estiver conectando, espera o evento 'open' disparar
+    else if (ws && ws.readyState === WebSocket.CONNECTING) {
+        console.warn("⏳ WS conectando... O comando será enviado assim que abrir.");
+        
+        // Adicionamos um escutador temporário que dispara uma única vez (once: true)
+        ws.addEventListener('open', () => {
+            forcarAtualizacaoClientes(); 
+        }, { once: true });
+    } 
+    // 3. Se não existir ou estiver fechado, tenta reconectar primeiro
+    else {
+        console.error("❌ WS offline. Tentando reconectar para enviar atualização...");
+        if (typeof conectarWS === 'function') {
+            conectarWS();
+            // Tenta de novo em 2 segundos após mandar reconectar
+            setTimeout(forcarAtualizacaoClientes, 2000);
+        }
     }
 }

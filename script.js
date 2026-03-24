@@ -4529,15 +4529,15 @@ function connectWebSocket() {
             const payload = JSON.parse(event.data);
   
             // --- ADICIONE ESTE BLOCO DE LOGICA AQUI ---
-            if (payload.type === 'FORCE_RELOAD') {
-                const vServidor = payload.versao_obrigatoria;
-                if (vServidor && vServidor !== VERSAO_ATUAL) {
-                    console.warn(`[UPDATE] Versão antiga (${VERSAO_ATUAL}). Atualizando para ${vServidor}...`);
-                    window.location.reload(true); 
-                    return; 
-                }
-                return; // Se for a mesma versão, ignora
-            }
+            //if (payload.type === 'FORCE_RELOAD') {
+            //    const vServidor = payload.versao_obrigatoria;
+            //    if (vServidor && vServidor !== VERSAO_ATUAL) {
+            //        console.warn(`[UPDATE] Versão antiga (${VERSAO_ATUAL}). Atualizando para ${vServidor}...`);
+            //        window.location.reload(true); 
+            //        return; 
+            //    }
+            //    return; // Se for a mesma versão, ignora
+            //}
           
             // Ignora mensagens de erro
             if (payload.type === 'ERROR') {
