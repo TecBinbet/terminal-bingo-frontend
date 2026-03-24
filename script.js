@@ -116,6 +116,9 @@ let filaDeBolas = [];
 
 let globalUserNick = null;
 let globalUserSaldo = 0.0;
+
+var sorteExtraAtivaNoBanco = false;
+
 var globalPrecoCartela = 0;
 
 let ultima_bola_render = -1;
@@ -2267,14 +2270,15 @@ function displayLoadedCards(bolasCantadas) {
     }
 
     if (qtdBolasAtuais > 0 && !window.primeiraBolaDetectada) {
-        // Verifica se o painel ainda está oculto antes de mudar
-        const painelAtual = document.getElementById('painel-numerico');
+        // Verifica se o painel ainda está oculto antes de mudar xxx
+        const painelAtual = document.getElementById('mobile-panels-container');
         const estaOculto = painelAtual && painelAtual.classList.contains('hidden');
         
         if (estaOculto) {
             //console.log("🎯 Primeira bola detectada! Mudando painel para NUMÉRICO.");
             alternarPainelMobile('numerico');
         }
+        ocultarBotoesSorteExtra()
         window.primeiraBolaDetectada = true;
     }
 
@@ -3230,7 +3234,7 @@ function displayWinnersPanel(ganhadoresData) {
         winnersPanelContainer.classList.remove('hidden');
         winnersPanelContainer.classList.add('flex');
     }
-    // tempoExibicaoGanhador // WINNERS_DISPLAY_TIME  // xxx
+    // tempoExibicaoGanhador // WINNERS_DISPLAY_TIME  
     // Reinicia a animação da barra de progresso
     if (winnersProgressBar) {  // timer ganhadores
         winnersProgressBar.style.transition = 'none';
@@ -3283,7 +3287,7 @@ async function fetchDataFromCollections() {
         const elementRodada = document.getElementById('mobile-last-round');
         const localRodada = parseInt(elementRodada ? elementRodada.textContent : '0') || 0;
         
-        // 2. Pega dados que vieram do servidor  xxx
+        // 2. Pega dados que vieram do servidor  
         const novaRodada = data.parametros ? data.parametros.rodada : 0;
         const bolasNovas = data.bolas_sorteadas ? data.bolas_sorteadas.length : 0;
         
@@ -4097,6 +4101,25 @@ async function renderMainContent(data) {
                 }
             }
         }         // --- FIM se Manual-
+        else {
+            // --- NOVO ELSE: MODO DIGITAL (AUTOMÁTICO) ---
+            const videoPlaceholder = document.getElementById('youtube-placeholder');
+    
+            // Verificamos se o elemento existe e se NÃO está oculto
+            if (videoPlaceholder && !videoPlaceholder.classList.contains('hidden')) {
+                console.log("🖥️ Modo Digital detectado: Ocultando container de vídeo.");
+        
+                // 1. Esconde o container
+                videoPlaceholder.classList.add('hidden');
+        
+                // 2. Opcional: Se houver um iframe de vídeo rodando lá dentro, 
+                // podemos resetar o src para parar o áudio/streaming
+                const iframe = videoPlaceholder.querySelector('iframe');
+                if (iframe) {
+                    iframe.src = ""; 
+                }
+            }
+        }
 
         if (abrirYoutubeBtn) {
              // if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
@@ -6876,6 +6899,7 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
         
         if (!idConfiguradoNoBanco || idConfiguradoNoBanco === 0) {
             console.log("🚫 Sorte Extra inativo no banco.");
+            sorteExtraAtivaNoBanco = false;
             ocultarBotoesSorteExtra();
             return;
         }
@@ -6950,6 +6974,8 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
         }
         
         // 4. Mostrar Botões e Renderizar Volante
+        sorteExtraAtivaNoBanco = true;
+
         mostrarBotoesSorteExtra();
         renderizarGridVolante(); 
         atualizarDisplaySelecao();
@@ -6975,10 +7001,20 @@ function ocultarBotoesSorteExtra() {
 }
 
 function mostrarBotoesSorteExtra() {
-    ['btn-open-extra', 'btn-floating-extra'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.remove('hidden');
-    });
+    // 1. Verificamos se existem bolas sorteadas (se for 0, estamos no intervalo/pré-jogo)
+    const noIntervalo = (bolasSorteadasCache.length === 0);
+
+    // 2. Só procedemos se ambas as condições forem verdadeiras
+    if (noIntervalo && sorteExtraAtivaNoBanco) {
+        ['btn-open-extra', 'btn-floating-extra'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.remove('hidden');
+        });
+        // console.log("✨ Sorte Extra disponível: Exibindo botões flutuantes.");
+    } else {
+        // Se o sorteio começou ou não tem promoção, garantimos que fiquem ocultos
+        ocultarBotoesSorteExtra();
+    }
 }
 
 function abrirTelaSorteExtra() {

@@ -2362,50 +2362,6 @@ async function confirmarGanhadorAtual() {
 
     if (!cartelaConfirmada) return;
 
-    // --- LÓGICA DE ATUALIZAÇÃO DE LISTAS (MANTÉM) ---
-    idsConfirmadosNestaRodada.add(cartelaConfirmada);
-    cartelasPendentesAuditoria = cartelasPendentesAuditoria.filter(c => 
-        String(c.cartela).trim() !== cartelaConfirmada
-    );
-    renderListaPendentes(cartelasPendentesAuditoria);
-
-    const listaSessao = document.getElementById('lista-auditoria-session');
-    if (listaSessao) {
-        if (listaSessao.innerText.trim() === 'Nenhum' || listaSessao.children.length === 0) {
-            listaSessao.innerHTML = '';
-        }
-        const tag = document.createElement('span');
-        tag.className = "inline-block bg-green-900 text-green-300 px-2 py-1 rounded border border-green-700 text-xs font-bold mr-2 mb-1";
-        tag.textContent = `Cartão: ${cartelaConfirmada}`;
-        listaSessao.appendChild(tag);
-    }
-
-    // --- PARTE LIMPA E SINCRONIZADA ---
-    
-    // Limpamos o valor do input antes de fechar para a próxima abertura estar vazia
-    input.value = ''; 
-    
-    // Escondemos o resultado da auditoria anterior
-    const resDiv = document.getElementById('auditoria-resultado');
-    if (resDiv) resDiv.classList.add('hidden');
-
-    console.log(`[AUDITORIA] Cartela ${cartelaConfirmada} confirmada. Finalizando sessão...`);
-
-    // ESTA LINHA ABAIXO SUBSTITUI TODO O BLOCO QUE VOCÊ PERGUNTOU:
-    // 1. Limpa a conferência no servidor.
-    // 2. Fecha o modal.
-    // 3. Devolve o foco ao jogo.
-    // 4. Avança o prêmio (ex: 4 Cantos -> Linha).
-    await encerrarSessaoConferencia(false); 
-}
-
-async function confirmarGanhadorAtual2() {
-    houveGanhadorNaSessao = true; 
-    const input = document.getElementById('input-auditoria');
-    const cartelaConfirmada = String(input.value).trim(); 
-
-    if (!cartelaConfirmada) return;
-
     idsConfirmadosNestaRodada.add(cartelaConfirmada);
 
     cartelasPendentesAuditoria = cartelasPendentesAuditoria.filter(c => 
@@ -2456,42 +2412,43 @@ async function encerrarSessaoConferencia(modoSilencioso = false) {
 
 
 async function processarProximoPremio() {
-    console.log("[DEBUG] Iniciando processamento do próximo prêmio...");
+    console.log("[DEBUG] 🔄 Iniciando processamento do próximo prêmio...");
     
     const elStatus = document.getElementById('status-premio');
     if (!elStatus) return;
 
-    // 1. Pegamos o que está na tela agora (ex: "4 CANTOS E LINHA")
     let premioAtualNaTela = elStatus.textContent.toUpperCase();
-    
-    // 2. Ordem de progressão lógica
-    const ordem = ['4 CANTOS', 'LINHA', 'FALTAUM', 'BINGO', 'DUPLO BINGO'];
     let proximoKey = null;
 
-    // --- CASO ESPECIAL: BUSCA SIMULTÂNEA (25 NÚMEROS) ---
+    // 1. Caso Especial: Saída de Busca Simultânea (25 números)
     if (premioAtualNaTela.includes("4 CANTOS") && premioAtualNaTela.includes("LINHA")) {
-        // Se estávamos buscando os dois e houve ganhador, agora buscamos apenas o que sobrou.
-        // Como a conferência acabou de validar um ganhador, o servidor já sabe quem ganhou.
-        // Vamos assumir que se alguém ganhou algo na busca simultânea, agora focamos na LINHA (que é o prêmio maior)
-        // ou verificamos se a linha ainda possui ganhadores pendentes.
+        console.log("[DEBUG] 🎯 Saída de busca simultânea detectada.");
         
-        console.log("[DEBUG] Saída de busca simultânea detectada.");
-        proximoKey = "LINHA"; 
-
+        // Verificamos se a LINHA ainda tem saldo para ser ganha
+        const valorLinha = parseFloat(dadosEventoAtual.premios['linha'] || 0);
+        
+        if (valorLinha > 0) {
+            proximoKey = "LINHA";
+            console.log("[DEBUG] ➡️ Mantendo foco na LINHA antes de avançar.");
+        } else {
+            // Se por algum motivo a linha não tiver valor, busca o próximo na ordem
+            proximoKey = "BINGO"; 
+        }
     } else {
-        // --- LÓGICA DE QUEDA NORMAL ---
-        // Padronização para bater com o array 'ordem'
-        let chaveBusca = premioAtualNaTela.replace('4 CANTOS', '4 CANTOS'); 
-        if (chaveBusca.includes("FALTA 1")) chaveBusca = "FALTAUM";
-        if (chaveBusca.includes("3 LINHAS")) chaveBusca = "LINHA";
+        // 2. Lógica de Queda Normal (Loop sequencial)
+        const ordem = ['4 CANTOS', 'LINHA', 'FALTAUM', 'BINGO', 'DUPLO BINGO'];
+        
+        // Padronização da chave atual para busca no array
+        let chaveBusca = premioAtualNaTela;
         if (chaveBusca.includes("QUADRA")) chaveBusca = "4 CANTOS";
+        if (chaveBusca.includes("FALTA 1")) chaveBusca = "FALTAUM";
 
         const indexAtual = ordem.indexOf(chaveBusca);
-        console.log(`[DEBUG] Index Atual: ${indexAtual} para chave: ${chaveBusca}`);
 
         if (indexAtual !== -1) {
             let dadosPremios = dadosEventoAtual ? dadosEventoAtual.premios : null;
             
+            // Percorre a lista para achar o próximo prêmio com valor > 0
             for (let i = indexAtual + 1; i < ordem.length; i++) {
                 const keyTeste = ordem[i];
                 let keyDados = keyTeste.toLowerCase().replace(' ', '_');
@@ -2507,27 +2464,26 @@ async function processarProximoPremio() {
         }
     }
 
-    // 3. EXECUÇÃO DA MUDANÇA
+    // 3. Executa a mudança se o próximo prêmio for diferente do atual
     if (proximoKey && proximoKey !== premioAtualNaTela) {
-        setTimeout(async () => {
-            await customAlert(
-                `Conferência finalizada!\n\nAvançando para: ${proximoKey}`, 
-                "Próximo Passo", 
-                3
-            );            
-            await mudarPremio(proximoKey);
-        }, 500);
-    } else if (!proximoKey) {
-        // Se não houver próximo, verifica se deve finalizar o bingo
-        setTimeout(async () => {
-            alternarBotaoReset('finalizar');
-            if (await customConfirm(`⚠️ Fim dos prêmios ativos!\n\nDeseja FINALIZAR o evento agora?`)) {
-                if (typeof finalizarEvento === 'function') finalizarEvento();
-                else if (typeof resetarJogo === 'function') resetarJogo();
-            }
-        }, 500);
+        console.log(`[DEBUG] ✅ Avançando prêmio para: ${proximoKey}`);
+        
+        // No modo robô, fazemos o alerta ser rápido para não travar a automação
+        const tempoAlert = modoRoboAtivo ? 1 : 3; 
+        
+        await customAlert(
+            `Prêmio conferido!\n\nPróximo alvo: ${proximoKey}`, 
+            "Sequência de Sorteio", 
+            tempoAlert
+        );            
+        
+        await mudarPremio(proximoKey);
+    } else if (!proximoKey && !premioAtualNaTela.includes("BINGO")) {
+        // Se não achou próximo e não é bingo, pode ser o fim da linha
+        console.log("[DEBUG] 🏁 Nenhum próximo prêmio encontrado.");
     }
 }
+
 
 async function processarProximoPremio2() {
     let info = null;
