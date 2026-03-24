@@ -2483,8 +2483,8 @@ function clearPanels() {
     if (typeof alternarPainelMobile === 'function') {
         alternarPainelMobile('ocultar');
     }
-    window.primeiraBolaDetectada = false;
-
+    window.primeiraBolaDetectada = false;   
+    window.fecharAuditoria();
     precoSerie.textContent = '';    
     cartelaRanges = [];
     newRanges = [];
@@ -4998,7 +4998,7 @@ function alternarPainelMobile(modo) {
         botoesAcao.forEach(btn => {
             if (btn) {
                 // Volta ao normal (py-1.5 e text-xs)
-                btn.classList.remove('py-2.5', 'text-xl');
+                btn.classList.remove('py-2.0', 'text-lg');
                 btn.classList.add('py-1.5', 'text-xs');
             }
         });
@@ -5008,9 +5008,9 @@ function alternarPainelMobile(modo) {
     const aumentarBotoesAcao = () => {
         botoesAcao.forEach(btn => {
             if (btn) {
-                // Fica maior (py-2.5 e text-xl)
+                // Fica maior (py-2.0 e text-xl)
                 btn.classList.remove('py-1.5', 'text-xs');
-                btn.classList.add('py-2.5', 'text-xl');
+                btn.classList.add('py-2.0', 'text-lg');
             }
         });
     };
@@ -6422,11 +6422,17 @@ async function abrirModalCompra(idEventoEspecifico = 0) {
 
         // 1. ATUALIZAÇÃO DO PREÇO GLOBAL IMEDIATA
         // Garante que o cálculo use o preço real vindo do banco de vendas
-        globalPrecoCartela = parseFloat(dadosEvento.preco_cartela || 2.0);
+
+        globalPrecoCartela = parseFloat(dadosEvento.valor_de_venda || 0);
+        globalUnidadeVenda = parseInt(dadosEvento.unidade_de_venda || 1);
 
         const elPrecoUnit = document.getElementById('preco-unitario-modal');
         if (elPrecoUnit) {
-                elPrecoUnit.textContent = `Preço Unitário: R$ ${globalPrecoCartela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+            if (globalUnidadeVenda > 1) {
+                elPrecoUnit.textContent = `Valor do Kit c/ ${globalUnidadeVenda} unidades: R$ ${globalPrecoCartela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+            } else {
+               elPrecoUnit.textContent = `Preço Unitário: R$ ${globalPrecoCartela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+            }
         }
 
         // 2. FORÇA O CÁLCULO INICIAL (Zera o total antes de abrir)
