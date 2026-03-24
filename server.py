@@ -3440,18 +3440,42 @@ def admin_resetar():
                     # 👉 NOVO: PAGAMENTO DO RATEIO NO FECHAMENTO DO EVENTO
                     # Só paga se o evento for finalizado com SUCESSO (botão verde)
                     # ====================================================================
+                    # Dentro do loop de vencedores na rota /api/admin/resetar
                     if finalizar_com_sucesso and val_rateio_float > 0 and sales_db is not None:
                         try:
-                            id_cli_pagto = buscar_id_cliente_por_cartela(sales_db, id_evento, int(w.get('cartela', 0)))
+                            # 1. Busca o dono da cartela (essencial para saber quem pagar)
+                            num_cartela_vencedora = int(w.get('cartela', 0))
+                            id_cli_pagto = buscar_id_cliente_por_cartela(sales_db, id_evento, num_cartela_vencedora)
+        
                             if id_cli_pagto:
-                                desc_pagto = f"Prêmio {chave} - Evento {id_evento}"
-                                registrar_transacao_cliente_mesa(sales_db, id_cli_pagto, val_rateio_float, 'premio', desc_pagto, id_evento)
-                                print(f"✅ [PAGAMENTO RATEIO] R$ {val_rateio_float:.2f} creditado ao cliente {id_cli_pagto} (Cartela {w.get('cartela')})")
+                                desc_pagto = f"🏆 Prêmio {chave} - Evento {id_evento}"
+            
+                                # 2. CHAMADA DA FUNÇÃO CENTRALIZADA
+                                # Note que passamos os parâmetros que a função centralizada espera
+                                sucesso = registrar_transacao_cliente(
+                                    db_vendas=sales_db, 
+                                    id_cliente=id_cli_pagto, 
+                                    valor=float(val_rateio_float),  # Valor positivo para crédito
+                                    tipo='premio', 
+                                    descricao=desc_pagto, 
+                                    id_evento=id_evento,
+                                    id_venda=f"PREMIO-{id_evento}-{num_cartela_vencedora}", # Referência única
+                                    origem="SISTEMA_SORTEIO",
+                                    registrado_por="ADMIN"
+                                )
+
+                                if sucesso:
+                                    print(f"✅ [PAGAMENTO CENTRALIZADO] R$ {val_rateio_float:.2f} creditado ao cliente {id_cli_pagto} (Cartela {num_cartela_vencedora})")
+                                else:
+                                    print(f"❌ [PAGAMENTO CENTRALIZADO] Falha ao processar crédito para cliente {id_cli_pagto}")
+        
                             else:
-                                print(f"⚠️ [PAGAMENTO RATEIO] Cartela {w.get('cartela')} sem dono identificado nas vendas.")
+                                # Se cair aqui, a cartela foi sorteada mas não existe registro de venda dela
+                                print(f"⚠️ [PAGAMENTO RATEIO] Cartela {num_cartela_vencedora} sem dono identificado nas vendas.")
+
                         except Exception as err_pagto:
-                            print(f"❌ [PAGAMENTO RATEIO] Erro ao pagar cartela {w.get('cartela')}: {err_pagto}")
-                
+                            print(f"❌ [PAGAMENTO RATEIO] Erro crítico ao pagar cartela {w.get('cartela')}: {err_pagto}")     
+           
         # ======================================================================
         # 🔥 PROCESSAMENTO DOS GANHADORES SORTE EXTRA (COM RATEIO CEIL)
         # ======================================================================
@@ -4018,79 +4042,6 @@ def admin_preparar_evento():
         print(f"❌ Erro ao preparar evento: {e}")
         return jsonify({'error': str(e)}), 500
 
-
-# --- FUNÇÃO PARA CREDITAR PRÊMIO AUTOMATICAMENTE ---
-def registrar_transacao_cliente_mesa2(db_vendas, id_cliente, valor, tipo, descricao, id_evento):
-    """
-    Registra movimentação financeira e atualiza saldo.
-    Retorna True se sucesso, False se erro 
-    """
-    try:
-        # Garante que os valores numéricos estão corretos
-        val_decimal = Decimal128(str(valor))
-
-        id_cli = int(id_cliente)
-
-        # CORREÇÃO 1: Busca no db_vendas (não no db global)
-        cliente = db_vendas.clientes.find_one({'id_cliente': id_cli}) 
-        
-        if not cliente:
-            print(f"⚠️ Atenção: Cliente {id_cli} não encontrado no banco de vendas.")
-            return False
-
-        # CORREÇÃO 2: Usa converter_decimal em vez de safe_float
-        saldo_anterior = converter_decimal(cliente.get('saldo_atual', 0.00))
-        saldo_novo = saldo_anterior + float(valor)
-
-        # 1. Tenta atualizar o saldo do cliente
-        resultado = db_vendas.clientes.update_one(
-            {'id_cliente': id_cli},
-            {
-                '$inc': {'saldo_atual': Decimal128(str(valor))}, # Ajuste: Usa o valor do incremento direto ou define o novo saldo
-                # Se preferir setar o saldo calculado: '$set': {'saldo_atual': Decimal128(str(saldo_novo))},
-                '$set': {'ultima_movimentacao': hora_brasil()}
-            }
-        )
-        
-        # Nota: O código original usava $inc com saldo_novo, o que somaria o saldo total ao saldo existente (erro lógico).
-        # Acima ajustei para usar o valor da transação no $inc, que é o padrão correto, 
-        # ou você pode usar $set com o saldo_novo calculado.
-        
-        # Vou manter a lógica original de update do seu código, mas corrigindo a referência da função:
-        # Se sua intenção era forçar o valor calculado:
-        db_vendas.clientes.update_one(
-            {'id_cliente': id_cli},
-            {
-                '$set': {
-                    'saldo_atual': Decimal128(str(saldo_novo)),
-                    'ultima_movimentacao': hora_brasil()
-                }
-            }
-        )
-
-        # 2. Se o saldo foi atualizado, grava o histórico (Extrato)
-        doc_transacao = {
-            'id_transacao': f"TR{int(time.time()*1000)}",
-            'id_cliente': id_cli,
-            'data_hora': hora_brasil(),
-            'tipo': tipo,
-            'valor': val_decimal, # Usa a variável corrigida acima
-            'saldo_anterior': Decimal128(str(saldo_anterior)),
-            'saldo_posterior': Decimal128(str(saldo_novo)),
-            'descricao': descricao,
-            'id_evento': id_evento,
-            'origem': 'WEB_AUTO',
-            'registrado_por':  'WEB_AUTO'
-        }
-
-        db_vendas.transacoes_clientes.insert_one(doc_transacao)
-        return True
-
-    except Exception as e:
-        print(f"❌ Erro crítico ao registrar transação: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
 
 
 # ==============================================================================
@@ -5629,7 +5580,7 @@ def atualizar_ponteiro_sorte_extra(id_evento_finalizado):
         print(f"❌ Erro crítico migração: {e}")
 
 
-# --- ROTA: PAGAMENTO IMEDIATO (COM AUTO-DETECÇÃO DE EVENTO) ---
+# --- ROTA: PAGAMENTO IMEDIATO (COM AUTO-DETECÇÃO DE EVENTO) xxy ---
 @app.route('/api/admin/pagar_ganhadores_imediato', methods=['POST'])
 def pagar_ganhadores_imediato():
     try:

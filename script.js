@@ -5585,7 +5585,7 @@ async function confirmarCompra() {
                     `<div class="text-center">
                         <p class="text-gray-300">Sua compra de <b>${qtd}</b> cartelas foi processada!</p>
                         ${infoSeries}
-                        <p class="text-[16px] text-gray-500 mt-2 uppercase font-bold">Boa sorte! 🍀</p>
+                        <p class="text-[18px] text-green-300 mt-2 uppercase font-bold">Boa sorte! 🍀</p>
                     </div>`, 
                     "COMPRA CONFIRMADA", 
                     "✅"
