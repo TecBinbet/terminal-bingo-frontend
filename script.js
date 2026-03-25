@@ -4998,7 +4998,7 @@ function alternarPainelMobile(modo) {
         botoesAcao.forEach(btn => {
             if (btn) {
                 // Volta ao normal (py-1.5 e text-xs)
-                btn.classList.remove('py-3', 'text-lg');
+                btn.classList.remove('py-2.5', 'text-lg');
                 btn.classList.add('py-1.5', 'text-xs');
             }
         });
@@ -5008,9 +5008,9 @@ function alternarPainelMobile(modo) {
     const aumentarBotoesAcao = () => {
         botoesAcao.forEach(btn => {
             if (btn) {
-                // Fica maior (py-3 e text-xl)
+                // Fica maior (py-2.5 e text-xl)
                 btn.classList.remove('py-1.5', 'text-xs');
-                btn.classList.add('py-3', 'text-lg');
+                btn.classList.add('py-2.5', 'text-lg');
             }
         });
     };

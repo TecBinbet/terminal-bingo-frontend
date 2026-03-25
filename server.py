@@ -1420,7 +1420,18 @@ connected_clients = set()
 # =========================================================
 @app.route('/')
 def serve_index():
-    # Não mistura mais socket aqui. Apenas entrega o site.
+    # --- NOVO: Captura o ID do colaborador da URL (id_col=015) ---
+    id_col_url = request.args.get('id_col')
+    
+    # Se o ID existir, salva na sessão para usar no momento da venda
+    if id_col_url:
+        # Remove aspas extras caso elas tenham vindo na URL por erro de digitação
+        id_limpo = id_col_url.replace('"', '').replace("'", "")
+        session['colaborador_referencia'] = id_limpo
+        print(f"[SISTEMA] Cliente acessou via QR Code do Colaborador: {id_limpo}")
+    # ------------------------------------------------------------
+
+    # Entrega o site normalmente
     return send_from_directory('.', 'index.html')
 
 
@@ -4057,7 +4068,6 @@ def admin_preparar_evento():
         return jsonify({'error': str(e)}), 500
 
 
-
 # ==============================================================================
 # 🛡️ MOTOR FINANCEIRO CENTRALIZADO E ATÓMICO (SERVER.PY)
 # ==============================================================================
@@ -4740,6 +4750,19 @@ def cadastrar_cliente():
         # --- ALTERAÇÃO AQUI: Mantém como Inteiro ---
         novo_id_cliente = int(contador['sequence_value'])
 
+        # =========================================================
+        # DEFINIÇÃO DO VENDEDOR (COLABORADOR DE REFERÊNCIA)
+        # =========================================================
+        # Captura o ID que foi salvo na sessão quando o cliente abriu o QR Code.
+        # Se não houver indicação, o padrão é 0.
+        id_vendedor_sessao = session.get('colaborador_referencia', 0)
+        
+        try:
+            # Garante que seja gravado como Inteiro (Int32) no MongoDB
+            id_colaborador_final = int(id_vendedor_sessao)
+        except (ValueError, TypeError):
+            id_colaborador_final = 0
+
         # 5. Montagem do Documento
         novo_cliente = {
             'id_cliente': novo_id_cliente, 
@@ -4752,7 +4775,7 @@ def cadastrar_cliente():
             'data_cadastro': hora_brasil(),
             'origem': 'auto_cadastro_site',
             'cidade': cidade,
-            'id_colaborador': 0,
+            'id_colaborador': id_colaborador_final,
             'em_treinamento': modo_treino
         }
 
