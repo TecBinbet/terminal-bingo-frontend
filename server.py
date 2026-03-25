@@ -1939,54 +1939,64 @@ def verificar_status_evento():
 
         id_evento = int(id_evento_str)
 
-        # 2. Conecta no Banco (Usando sua função robusta)
+        # 2. Conecta no Banco
         sales_db = get_sales_db_connection()
-        
         if sales_db is None:
             print("❌ Erro: A função get_sales_db_connection falhou.")
             return jsonify({'erro': 'Falha na conexão com vendas'}), 500
 
         # 3. Busca o Evento
-        # Tenta buscar pelo ID numérico
-        #print(f"🔎 Buscando Evento {id_evento} no banco '{sales_db.name}'...")
         evento = sales_db.eventos.find_one({'id_evento': id_evento})
 
+        # Tratamento imediato se o evento não existir
         if not evento:
-            # Retornamos 200 (Sucesso de rede) mas com status 'erro' no JSON
             return jsonify({
                 'status': 'nao_encontrado', 
                 'valor_de_venda': 0.0,
                 'unidade_de_venda': 1,
                 'msg': f'Evento {id_evento} nao existe no banco de vendas',
-                'numeracao_atual_venda': 1 # Valor padrão de segurança
+                'numeracao_atual_venda': 1
             }), 200
 
+        # 4. Busca controle de venda (Próxima cartela)
         controle = sales_db.controle_venda.find_one({'id_evento': id_evento})
-        
-        proximo_numero = controle.get('inicial_proxima_venda', 1) if controle else 1
+        proximo_numero = 1
+        if controle and isinstance(controle, dict):
+            proximo_numero = controle.get('inicial_proxima_venda', 1)
 
-        # 4. Retorna o Resultado
-        if evento:
-            print(f"✅ SUCESSO! Foto encontrada: {evento.get('imagem_premio')}")
-            return jsonify({
-                'id': str(id_evento),
-                'status': evento.get('status', 'indefinido'),
-                'numeracao_atual_venda': proximo_numero, # Adicionado para o modal
-                'imagem_premio': evento.get('imagem_premio', ''),
-                'premio_atual': evento.get('premio_atual', 'BINGO'),
-                'descricao': evento.get('descricao', f'Evento {id_evento}'),
-                'valor_de_venda': float(evento.get('valor_de_venda', 0.0)),
-                'unidade_de_venda': int(evento.get('unidade_de_venda', 1))
-            })
-        else:
-            print(f"❌ Evento {id_evento} não encontrado em '{sales_db.name}'.")
-            return jsonify({'status': 'nao_encontrado'}), 404
+        # === TRATAMENTO ESPECIAL PARA DECIMAL128 (DINHEIRO) ===
+        # O Flask não aceita Decimal128 direto, precisamos converter para float.
+        raw_valor = evento.get('valor_de_venda')
+        try:
+            # Se for Decimal128 ou String, str() converte e float() finaliza.
+            # Se for None, o 'or 0' garante que não exploda.
+            valor_venda_final = float(str(raw_valor)) if raw_valor is not None else 0.0
+        except (ValueError, TypeError):
+            valor_venda_final = 0.0
+
+        unidade_venda_final = int(evento.get('unidade_de_venda') or 1)
+
+        # 5. Retorna o Resultado Sucesso
+        print(f"✅ SUCESSO! Evento {id_evento} processado com preço R$ {valor_venda_final}")
+        
+        return jsonify({
+            'id': str(id_evento),
+            'status': str(evento.get('status', 'indefinido')),
+            'numeracao_atual_venda': proximo_numero,
+            'imagem_premio': evento.get('imagem_premio', ''),
+            'premio_atual': evento.get('premio_atual', 'BINGO'),
+            'descricao': evento.get('descricao', f'Evento {id_evento}'),
+            'valor_de_venda': valor_venda_final,
+            'unidade_de_venda': unidade_venda_final,
+            'preco_cartela': valor_venda_final  # Enviado duplicado para evitar erro no Front
+        })
 
     except ValueError:
         return jsonify({'erro': 'ID deve ser número'}), 400
     except Exception as e:
-        print(f"Erro no servidor: {e}")
-        return jsonify({'status': 'erro'}), 500
+        print(f"💥 Erro Crítico no Servidor: {str(e)}")
+        # Retornar o detalhe do erro ajuda muito no debug agora
+        return jsonify({'status': 'erro', 'detalhe': str(e)}), 500
 
 
 
