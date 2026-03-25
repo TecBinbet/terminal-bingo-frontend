@@ -1955,6 +1955,8 @@ def verificar_status_evento():
             # Retornamos 200 (Sucesso de rede) mas com status 'erro' no JSON
             return jsonify({
                 'status': 'nao_encontrado', 
+                'valor_de_venda': 0.0,
+                'unidade_de_venda': 1,
                 'msg': f'Evento {id_evento} nao existe no banco de vendas',
                 'numeracao_atual_venda': 1 # Valor padrão de segurança
             }), 200
@@ -1973,9 +1975,8 @@ def verificar_status_evento():
                 'imagem_premio': evento.get('imagem_premio', ''),
                 'premio_atual': evento.get('premio_atual', 'BINGO'),
                 'descricao': evento.get('descricao', f'Evento {id_evento}'),
-                'valor_de_venda': valor,
-                'unidade_de_venda': unidade,
-                'preco_cartela': valor
+                'valor_de_venda': float(evento.get('valor_de_venda', 0.0)),
+                'unidade_de_venda': int(evento.get('unidade_de_venda', 1))
             })
         else:
             print(f"❌ Evento {id_evento} não encontrado em '{sales_db.name}'.")
