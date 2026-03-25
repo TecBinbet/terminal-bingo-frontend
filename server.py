@@ -1972,7 +1972,10 @@ def verificar_status_evento():
                 'numeracao_atual_venda': proximo_numero, # Adicionado para o modal
                 'imagem_premio': evento.get('imagem_premio', ''),
                 'premio_atual': evento.get('premio_atual', 'BINGO'),
-                'descricao': evento.get('descricao', f'Evento {id_evento}')
+                'descricao': evento.get('descricao', f'Evento {id_evento}'),
+                'valor_de_venda': valor,
+                'unidade_de_venda': unidade,
+                'preco_cartela': valor
             })
         else:
             print(f"❌ Evento {id_evento} não encontrado em '{sales_db.name}'.")

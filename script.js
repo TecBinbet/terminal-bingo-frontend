@@ -6422,8 +6422,8 @@ async function abrirModalCompra(idEventoEspecifico = 0) {
 
         // 1. ATUALIZAÇÃO DO PREÇO GLOBAL IMEDIATA
         // Garante que o cálculo use o preço real vindo do banco de vendas
-        const precoEncontrado = data.valor_de_venda ?? data.preco_cartela;
-        const unidadeEncontrada = data.unidade_de_venda ?? 1;
+        const precoEncontrado = dadosEvento.valor_de_venda ?? data.preco_cartela;
+        const unidadeEncontrada = dadosEvento.unidade_de_venda ?? 1;
 
         if (precoEncontrado !== undefined) {
                 globalPrecoCartela = parseFloat(precoEncontrado);
