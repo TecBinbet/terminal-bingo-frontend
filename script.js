@@ -4998,7 +4998,7 @@ function alternarPainelMobile(modo) {
         botoesAcao.forEach(btn => {
             if (btn) {
                 // Volta ao normal (py-1.5 e text-xs)
-                btn.classList.remove('py-2.0', 'text-lg');
+                btn.classList.remove('py-3.0', 'text-lg');
                 btn.classList.add('py-1.5', 'text-xs');
             }
         });
@@ -5008,9 +5008,9 @@ function alternarPainelMobile(modo) {
     const aumentarBotoesAcao = () => {
         botoesAcao.forEach(btn => {
             if (btn) {
-                // Fica maior (py-2.0 e text-xl)
+                // Fica maior (py-3.0 e text-xl)
                 btn.classList.remove('py-1.5', 'text-xs');
-                btn.classList.add('py-2.0', 'text-lg');
+                btn.classList.add('py-3.0', 'text-lg');
             }
         });
     };
@@ -6422,16 +6422,24 @@ async function abrirModalCompra(idEventoEspecifico = 0) {
 
         // 1. ATUALIZAÇÃO DO PREÇO GLOBAL IMEDIATA
         // Garante que o cálculo use o preço real vindo do banco de vendas
+        const precoEncontrado = data.valor_de_venda ?? data.preco_cartela;
+        const unidadeEncontrada = data.unidade_de_venda ?? 1;
 
-        globalPrecoCartela = parseFloat(dadosEvento.valor_de_venda || 0);
-        globalUnidadeVenda = parseInt(dadosEvento.unidade_de_venda || 1);
+        if (precoEncontrado !== undefined) {
+                globalPrecoCartela = parseFloat(precoEncontrado);
+                console.log(`💰 Preço Global Atualizado: R$ ${globalPrecoCartela}`);
+        }
 
+        // Salva a unidade também
+        globalUnidadeVenda = parseInt(unidadeEncontrada);
+
+        // --- ATUALIZA O TEXTO DO PREÇO NO MODAL ---
         const elPrecoUnit = document.getElementById('preco-unitario-modal');
         if (elPrecoUnit) {
             if (globalUnidadeVenda > 1) {
                 elPrecoUnit.textContent = `Valor do Kit c/ ${globalUnidadeVenda} unidades: R$ ${globalPrecoCartela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
             } else {
-               elPrecoUnit.textContent = `Preço Unitário: R$ ${globalPrecoCartela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+                elPrecoUnit.textContent = `Preço Unitário: R$ ${globalPrecoCartela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
             }
         }
 
@@ -7026,7 +7034,7 @@ function ocultarBotoesSorteExtra() {
 
 function mostrarBotoesSorteExtra() {
     // 1. Verificamos se existem bolas sorteadas (se for 0, estamos no intervalo/pré-jogo)
-    const noIntervalo = (bolasSorteadasCache.length === 0);
+    const noIntervalo = (globalBolasCantadas.length === 0);
 
     // 2. Só procedemos se ambas as condições forem verdadeiras
     if (noIntervalo && sorteExtraAtivaNoBanco) {
