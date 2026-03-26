@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.2";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.3";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -2271,7 +2271,7 @@ function displayLoadedCards(bolasCantadas) {
         return; // Sai da função silenciosamente e poupa 100% do processamento!
     }
     
-    if (!window.primeiraBolaDetectada) {
+    if (qtdBolasAtuais > 0 && !window.primeiraBolaDetectada) {
         // Verifica se o painel ainda está oculto antes de mudar xxxyyy
         const painelAtual = document.getElementById('mobile-panels-container');
         const estaOculto = painelAtual && painelAtual.classList.contains('hidden');
@@ -4004,7 +4004,7 @@ async function renderMainContent(data) {
             console.log("🎯 Primeira bola detectada! Mudando painel para NUMÉRICO.");
             alternarPainelMobile('numerico');
         }
-        ocultarBotoesSorteExtra()
+        ocultarBotoesSorteExtra();
         //window.primeiraBolaDetectada = true;
     }
 

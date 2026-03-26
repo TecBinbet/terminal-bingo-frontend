@@ -3436,7 +3436,8 @@ async function processarProximoDaFilaExtra() {
 
     try {
         console.log(`▶️ [EXTRA] Processando: ${ganhadorAtual.nome} - ${ganhadorAtual.premio}`);
-        // --- AQUI ACONTECE A MÁGICA ---
+        // --- AQUI ACONTECE A MÁGIC
+A ---
         // Aqui chamamos a função que valida/comprova no servidor (igual você faz no Bingo)
         // Isso vai fazer aparecer na TV do cliente.
         await validarGanhadorExtra(ganhadorAtual); 
@@ -3594,7 +3595,7 @@ async function dispararVerificacaoRobo() {
         console.log("🤖 [ROBO] Verificação do Sorte Extra concluída. Retomando sorteio principal...");
         setTimeout(() => {
             if (modoRoboAtivo) toggleAutoSorteio(true);
-        }, 3000); // 3 Segundos de fôlego antes de voltar a atirar bolas
+        }, tempoEspera * 1000); // 3 Segundos de fôlego antes de voltar a atirar bolas
     }
 }
 
@@ -3915,6 +3916,11 @@ async function iniciarTransicaoRobo() {
 function exibirPainelTransicaoRobo(dadosEvento) {
     let tempoRestante = dadosEvento.segundos_restantes;
     let id_proximo_evento = dadosEvento.id_evento;
+    const inputTempoBola = document.getElementById('input-tempo-auto');
+
+    const segundosBolaExtra = (parseInt(inputTempoBola?.value) || 3) * 1000;
+    
+    const tempoBaseRespiro = (typeof tempoEsperaConferenciaRobo !== 'undefined' ? tempoEsperaConferenciaRobo : 1) * 1000;
 
 // 👉 A SUA IDEIA AQUI: O Maestro avisa os terminais!
     console.log("📢 [ROBÔ] Disparando aviso de transição para todos os terminais...");
@@ -4011,14 +4017,14 @@ function exibirPainelTransicaoRobo(dadosEvento) {
             
             console.log(`🤖 [ROBO-TRANSITION] Tempo esgotado! Carregando evento ${dadosEvento.id_evento}...`);
             
-            // 👉 O GATILHO MESTRE: Arranca o próximo jogo!
+            // 👉 O GATILHO MESTRE: Arranca o próximo jogo!  xxxx
             if (typeof executarCarregamentoReal === 'function') {
                 executarCarregamentoReal(dadosEvento.id_evento);
-                
+                const TotalEspera = tempoBaseRespiro + segundosBolaExtra;
                 // Dá um tempinho para a tela desenhar as cartelas e solta o robô!
                 setTimeout(() => {
                     if (modoRoboAtivo) toggleAutoSorteio(true);
-                }, 3000);
+                }, TotalEspera);
             }
         } else {
             atualizarTela();
