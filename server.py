@@ -4505,6 +4505,7 @@ def api_comprar_cartelas():
             "nome_cliente": nome_do_cliente_db,                          
             "nick_colaborador": "AUTO-ATENDIMENTO",
             "id_colaborador": id_colaborador_indicacao,
+            "id_vendedor": 0,                      
             "data_venda": hora_brasil(),  
             "quantidade_unidades": qtd_desejada,
             "quantidade_cartelas": qtd_desejada, 
