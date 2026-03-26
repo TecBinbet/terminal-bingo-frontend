@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.1";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.2";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -5740,8 +5740,8 @@ async function confirmarCompra() {
 
             let infoSeries = `
                 <div class="p-1 bg-gray-950/50 rounded-lg border border-gray-800">
-                    <span class="text-[12px] text-gray-500 uppercase font-bold tracking-widest">Período Adquirido</span><br>
-                    <b class="text-yellow-400 font-mono text-lg">
+                    <span class="text-[12px] text-gray-400 uppercase font-bold tracking-widest">Período Adquirido</span><br>
+                    <b class="text-yellow-400 font-mono text-xl">
                         ${nInicial} <span class="text-white text-xs mx-1">até</span> ${nFinal}
                     </b>
                 </div>`;
@@ -5752,7 +5752,7 @@ async function confirmarCompra() {
                 infoSeries += `
                 <div class="mt-1 p-1 bg-gray-950/50 rounded-lg border border-gray-800 border-t-0">
                     <span class="text-[12px] text-gray-500 uppercase font-bold tracking-widest">Período Adicional (Lote Novo)</span><br>
-                    <b class="text-cyan-400 font-mono text-lg">
+                    <b class="text-cyan-400 font-mono text-xl">
                         ${nInicial2} <span class="text-white text-xs mx-1">até</span> ${nFinal2}
                     </b>
                 </div>`;
