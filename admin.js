@@ -4024,7 +4024,7 @@ function exibirPainelTransicaoRobo(dadosEvento) {
                 // Dá um tempinho para a tela desenhar as cartelas e solta o robô!
                 setTimeout(() => {
                     if (modoRoboAtivo) toggleAutoSorteio(true);
-                }, TotalEspera);
+                }, 3000);  // TotalEspera
             }
         } else {
             atualizarTela();
