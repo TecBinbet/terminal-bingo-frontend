@@ -2,9 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-
-const VERSAO_ATUAL = "1.4";   // Mude isso sempre que atualizar o JS
-
+const VERSAO_ATUAL = "1.5";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -2273,15 +2271,15 @@ function displayLoadedCards(bolasCantadas) {
         return; // Sai da função silenciosamente e poupa 100% do processamento!
     }
     
-    if (qtdBolasAtuais > 0 && !window.primeiraBolaDetectada) {
-        // Verifica se o painel ainda está oculto antes de mudar xxx
+    if (!window.primeiraBolaDetectada) {
+        // Verifica se o painel ainda está oculto antes de mudar xxxyyy
         const painelAtual = document.getElementById('mobile-panels-container');
         const estaOculto = painelAtual && painelAtual.classList.contains('hidden');
         
-        //if (estaOculto) {
+        if (estaOculto) {
             console.log("🎯 Primeira bola detectada! Mudando painel para NUMÉRICO.");
             alternarPainelMobile('numerico');
-        //}
+        }
         ocultarBotoesSorteExtra()
         window.primeiraBolaDetectada = true;
     }
@@ -3996,8 +3994,8 @@ async function renderMainContent(data) {
         return; // Sai da função silenciosamente e poupa 100% do processamento!
     }
     
-
-    if (qtdBolasAtuais > 0 && !window.primeiraBolaDetectada) {
+    //if (qtdBolasAtuais > 0 && !window.primeiraBolaDetectada) {
+    if (!window.primeiraBolaDetectada) {
         // Verifica se o painel ainda está oculto antes de mudar xxx
         const painelAtual = document.getElementById('mobile-panels-container');
         const estaOculto = painelAtual && painelAtual.classList.contains('hidden');
@@ -4007,7 +4005,7 @@ async function renderMainContent(data) {
             alternarPainelMobile('numerico');
         }
         ocultarBotoesSorteExtra()
-        window.primeiraBolaDetectada = true;
+        //window.primeiraBolaDetectada = true;
     }
 
 
@@ -5653,7 +5651,170 @@ function calcularTotalCompra() {
 }
 
 // CONFIRMAR COMPRA (COM RECARREGAMENTO FORÇADO)
+// CONFIRMAR COMPRA (COM RECARREGAMENTO FORÇADO E SPINNER NO BOTÃO)
 async function confirmarCompra() {
+    // 1. Captura a quantidade e limpa o valor
+    const elInput = document.getElementById('qtd-manual');
+    const qtd = elInput ? parseInt(elInput.value) || 0 : 0;
+
+    // --- SUPER TRAVA: IMPEDE O ERRO 500 ---
+    if (qtd <= 0) {
+        console.warn("🚫 Compra abortada: Quantidade zerada.");
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Selecione a quantidade de cartelas antes de finalizar.", "Atenção", "⚠️");
+        } else {
+            alert("Selecione a quantidade.");
+        }
+        return; 
+    }
+
+    // --- INÍCIO DO EFEITO DE LOADING NO BOTÃO (POSICIONADO NO TOPO) ---
+    const btnConfirmar = document.getElementById('btn-confirmar-compra');
+    const txtConfirmar = document.getElementById('texto-botao-confirmar');
+    const originalHTML = txtConfirmar ? txtConfirmar.innerHTML : "Finalizar Compra";
+
+    if (btnConfirmar) {
+        btnConfirmar.disabled = true; // Impede cliques duplos imediatamente
+        btnConfirmar.style.opacity = "0.7";
+    }
+    if (txtConfirmar) {
+        txtConfirmar.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Processando...`;
+    }
+
+    try {
+        // 2. Descobre o ID do evento alvo da compra
+        let idEventoFinal = 0;
+        if (typeof obterIdEventoAlvo === 'function') {
+            idEventoFinal = obterIdEventoAlvo();
+        } else {
+            const elLastRound = document.getElementById('mobile-last-round');
+            idEventoFinal = parseInt(elLastRound?.textContent) || 0;
+        }
+
+        // Função auxiliar para converter "R$ 1.200,50" em 1200.50
+        function lerDinheiro(idElemento) {
+            const el = document.getElementById(idElemento);
+            if (!el) return 0.0;
+            let texto = el.value || el.textContent || "0";
+            texto = texto.toString()
+                        .replace('R$', '')
+                        .replace(/\s/g, '')     
+                        .replace(/\./g, '')     
+                        .replace(',', '.');     
+            return parseFloat(texto) || 0.0;
+        }
+
+        // 3. Validação de Saldo (Client-side)
+        const valorTotalReais = lerDinheiro('total-compra-display');
+        const saldoAtualReais = lerDinheiro('saldo-modal-compra');
+
+        if (valorTotalReais > saldoAtualReais) {
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert("Seu saldo é insuficiente para esta compra. Faça uma recarga!", "Saldo Insuficiente", "🚫");
+            } 
+            return; // O bloco finally restaurará o botão
+        }
+
+        if (typeof showFullLoading === 'function') showFullLoading("Processando compra...");
+
+        // 4. Chamada da API
+        const res = await fetch(`${API_BASE_URL}/api/comprar_cartelas`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'include',
+            body: JSON.stringify({
+                quantidade: qtd, 
+                id_evento: idEventoFinal 
+            })
+        });
+        
+        const data = await res.json();
+
+        if (res.ok) {
+            // SUCESSO - CORREÇÃO DO ALERTA E RECIBO
+            const nInicial = String(data.inicial || '0').padStart(6, '0');
+            const nFinal = String(data.final || '0').padStart(6, '0');
+
+            let infoSeries = `
+                <div class="p-1 bg-gray-950/50 rounded-lg border border-gray-800">
+                    <span class="text-[12px] text-gray-500 uppercase font-bold tracking-widest">Período Adquirido</span><br>
+                    <b class="text-yellow-400 font-mono text-lg">
+                        ${nInicial} <span class="text-white text-xs mx-1">até</span> ${nFinal}
+                    </b>
+                </div>`;
+
+            if (data.inicial2 && parseInt(data.inicial2) > 0) {
+                const nInicial2 = String(data.inicial2).padStart(6, '0');
+                const nFinal2 = String(data.final2).padStart(6, '0');
+                infoSeries += `
+                <div class="mt-1 p-1 bg-gray-950/50 rounded-lg border border-gray-800 border-t-0">
+                    <span class="text-[12px] text-gray-500 uppercase font-bold tracking-widest">Período Adicional (Lote Novo)</span><br>
+                    <b class="text-cyan-400 font-mono text-lg">
+                        ${nInicial2} <span class="text-white text-xs mx-1">até</span> ${nFinal2}
+                    </b>
+                </div>`;
+            }
+
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert(
+                    `<div class="text-center">
+                        <p class="text-gray-300">Sua compra de <b>${qtd}</b> cartelas foi processada!</p>
+                        ${infoSeries}
+                        <p class="text-[18px] text-green-300 mt-2 uppercase font-bold">Boa sorte! 🍀</p>
+                    </div>`, 
+                    "COMPRA CONFIRMADA", 
+                    "✅"
+                );
+            }
+
+            if (typeof atualizarDadosCliente === 'function') await atualizarDadosCliente(); 
+            
+            const idEventoNaTela = (typeof currentEventID !== 'undefined') ? currentEventID : null;
+
+            if (idEventoNaTela && String(idEventoFinal) === String(idEventoNaTela)) {
+                console.log(`🔄 Compra no evento ATUAL (${idEventoFinal}). Atualizando mesa...`);
+                if (typeof eventoCarregadoAtual !== 'undefined') {
+                    eventoCarregadoAtual = null; 
+                }
+                await new Promise(r => setTimeout(r, 500));
+                if (typeof carregarCartelasAutomaticas === 'function') {
+                    await carregarCartelasAutomaticas(idEventoFinal);
+                } 
+            } else {
+                console.log(`📅 Compra Agendada (Evento ${idEventoFinal}). Mesa mantida no Evento ${idEventoNaTela}.`);
+            }
+
+            if (typeof fecharModal === 'function') fecharModal('modal-comprar-cartelas'); 
+            
+            if (typeof limparQuantidade === 'function') {
+               limparQuantidade();
+            } else if (elInput) {
+               elInput.value = '';
+            }      
+
+        } else {
+            if (typeof showCustomAlert === 'function') showCustomAlert(data.erro || "Erro desconhecido.", "Erro", "❌");
+            else alert(data.erro);
+        }
+
+    } catch (e) {
+        console.error(e);
+        if (typeof showCustomAlert === 'function') showCustomAlert("Erro de comunicação.", "Falha", "🌐");
+    } finally {
+        if (typeof hideFullLoading === 'function') hideFullLoading();
+        
+        // --- RESTAURAÇÃO DO BOTÃO AO ESTADO ORIGINAL ---
+        if (btnConfirmar) {
+            btnConfirmar.disabled = false;
+            btnConfirmar.style.opacity = "1";
+        }
+        if (txtConfirmar) {
+            txtConfirmar.innerHTML = originalHTML;
+        }
+    }
+}
+
+async function confirmarCompra2() {
     // 1. Captura a quantidade e limpa o valor
     const elInput = document.getElementById('qtd-manual');
     const qtd = elInput ? parseInt(elInput.value) || 0 : 0;

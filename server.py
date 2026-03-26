@@ -174,7 +174,7 @@ def watch_collections():
                 
         except Exception as e:
             print(f"❌ Erro no Watcher: {e}")
-            
+         
         gevent.sleep(1)
 
 
@@ -186,7 +186,6 @@ def broadcast(data):
             client.send(msg)
         except:
             clients.discard(client)
-
 
 
 def atualizar_status_treinamento():
@@ -234,6 +233,7 @@ def parse_brl(valor_str):
     except:
         return 0.0
 
+
 def format_brl(valor_float):
     """Converte float 1200.50 para '1.200,50' (sem R$)"""
     try:
@@ -272,11 +272,9 @@ except Exception:
 VERSION = "2.1.0-SingleTenant"
 
 # --- CONFIGURAÇÃO DE ROTEAMENTO DE SALAS --- AQUI
-
 # ==============================================================================
 # 🆕 ADIÇÃO MULTI-SALAS (INÍCIO)
 # ==============================================================================
-
 # Lê o ID da Sala que vem do Docker-Compose (Ex: 001, 002 ou 003)
 #PARAM_ID_SALA = os.environ.get("IDSALA", "001")
 print(f"🚀 INICIANDO SERVIDOR PARA SALA: {PARAM_ID_SALA}")
@@ -326,7 +324,6 @@ def buscar_uri_da_sala(id_sala_alvo):
 # ==============================================================================
 # 🆕 ADIÇÃO MULTI-SALAS (FIM)
 # ==============================================================================
-
 
 # --- DEFINE A URI REAL DO SISTEMA ---
 MONGO_URI = buscar_uri_da_sala(PARAM_ID_SALA)
