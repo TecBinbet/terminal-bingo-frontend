@@ -3,7 +3,7 @@
 // ======================================================
 
 
-const VERSAO_ATUAL = "1.0";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.3";   // Mude isso sempre que atualizar o JS
 
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
@@ -2272,14 +2272,14 @@ function displayLoadedCards(bolasCantadas) {
     if (qtdBolasAtuais === ultima_bola_render) {
         return; // Sai da função silenciosamente e poupa 100% do processamento!
     }
-
+    
     if (qtdBolasAtuais > 0 && !window.primeiraBolaDetectada) {
         // Verifica se o painel ainda está oculto antes de mudar xxx
         const painelAtual = document.getElementById('mobile-panels-container');
         const estaOculto = painelAtual && painelAtual.classList.contains('hidden');
         
         if (estaOculto) {
-            //console.log("🎯 Primeira bola detectada! Mudando painel para NUMÉRICO.");
+            console.log("🎯 Primeira bola detectada! Mudando painel para NUMÉRICO.");
             alternarPainelMobile('numerico');
         }
         ocultarBotoesSorteExtra()
@@ -3987,7 +3987,36 @@ async function renderMainContent(data) {
         falarTexto(`${ultimaBolaDaLista}`);
         ultimaBolaCantada = ultimaBolaDaLista;
         ultimaBolaExibida = ultimaBolaDaLista; 
+
+    const qtdBolasAtuais = bolasCantadas ? bolasCantadas.length : 0;
+
+    // 👉 A SUA TRAVA DE PERFORMANCE!
+    // Se a quantidade de bolas não mudou desde a última renderização, cancela tudo.
+    if (qtdBolasAtuais === ultima_bola_render) {
+        return; // Sai da função silenciosamente e poupa 100% do processamento!
+    }
+    
+    console.error("[RIVx] qtdBolasAtuais  ==================",qtdBolasAtuais);
+    console.error("[RIVx] window.primeiraBolaDetectada ======",window.primeiraBolaDetectada);
+
+    if (qtdBolasAtuais > 0 && !window.primeiraBolaDetectada) {
+        // Verifica se o painel ainda está oculto antes de mudar xxx
+
+    console.error("[RIV-x2] qtdBolasAtuais  ==================",qtdBolasAtuais);
+    console.error("[RIV-x2] window.primeiraBolaDetectada ======",window.primeiraBolaDetectada);
+
+        const painelAtual = document.getElementById('mobile-panels-container');
+        const estaOculto = painelAtual && painelAtual.classList.contains('hidden');
         
+        if (estaOculto) {
+            console.log("🎯 Primeira bola detectada! Mudando painel para NUMÉRICO.");
+            alternarPainelMobile('numerico');
+        }
+        ocultarBotoesSorteExtra()
+        window.primeiraBolaDetectada = true;
+    }
+
+
         // Pequeno delay para garantir que o DOM não esteja ocupado
         setTimeout(() => {
              if (cachedRawCards.length > 0) {
@@ -4108,21 +4137,28 @@ async function renderMainContent(data) {
         }         // --- FIM se Manual-
         else {
             // --- NOVO ELSE: MODO DIGITAL (AUTOMÁTICO) ---
-            const videoPlaceholder = document.getElementById('youtube-placeholder');
-    
-            // Verificamos se o elemento existe e se NÃO está oculto
-            if (videoPlaceholder && !videoPlaceholder.classList.contains('hidden')) {
-                console.log("🖥️ Modo Digital detectado: Ocultando container de vídeo.");
-        
-                // 1. Esconde o container
-                videoPlaceholder.classList.add('hidden');
-        
-                // 2. Opcional: Se houver um iframe de vídeo rodando lá dentro, 
-                // podemos resetar o src para parar o áudio/streaming
-                const iframe = videoPlaceholder.querySelector('iframe');
+   
+            // 1. Identificamos o container principal do vídeo (ajuste o ID se for video-container)
+            const videoContainer = document.getElementById('video-container') || youtubePlaceholder;
+
+            if (videoContainer && !videoContainer.classList.contains('hidden')) {
+                console.log("🖥️ Modo Digital detectado: Ocultando e parando vídeo.");
+
+                // 2. Esconde o container principal
+                videoContainer.classList.add('hidden');
+
+                // 3. Para o vídeo (limpa o iframe) para não continuar ouvindo o áudio
+                // Procuramos o iframe dentro do container que escondemos
+                const iframe = videoContainer.querySelector('iframe');
                 if (iframe) {
-                    iframe.src = ""; 
+                    iframe.src = ""; // Remove o vídeo
+                    console.log("🎥 Iframe do YouTube resetado.");
                 }
+                
+                // 4. Se você tiver um botão de "Fechar Vídeo", podemos simular o clique nele
+                // Isso garante que qualquer outra lógica de fechamento seja executada
+                const btnFechar = document.getElementById('btn-fechar-video'); // Ajuste o ID
+                if (btnFechar) btnFechar.click();
             }
         }
 
@@ -4630,7 +4666,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-
+    const elVersao = document.getElementById('versao-menu');
+    if (elVersao) {
+        elVersao.textContent = `v${VERSAO_ATUAL}`;
+        console.log(`✅ Interface atualizada para versão: ${VERSAO_ATUAL}`);
+    }
 
     // 1. ORIENTAÇÃO DA TELA (MOBILE)
     if (isMobileDevice()) {
@@ -4962,15 +5002,16 @@ function controlarPainelMobileEntrada() {
     // Converte para inteiro para garantir comparação correta
     const tipo = parseInt(tipoEntradaCartelas);
 
-    if (tipo === 2) {
+    //*      >>>>>>>>>>>>>> FORÇA A ENTRADA DE CARTELA ONLINE 
+    //*if (tipo === 2) {
         // MODO COMPRA (Valor = 2): Oculta o manual, mostra os botões
         painelManual.classList.add('hidden');
         painelBotoes.classList.remove('hidden');
-    } else {
+    //*} else {
         // MODO MANUAL (Valor = 1 ou outro): Mostra o manual, oculta os botões
-        painelManual.classList.remove('hidden');
-        painelBotoes.classList.add('hidden');
-    }
+        //* painelManual.classList.remove('hidden');
+        //* painelBotoes.classList.add('hidden');
+    //*}
 }
 
 // --- CONTROLE DE ABAS (NUMÉRICO / INFORMATIVO / ESTATÍSTICAS) ---
@@ -4998,7 +5039,7 @@ function alternarPainelMobile(modo) {
         botoesAcao.forEach(btn => {
             if (btn) {
                 // Volta ao normal (py-1.5 e text-xs)
-                btn.classList.remove('py-2', 'text-lg');
+                btn.classList.remove('py-1.5', 'text-lg');  // mudar aqui
                 btn.classList.add('py-1.5', 'text-xs');
             }
         });
@@ -5008,9 +5049,9 @@ function alternarPainelMobile(modo) {
     const aumentarBotoesAcao = () => {
         botoesAcao.forEach(btn => {
             if (btn) {
-                // Fica maior (py-2 e text-xl)
+                // Fica maior (py-1.5 e text-xl)
                 btn.classList.remove('py-1.5', 'text-xs');
-                btn.classList.add('py-2', 'text-lg');
+                btn.classList.add('py-1.5', 'text-lg');
             }
         });
     };
@@ -5528,38 +5569,112 @@ async function confirmarSaque() {
 }
 
 
-function selecionarQtd(n) {
-    const input = document.getElementById('qtd-manual'); // Seu código usava 'input-qtd'
-    if (input) {
-        input.value = n;
-        // Chama o calculo visual se existir, se não, segue a vida
-        if (typeof calcularTotalCompra === 'function') calcularTotalCompra();
+// Função para somar valores ao total atual
+window.somarQtd = function(valor) {
+    const inputQtd = document.getElementById('qtd-manual');
+    if (!inputQtd) return;
+
+    // Pega o valor atual (se estiver vazio, assume 0)
+    let atual = parseInt(inputQtd.value) || 0;
+    
+    // Soma o novo valor
+    inputQtd.value = atual + valor;
+
+    // Dispara o cálculo do preço total automaticamente
+    if (typeof calcularTotalCompra === 'function') {
+        calcularTotalCompra();
     }
-}
+    
+    // Feedback visual rápido no input (efeito de "piscar" verde)
+    inputQtd.classList.add('border-green-500', 'scale-105');
+    setTimeout(() => {
+        inputQtd.classList.remove('scale-105');
+        // Mantém a borda verde se houver valor
+    }, 150);
+};
+
+// Função para zerar tudo
+window.limparQuantidade = function() {
+    const inputQtd = document.getElementById('qtd-manual');
+    const totalDisplay = document.getElementById('total-compra-display');
+    
+    if (inputQtd) inputQtd.value = '';
+    if (totalDisplay) totalDisplay.textContent = 'R$ 0,00';
+    
+    // Chama o cálculo para resetar estados de erro/saldo
+    if (typeof calcularTotalCompra === 'function') {
+        calcularTotalCompra();
+    }
+    
+    console.log("🧹 Quantidade resetada.");
+};
 
 // Calculo visual do total (Auxiliar)
 function calcularTotalCompra() {
     const inputQtd = document.getElementById('qtd-manual');
     const displayTotal = document.getElementById('total-compra-display');
+    const btnFinalizar = document.getElementById('btn-confirmar-compra'); // Ajuste o ID se for outro
     
     if (!inputQtd || !displayTotal) return;
 
+    // 1. Cálculo da quantidade e total
     const qtd = parseInt(inputQtd.value) || 0;
     const total = qtd * globalPrecoCartela;
 
+    // 2. Atualiza o display visual
     displayTotal.textContent = `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
 
-    // Feedback de cor no total se ultrapassar o saldo
-    if (total > globalUserSaldo) {
-        displayTotal.classList.add('text-red-500');
-    } else {
-        displayTotal.classList.remove('text-red-500');
-    }
-}
+    // 3. Validação de Saldo e Botão
+    const temSaldo = total <= globalUserSaldo;
+    const temQuantidade = qtd > 0;
 
+    if (!temSaldo) {
+        // Saldo Insuficiente
+        displayTotal.classList.add('text-red-500', 'animate-pulse');
+        if (btnFinalizar) {
+            btnFinalizar.disabled = true;
+            btnFinalizar.classList.add('opacity-50', 'cursor-not-allowed', 'grayscale');
+            btnFinalizar.innerText = "Saldo Insuficiente";
+        }
+    } else {
+        // Saldo OK
+        displayTotal.classList.remove('text-red-500', 'animate-pulse');
+        if (btnFinalizar) {
+            // Só habilita se tiver pelo menos 1 cartela selecionada
+            btnFinalizar.disabled = !temQuantidade;
+            if (temQuantidade) {
+                btnFinalizar.classList.remove('opacity-50', 'cursor-not-allowed', 'grayscale');
+                btnFinalizar.innerText = "Finalizar Compra";
+            } else {
+                // Se a quantidade for 0, garantimos que o botão não esteja "colorido" nem "grayscaled" de erro
+                btnFinalizar.classList.add('opacity-50', 'cursor-not-allowed');
+                btnFinalizar.classList.remove('grayscale'); // Adicione esta linha
+                btnFinalizar.innerText = "Selecione a Qtd";
+            }
+        }
+    }
+
+    // Log para debug (ajuda muito no iPhone)
+    console.log(`🧮 Cálculo: ${qtd} x ${globalPrecoCartela} = ${total} (Saldo: ${globalUserSaldo})`);
+}
 
 // CONFIRMAR COMPRA (COM RECARREGAMENTO FORÇADO)
 async function confirmarCompra() {
+    // 1. Captura a quantidade e limpa o valor
+    const elInput = document.getElementById('qtd-manual');
+    const qtd = elInput ? parseInt(elInput.value) || 0 : 0;
+
+    // --- SUPER TRAVA: IMPEDE O ERRO 500 ---
+    if (qtd <= 0) {
+        console.warn("🚫 Compra abortada: Quantidade zerada.");
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Selecione a quantidade de cartelas antes de finalizar.", "Atenção", "⚠️");
+        } else {
+            alert("Selecione a quantidade.");
+        }
+        return; // FINALIZA A FUNÇÃO AQUI. O FETCH NÃO SERÁ EXECUTADO.
+    }
+
     let idEventoFinal = 0;
     
     // 1. Descobre o ID do evento alvo da compra
@@ -5568,15 +5683,6 @@ async function confirmarCompra() {
     } else {
         const elLastRound = document.getElementById('mobile-last-round');
         idEventoFinal = parseInt(elLastRound?.textContent) || 0;
-    }
-
-    const inputQtd = document.getElementById('qtd-manual');
-    const qtd = inputQtd ? parseInt(inputQtd.value) : 0;
-
-    if (qtd <= 0) {
-        if (typeof showCustomAlert === 'function') showCustomAlert("Selecione a quantidade.", "Atenção", "⚠️");
-        else alert("Selecione a quantidade.");
-        return;
     }
 
     // Função auxiliar para converter "R$ 1.200,50" em 1200.50
@@ -5706,8 +5812,12 @@ async function confirmarCompra() {
             // --- FIM DA CORREÇÃO ---
 
             // Fecha modal e limpa inputs
-            if (typeof fecharModal === 'function') fecharModal('modal-comprar-cartelas');
-            if (inputQtd) inputQtd.value = '';
+            if (typeof fecharModal === 'function') fecharModal('modal-comprar-cartelas'); 
+            if (typeof limparQuantidade === 'function') {
+               limparQuantidade();
+            } else if (inputQtd) {
+               inputQtd.value = '';
+            }      
 
         } else {
             // ERRO DO SERVIDOR
@@ -6376,6 +6486,127 @@ async function atualizarPrecoDoEvento(idForcado = 0) {
 
 
 async function abrirModalCompra(idEventoEspecifico = 0) {
+    // 1. Identifica o botão para feedback visual
+    const btnCompra = document.querySelector('.btn-comprar-principal') || document.activeElement;
+    const originalHTML = btnCompra ? btnCompra.innerHTML : "";
+
+    // 2. Verifica Login (Prevenção de erro se a função não existir)
+    if (typeof isUsuarioLogado === 'function' && !isUsuarioLogado()) {
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Você precisa fazer login para comprar cartelas.", "Login Necessário", "🔒");
+        }
+        if (typeof abrirModalLogin === 'function') abrirModalLogin();
+        return;
+    }
+
+    // 3. Ativa o estado de Loading no botão
+    if (btnCompra && btnCompra.tagName === "BUTTON") {
+        btnCompra.style.pointerEvents = "none"; 
+        btnCompra.style.opacity = "0.7";
+        btnCompra.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Carregando...`;
+    }
+
+    // 4. Fecha modais sobrepostos (Importante para mobile)
+    if (typeof fecharModal === 'function') {
+        fecharModal('modal-carteira');
+        fecharModal('events-panel-container');
+    }
+
+    try {
+        // --- NOVO PASSO 5: MOSTRAR O MODAL IMEDIATAMENTE ---
+        eventoSelecionadoParaCompra = idEventoEspecifico > 0 ? idEventoEspecifico : 0;
+        console.log("🛒 Evento selecionado para compra:", eventoSelecionadoParaCompra);
+
+        const modal = document.getElementById('modal-comprar-cartelas');
+        if (!modal) return;
+
+        // Limpa estados anteriores
+        const elNum = document.getElementById('numeracao_atual_venda');
+        const elPrecoUnit = document.getElementById('preco-unitario-modal');
+        if (elNum) elNum.textContent = "......";
+        if (elPrecoUnit) elPrecoUnit.textContent = "Carregando preço...";
+
+        // Força a exibição imediata (Estratégia para iPhone)
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        modal.style.zIndex = "10000"; 
+
+        // --- AGORA SIM: BUSCA DADOS DO EVENTO ---
+        const dadosEvento = await atualizarPrecoDoEvento(idEventoEspecifico);
+   
+        if (!dadosEvento || dadosEvento.status === 'nao_encontrado') {
+            modal.classList.add('hidden'); 
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert("Este evento não está disponível no momento.", "Aviso", "⚠️");
+            }
+            return; 
+        }
+
+        // 6. ATUALIZAÇÃO DE PREÇOS
+        const precoEncontrado = dadosEvento.valor_de_venda ?? dadosEvento.preco_cartela;
+        const unidadeEncontrada = dadosEvento.unidade_de_venda ?? 1;
+
+        if (precoEncontrado !== undefined) {
+            globalPrecoCartela = parseFloat(precoEncontrado);
+        }
+        globalUnidadeVenda = parseInt(unidadeEncontrada);
+
+        // 7. PREPARAÇÃO DA INTERFACE (Aqui removi a declaração 'const modal' que estava repetida)
+        
+        // Preenche Numeração
+        if (elNum && dadosEvento.numeracao_atual_venda !== undefined) {
+            elNum.textContent = dadosEvento.numeracao_atual_venda.toString().padStart(6, '0');
+        }
+
+        // Preenche Preço Unitário/Kit
+        if (elPrecoUnit) {
+            const precoFormatado = globalPrecoCartela.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+            elPrecoUnit.textContent = globalUnidadeVenda > 1 
+                ? `Kit c/ ${globalUnidadeVenda} un: R$ ${precoFormatado}`
+                : `Preço Unitário: R$ ${precoFormatado}`;
+        }
+
+        // Preenche Saldo
+        const saldoModal = document.getElementById('saldo-modal-compra');
+        if (saldoModal) {
+            const saldoAtual = (typeof globalUserSaldo !== 'undefined') ? globalUserSaldo : 0;
+            saldoModal.textContent = `R$ ${saldoAtual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+            
+            if (saldoAtual <= 0) {
+                saldoModal.classList.add('text-red-400');
+                saldoModal.classList.remove('text-green-400');
+            } else {
+                saldoModal.classList.add('text-green-400');
+                saldoModal.classList.remove('text-red-400');
+            }
+        }
+
+        // Limpa inputs de quantidade
+        const inputQtd = document.getElementById('qtd-manual');
+        const totalDisplay = document.getElementById('total-compra-display');
+        if (inputQtd) inputQtd.value = '';
+        if (totalDisplay) totalDisplay.textContent = 'R$ 0,00';
+
+        // 8. EXIBIÇÃO FINAL
+        if (typeof calcularTotalCompra === 'function') calcularTotalCompra();
+
+    } catch (error) {
+        console.error("❌ Erro ao abrir modal de compra:", error);
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Erro ao carregar dados. Tente novamente.", "Erro", "❌");
+        }
+    } finally {
+        // 9. RESTAURAÇÃO DO BOTÃO
+        if (btnCompra && btnCompra.tagName === "BUTTON") {
+            btnCompra.style.pointerEvents = "auto";
+            btnCompra.style.opacity = "1";
+            btnCompra.innerHTML = originalHTML;
+        }
+    }
+}
+
+
+async function abrirModalCompra2(idEventoEspecifico = 0) {
     // 1. Identifica o botão que foi clicado para aplicar o loading
     const btnCompra = document.querySelector('.btn-comprar-principal') || document.activeElement;
     const originalHTML = btnCompra ? btnCompra.innerHTML : "";
@@ -7879,7 +8110,7 @@ window.mostrarAjudaInstalacao = function() {
                 <p class="font-bold text-yellow-500">Siga os passos para instalar:</p>
                 <div class="flex items-start gap-3">
                     <span class="bg-gray-700 px-2 rounded-full">1</span>
-                    <span>Toque no botão <b>Compartilhar</b> na barra inferior do Safari (o ícone é um quadrado com uma seta para cima <span class="text-blue-500">⎋</span>).</span>
+                    <span>Toque no ícone <b>Compartilhar</b> <i class="fas fa-share-square text-blue-400"></i> (quadrado com seta para cima).</span>
                 </div>
                 <div class="flex items-start gap-3">
                     <span class="bg-gray-700 px-2 rounded-full">2</span>
@@ -7979,10 +8210,77 @@ window.abrirAuditoria = async function(idEvento) {
 };
 
 
+window.forcarUpdateGeral = async function() {
+    // 1. Pergunta ao usuário se ele realmente quer recarregar
+    // Usando o seu padrão de customConfirm (ajuste o texto se desejar)
+    let confirmar = false;    
+
+    if (typeof showCustomConfirm === 'function') {
+        confirmar = await showCustomConfirm(
+            "Deseja forçar a atualização do sistema?\n\nA página será recarregada para sincronizar com o servidor.",
+            "Sincronização Geral", " 🔄 "
+        );
+    } else {
+        // Fallback: Caso a função não exista, o navegador usa a caixa padrão
+        confirmar = window.confirm("Deseja forçar a atualização do sistema?");
+    }
+
+    if (confirmar) {
+        console.log("♻️ Usuário confirmou Hard Reset. Limpando dados locais...");
+        closeSideMenu();
+        // 2. Feedback visual de "Aguarde"
+        if (typeof customAlert === 'function') {
+            // Exibimos um alerta rápido de 2 segundos antes de dar o refresh
+            await customAlert(
+                "Sincronizando dados...\nAguarde um instante.",
+                "Sincronia",
+                2
+            );
+        }
+
+        // 3. Limpezas preventivas antes do refresh
+        if (typeof bolasSorteadasCache !== 'undefined') bolasSorteadasCache = [];
+        
+        // 4. Fecha o vídeo se estiver teimando em ficar aberto
+        const vidContainer = document.getElementById('video-container') || document.getElementById('youtube-placeholder');
+        if (vidContainer) {
+            vidContainer.classList.add('hidden');
+            const iframe = vidContainer.querySelector('iframe');
+            if (iframe) iframe.src = "";
+        }
+
+        // 5. O Refresh propriamente dito
+        // timeout de 500ms só para o usuário ver que o clique funcionou
+        setTimeout(() => {
+            window.location.reload(true);
+        }, 500);
+    } else {
+        console.log("❌ Atualização cancelada pelo usuário.");
+    }
+};
+
+window.limparQuantidade = function() {
+    const input = document.getElementById('qtd-manual');
+    if (input) input.value = "0"; // Mudar de '' para '0' ajuda o parseInt a não bugar
+    calcularTotalCompra();
+};
+
 // Faça o mesmo para a função de fechar
 window.fecharAuditoria = function() {
     const modal = document.getElementById('modal-auditoria');
     if (modal) modal.classList.add('hidden');
+}
+
+window.addEventListener('appinstalled', () => {
+    console.log('🎉 PWA instalado com sucesso!');
+    const btnInstalar = document.getElementById('btn-instalar-app');
+    if (btnInstalar) btnInstalar.parentElement.classList.add('hidden');
+});
+
+// E na inicialização do site:
+if (window.matchMedia('(display-mode: standalone)').matches) {
+    const btnInstalar = document.getElementById('btn-instalar-app');
+    if (btnInstalar) btnInstalar.parentElement.classList.add('hidden');
 }
 
 // Função preparada para expansão futura para Ant Media Server

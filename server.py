@@ -789,8 +789,7 @@ def process_prizes(premios_raw):
     return premio_data, tope_data, card_ranges, premio_info
 
 
-# Crie esta nova função no seu código:
-
+# PROCESSA AS CARTELAS EM JOGO
 def recalcular_ranking_principal():
     """
     Função Despachante: Decide qual rotina de ranking (90 ou 75) deve ser executada.
@@ -859,7 +858,6 @@ def recalcular_ranking_top10():
                 for g in ganhadores_linha:
                     tag = g.get('linha_ganha_tag') 
                     if tag: linhas_ja_ganhas.add(tag)
-        # ---------------------------------------------------------------------
 
         # Mapa de Ganhadores Gerais (Bingo)
         ids_vencedores_bingo = set()
@@ -964,7 +962,7 @@ def recalcular_ranking_top10():
             lista_original = r['numeros_faltantes']
             string_numeros = ",".join(f"{n:02d}" for n in lista_original)
             
-            pos_letra = r['posicao'][0] if r['posicao'] else ""
+            pos_letra = r['posicao'][0].upper() if r['posicao'] else ""
 
             novos_docs.append({
                 "id_posicao": i + 1,
@@ -986,7 +984,7 @@ def recalcular_ranking_top10():
         traceback.print_exc()
 
 
-def recalcular_ranking_top10_75():    # xyx
+def recalcular_ranking_top10_75():  
     """
     Calcula ranking para BINGO 75 (Lógica Rígida de Fluxo).
     """

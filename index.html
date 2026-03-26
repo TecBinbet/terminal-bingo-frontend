@@ -582,7 +582,10 @@
                             <span id="menu-status-fullscreen" class="text-xs font-bold text-gray-500">OFF</span>
                         </button>
                     </li>
-                    <li>
+ 
+                </ul>
+                <ul>
+                   <li>
                         <button id="btn-instalar-app" onclick="mostrarAjudaInstalacao()" class="w-full flex items-center justify-between                                         p-2 rounded-lg hover:bg-blue-900/30 hover:text-blue-400 transition-colors text-gray-200 border border-transparent hover:border-blue-500/50">
                             <div class="flex items-center gap-2">
                                 <span id="icon-instalar">📲</span>
@@ -590,8 +593,18 @@
                             </div>
                             <span class="text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded animate-pulse">NOVO</span>
                         </button>
+                    </li> 
+                    <li>
+                        <button onclick="window.forcarUpdateGeral()" 
+                            class="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-700/50 hover:text-yellow-400 transition-colors text-                   gray-200 border border-transparent hover:border-yellow-600/30">
+                            <div class="flex items-center gap-2">
+                                <span>🔄</span>
+                                <span class="font-bold text-sm">Sincronizar Sistema</span>
+                            </div>
+                            <span id="versao-menu" class="text-[10px] text-gray-500 italic">v--</span>
                     </li>
-                </ul>
+               </ul>
+
                 <ul>
                      <li onclick="fazerLogout()" class="cursor-pointer p-2 hover:bg-red-600 hover:text-white rounded-lg transition-colors flex items-center gap-3 mt-4 border-t border-gray-700/30">
                          <span class="text-xl">🚪</span> <span class="font-bold">Fazer Logout</span>
@@ -618,7 +631,7 @@
             <p id="aviso-mensagem" class="text-gray-900 text-sm font-black leading-snug mb-1 line-clamp-2">...</p>
             
             <div id="aviso-timer-container" class="hidden flex-row items-center justify-center gap-3 w-full bg-gray-900 rounded-lg p-0.5 border border-gray-700">
-                <span class="text-xs text-blue-400 uppercase tracking-widest font-bold">Início em:</span>
+                <span class="text-sm text-blue-300 uppercase tracking-widest font-bold">Início em:</span>
                 <span id="aviso-timer" class="text-2xl font-mono font-black text-green-400 drop-shadow-[0_0_5px_rgba(74,222,128,0.5)]">00:00</span>
             </div>
         </div>
@@ -661,7 +674,8 @@
         </div>
     </div>
 
-<div id="modal-comprar-cartelas" class="hidden fixed inset-0 z-50 flex items-start justify-center bg-black/10 backdrop-blur-sm p-4  pt-10">
+<div id="modal-comprar-cartelas" 
+     class="hidden fixed inset-0 z-[9999] flex items-start justify-center bg-black/60 backdrop-blur-md p-4 pt-10 pointer-events-auto">
     <div class="bg-gray-900 w-full max-w-lg rounded-2xl border border-gray-700 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         <div class="bg-gray-800 p-2 flex justify-between items-center border-b border-gray-700 shrink-0">
             <h3 class="text-xl font-bold text-green-400 flex items-center gap-2">
@@ -685,23 +699,31 @@
                 <span id="numeracao_atual_venda" class="text-yellow-400 font-bold text-lg">0</span>
             </div>
 
-            <div class="mb-4">
-                <label class="block text-gray-300 mb-0 text-sm font-bold uppercase tracking-wide">Quantas cartelas?</label>
-                
-                <div class="grid grid-cols-5 gap-2 mb-3">
-                    <button onclick="selecionarQtd(5)" class="btn-qtd p-3 rounded-lg border border-gray-600 hover:border-green-500 hover:bg-green-900/30 text-white font-bold transition-all">5</button>
-                    <button onclick="selecionarQtd(10)" class="btn-qtd p-3 rounded-lg border border-gray-600 hover:border-green-500 hover:bg-green-900/30 text-white font-bold transition-all">10</button>
-                    <button onclick="selecionarQtd(20)" class="btn-qtd p-3 rounded-lg border border-gray-600 hover:border-green-500 hover:bg-green-900/30 text-white font-bold transition-all">20</button>
-                    <button onclick="selecionarQtd(50)" class="btn-qtd p-3 rounded-lg border border-gray-600 hover:border-green-500 hover:bg-green-900/30 text-white font-bold transition-all">50</button>
-                    <button onclick="selecionarQtd(100)" class="btn-qtd p-3 rounded-lg border border-gray-600 hover:border-green-500 hover:bg-green-900/30 text-white font-bold transition-all">100</button>
+<div class="mb-4">
+    <div class="flex justify-between items-center mb-2">
+        <label class="block text-gray-300 text-sm font-bold uppercase tracking-wide">Quantas cartelas?</label>
+        <button onclick="limparQuantidade()" class="text-[10px] bg-red-900/40 text-red-400 border border-red-800 px-2 py-1 rounded hover:bg-red-800 hover:text-white transition-all uppercase font-bold">
+            Limpar ✕
+        </button>
+    </div>
+    
+    <div class="grid grid-cols-5 gap-2 mb-3">
+        <button onclick="somarQtd(5)" class="btn-qtd p-3 rounded-lg border border-gray-600 hover:border-green-500 hover:bg-green-900/30 text-white font-bold transition-all">+5</button>
+        <button onclick="somarQtd(10)" class="btn-qtd p-3 rounded-lg border border-gray-600 hover:border-green-500 hover:bg-green-900/30 text-white font-bold transition-all">+10</button>
+        <button onclick="somarQtd(20)" class="btn-qtd p-3 rounded-lg border border-gray-600 hover:border-green-500 hover:bg-green-900/30 text-white font-bold transition-all">+20</button>
+        <button onclick="somarQtd(50)" class="btn-qtd p-3 rounded-lg border border-gray-600 hover:border-green-500 hover:bg-green-900/30 text-white font-bold transition-all">+50</button>
+        <button onclick="somarQtd(100)" class="btn-qtd p-3 rounded-lg border border-gray-600 hover:border-green-500 hover:bg-green-900/30 text-white font-bold transition-all">+100</button>
+    </div>
 
-                </div>
-
-                <div class="flex items-center gap-3">
-                    <input type="number" id="qtd-manual" class="w-20 bg-gray-950 border border-gray-700 rounded-lg p-2 text-center text-white text-xl font-bold focus:border-green-500 outline-none" placeholder="Qtd" min="1" oninput="calcularTotalCompra()">
-                    <div class="text-sm text-green-500"> << ou digite a quantidade</div>
-                </div>
-            </div>
+    <div class="flex items-center gap-3">
+        <input type="number" id="qtd-manual" 
+               class="w-24 bg-gray-950 border border-gray-700 rounded-lg p-2 text-center text-white text-xl font-bold focus:border-green-500 outline-none" 
+               placeholder="Total" min="1" oninput="calcularTotalCompra()">
+        <div class="text-[11px] leading-tight text-green-500"> 
+            Digite ou use os<br>botões para somar
+        </div>
+    </div>
+</div>
 
             <div class="bg-gray-800 p-2 rounded-xl border border-gray-700">
                 <div class="flex justify-between items-center mb-1 -mt-1.5">
@@ -709,9 +731,14 @@
                     <span id="total-compra-display" class="text-2xl font-bold text-white">R$ 0,00</span>
                 </div>
                 
-                <button onclick="confirmarCompra()" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl shadow-lg text-lg transition-transform active:scale-95 flex items-center justify-center gap-2">
-                    <span>✅</span> CONFIRMAR COMPRA
-                </button>
+<button id="btn-confirmar-compra" 
+        type="button" 
+        onclick="confirmarCompra()" 
+        class="mt-3 w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl shadow-lg text-lg transition-transform active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale">
+    <span>✅</span>
+    <span id="texto-botao-confirmar">Finalizar Compra</span>
+</button>
+
             </div>
 
         </div>
@@ -853,7 +880,7 @@
 
             <div>
                 <label class="block text-gray-400 text-sm mb-1">Sua Chave Pix</label>
-                <input type="text" id="cad-pix" class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-green-500 outline-none" placeholder="CPF, Email, Telefone ou Aleatória">
+                <input type="text" id="cad-pix" class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-green-500 outline-none" placeholder="Digite a chave pix">
             </div>
 
             <div>

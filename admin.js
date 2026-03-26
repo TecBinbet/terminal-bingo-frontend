@@ -431,7 +431,7 @@ function renderGridConferencia(data) {
     }
 
     // Identifica o tipo de jogo
-    let tipoJogo = data.layout.tipo;   // ttt
+    let tipoJogo = data.layout.tipo;   
     if (!tipoJogo) {
        if (data.layout.superior || data.layout.central || data.layout.inferior) {
             tipoJogo = 90;
@@ -447,6 +447,7 @@ function renderGridConferencia(data) {
     let numerosDaCartela = [];
     if (tipoJogo === 75) {
         numerosDaCartela = data.layout?.lista || [];
+
     } else {
         numerosDaCartela = (data.layout?.superior || [])
                             .concat(data.layout?.central || [])
@@ -494,7 +495,7 @@ function renderGridConferencia(data) {
                 
                 // Índice Transposto (Mantido seu padrão)
                 const index = (coluna * 5) + linha; 
-                const num = numerosDaCartela[index]; // AQUI TEM CERTEZA QUE EXISTE
+                const num = numerosDaCartela[index]; 
 
                 const cell = document.createElement('div');
                 const isFree = false; //(index === 12); 
@@ -866,7 +867,7 @@ function processarMensagemWS(event) {
                 const dados = payload.buscandoMesaData[0];
                 let premio = dados?.buscando_o_premio || '...';
                 if (MAX_BOLAS === 75 && premio === 'QUADRA') premio = '4 CANTOS';
-                
+              
                 const elTitulo = document.getElementById('premio-atual'); 
                 if (elTitulo) elTitulo.textContent = premio;
             }
@@ -963,7 +964,7 @@ function verificarVitoriaPeloRanking(listaMelhores) {
                 setTimeout(() => {
                     processandoVitoria = false; 
                     gerenciarVitoriaRobo(ganhadoresEncontrados);
-                }, 4000);   // aqui esta o tempo
+                }, 5000);   // aqui esta o tempo
             }
         } 
         jaAlertouNestaBola = true;
@@ -1854,7 +1855,7 @@ async function executarCarregamentoReal(idEvento) {
         id_rodada_ativa = parseInt(idEvento);
         console.error("🎱 Evento Configurado: id_rodada_ativa:  ",id_rodada_ativa );
 
-        const tipoCartela = parseInt(dados.tipo_sorteio || 25);
+        const tipoCartela = parseInt(dados.tipo_cartela || 25);
         if (tipoCartela === 25) {
             MAX_BOLAS = 75;
             console.log("🎱 Evento Configurado: BINGO 75");
@@ -2137,17 +2138,31 @@ function renderRanking90(lista, tipo) {
     lista.slice(0, 15).forEach((item, i) => {
         const status = (item.premio && item.premio !== "null") ? item.premio : "";
         const nums = item.numeros_faltantes || [];
-        
+        const posicaoValida = (item.posicao && item.posicao !== "");
+     
         let htmlNums = nums.map(n => n<10?`0${n}`:n).join(' ');
 
-        if (["LINHA"].includes(status) && item.posicao) {
-            htmlNums = `<span class=" text-center text-[9px] bg-yellow-900/60 text-yellow-300 px-1.5 rounded border border-yellow-700 mr-1.5">${item.posicao}</span>` + htmlNums;
+    //    if (["LINHA"].includes(status) && item.posicao) {
+   //         htmlNums = `<span class=" text-center text-[9px] bg-yellow-900/60 text-yellow-300 px-1.5 rounded border border-yellow-700 mr-1.5">${item.posicao}</span>` + htmlNums;
+   //     }
+
+   //     if (["BINGO","DUPLO BINGO"].includes(status)) {
+   //         htmlNums = `<span class="text-green-400 font-black animate-pulse">${status}</span>`;
+   //     } else if (status === "LINHA") {
+   //         htmlNums = `<span class="text-center  text-yellow-400 font-bold animate-pulse">${status} <span class="text-xs">(${item.posicao || ''})</span></span>`;
+   //     }
+
+        if (posicaoValida && !["BINGO", "DUPLO BINGO"].includes(status)) {
+            htmlNums = `<span class="inline-block text-center text-[10px] bg-blue-700 text-white font-bold w-5 h-5 leading-4 rounded-full mr-1 shadow-sm">${item.posicao}</span>` + htmlNums;
         }
 
-        if (["BINGO","DUPLO BINGO"].includes(status)) {
+        if (["BINGO", "DUPLO BINGO"].includes(status)) {
             htmlNums = `<span class="text-green-400 font-black animate-pulse">${status}</span>`;
         } else if (status === "LINHA") {
-            htmlNums = `<span class="text-center  text-yellow-400 font-bold animate-pulse">${status} <span class="text-xs">(${item.posicao || ''})</span></span>`;
+            // Mostra "LINHA" piscando e a letra da posição ao lado
+            htmlNums = `<span class="text-yellow-400 font-bold animate-pulse">LINHA <span class="text-[10px] bg-yellow-400 text-black px-1 rounded-sm">${item.posicao || ''}</span></span>`;
+        } else if (status === "QUADRA") {
+            htmlNums = `<span class="text-red-400 font-bold animate-pulse">QUADRA <span class="text-[10px] bg-red-400 text-black px-1 rounded-sm">${item.posicao || ''}</span></span>`;
         }
         
         const row = document.createElement('div');
@@ -2300,6 +2315,8 @@ async function validarCartelaAuditoria() {
             urlEndpoint = `${API_BASE_URL}/api/admin/validar_cartela_75`;
         }
         
+        console.warn(`[DEB] ⚠️ API ${urlEndpoint}`);
+
         const response = await fetch(urlEndpoint, {
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' }, 
@@ -2420,41 +2437,55 @@ async function encerrarSessaoConferencia(modoSilencioso = false) {
 async function processarProximoPremio() {
     console.log("[DEBUG] 🔄 Iniciando processamento do próximo prêmio...");
     
+    // 1. BUSCA DADOS ATUALIZADOS DA MESA (Necessário para saber se ainda há linhas pendentes)
+    let infoMesa = null;
+    try {
+        const resp = await fetch(`${API_BASE_URL}/api/initial-data`);
+        const dados = await resp.json();
+        infoMesa = dados.buscandoMesaData[0]; 
+    } catch (e) { 
+        console.error("Erro ao buscar dados da mesa:", e);
+        return; 
+    }
+
+    if (!infoMesa) return;
+
+    // --- REGRA DE OURO REINSERIDA ---
+    // Se o prêmio atual é LINHA e ainda existem linhas na fila (ex: ['CEN', 'INF']), PARA TUDO.
+    // O sistema não deve avançar o prêmio global enquanto as sub-linhas não acabarem.
+    if (infoMesa.buscando_o_premio === 'LINHA' && infoMesa.buscando_a_linha && infoMesa.buscando_a_linha.length > 0) {
+        console.log("[DEBUG] ⏳ Ainda existem linhas pendentes na fila. Aguardando próximas conferências...");
+        return; 
+    }
+    // --------------------------------
+
     const elStatus = document.getElementById('status-premio');
     if (!elStatus) return;
 
     let premioAtualNaTela = elStatus.textContent.toUpperCase();
     let proximoKey = null;
 
-    // 1. Caso Especial: Saída de Busca Simultânea (25 números)
+    // 2. Caso Especial: Saída de Busca Simultânea (4 Cantos + Linha)
     if (premioAtualNaTela.includes("4 CANTOS") && premioAtualNaTela.includes("LINHA")) {
-        console.log("[DEBUG] 🎯 Saída de busca simultânea detectada.");
-        
-        // Verificamos se a LINHA ainda tem saldo para ser ganha
-        const valorLinha = parseFloat(dadosEventoAtual.premios['linha'] || 0);
-        
+        const valorLinha = parseFloat(dadosEventoAtual?.premios?.['linha'] || 0);
         if (valorLinha > 0) {
             proximoKey = "LINHA";
-            console.log("[DEBUG] ➡️ Mantendo foco na LINHA antes de avançar.");
         } else {
-            // Se por algum motivo a linha não tiver valor, busca o próximo na ordem
             proximoKey = "BINGO"; 
         }
     } else {
-        // 2. Lógica de Queda Normal (Loop sequencial)
+        // 3. Lógica de Queda Normal (Loop sequencial)
         const ordem = ['4 CANTOS', 'LINHA', 'FALTAUM', 'BINGO', 'DUPLO BINGO'];
         
-        // Padronização da chave atual para busca no array
-        let chaveBusca = premioAtualNaTela;
-        if (chaveBusca.includes("QUADRA")) chaveBusca = "4 CANTOS";
-        if (chaveBusca.includes("FALTA 1")) chaveBusca = "FALTAUM";
+        let chaveBusca = infoMesa.buscando_o_premio; // Usamos o dado real do banco
+        if (chaveBusca === 'FALTA 1') chaveBusca = 'FALTAUM';
+        if (chaveBusca === '3 LINHAS' || chaveBusca === '2 LINHAS') chaveBusca = 'LINHA';
 
         const indexAtual = ordem.indexOf(chaveBusca);
 
         if (indexAtual !== -1) {
             let dadosPremios = dadosEventoAtual ? dadosEventoAtual.premios : null;
             
-            // Percorre a lista para achar o próximo prêmio com valor > 0
             for (let i = indexAtual + 1; i < ordem.length; i++) {
                 const keyTeste = ordem[i];
                 let keyDados = keyTeste.toLowerCase().replace(' ', '_');
@@ -2470,23 +2501,19 @@ async function processarProximoPremio() {
         }
     }
 
-    // 3. Executa a mudança se o próximo prêmio for diferente do atual
-    if (proximoKey && proximoKey !== premioAtualNaTela) {
+    // 4. Executa a mudança
+    if (proximoKey) {
         console.log(`[DEBUG] ✅ Avançando prêmio para: ${proximoKey}`);
         
-        // No modo robô, fazemos o alerta ser rápido para não travar a automação
         const tempoAlert = modoRoboAtivo ? 1 : 3; 
         
         await customAlert(
-            `Prêmio conferido!\n\nPróximo alvo: ${proximoKey}`, 
+            `Todas as conferências deste nível concluídas!\n\nPróximo alvo: ${proximoKey}`, 
             "Sequência de Sorteio", 
             tempoAlert
         );            
         
         await mudarPremio(proximoKey);
-    } else if (!proximoKey && !premioAtualNaTela.includes("BINGO")) {
-        // Se não achou próximo e não é bingo, pode ser o fim da linha
-        console.log("[DEBUG] 🏁 Nenhum próximo prêmio encontrado.");
     }
 }
 
