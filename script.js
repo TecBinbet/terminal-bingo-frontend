@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.5";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.1";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -5650,7 +5650,6 @@ function calcularTotalCompra() {
     // console.log(`🧮 Cálculo: ${qtd} x ${globalPrecoCartela} = ${total} (Saldo: ${globalUserSaldo})`);
 }
 
-// CONFIRMAR COMPRA (COM RECARREGAMENTO FORÇADO)
 // CONFIRMAR COMPRA (COM RECARREGAMENTO FORÇADO E SPINNER NO BOTÃO)
 async function confirmarCompra() {
     // 1. Captura a quantidade e limpa o valor
@@ -5673,12 +5672,16 @@ async function confirmarCompra() {
     const txtConfirmar = document.getElementById('texto-botao-confirmar');
     const originalHTML = txtConfirmar ? txtConfirmar.innerHTML : "Finalizar Compra";
 
+    // Desabilita para evitar clique duplo (O segredo contra o erro 500)
     if (btnConfirmar) {
-        btnConfirmar.disabled = true; // Impede cliques duplos imediatamente
-        btnConfirmar.style.opacity = "0.7";
+        btnConfirmar.disabled = true;
+        btnConfirmar.classList.add('opacity-70', 'cursor-wait');
+        const botoesQtd = document.querySelectorAll('.btn-qtd'); 
+        botoesQtd.forEach(b => { b.disabled = true; b.style.opacity = "0.5"; });
     }
+    // Ativa o Spinner
     if (txtConfirmar) {
-        txtConfirmar.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Processando...`;
+        txtConfirmar.innerHTML = `<i class="fas fa-circle-notch fa-spin mr-2"></i> Processando...`;
     }
 
     try {
@@ -5803,14 +5806,21 @@ async function confirmarCompra() {
     } finally {
         if (typeof hideFullLoading === 'function') hideFullLoading();
         
-        // --- RESTAURAÇÃO DO BOTÃO AO ESTADO ORIGINAL ---
+        // --- RESTAURAÇÃO COMPLETA DA INTERFACE ---
         if (btnConfirmar) {
             btnConfirmar.disabled = false;
-            btnConfirmar.style.opacity = "1";
+            btnConfirmar.classList.remove('opacity-70', 'cursor-wait');
+            btnConfirmar.style.opacity = "1"; // Garante que a opacidade volte ao brilho total
         }
-        if (txtConfirmar) {
-            txtConfirmar.innerHTML = originalHTML;
-        }
+
+        // Restaura todos os botões de incremento (+5, +10...)
+        const botoesQtd = document.querySelectorAll('.btn-qtd');
+        botoesQtd.forEach(b => { 
+            b.disabled = false; 
+            b.style.opacity = "1"; 
+        });
+
+        if (txtConfirmar) txtConfirmar.innerHTML = originalHTML;
     }
 }
 
