@@ -3,7 +3,7 @@
 // ======================================================
 
 
-const VERSAO_ATUAL = "1.3";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.4";   // Mude isso sempre que atualizar o JS
 
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
@@ -1053,7 +1053,7 @@ function renderizarListaMinhasCartelas(dados) {
     // Atualiza a memória global com O QUE TIVER DE MAIS ATUAL
     globalMinhasCartelas = { cartelas: listaBingo, cupons_extra: listaExtra };
 
-    console.log(`📊 Resumo Visual: ${listaBingo.length} Cartelas | ${listaExtra.length} Cupons Extra`);
+    //console.log(`📊 Resumo Visual: ${listaBingo.length} Cartelas | ${listaExtra.length} Cupons Extra`);
 
     // ============================================================
     // RENDERIZAÇÃO
@@ -2278,10 +2278,10 @@ function displayLoadedCards(bolasCantadas) {
         const painelAtual = document.getElementById('mobile-panels-container');
         const estaOculto = painelAtual && painelAtual.classList.contains('hidden');
         
-        if (estaOculto) {
+        //if (estaOculto) {
             console.log("🎯 Primeira bola detectada! Mudando painel para NUMÉRICO.");
             alternarPainelMobile('numerico');
-        }
+        //}
         ocultarBotoesSorteExtra()
         window.primeiraBolaDetectada = true;
     }
@@ -3996,18 +3996,12 @@ async function renderMainContent(data) {
         return; // Sai da função silenciosamente e poupa 100% do processamento!
     }
     
-    console.error("[RIVx] qtdBolasAtuais  ==================",qtdBolasAtuais);
-    console.error("[RIVx] window.primeiraBolaDetectada ======",window.primeiraBolaDetectada);
 
     if (qtdBolasAtuais > 0 && !window.primeiraBolaDetectada) {
         // Verifica se o painel ainda está oculto antes de mudar xxx
-
-    console.error("[RIV-x2] qtdBolasAtuais  ==================",qtdBolasAtuais);
-    console.error("[RIV-x2] window.primeiraBolaDetectada ======",window.primeiraBolaDetectada);
-
         const painelAtual = document.getElementById('mobile-panels-container');
         const estaOculto = painelAtual && painelAtual.classList.contains('hidden');
-        
+       
         if (estaOculto) {
             console.log("🎯 Primeira bola detectada! Mudando painel para NUMÉRICO.");
             alternarPainelMobile('numerico');
@@ -4058,14 +4052,14 @@ async function renderMainContent(data) {
         const saldoEl = document.getElementById('mobile-user-balance');
 
         if (parametrosInfo && parametrosInfo.em_treinamento) {
-            console.error("🛠️ Ativa Modo Treino");
+            //console.error("🛠️ Ativa Modo Treino");
             if (badge) badge.classList.remove('hidden');
             if (saldoEl) {
                 saldoEl.classList.add('text-yellow-500');
                 saldoEl.classList.remove('text-green-400'); // Garante que a cor real saia
             }
         } else {
-            console.error("🚀 Volta para Modo Real");
+            // console.error("🚀 Volta para Modo Real");
             // 🚀 Volta para Modo Real
             if (badge) badge.classList.add('hidden');
             if (saldoEl) {
@@ -5655,7 +5649,7 @@ function calcularTotalCompra() {
     }
 
     // Log para debug (ajuda muito no iPhone)
-    console.log(`🧮 Cálculo: ${qtd} x ${globalPrecoCartela} = ${total} (Saldo: ${globalUserSaldo})`);
+    // console.log(`🧮 Cálculo: ${qtd} x ${globalPrecoCartela} = ${total} (Saldo: ${globalUserSaldo})`);
 }
 
 // CONFIRMAR COMPRA (COM RECARREGAMENTO FORÇADO)
@@ -7017,7 +7011,7 @@ async function buscarImagemDoPremio(idEvento) {
         const baseUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
         const urlParaBuscar = `${baseUrl}/api/verificar_status_evento?id_evento=${idEvento}`;
 
-        console.log(`🚀 [DEBUG] URL Gerada: ${urlParaBuscar}`);
+        //xx console.log(`🚀 [DEBUG] URL Gerada: ${urlParaBuscar}`);
        
         const response = await fetch(urlParaBuscar);
         
@@ -7281,7 +7275,7 @@ function mostrarBotoesSorteExtra() {
 }
 
 function abrirTelaSorteExtra() {
-    console.log("👆 Abrindo tela do Sorte Extra...");
+    // console.log("👆 Abrindo tela do Sorte Extra...");
     const modal = document.getElementById('modal-sorte-extra');
     if (typeof telaFull !== 'undefined' && !telaFull && typeof goFullscreen === 'function') goFullscreen();
     
