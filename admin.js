@@ -1925,6 +1925,61 @@ async function executarCarregamentoReal(idEvento) {
 async function definirProximoPremioAutomatico() {
     if (!dadosEventoAtual || !dadosEventoAtual.premios) return;
 
+    // 1. REGRA DE OURO: O JS só decide o prêmio ANTES da primeira bola!
+    // Se o jogo já começou, o Python é quem gerencia se é 4 Cantos, Linha ou Bingo.
+    if (bolasSorteadasCache.length > 0) {
+        console.log("⏳ [AUTO-PREMIO] Sorteio já em andamento. O Python está no controle do prêmio.");
+        return; 
+    }
+
+    let premioAlvo = '';
+
+    // 2. Lemos direto dos dados seguros em memória (Ignoramos o HTML)
+    const temQuadra = parseFloat(dadosEventoAtual.premios['quadra'] || 0) > 0;
+    const temLinha = parseFloat(dadosEventoAtual.premios['linha'] || 0) > 0;
+    const temFaltaUm = parseFloat(dadosEventoAtual.premios['falta_um'] || 0) > 0;
+    const temBingo = parseFloat(dadosEventoAtual.premios['bingo'] || 0) > 0;
+    const temSegundoBingo = parseFloat(dadosEventoAtual.premios['segundo_bingo'] || 0) > 0;
+
+    // --- LÓGICA DE DECISÃO INICIAL ---
+    
+    if (typeof MAX_BOLAS !== 'undefined' && MAX_BOLAS === 75) {
+        // Lógica de Arranque para 75 Bolas
+        if (temQuadra && temLinha) {
+            premioAlvo = '4 CANTOS E LINHA';
+        } else if (temQuadra) {
+            premioAlvo = '4 CANTOS';
+        } else if (temLinha) {
+            premioAlvo = 'LINHA';
+        } else {
+            premioAlvo = 'BINGO';
+        }
+    } else {
+        // Lógica de Arranque para 90 Bolas (Ordem estrita de queda)
+        if (temQuadra) {
+            premioAlvo = 'QUADRA';
+        } else if (temLinha) {
+            premioAlvo = 'LINHA';
+        } else if (temFaltaUm) {
+            premioAlvo = 'FALTA UM';
+        } else if (temBingo) {
+            premioAlvo = 'BINGO';
+        } else if (temSegundoBingo) {
+            premioAlvo = 'DUPLO BINGO';
+        }
+    }
+
+    // 3. Dispara a atualização para o Banco de Dados (que avisará Mesa e Terminais)
+    if (premioAlvo) {
+        console.log(`🎯 [AUTO-PREMIO] Status INICIAL confirmado: ${premioAlvo}`);
+        await mudarPremio(premioAlvo);
+    }
+}
+
+
+async function definirProximoPremioAutomatico2() {
+    if (!dadosEventoAtual || !dadosEventoAtual.premios) return;
+
     // 1. Identifica o nome do primeiro prêmio na interface (Mesa)
     // Buscamos o label que você definiu na carregarEvento/executarCarregamentoReal
     const labelQuadraElement = document.querySelector('#container-premios-lista span');
@@ -1938,8 +1993,8 @@ async function definirProximoPremioAutomatico() {
     // --- LÓGICA DE DECISÃO ---
     
     // Se o primeiro prêmio diz "4 CANTOS" e o jogo não começou, 
-    // assumimos a busca simultânea de 25 números.
-    if (textoPrimeiroPremio.includes("4 CANTOS") && sorteioNaoIniciado) {
+    // assumimos a busca simultânea de 25 números. mmm
+    if (textoPrimeiroPremio.includes("4 CANTOS") && sorteioNaoIniciado && MAX_BOLAS === 75) {
         
         // Verificamos se a LINHA também tem valor configurado
         const temLinha = parseFloat(dadosEventoAtual.premios['linha'] || 0) > 0;
@@ -2437,7 +2492,7 @@ async function encerrarSessaoConferencia(modoSilencioso = false) {
 async function processarProximoPremio() {
     console.log("[DEBUG] 🔄 Iniciando processamento do próximo prêmio...");
     
-    // 1. BUSCA DADOS ATUALIZADOS DA MESA (Necessário para saber se ainda há linhas pendentes)
+    // 1. BUSCA DADOS ATUALIZADOS DA MESA
     let infoMesa = null;
     try {
         const resp = await fetch(`${API_BASE_URL}/api/initial-data`);
@@ -2451,13 +2506,10 @@ async function processarProximoPremio() {
     if (!infoMesa) return;
 
     // --- REGRA DE OURO REINSERIDA ---
-    // Se o prêmio atual é LINHA e ainda existem linhas na fila (ex: ['CEN', 'INF']), PARA TUDO.
-    // O sistema não deve avançar o prêmio global enquanto as sub-linhas não acabarem.
     if (infoMesa.buscando_o_premio === 'LINHA' && infoMesa.buscando_a_linha && infoMesa.buscando_a_linha.length > 0) {
         console.log("[DEBUG] ⏳ Ainda existem linhas pendentes na fila. Aguardando próximas conferências...");
         return; 
     }
-    // --------------------------------
 
     const elStatus = document.getElementById('status-premio');
     if (!elStatus) return;
@@ -2465,7 +2517,11 @@ async function processarProximoPremio() {
     let premioAtualNaTela = elStatus.textContent.toUpperCase();
     let proximoKey = null;
 
-    // 2. Caso Especial: Saída de Busca Simultânea (4 Cantos + Linha)
+    // --- O SEU AJUSTE INTELIGENTE AQUI ---
+    // Define o nome correto do primeiro prêmio baseado no tipo de bingo
+    const nomePrimeiroPremio = (typeof MAX_BOLAS !== 'undefined' && MAX_BOLAS === 75) ? '4 CANTOS' : 'QUADRA';
+
+    // 2. Caso Especial: Saída de Busca Simultânea (Apenas em 75 bolas)
     if (premioAtualNaTela.includes("4 CANTOS") && premioAtualNaTela.includes("LINHA")) {
         const valorLinha = parseFloat(dadosEventoAtual?.premios?.['linha'] || 0);
         if (valorLinha > 0) {
@@ -2474,10 +2530,11 @@ async function processarProximoPremio() {
             proximoKey = "BINGO"; 
         }
     } else {
-        // 3. Lógica de Queda Normal (Loop sequencial)
-        const ordem = ['4 CANTOS', 'LINHA', 'FALTAUM', 'BINGO', 'DUPLO BINGO'];
+        // 3. Lógica de Queda Normal (Loop sequencial Dinâmico)
+        // Injeta a variável nomePrimeiroPremio na primeira posição
+        const ordem = [nomePrimeiroPremio, 'LINHA', 'FALTAUM', 'BINGO', 'DUPLO BINGO'];
         
-        let chaveBusca = infoMesa.buscando_o_premio; // Usamos o dado real do banco
+        let chaveBusca = infoMesa.buscando_o_premio; // Dado real do banco
         if (chaveBusca === 'FALTA 1') chaveBusca = 'FALTAUM';
         if (chaveBusca === '3 LINHAS' || chaveBusca === '2 LINHAS') chaveBusca = 'LINHA';
 
@@ -2489,7 +2546,9 @@ async function processarProximoPremio() {
             for (let i = indexAtual + 1; i < ordem.length; i++) {
                 const keyTeste = ordem[i];
                 let keyDados = keyTeste.toLowerCase().replace(' ', '_');
-                if (keyTeste === '4 CANTOS') keyDados = 'quadra';
+                
+                // Mapeamentos para ler do objeto de configuração do banco de dados (que usa minúsculas)
+                if (keyTeste === '4 CANTOS' || keyTeste === 'QUADRA') keyDados = 'quadra';
                 if (keyTeste === 'FALTAUM') keyDados = 'falta_um';
                 if (keyTeste === 'DUPLO BINGO') keyDados = 'segundo_bingo';
 
@@ -2503,16 +2562,47 @@ async function processarProximoPremio() {
 
     // 4. Executa a mudança
     if (proximoKey) {
-        console.log(`[DEBUG] ✅ Avançando prêmio para: ${proximoKey}`);
         
+        // --- 🌟 O TOQUE DE OURO: Formatação Visual Dinâmica ---
+        let textoExibicao = proximoKey;
+        
+        // Se for 90 bolas e o alvo for Quadra ou Linha, vamos descobrir quais linhas restam
+        if (typeof MAX_BOLAS !== 'undefined' && MAX_BOLAS === 90) {
+            if (proximoKey === 'LINHA') {
+                
+                let linhasArray = infoMesa.buscando_a_linha;
+                let linhasTexto = "SUP, CEN e INF"; // Valor padrão caso venha vazio
+                
+                // Formata o Array para texto humano (ex: "SUP e INF" ou apenas "CEN")
+                if (Array.isArray(linhasArray) && linhasArray.length > 0) {
+                    const tags = linhasArray.map(l => l.toUpperCase());
+                    
+                    if (tags.length === 1) {
+                        linhasTexto = tags[0]; // Ex: "CEN"
+                    } else if (tags.length === 2) {
+                        linhasTexto = tags.join(' e '); // Ex: "SUP e INF"
+                    } else {
+                        // Ex: Junta os primeiros com vírgula e o último com "e" -> "SUP, CEN e INF"
+                        linhasTexto = tags.slice(0, -1).join(', ') + ' e ' + tags[tags.length - 1];
+                    }
+                } else if (typeof linhasArray === 'string' && linhasArray.trim() !== '') {
+                    // Fallback de segurança caso o backend envie como string direta
+                    linhasTexto = linhasArray.toUpperCase();
+                }
+                
+                textoExibicao = `${proximoKey} (${linhasTexto})`;
+            }
+        }
+
+        console.log(`[DEBUG] ✅ Avançando prêmio para: ${textoExibicao}`);        
         const tempoAlert = modoRoboAtivo ? 1 : 3; 
         
         await customAlert(
-            `Todas as conferências deste nível concluídas!\n\nPróximo alvo: ${proximoKey}`, 
+            `Todas as conferências deste nível concluídas!\n\nPróximo alvo: ${textoExibicao}`, 
             "Sequência de Sorteio", 
             tempoAlert
-        );            
-        
+        );                 
+        // Mantemos proximoKey limpo (ex: "LINHA") para o Python processar sem erros
         await mudarPremio(proximoKey);
     }
 }
@@ -2586,11 +2676,27 @@ async function mudarPremio(tipo) {
     const elTitulo = document.getElementById('premio-atual'); 
 
     // 1. Limpeza e Padronização do Nome do Prêmio
-    // Remove "Buscando:", "(Mesa)", troca "Quadra" por "4 Cantos" e limpa espaços
     let tipoLimpo = tipo.replace(/Buscando:\s*/i, "")
                         .replace(/\(Mesa\)/i, "")
-                        .replace(/Quadra/i, "4 Cantos")
                         .trim();
+
+    // Substitui Quadra por 4 Cantos APENAS se for bingo de 75 bolas
+    if (typeof MAX_BOLAS !== 'undefined' && MAX_BOLAS === 75) {
+        tipoLimpo = tipoLimpo.replace(/Quadra/i, "4 Cantos");
+    }
+
+   // Se for 90 bolas e o prêmio for LINHA, descobre quais linhas estão ativas
+   if (typeof MAX_BOLAS !== 'undefined' && MAX_BOLAS === 90 && tipoLimpo === 'LINHA') {
+        try {
+            const resp = await fetch(`${API_BASE_URL}/api/initial-data`);
+            const dados = await resp.json();
+            const info = dados.buscandoMesaData[0];
+            
+            if (info && info.buscando_a_linha) {
+                textoParaTela = `${tipoLimpo} (${info.buscando_a_linha})`; // Ex: LINHA (SUP e INF)
+            }
+        } catch(e) { console.error(e); }
+    }
 
     // 2. Atualização visual na Mesa Controladora (Sem os prefixos)
     if (elStatus) elStatus.textContent = tipoLimpo;
@@ -4020,11 +4126,11 @@ function exibirPainelTransicaoRobo(dadosEvento) {
             // 👉 O GATILHO MESTRE: Arranca o próximo jogo!  xxxx
             if (typeof executarCarregamentoReal === 'function') {
                 executarCarregamentoReal(dadosEvento.id_evento);
-                const TotalEspera = tempoBaseRespiro + segundosBolaExtra;
+                //const TotalEspera = tempoBaseRespiro + segundosBolaExtra;
                 // Dá um tempinho para a tela desenhar as cartelas e solta o robô!
                 setTimeout(() => {
                     if (modoRoboAtivo) toggleAutoSorteio(true);
-                }, 3000);  // TotalEspera
+                }, 3000);                                                       // TotalEspera
             }
         } else {
             atualizarTela();
