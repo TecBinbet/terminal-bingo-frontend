@@ -926,7 +926,7 @@ function verificarVitoriaPeloRanking(listaMelhores) {
         termosVitoria = ['BINGO', 'LINHA', 'QUADRA', '4 CANTOS', '4 CANTOS E LINHA'];
     } else {
         paradasObrigatorias = ['QUADRA', 'LINHA', 'FALTA UM', 'BINGO', 'DUPLO BINGO'];
-        termosVitoria = ['BINGO', 'LINHA', 'QUADRA', 'FALTA 1', 'FALTA UM', 'DUPLO BINGO'];
+        termosVitoria = ['BINGO', 'LINHA', 'QUADRA', 'FALTA 1','FALTAUM', 'FALTA UM', 'DUPLO BINGO'];
     }
 
     // 2. Filtramos os ganhadores reais vindos do servidor
@@ -2186,7 +2186,17 @@ function renderRanking90(lista, tipo) {
     c.innerHTML = '';
     
     if (!lista || lista.length === 0) { 
-        c.innerHTML = '<div class="text-gray-600 text-center text-xs py-2">Calculando...</div>'; 
+        c.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-10 space-y-3">
+                <svg class="animate-spin h-10 w-10 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span class="text-blue-400 text-sm font-bold animate-pulse tracking-widest uppercase">
+                    Calculando Ranking...
+                </span>
+            </div>
+        `; 
         return; 
     }
     
@@ -2196,28 +2206,18 @@ function renderRanking90(lista, tipo) {
         const posicaoValida = (item.posicao && item.posicao !== "");
      
         let htmlNums = nums.map(n => n<10?`0${n}`:n).join(' ');
-
-    //    if (["LINHA"].includes(status) && item.posicao) {
-   //         htmlNums = `<span class=" text-center text-[9px] bg-yellow-900/60 text-yellow-300 px-1.5 rounded border border-yellow-700 mr-1.5">${item.posicao}</span>` + htmlNums;
-   //     }
-
-   //     if (["BINGO","DUPLO BINGO"].includes(status)) {
-   //         htmlNums = `<span class="text-green-400 font-black animate-pulse">${status}</span>`;
-   //     } else if (status === "LINHA") {
-   //         htmlNums = `<span class="text-center  text-yellow-400 font-bold animate-pulse">${status} <span class="text-xs">(${item.posicao || ''})</span></span>`;
-   //     }
-
+                                                                                             // text-[13px]     
         if (posicaoValida && !["BINGO", "DUPLO BINGO"].includes(status)) {
-            htmlNums = `<span class="inline-block text-center text-[10px] bg-blue-700 text-white font-bold w-5 h-5 leading-4 rounded-full mr-1 shadow-sm">${item.posicao}</span>` + htmlNums;
+            htmlNums = `<span class="inline-block text-center text-[13px] bg-blue-700 text-white font-bold w-5 h-5 leading-4 rounded-full mr-1 shadow-sm">${item.posicao}</span>` + htmlNums;
         }
 
         if (["BINGO", "DUPLO BINGO"].includes(status)) {
             htmlNums = `<span class="text-green-400 font-black animate-pulse">${status}</span>`;
         } else if (status === "LINHA") {
-            // Mostra "LINHA" piscando e a letra da posição ao lado
-            htmlNums = `<span class="text-yellow-400 font-bold animate-pulse">LINHA <span class="text-[10px] bg-yellow-400 text-black px-1 rounded-sm">${item.posicao || ''}</span></span>`;
+            // Mostra "LINHA" piscando e a letra da posição ao lado                                                  
+            htmlNums = `<span class="text-yellow-400 font-bold animate-pulse">LINHA <span class="text-[12px] bg-yellow-400 text-black px-1 rounded-sm">${item.posicao || ''}</span></span>`;
         } else if (status === "QUADRA") {
-            htmlNums = `<span class="text-red-400 font-bold animate-pulse">QUADRA <span class="text-[10px] bg-red-400 text-black px-1 rounded-sm">${item.posicao || ''}</span></span>`;
+            htmlNums = `<span class="text-red-400 font-bold animate-pulse">QUADRA <span class="text-[12px] bg-red-400 text-black px-1 rounded-sm">${item.posicao || ''}</span></span>`;
         }
         
         const row = document.createElement('div');
@@ -2246,7 +2246,17 @@ function renderRanking75(lista, tipo) {
     c.innerHTML = '';
 
     if (!lista || lista.length === 0) { 
-        c.innerHTML = '<div class="text-gray-600 text-center text-xs py-2">Calculando Padrões...</div>'; 
+        c.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-10 space-y-3">
+                <svg class="animate-spin h-10 w-10 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span class="text-blue-400 text-sm font-bold animate-pulse tracking-widest uppercase">
+                    Calculando Ranking...
+                </span>
+            </div>
+        `; 
         return; 
     }
     
@@ -2412,6 +2422,14 @@ async function validarCartelaAuditoria() {
                 if (!modoRoboAtivo && btnConfirmar) {
                     btnConfirmar.classList.remove('hidden'); 
                     btnConfirmar.onclick = () => confirmarGanhadorAtual(); 
+                    // --- 🔒 TRAVA O BOTÃO DE ENCERRAR ---
+                    const btnEncerrar = document.getElementById('btn-encerrar-auditoria'); // <--- Coloque o ID correto aqui
+                    if (btnEncerrar) {
+                        btnEncerrar.disabled = true;
+                        btnEncerrar.style.opacity = '0.5'; // Deixa visualmente apagado
+                        btnEncerrar.style.cursor = 'not-allowed';
+                    }
+                    // ------------------------------------
                     setTimeout(() => btnConfirmar.focus(), 100);
                 }
             } else {
@@ -2467,6 +2485,12 @@ async function confirmarGanhadorAtual() {
     try { await fetch(`${API_BASE_URL}/api/admin/limpar_conferencia`, { method: 'POST' }); } catch(e) {}
 
     if (!modoRoboAtivo) {
+        const btnEncerrar = document.getElementById('btn-encerrar-auditoria'); // <--- Mesmo ID
+        if (btnEncerrar) {
+            btnEncerrar.disabled = false;
+            btnEncerrar.style.opacity = '1';
+            btnEncerrar.style.cursor = 'pointer';
+        }
         input.disabled = false; 
         input.focus();
     }
@@ -2604,6 +2628,13 @@ async function processarProximoPremio() {
         );                 
         // Mantemos proximoKey limpo (ex: "LINHA") para o Python processar sem erros
         await mudarPremio(proximoKey);
+    } else {
+        setTimeout(async () => {
+            if (typeof alternarBotaoReset === 'function') alternarBotaoReset('finalizar');
+            if (await customConfirm(`⚠️ Fim da sequência de prêmios!\n\nEste foi o último prêmio ativo.\nDeseja FINALIZAR o evento agora?`)) {
+                if (typeof resetarJogo === 'function') resetarJogo();
+            }
+        }, 500);
     }
 }
 

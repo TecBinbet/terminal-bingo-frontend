@@ -811,8 +811,9 @@ def recalcular_ranking_principal():
 
 
 # ==============================================================================
-# 🚀 MOTOR DE RANKING BLINDADO (CONTAGEM EXATA DE ACERTOS) - 90 BOLAS
+# 🚀 MOTOR DE RANKING BLINDADO COM PROTEÇÃO ANTI-LOOP (90 BOLAS)
 # ==============================================================================
+
 def recalcular_ranking_top10():
     global db, CACHE_JOGO
     
@@ -853,6 +854,25 @@ def recalcular_ranking_top10():
                     try: ids_vencedores_bingo.add(int(v['cartela']))
                     except: pass
 
+        # =========================================================
+        # 🚀 LISTAS DE MEMÓRIA (O SEGREDO PARA PARAR O ALARME)
+        # =========================================================
+        # 1. Proteção da Quadra
+        ids_vencedores_quadra = set()
+        if busca_quadra:
+            vencedores_q = db.ganhadores.find({'premio': {'$regex': 'QUADRA|CANTOS', '$options': 'i'}})
+            for v in vencedores_q:
+                try: ids_vencedores_quadra.add(int(v['cartela']))
+                except: pass
+
+        # 2. Proteção do Falta Um
+        ids_vencedores_falta_um = set()
+        vencedores_fu = db.ganhadores.find({'premio': {'$regex': 'FALTA UM|FALTAUM', '$options': 'i'}})
+        for v in vencedores_fu:
+            try: ids_vencedores_falta_um.add(int(v['cartela']))
+            except: pass
+        # =========================================================
+
         _cartelas = CACHE_JOGO['cartelas']
         _bolas = bolas_cantadas
         resultados = [] 
@@ -888,48 +908,57 @@ def recalcular_ranking_top10():
                 tag_posicao = "" 
                 busca_linha_temporaria = False
 
-            # =================================================================
-            # 🚀 O NOVO MOTOR: Contagem exata de Acertos (Impossível falhar)
-            # =================================================================
-            
-            # 1. Filtra a linha removendo zeros (caso o gerador de cartelas tenha deixado lixo)
             validos_base = {n for n in numeros_base if n > 0}
-            
-            # 2. Faz a Intersecção: Quantos números válidos desta linha JÁ FORAM sorteados?
             acertos = len(validos_base & _bolas)
 
             if busca_quadra and busca_linha_temporaria:
-                # O alvo da Quadra são exatos 4 acertos.
                 distancia = max(0, 4 - acertos)
-                
-                # Para exibição, enviamos o que sobrou na linha (para não piscar a linha toda falsa)
                 faltam_exibicao = validos_base - _bolas
                 
                 if distancia == 0:
-                    msg_premio = "QUADRA"
+                    # 🛡️ PROTEÇÃO DA QUADRA: Parar o Alarme!
+                    if c_id in ids_vencedores_quadra:
+                        distancia = 1 # Continua no topo, mas tira do estado de alerta
+                        msg_premio = ""
+                    else:
+                        msg_premio = "QUADRA"
                 else:
                     msg_premio = ""
                     
             else:
-                # Lógica normal para LINHA (geralmente 5 alvos) ou BINGO (15 alvos)
-                alvo_necessario = len(validos_base) 
-                distancia = max(0, alvo_necessario - acertos)
-                
-                faltam_exibicao = validos_base - _bolas
-                
-                if distancia == 0:
-                    if busca_linha and busca_linha_temporaria: msg_premio = "LINHA"
-                    elif busca_duplo: msg_premio = "DUPLO BINGO"
-                    else: msg_premio = "BINGO"
-                elif distancia == 1 and busca_falta_um:
-                    msg_premio = "FALTA UM"
+                is_premio_falta_um = (busca_falta_um or "FALTAUM" in premio_buscado.replace(" ", "")) and not busca_linha_temporaria
+
+                if is_premio_falta_um:
+                    alvo_necessario = len(validos_base) - 1 
+                    distancia_real = alvo_necessario - acertos
+                    
+                    if distancia_real <= 0: 
+                        # 🛡️ PROTEÇÃO DO FALTA UM
+                        if c_id in ids_vencedores_falta_um:
+                            distancia = 1
+                            msg_premio = ""
+                        else:
+                            distancia = 0
+                            msg_premio = "FALTA UM" # 🏆 AQUI GARANTE QUE O TEXTO VÁ PARA A TELA
+                    else:
+                        distancia = distancia_real
+                        msg_premio = ""
+                        
                 else:
-                    msg_premio = ""
+                    alvo_necessario = len(validos_base) 
+                    distancia = max(0, alvo_necessario - acertos)
+                    
+                    if distancia == 0:
+                        if busca_linha and busca_linha_temporaria: msg_premio = "LINHA"
+                        elif busca_duplo: msg_premio = "DUPLO BINGO"
+                        else: msg_premio = "BINGO"
+                    else:
+                        msg_premio = ""
+
+                faltam_exibicao = validos_base - _bolas
             
-            # Guarda na tupla
             resultados.append((distancia, c_id, faltam_exibicao, tag_posicao, msg_premio, item['nome'], validos_base))
 
-        # --- ORDENAÇÃO E PREPARAÇÃO DO TOP 10 ---
         resultados.sort(key=lambda x: (x[0], x[1])) 
         top_10 = resultados[:10]
 
@@ -938,8 +967,8 @@ def recalcular_ranking_top10():
 
         novos_docs = []
         for i, r in enumerate(top_10):
-            base_list = sorted(list(r[6])) # Números válidos da linha/cartela
-            faltantes_list = sorted(list(r[2])) # O que realmente falta marcar
+            base_list = sorted(list(r[6])) 
+            faltantes_list = sorted(list(r[2])) 
             string_numeros = ",".join(f"{n:02d}" for n in base_list) 
             pos_letra = r[3][0].upper() if r[3] else "" 
             
@@ -949,10 +978,10 @@ def recalcular_ranking_top10():
                 "posicao": pos_letra,
                 "numeros": string_numeros, 
                 "numeros_faltantes": faltantes_list,
-                "premio": r[4],
+                "premio": r[4], # Este é o texto que aparece na tela (ex: "FALTA UM")
                 "nome": r[5],
                 "rodada": int(id_evento_ativo),
-                "qtde": int(r[0]) # Envia a distância como Qtde para o Front-end
+                "qtde": int(r[0]) 
             }
             novos_docs.append(doc)
 
@@ -3496,6 +3525,7 @@ def admin_validar_cartela():
                     campo_valor = ''
                     if 'QUADRA' in premio_nome: campo_valor = 'premio_quadra'
                     elif 'LINHA' in premio_nome: campo_valor = 'premio_linha'
+                    elif 'FALTA' in premio_nome: campo_valor = 'premio_falta_um'
                     elif 'BINGO' in premio_nome: campo_valor = 'premio_bingo'
                     elif 'DUPLO' in premio_nome: campo_valor = 'premio_duplo_bingo'
                     elif 'ACUMULADO' in premio_nome: campo_valor = 'premio_acumulado'
