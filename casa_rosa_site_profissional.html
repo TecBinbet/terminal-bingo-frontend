@@ -1,0 +1,90 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Casa Rosa Drinks</title>
+<style>
+:root{
+  --bg:#0f0f12;
+  --card:#17171d;
+  --soft:#23232c;
+  --pink:#ff4fa3;
+  --gold:#d9b56d;
+  --text:#f7f7f8;
+  --muted:#b7b7c2;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;font-family:Arial,Helvetica,sans-serif;background:
+  radial-gradient(circle at top, rgba(255,79,163,.15), transparent 30%),
+  linear-gradient(180deg, #121218 0%, #0a0a0d 100%);
+  color:var(--text);
+}
+.container{max-width:1100px;margin:0 auto;padding:24px}
+.hero{
+  background:linear-gradient(135deg, rgba(255,79,163,.15), rgba(217,181,109,.12));
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:24px;padding:34px 24px;box-shadow:0 10px 40px rgba(0,0,0,.35);
+}
+.badge{display:inline-block;padding:8px 14px;border-radius:999px;background:rgba(255,79,163,.12);color:var(--pink);font-weight:700;letter-spacing:.5px}
+h1{font-size:44px;margin:14px 0 8px}
+.tagline{font-size:20px;color:var(--gold);font-weight:700;margin:0 0 8px}
+.sub{color:var(--muted);max-width:750px;line-height:1.55}
+.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px}
+.btn{
+  text-decoration:none;padding:14px 18px;border-radius:14px;font-weight:700;
+  border:1px solid rgba(255,255,255,.1);display:inline-block
+}
+.btn.primary{background:var(--pink);color:white}
+.btn.secondary{background:var(--card);color:var(--text)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-top:22px}
+.card{
+  background:rgba(23,23,29,.96); border:1px solid rgba(255,255,255,.08);
+  border-radius:20px;padding:20px;
+}
+.card h2{margin:0 0 14px;color:var(--gold);font-size:22px}
+.item{display:flex;justify-content:space-between;gap:18px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.item:last-child{border-bottom:none}
+.name{color:var(--text)}
+.price{color:var(--pink);font-weight:700;white-space:nowrap}
+.contact{
+  margin-top:28px;padding:18px;border-radius:18px;background:var(--card);border:1px solid rgba(255,255,255,.08)
+}
+footer{padding:30px 0 50px;color:var(--muted);text-align:center}
+.small{font-size:13px;color:var(--muted)}
+.highlight{color:var(--pink);font-weight:700}
+</style>
+</head>
+<body>
+<div class="container">
+  <section class="hero">
+    <span class="badge">CARDÁPIO DIGITAL • CASA ROSA</span>
+    <h1>Casa Rosa Drinks</h1>
+    <p class="tagline">A busca pelo prazer é o único propósito da vida.</p>
+    <p class="sub">Cardápio digital premium com atendimento rápido via WhatsApp, Instagram e acesso ideal para QR Code de mesa. Estrutura pronta para publicação em hospedagem.</p>
+    <div class="actions">
+      <a class="btn primary" href="{wa1}" target="_blank">WhatsApp 1</a>
+      <a class="btn primary" href="{wa2}" target="_blank">WhatsApp 2</a>
+      <a class="btn secondary" href="{instagram_url}" target="_blank">Instagram</a>
+    </div>
+  </section>
+  <div class="grid">
+<section class="card"><h2>Cervejas, Refrigerantes e Energéticos</h2><div class="item"><div class="name">Skol</div><div class="price">R$ 10,00</div></div><div class="item"><div class="name">Heineken Long Neck</div><div class="price">R$ 35,00</div></div><div class="item"><div class="name">Heineken Zero Long Neck</div><div class="price">R$ 35,00</div></div><div class="item"><div class="name">Budweiser Long Neck</div><div class="price">R$ 35,00</div></div><div class="item"><div class="name">Stella Long Neck</div><div class="price">R$ 35,00</div></div><div class="item"><div class="name">Corona Long Neck</div><div class="price">R$ 35,00</div></div><div class="item"><div class="name">Coca-Cola Lata</div><div class="price">R$ 10,00</div></div><div class="item"><div class="name">Guaraná Lata</div><div class="price">R$ 10,00</div></div><div class="item"><div class="name">Tônica Lata</div><div class="price">R$ 10,00</div></div><div class="item"><div class="name">Schweppes Lata</div><div class="price">R$ 10,00</div></div><div class="item"><div class="name">Red Bull Tradicional</div><div class="price">R$ 45,00</div></div><div class="item"><div class="name">Red Bull Melancia</div><div class="price">R$ 45,00</div></div><div class="item"><div class="name">Red Bull Tropical</div><div class="price">R$ 45,00</div></div><div class="item"><div class="name">Red Bull de Coco</div><div class="price">R$ 45,00</div></div><div class="item"><div class="name">Red Bull Morango e Pêssego</div><div class="price">R$ 45,00</div></div><div class="item"><div class="name">Red Bull Frutas Vermelhas</div><div class="price">R$ 45,00</div></div></section><section class="card"><h2>Águas e Sucos</h2><div class="item"><div class="name">Água com gás</div><div class="price">R$ 10,00</div></div><div class="item"><div class="name">Água sem gás</div><div class="price">R$ 10,00</div></div><div class="item"><div class="name">Água de coco 200 ml</div><div class="price">R$ 20,00</div></div><div class="item"><div class="name">Água de coco 1 L</div><div class="price">R$ 50,00</div></div><div class="item"><div class="name">Caixa de suco de laranja 1 L</div><div class="price">R$ 50,00</div></div><div class="item"><div class="name">Caixa de suco de maracujá 1 L</div><div class="price">R$ 50,00</div></div><div class="item"><div class="name">Caixa de suco de morango 1 L</div><div class="price">R$ 50,00</div></div><div class="item"><div class="name">Suco de fruta 300 ml</div><div class="price">R$ 35,00</div></div></section><section class="card"><h2>Vodkas</h2><div class="item"><div class="name">Smirnoff</div><div class="price">R$ 380,00</div></div><div class="item"><div class="name">Absolut</div><div class="price">R$ 450,00</div></div><div class="item"><div class="name">Cîroc Tradicional</div><div class="price">R$ 490,00</div></div><div class="item"><div class="name">Cîroc Red Berry</div><div class="price">R$ 520,00</div></div><div class="item"><div class="name">Cîroc Coconut</div><div class="price">R$ 520,00</div></div><div class="item"><div class="name">Cîroc Pineapple</div><div class="price">R$ 520,00</div></div><div class="item"><div class="name">Grey Goose</div><div class="price">R$ 650,00</div></div><div class="item"><div class="name">Belvedere</div><div class="price">R$ 600,00</div></div></section><section class="card"><h2>Gins</h2><div class="item"><div class="name">Gin Tanqueray</div><div class="price">R$ 450,00</div></div><div class="item"><div class="name">Gin Tanqueray Royal</div><div class="price">R$ 480,00</div></div><div class="item"><div class="name">Gin Tanqueray Sevilla</div><div class="price">R$ 480,00</div></div><div class="item"><div class="name">Beefeater Tradicional</div><div class="price">R$ 450,00</div></div><div class="item"><div class="name">Beefeater Pink</div><div class="price">R$ 520,00</div></div></section><section class="card"><h2>Whiskies</h2><div class="item"><div class="name">Red Label</div><div class="price">R$ 480,00</div></div><div class="item"><div class="name">Black Label</div><div class="price">R$ 600,00</div></div><div class="item"><div class="name">Gold Label</div><div class="price">R$ 750,00</div></div><div class="item"><div class="name">Gold Label 18 anos</div><div class="price">R$ 890,00</div></div><div class="item"><div class="name">Double Black</div><div class="price">R$ 690,00</div></div><div class="item"><div class="name">Green Label</div><div class="price">R$ 920,00</div></div><div class="item"><div class="name">Blue Label</div><div class="price">R$ 1.850,00</div></div><div class="item"><div class="name">Grand Old Parr</div><div class="price">R$ 600,00</div></div><div class="item"><div class="name">Grand Old Parr 18 anos</div><div class="price">R$ 780,00</div></div><div class="item"><div class="name">Buchanan’s 12 anos</div><div class="price">R$ 650,00</div></div><div class="item"><div class="name">Jack Daniel’s</div><div class="price">R$ 600,00</div></div><div class="item"><div class="name">Jack Daniel’s Maçã Verde</div><div class="price">R$ 620,00</div></div><div class="item"><div class="name">Jack Daniel’s Fire</div><div class="price">R$ 630,00</div></div><div class="item"><div class="name">Jack Daniel’s Honey</div><div class="price">R$ 640,00</div></div></section><section class="card"><h2>Licor, Cachaça, Tequila e Espumantes</h2><div class="item"><div class="name">Jose Cuervo Ouro</div><div class="price">R$ 350,00</div></div><div class="item"><div class="name">Malibu</div><div class="price">R$ 300,00</div></div><div class="item"><div class="name">Licor Amarula</div><div class="price">R$ 330,00</div></div><div class="item"><div class="name">Licor 43</div><div class="price">R$ 420,00</div></div><div class="item"><div class="name">Licor 43 Chocolate</div><div class="price">R$ 420,00</div></div><div class="item"><div class="name">Licor Ballena</div><div class="price">R$ 450,00</div></div><div class="item"><div class="name">Licor Ballena Chocolate</div><div class="price">R$ 450,00</div></div><div class="item"><div class="name">Chandon Brut</div><div class="price">R$ 340,00</div></div><div class="item"><div class="name">Chandon Rosé</div><div class="price">R$ 340,00</div></div></section><section class="card"><h2>Combos</h2><div class="item"><div class="name">Smirnoff + 4 Red Bull</div><div class="price">R$ 380,00</div></div><div class="item"><div class="name">Absolut + 4 Red Bull</div><div class="price">R$ 450,00</div></div><div class="item"><div class="name">Cîroc Tradicional + 4 Red Bull</div><div class="price">R$ 490,00</div></div><div class="item"><div class="name">Cîroc Red Berry + 4 Red Bull</div><div class="price">R$ 520,00</div></div><div class="item"><div class="name">Cîroc Coconut + 4 Red Bull</div><div class="price">R$ 520,00</div></div><div class="item"><div class="name">Cîroc Pineapple + 4 Red Bull</div><div class="price">R$ 520,00</div></div><div class="item"><div class="name">Grey Goose + 4 Red Bull</div><div class="price">R$ 650,00</div></div><div class="item"><div class="name">Belvedere + 4 Red Bull</div><div class="price">R$ 600,00</div></div><div class="item"><div class="name">Gin Tanqueray + 4 Red Bull</div><div class="price">R$ 450,00</div></div><div class="item"><div class="name">Gin Tanqueray Royal + 4 Red Bull</div><div class="price">R$ 480,00</div></div><div class="item"><div class="name">Gin Tanqueray Sevilla + 4 Red Bull</div><div class="price">R$ 480,00</div></div><div class="item"><div class="name">Beefeater Tradicional + 4 Red Bull</div><div class="price">R$ 450,00</div></div><div class="item"><div class="name">Beefeater Pink + 4 Red Bull</div><div class="price">R$ 520,00</div></div><div class="item"><div class="name">Red Label + 4 Red Bull</div><div class="price">R$ 480,00</div></div><div class="item"><div class="name">Black Label + 4 Red Bull</div><div class="price">R$ 600,00</div></div><div class="item"><div class="name">Gold Label + 4 Red Bull</div><div class="price">R$ 750,00</div></div><div class="item"><div class="name">Gold Label 18 anos + 4 Red Bull</div><div class="price">R$ 890,00</div></div><div class="item"><div class="name">Double Black + 4 Red Bull</div><div class="price">R$ 690,00</div></div><div class="item"><div class="name">Green Label + 4 Red Bull</div><div class="price">R$ 920,00</div></div><div class="item"><div class="name">Blue Label + 4 Red Bull</div><div class="price">R$ 1.850,00</div></div><div class="item"><div class="name">Grand Old Parr + 4 Red Bull</div><div class="price">R$ 600,00</div></div><div class="item"><div class="name">Grand Old Parr 18 anos + 4 Red Bull</div><div class="price">R$ 780,00</div></div><div class="item"><div class="name">Buchanan’s 12 anos + 4 Red Bull</div><div class="price">R$ 650,00</div></div><div class="item"><div class="name">Jack Daniel’s + 4 Red Bull</div><div class="price">R$ 600,00</div></div><div class="item"><div class="name">Jack Daniel’s Maçã Verde + 4 Red Bull</div><div class="price">R$ 620,00</div></div><div class="item"><div class="name">Jack Daniel’s Fire + 4 Red Bull</div><div class="price">R$ 630,00</div></div><div class="item"><div class="name">Jack Daniel’s Honey + 4 Red Bull</div><div class="price">R$ 640,00</div></div></section><section class="card"><h2>Caipirinhas e Gin Drinks</h2><div class="item"><div class="name">Caipirinha de Limão</div><div class="price">R$ 30,00</div></div><div class="item"><div class="name">Caipirinha de Morango e Maracujá</div><div class="price">R$ 55,00</div></div><div class="item"><div class="name">Caipirinha de Abacaxi e Hortelã</div><div class="price">R$ 55,00</div></div><div class="item"><div class="name">Caipirinha de Kiwi e Limão</div><div class="price">R$ 55,00</div></div><div class="item"><div class="name">Caipirinha de Melancia e Hortelã</div><div class="price">R$ 55,00</div></div><div class="item"><div class="name">Caipirinha de Manga, Limão e Pimenta</div><div class="price">R$ 75,00</div></div><div class="item"><div class="name">Caipirinha de Frutas Vermelhas</div><div class="price">R$ 75,00</div></div><div class="item"><div class="name">Caipirinha de Maracujá e Red Bull Tropical</div><div class="price">R$ 75,00</div></div><div class="item"><div class="name">Caipirinha de Coco e Abacaxi</div><div class="price">R$ 75,00</div></div><div class="item"><div class="name">Gin Tanqueray + Schweppes</div><div class="price">R$ 95,00</div></div><div class="item"><div class="name">Gin Tanqueray + Tônica</div><div class="price">R$ 95,00</div></div><div class="item"><div class="name">Gin Tanqueray + Red Bull Melancia</div><div class="price">R$ 95,00</div></div><div class="item"><div class="name">Gin Tanqueray + Red Bull Tropical</div><div class="price">R$ 95,00</div></div><div class="item"><div class="name">Gin Tanqueray + Red Bull Morango e Pêssego</div><div class="price">R$ 95,00</div></div><div class="item"><div class="name">Gin Tanqueray + Red Bull Frutas Vermelhas</div><div class="price">R$ 95,00</div></div><div class="item"><div class="name">Gin Tanqueray + Red Bull de Coco</div><div class="price">R$ 95,00</div></div><div class="item"><div class="name">Gin Tanqueray + Schweppes + Gelo de Coco</div><div class="price">R$ 115,00</div></div><div class="item"><div class="name">Gin Tanqueray + Tônica + Gelo de Coco</div><div class="price">R$ 115,00</div></div><div class="item"><div class="name">Gin Tanqueray + RB Melancia + Gelo de Coco</div><div class="price">R$ 115,00</div></div><div class="item"><div class="name">Gin Tanqueray + RB Tropical + Gelo de Coco</div><div class="price">R$ 115,00</div></div><div class="item"><div class="name">Gin Tanqueray + RB Frutas Vermelhas + Gelo de Coco</div><div class="price">R$ 115,00</div></div><div class="item"><div class="name">Gin Tanqueray + RB Morango e Pêssego + Gelo de Coco</div><div class="price">R$ 115,00</div></div><div class="item"><div class="name">Gin Tanqueray + RB de Coco + Gelo de Coco</div><div class="price">R$ 115,00</div></div></section><section class="card"><h2>Doses de Whisky e Vodka</h2><div class="item"><div class="name">Red Label</div><div class="price">R$ 30,00</div></div><div class="item"><div class="name">Black Label</div><div class="price">R$ 50,00</div></div><div class="item"><div class="name">Jack Daniel’s</div><div class="price">R$ 40,00</div></div><div class="item"><div class="name">Jack Daniel’s Honey</div><div class="price">R$ 45,00</div></div><div class="item"><div class="name">Grand Old Parr</div><div class="price">R$ 45,00</div></div><div class="item"><div class="name">Buchanan’s</div><div class="price">R$ 65,00</div></div><div class="item"><div class="name">Vodka Smirnoff</div><div class="price">R$ 30,00</div></div><div class="item"><div class="name">Vodka Absolut</div><div class="price">R$ 40,00</div></div><div class="item"><div class="name">Vodka Cîroc Tradicional</div><div class="price">R$ 40,00</div></div><div class="item"><div class="name">Vodka Cîroc Red Berry</div><div class="price">R$ 45,00</div></div></section><section class="card"><h2>Doses de Licor e Tequila</h2><div class="item"><div class="name">Jose Cuervo</div><div class="price">R$ 30,00</div></div><div class="item"><div class="name">Licor 43</div><div class="price">R$ 45,00</div></div><div class="item"><div class="name">Licor 43 Chocolate</div><div class="price">R$ 45,00</div></div><div class="item"><div class="name">Licor Ballena</div><div class="price">R$ 45,00</div></div><div class="item"><div class="name">Licor Ballena Chocolate</div><div class="price">R$ 45,00</div></div><div class="item"><div class="name">Licor Amarula</div><div class="price">R$ 55,00</div></div><div class="item"><div class="name">Licor Malibu</div><div class="price">R$ 30,00</div></div></section><section class="card"><h2>Adicionais</h2><div class="item"><div class="name">Gelo de Coco</div><div class="price">R$ 20,00</div></div><div class="item"><div class="name">Adicional de Frutas</div><div class="price">R$ 10,00</div></div></section>
+  </div>
+  <section class="contact">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:14px;align-items:center">
+      <div>
+        <div class="highlight">@casarosadrinks2k26</div>
+        <div class="small">Contato: 11 95908-6257 • 11 98614-5869</div>
+      </div>
+      <div class="small">URL configurada no QR: https://casarosa-drinks.vercel.app</div>
+    </div>
+  </section>
+  <footer>
+    Casa Rosa Drinks • versão digital pronta para publicar
+  </footer>
+</div>
+</body>
+</html>
