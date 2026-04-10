@@ -4732,9 +4732,196 @@ def api_dados_cliente():
         print(f"Erro dados cliente: {e}")
         return jsonify({'erro': str(e)}), 500
 
-
 @app.route('/api/comprar_cartelas', methods=['POST'])
 def api_comprar_cartelas():
+    """Processa a compra de forma ATÓMICA e com Rollover perfeito."""
+    if 'id_cliente' not in session:
+        return jsonify({'erro': 'Sessão expirada. Faça login novamente.'}), 401
+        
+    data = request.json
+    qtd_desejada = int(data.get('quantidade', 0))
+    id_solicitado = data.get('id_evento') 
+    
+    if qtd_desejada <= 0: return jsonify({'erro': 'Quantidade inválida.'}), 400
+    
+    sales_db = get_sales_db_connection()
+    if sales_db is None: return jsonify({'erro': 'Banco de Vendas offline.'}), 500
+
+    try:
+        id_cli = int(session['id_cliente'])
+        
+        # --- DEFINIÇÃO DO ID DO EVENTO ---
+        if id_solicitado:
+            print(f"🛒 Solicitado Evento ID: {id_solicitado}")
+            try: raw_id = int(id_solicitado)
+            except: raw_id = str(id_solicitado)
+        else:
+            print("⚠️ Nenhum ID recebido. Usando evento da rodada atual.")
+            rodada_info = db.rodada.find_one({})
+            raw_id = rodada_info.get('id_evento') if rodada_info else None
+
+        busca_ids = [raw_id, str(raw_id)]
+        if isinstance(raw_id, str) and raw_id.isdigit():
+            busca_ids.append(int(raw_id))
+            
+        evento = sales_db.eventos.find_one({'id_evento': {'$in': busca_ids}})
+        
+        if not evento:
+            return jsonify({'erro': f'Evento {raw_id} não encontrado.'}), 400
+            
+        # ==================================================================
+        # 🚫 VALIDAÇÃO DE STATUS
+        # ==================================================================
+        status_atual = str(evento.get('status', '')).lower().strip()
+        
+        if status_atual != 'ativo':
+            print(f"⛔ Tentativa de compra bloqueada. Status: {status_atual}")
+            return jsonify({
+                'erro': 'Vendas encerradas!', 
+                'detalhe': f'O evento está {status_atual}. Aguarde o próximo.'
+            }), 400
+
+        id_evento_oficial = evento.get('id_evento')
+        limite_maximo_cartelas = int(evento.get('numero_maximo', 72000))
+        numero_inicial_evento = int(evento.get('numero_inicial', 1))
+        
+        # 🎯 NOVO: Resgata a Unidade de Venda e calcula o total real de cartelas
+        unidade_venda = int(evento.get('unidade_de_venda', evento.get('unidade_venda', 1)))
+        total_cartelas_compradas = qtd_desejada * unidade_venda
+        
+        cliente = sales_db.clientes.find_one({'id_cliente': id_cli})
+        if not cliente: return jsonify({'erro': 'Cliente não encontrado.'}), 400
+
+        nome_do_cliente_db = cliente.get('nick', 'Cliente')
+        id_colaborador_indicacao = cliente.get('id_colaborador', 0)
+  
+        # Verifica Saldo
+        valor_unit = converter_decimal(evento.get('valor_de_venda', 0))
+        custo_total = valor_unit * qtd_desejada
+        
+        saldo_cliente = converter_decimal(cliente.get('saldo_atual', 0))
+        if saldo_cliente < custo_total:
+             return jsonify({'erro': 'Saldo insuficiente para esta compra.'}), 400
+
+        # ==============================================================================
+        # 🚀 MOTOR DE VENDAS ATÓMICO
+        # ==============================================================================
+        
+        # 🎯 AJUSTE: Passamos 'total_cartelas_compradas' no lugar de 'qtd_desejada'
+        numero_inicial_atual = get_next_bilhete_sequence(
+            db=sales_db, 
+            id_evento=id_evento_oficial, 
+            increment_field='inicial_proxima_venda', 
+            qtd=total_cartelas_compradas, 
+            limite_maximo=limite_maximo_cartelas 
+        )
+                                                           
+        if numero_inicial_atual is None:
+            return jsonify({'erro': 'Falha interna ao gerar número do bilhete.'}), 500
+
+        # Lógica de Rollover / Reinício
+        if numero_inicial_atual == 1: 
+            numero_inicial_atual = numero_inicial_evento
+            sales_db.controle_venda.update_one(
+                {'id_evento': id_evento_oficial},
+                {'$set': {'inicial_proxima_venda': numero_inicial_atual + total_cartelas_compradas}} # 🎯 AJUSTE
+            )
+
+        # 🎯 AJUSTE: O cálculo do número final agora usa o total exato de cartelas
+        numero_final_atual = numero_inicial_atual + total_cartelas_compradas - 1
+        
+        numero_inicial2_atual = 0 
+        numero_final2_atual = 0 
+        
+        # Tratamento perfeito de se a compra "atravessar" o limite máximo
+        if numero_final_atual > limite_maximo_cartelas:
+            numero_inicial2_atual = 1
+            numero_final2_atual = numero_final_atual - limite_maximo_cartelas
+            numero_final_atual = limite_maximo_cartelas
+
+        # --- CONTADOR GLOBAL DE VENDAS ---
+        retorno_global = sales_db.contadores.find_one_and_update(
+            {'_id': 'global'}, 
+            {'$inc': {'id_vendas_global': 1}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER
+        )
+        id_venda_global = retorno_global.get('id_vendas_global')
+        
+        # Grava na Tabela de Vendas
+        venda_doc = {
+            "id_venda": f"WEB{id_venda_global}", 
+            "id_evento": id_evento_oficial,
+            "id_cliente": id_cli,
+            "nome_cliente": nome_do_cliente_db,                            
+            "nick_colaborador": "AUTO-ATENDIMENTO",
+            "id_colaborador": id_colaborador_indicacao,
+            "id_vendedor": 0,                      
+            "data_venda": hora_brasil(),  
+            "quantidade_unidades": qtd_desejada, # 🎯 Mantém registro de quantos Kits comprou
+            "quantidade_cartelas": total_cartelas_compradas, # 🎯 Novo registro: total de cartelas geradas
+            "numero_inicial": numero_inicial_atual,
+            "numero_final": numero_final_atual,
+            "numero_inicial2": numero_inicial2_atual,
+            "numero_final2": numero_final2_atual,
+            "valor_total": Decimal128(str(custo_total)),
+            "origem": "terminal_cliente"
+        }
+        
+        col_vendas_nome = f"vendas{id_evento_oficial}"
+        sales_db[col_vendas_nome].insert_one(venda_doc)
+        print(f"💾 Venda WEB gravada: {col_vendas_nome} | Cartelas: {numero_inicial_atual}-{numero_final_atual}")
+
+        # ==================================================================
+        # --- ATUALIZAÇÃO DO BUFFER PARA O ROBÔ DE PRÊMIOS ---
+        tipo_premiacao = str(evento.get('tipo_premiacao', '')).lower().strip()
+        if tipo_premiacao == 'porcentagem':
+            sales_db.eventos.update_one(
+                {"id_evento": id_evento_oficial},
+                {"$inc": {"valor_pendente_telemovel": float(custo_total)}} 
+            )
+            print(f"📈 Buffer de prêmios atualizado em +R$ {float(custo_total):.2f}")
+        # ==================================================================
+
+        # Debita e finaliza com o nosso motor financeiro seguro
+        registrar_transacao_cliente(
+            db_vendas=sales_db, 
+            id_cliente=id_cli, 
+            valor=-abs(custo_total), 
+            tipo='compra_cartela', 
+            descricao=f"Compra Web - {qtd_desejada} kit(s) - {evento.get('descricao')}", 
+            id_evento=id_evento_oficial,
+            id_venda=f"WEB{id_venda_global}",
+            origem="WEB_CLIENTE",
+            registrado_por="AUTO-ATENDIMENTO"
+        )
+        
+        saldo_atual_novo = saldo_cliente - custo_total
+        
+        cartelas_txt = f"{numero_inicial_atual} a {numero_final_atual}"
+        if numero_inicial2_atual > 0:
+            cartelas_txt += f" e {numero_inicial2_atual} a {numero_final2_atual}"
+
+        return jsonify({
+            'status': 'ok',
+            'msg': 'Compra realizada!',
+            'novo_saldo': saldo_atual_novo,
+            'cartelas': cartelas_txt,
+            'inicial': numero_inicial_atual,
+            'final': numero_final_atual,
+            'inicial2': numero_inicial2_atual,
+            'final2': numero_final2_atual
+        })
+
+    except Exception as e:
+        print(f"Erro crítico compra: {e}")
+        traceback.print_exc()
+        return jsonify({'erro': 'Erro interno.'}), 500
+
+
+# Reserva
+@app.route('/api/comprar_cartelas2', methods=['POST'])
+def api_comprar_cartelas2():
     """Processa a compra de forma ATÓMICA e com Rollover perfeito."""
     if 'id_cliente' not in session:
         return jsonify({'erro': 'Sessão expirada. Faça login novamente.'}), 401

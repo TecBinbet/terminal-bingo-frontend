@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.4";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.6";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -3173,7 +3173,7 @@ function ocultarConferencia() {
 // --- FUNÇÃO MOSTRAR GANHADORES (CORRIGIDA) ---
 function displayWinnersPanel(ganhadoresData) {
     // 1. Validação se há dados
-    if (!ganhadoresData || ganhadoresData.length === 0 || ultimaBolaCantada !== null) return;
+    if (Carregando || !ganhadoresData || ganhadoresData.length === 0 || ultimaBolaCantada !== null) return;
     // 2. Gera o Hash (Assinatura) dos dados atuais
     const currentHash = JSON.stringify(ganhadoresData);
 
@@ -3841,7 +3841,6 @@ async function renderMainContent(data) {
     
     if (Carregando) {
         tipoEntradaCartelas = parametrosInfo.tipo_entrada_de_cartelas  || 1;
-        Carregando = false;   
     }
     controlarPainelMobileEntrada();
     
@@ -4215,8 +4214,12 @@ async function renderMainContent(data) {
         (mobileTotalCartelasSpan ? parseInt(mobileTotalCartelasSpan.textContent) : 0) : 
         (totalCartelasSpan ? parseInt(totalCartelasSpan.textContent) : 0);
     checkTotalCards(totalAtual);
-}
 
+    // --- SINALIZA QUE O CARREGAMENTO INICIAL TERMINOU ---
+    if (Carregando) {
+        Carregando = false;
+    }
+}
 
 
 //==============
@@ -4756,12 +4759,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Botão para fechar o painel de Ganhadores Principais
-    const btnCloseWinners = document.getElementById('btn-close-winners');
-    const winnersPanel = document.getElementById('winners-panel-container');
-    if (btnCloseWinners && winnersPanel) {
-        btnCloseWinners.addEventListener('click', () => {
-            winnersPanel.classList.add('hidden');
-        });
+    const btnCloseWinners = document.getElementById('btn-close-winners'); 
+    if (btnCloseWinners) {
+        btnCloseWinners.addEventListener('click', closeWinnersPanel);
     }
 
     // 4. ALTERNÂNCIA VISUAL (LISTA vs TOP 10) - MOBILE E DESKTOP
