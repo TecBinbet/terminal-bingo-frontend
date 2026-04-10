@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.6";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.7";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -2736,8 +2736,18 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
         return;
     }
 
+    // --- 2.5 TRATAMENTO DE NOMES (Substitui DUPLO BINGO por 2º BINGO) ---
+    validPrizes.forEach(p => {
+        if (p.tipo_premio === 'DUPLO BINGO') {
+            p.tipo_premio = '2º BINGO';
+        }
+        if (p.tipo_premio === 'TRIPLO BINGO') {
+            p.tipo_premio = '3º BINGO';
+        }
+    });
+
     // --- 3. SEPARAÇÃO DAS COLUNAS ---
-    const esquerdaOrdem = ['QUADRA', 'LINHA', '3 LINHAS', 'FALTA 1', 'BINGO', 'DUPLO BINGO', 'TRIPLO BINGO'];
+    const esquerdaOrdem = ['QUADRA', 'LINHA', '3 LINHAS', 'FALTA 1', 'BINGO', '2º BINGO', '3º BINGO'];
     const direitaOrdem = ['SUPER BINGO', 'ACUMULADO'];
 
     const premiosEsquerda = validPrizes.filter(p => esquerdaOrdem.includes(p.tipo_premio))
@@ -4689,8 +4699,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            btnCompraMobile.style.opacity = "0.7";
-            btnCompraMobile.textContent = "⏳ ...";
+            //btnCompraMobile.style.opacity = "0.7";
+            //btnCompraMobile.textContent = "⏳ ...";
 
             try {
                 const response = await fetch(`${API_BASE_URL}/api/verificar_status_evento?id_evento=${idParaChecar}`);
@@ -5026,24 +5036,35 @@ function alternarPainelMobile(modo) {
         document.getElementById('btn-minhas-cartelas-mobile-view')
     ];
 
-    // Função interna para resetar tamanho dos botões de ação
+    // Função interna para resetar tamanho dos botões de ação (AUTO AJUSTE)
     const resetTamanhoBotoesAcao = () => {
         botoesAcao.forEach(btn => {
             if (btn) {
-                // Volta ao normal (py-1.5 e text-xs)
-                btn.classList.remove('py-1.5', 'text-lg');  // mudar aqui
-                btn.classList.add('py-1.5', 'text-xs');
+                // 1. Removemos a altura fixa GRANDE e a fonte grande
+                btn.classList.remove('h-14', 'text-lg');  
+                
+                // 2. Removemos o padding vertical (py) antigo só por garantia, 
+                // já que agora quem manda no tamanho é o "h"
+                btn.classList.remove('py-1.5'); 
+                
+                // 3. Adicionamos a altura fixa MENOR (ex: h-6) e a fonte menor
+                btn.classList.add('h-6', 'text-xs');
             }
         });
     };
 
-    // Função interna para aumentar tamanho (Modo Ocultar)
+    // Função interna para aumentar tamanho (Modo Ocultar - ALTURA FIXA)
     const aumentarBotoesAcao = () => {
         botoesAcao.forEach(btn => {
             if (btn) {
-                // Fica maior (py-1.5 e text-xl)
-                btn.classList.remove('py-1.5', 'text-xs');
-                btn.classList.add('py-1.5', 'text-lg');
+                // Removemos o auto-ajuste e os tamanhos pequenos
+                btn.classList.remove('py-1.5', 'text-xs', 'h-8', 'h-auto');
+                
+                // Adicionamos a altura fixa (ex: h-14 que é 48px) e a fonte maior
+                btn.classList.add('h-14', 'text-lg'); 
+                
+                // Nota: se o texto ficar desalinhado verticalmente com o h-14, 
+                // certifique-se de que o botão tenha as classes 'flex items-center justify-center' no HTML.
             }
         });
     };
