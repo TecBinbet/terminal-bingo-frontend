@@ -872,7 +872,7 @@ function processarMensagemWS(event) {
                 if (elTitulo) elTitulo.textContent = premio;
             }
             if (payload.parametrosInfo) {
-                if (!configuracaoServer || Object.keys(configuracaoServer).length === 0) {
+                // if (!configuracaoServer || Object.keys(configuracaoServer).length === 0) {
                     configuracaoServer = payload.parametrosInfo;
                     if (configuracaoServer.sorteio_automatizado !== undefined) {
                         sorteioAutomatizadoConfig = configuracaoServer.sorteio_automatizado;
@@ -889,19 +889,20 @@ function processarMensagemWS(event) {
                     if (configuracaoServer.enviar_porta_serial !== undefined) {
                         enviarPortaSerial = configuracaoServer.enviar_porta_serial;
                     }
-
+                   
                     if (configuracaoServer.modo_sorteio) {
                         modoSorteio = configuracaoServer.modo_sorteio;
                         if (typeof aplicarVisualModoSorteio === 'function') {
                             aplicarVisualModoSorteio(modoSorteio);
                         }
+                        forcarBotaoExtratora(modoSorteio);                      
                     }
-            
+  
                     const modal = document.getElementById('modal-config');
                     if (modal && modal.classList.contains('hidden') && typeof preencherModalConfig === 'function') {
                         preencherModalConfig(configuracaoServer);
                     }
-                }
+               // }
             }
 
         }
@@ -910,6 +911,45 @@ function processarMensagemWS(event) {
         console.error("Erro no processamento do WS:", e);
     }
 }
+
+
+function forcarBotaoExtratora(modo) {
+    const btn = document.getElementById('btn-ligar-extratora');
+    if (!btn) return;
+
+    if (modo === 'manual') {
+        // Isso aqui vence qualquer 'hidden' que exista no sistema
+        btn.style.setProperty('display', 'flex', 'important'); 
+    } else {
+        btn.style.setProperty('display', 'none', 'important');
+    }
+}
+
+
+// Função definitiva e limpa para gerenciar a Extratora
+function atualizarVisibilidadeExtratora() {
+    const btn = document.getElementById('btn-ligar-extratora');
+    if (!btn) return;
+
+    // Tenta ler a variável global do sistema. Se ela ainda não existir 
+    // (porque o evento não foi selecionado), ele tenta ler o botão rádio da tela.
+    let modoAtual = 'digital'; // padrão seguro
+    
+    if (typeof modoSorteio !== 'undefined' && modoSorteio) {
+        modoAtual = modoSorteio;
+    } else {
+        const radioMarcado = document.querySelector('input[name="modo_sorteio"]:checked');
+        if (radioMarcado) modoAtual = radioMarcado.value;
+    }
+
+    // Aplica o visual correto baseado no que descobrimos
+    if (modoAtual === 'manual') {
+        btn.classList.remove('hidden');
+    } else {
+        btn.classList.add('hidden');
+    }
+}
+
 
 function verificarVitoriaPeloRanking(listaMelhores) {
     // 1. Definimos as paradas e termos de vitória conforme o tipo de jogo
@@ -1140,7 +1180,7 @@ async function carregarParametrosDoBanco() {
         configuracaoServer = dados;
         if (dados.qtde_tope) qtdeTopeSorteExtra = parseInt(dados.qtde_tope);
         if (dados.aguardandoVideo) aguardandoVideo = parseInt(dados.aguardandoVideo);
-        
+
         console.log("✅ [API] Parâmetros sincronizados com sucesso:", configuracaoServer);
         return dados;
     } catch (e) {
@@ -1148,7 +1188,6 @@ async function carregarParametrosDoBanco() {
         return null;
     }
 }
-
 
 async function abrirModalConfig() {
     toggleAdminMenu();
@@ -1208,7 +1247,7 @@ function preencherModalConfig(params) {
     if (params.tipo_sorteio) document.getElementById('config-tipo-sorteio').value = params.tipo_sorteio;
     const selectEntrada = document.getElementById('config-entrada-cartelas');
     if (params.tipo_entrada_de_cartelas && selectEntrada) selectEntrada.value = params.tipo_entrada_de_cartelas;
-    if (params.sorteio_automatizado !== undefined) document.getElementById('config-sorteio-automatizado').checked = params.sorteio_automatizado;
+
     if (params.aviso_fim_das_vendas) {
         document.getElementById('config-aviso-fim-vendas').value = params.aviso_fim_das_vendas;
     }
@@ -1216,18 +1255,19 @@ function preencherModalConfig(params) {
     const radiosModo = document.querySelectorAll('input[name="modo_sorteio"]');
     
     radiosModo.forEach(radio => {
-        // Remove listeners antigos para não duplicar (boa prática)
-        radio.removeEventListener('change', toggleOpcaoAutomatizado);
-        radio.removeEventListener('change', toggleOpcaoSerial);
-        
-        // Adiciona o evento para disparar AS DUAS funções ao mudar
-        radio.addEventListener('change', () => {
+        // Usar o 'onchange' substitui automaticamente qualquer evento anterior, 
+        // evitando a duplicação sem precisar do removeEventListener!
+        radio.onchange = () => {
             toggleOpcaoAutomatizado();
             toggleOpcaoSerial();
-        });
+        };
     });
+
+    // 🎯 A SOLUÇÃO VEM AQUI:
+    // Chama as funções logo no carregamento para ler o estado inicial (checked)
     toggleOpcaoAutomatizado();
     toggleOpcaoSerial();
+
 }
 
 function toggleOpcaoAutomatizado() {
@@ -3527,6 +3567,7 @@ document.addEventListener('DOMContentLoaded', () => {
     iniciarRelogio();
     initGrid();
     connectAdminWS();
+    setTimeout(atualizarVisibilidadeExtratora, 300);
     devolverFocoAoJogo();
 });
 
