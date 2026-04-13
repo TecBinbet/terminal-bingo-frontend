@@ -23,6 +23,8 @@ let tempoEsperaConferenciaRobo = 3;
 
 let tempoInicioTransmissao = 0;
 
+let qtdeCuponsVendidosEvento = 0;
+
 let A_Ultima_Bola = 0;
 
 let isSorting = false;
@@ -1159,14 +1161,66 @@ function renderizarListaEventos(eventos) {
                     <span>⏰ ${evt.hora || '--:--'}</span>
                     <span class="uppercase font-bold text-blue-300">[${evt.status}]</span>
                 </div>
+            </div>     
+            <div class="flex gap-2 items-center">
+                <button onclick="carregarEvento('${evt.id_evento}')" class="px-4 py-3 rounded text-xs font-bold ${isFinalizado ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-green-700 text-white hover:bg-green-600 shadow'}">
+                    ${isFinalizado ? 'ENCERRADO' : 'CARREGAR'}
+                </button>   
+                
+                ${!isFinalizado ? `
+                <button onclick="ativarNovoEvento('${evt.id_evento}')" 
+                        class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-3 rounded text-xs shadow">
+                    ATIVAR P/ COMPRA
+                </button>
+                ` : ''}
             </div>
-            <button onclick="carregarEvento('${evt.id_evento}')" class="px-4 py-3 rounded text-xs font-bold ${isFinalizado ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-green-700 text-white hover:bg-green-600 shadow'}">
-                ${isFinalizado ? 'ENCERRADO' : 'CARREGAR'}
-            </button>
         `;
+
         container.appendChild(card);
     });
 }
+
+
+// Adicionamos o parâmetro 'automatico = false'
+async function ativarNovoEvento(idNovoEvento, automatico = false) {
+    // Se for manual (clique no botão), ele pergunta. Se for automático, passa direto!
+    if (!automatico) { 
+        const confirmou = await customConfirm(`Deseja ativar o Evento ${idNovoEvento} p/ Vendas no Terminal?`);
+        if(!confirmou) return;
+    } else {
+        // Log discreto para debug quando for automático
+        console.log(`🤖 [AUTOMAÇÃO] Ativando evento ${idNovoEvento} sem confirmação manual.`);
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/admin/ativar_evento`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id_evento: idNovoEvento })
+        });
+
+        const data = await response.json();
+
+        if (data.sucesso) {
+            // if (!automatico) alert("✅ Evento ativado! Os terminais já podem acessar a nova rodada.");
+            
+            if (typeof dadosEventoAtual !== 'undefined') {
+                dadosEventoAtual.id = idNovoEvento;
+                dadosEventoAtual.id_evento = idNovoEvento;
+            }
+
+            // Fecha o modal se estiver aberto
+            const modal = document.getElementById('painel-selecao-eventos'); 
+            if (modal) modal.classList.add('hidden');
+            
+        } else {
+            console.error("❌ Erro ao ativar evento: ", data.mensagem);
+        }
+    } catch (e) {
+        console.error("Erro na ativação:", e);
+    }
+}
+
 
 async function carregarParametrosDoBanco() {
     console.log("📡 [API] Buscando parâmetros oficiais do banco...");
@@ -1495,23 +1549,28 @@ async function sortearBola() {
         }
 
         // 🍀 GATILHO SORTE EXTRA (LOCAL)
-         if (buscarSorteExtra) {
-          if (sorteioExtraConfigAtivo && bolasSorteadasCache.length === qtdeTopeSorteExtra) {
-            if (!jaValidouSorteExtraNestaRodada) {
-                jaValidouSorteExtraNestaRodada = true;
-                if (autoSorteioAtivo) pararAutoSorteio(); // Para o robô para processar o sorte extra
-        
-                console.log("🚨 [GATILHO LOCAL] Atingiu quantidade para Sorte Extra!");
-        
-                if (modoRoboAtivo) {
-                    if (typeof dispararVerificacaoRobo === 'function') dispararVerificacaoRobo();
+        if (buscarSorteExtra) {
+            if (sorteioExtraConfigAtivo && bolasSorteadasCache.length === qtdeTopeSorteExtra) {
+                if (qtdeCuponsVendidosEvento > 0) {
+                    if (!jaValidouSorteExtraNestaRodada) {
+                        jaValidouSorteExtraNestaRodada = true;
+                        if (autoSorteioAtivo) pararAutoSorteio(); 
+                        console.log(`🚨 [GATILHO LOCAL] Atingiu bola ${qtdeTopeSorteExtra}. Iniciando Sorte Extra para ${qtdeCuponsVendidosEvento} cupons.`);
+                        if (modoRoboAtivo) {
+                            if (typeof dispararVerificacaoRobo === 'function') dispararVerificacaoRobo();
+                        } else {
+                            if (typeof abrirModalValidacaoSorteExtra === 'function') abrirModalValidacaoSorteExtra();
+                        }
+                    }
                 } else {
-                    if (typeof abrirModalValidacaoSorteExtra === 'function') abrirModalValidacaoSorteExtra();
+                // Caso chegue na bola do tope mas não tenha cupons
+                    if (!jaValidouSorteExtraNestaRodada) {
+                        console.warn("⏭️ Sorte Extra ignorada: Quantidade de cupons vendidos é ZERO.");
+                        jaValidouSorteExtraNestaRodada = true; // Marca como validado para não ficar disparando o log
+                   }
                 }
-            }
-          }
-        }
-     
+           }
+        }     
     } catch (e) {
         console.error("Erro de comunicação (Ignorado pelo Locutor):", e);
     } finally {
@@ -1641,11 +1700,18 @@ async function inserirBolaManual() {
         // 🍀 GATILHO SORTE EXTRA (LOCAL)
         if (buscarSorteExtra) {
             if (sorteioExtraConfigAtivo && bolasSorteadasCache.length === qtdeTopeSorteExtra) {
-                if (!jaValidouSorteExtraNestaRodada) {
-                    jaValidouSorteExtraNestaRodada = true;      
-                    console.log("🚨 [GATILHO LOCAL] Atingiu quantidade para Sorte Extra!");
-                    if (typeof abrirModalValidacaoSorteExtra === 'function') abrirModalValidacaoSorteExtra();
-                    
+                if (qtdeCuponsVendidosEvento > 0) {
+                    if (!jaValidouSorteExtraNestaRodada) {
+                        jaValidouSorteExtraNestaRodada = true;      
+                        console.log("🚨 [GATILHO LOCAL] Atingiu quantidade para Sorte Extra!");
+                        if (typeof abrirModalValidacaoSorteExtra === 'function') abrirModalValidacaoSorteExtra();             
+                    }
+                } else {
+                // Caso chegue na bola do tope mas não tenha cupons
+                    if (!jaValidouSorteExtraNestaRodada) {
+                        console.warn("⏭️ Sorte Extra ignorada: Quantidade de cupons vendidos é ZERO.");
+                        jaValidouSorteExtraNestaRodada = true; // Marca como validado para não ficar disparando o log
+                   }
                 }
             }
         }
@@ -1886,6 +1952,9 @@ async function executarCarregamentoReal(idEvento) {
         }
 
         dadosEventoAtual = dados; 
+
+        qtdeCuponsVendidosEvento = dados.qtde_cupons || 0; 
+        console.log(`%c🎟️ SORTE EXTRA: ${qtdeCuponsVendidosEvento} cupons em jogo.`, "color: #fbbf24; font-weight: bold;");
 
         // forcarAtualizacaoClientes();
 
@@ -2863,11 +2932,39 @@ async function resetarJogo(force = false) {
         jogoRoboFinalizadoComSucesso = false;
 
         // Envia o payload completo
-        await fetch(`${API_BASE_URL}/api/admin/resetar`, { 
+        //await fetch(`${API_BASE_URL}/api/admin/resetar`, { 
+        //    method: 'POST',
+        //    headers: { 'Content-Type': 'application/json' },
+        //    body: JSON.stringify(payload) 
+        //});
+
+
+        // ✅ COLOQUE ESTE NO LUGAR (Note o "const responseReset =" no início):
+        const responseReset = await fetch(`${API_BASE_URL}/api/admin/resetar`, { 
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload) 
         });
+
+
+        // Transformamos a resposta em JSON para pegar a variável 'proximo_evento'
+        const dataReset = await responseReset.json(); 
+        const idProximoEvento = dataReset.proximo_evento;
+
+        // =======================================================
+        // 👉 NOVO: COLOCA OS TERMINAIS EM MODO DE ESPERA
+        // =======================================================
+        try {
+            await fetch(`${API_BASE_URL}/api/admin/atualizar_buscando`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    buscando_o_premio: "AGUARDANDO INÍCIO SORTEIO...", 
+                    buscando_a_linha: "", qtde_linha: 0, valor: ""
+                })
+            });
+        } catch(e) { console.error("Erro ao por em espera:", e); }
+        // =======================================================
         
         // =======================================================
         // 🧹 RESET LOCAL DAS VARIÁVEIS
@@ -2917,7 +3014,17 @@ async function resetarJogo(force = false) {
                     if(payload.ganhadores_extra.length > 0) {
                         msgSucesso += `\n\n✅ ${payload.ganhadores_extra.length} Prêmios Extras Processados/Pagos.`;
                     }
-                    msgSucesso += "\nO próximo evento foi carregado.";
+
+                    // Verifica se o servidor mandou um ID de evento válido
+                    if (idProximoEvento && idProximoEvento !== "None" && idProximoEvento !== "") {
+                        msgSucesso += `\n🔄 O Próximo Evento (#${idProximoEvento}) foi ativado automaticamente!`;
+                        
+                        // Chama a função de ativar no modo "automático" (true) para não pedir confirmação
+                        await ativarNovoEvento(idProximoEvento, true);
+                    } else {
+                        msgSucesso += "\n⚠️ Não há um próximo evento agendado.";
+                        abrirModalEventos(); // Só abre o modal se não tiver próximo evento automático
+                    }
                 
                     customAlert(msgSucesso, "Sucesso", 5); // 5 segundos
                     abrirModalEventos();

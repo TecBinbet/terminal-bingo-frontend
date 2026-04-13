@@ -271,7 +271,7 @@ except Exception:
 
 VERSION = "2.1.0-SingleTenant"
 
-# --- CONFIGURAÇÃO DE ROTEAMENTO DE SALAS --- AQUI
+# --- CONFIGURAÇÃO DE ROTEAMENTO DE SALAS --- 
 # ==============================================================================
 # 🆕 ADIÇÃO MULTI-SALAS (INÍCIO)
 # ==============================================================================
@@ -1926,18 +1926,39 @@ def api_stream_():
 @app.route('/<path:path>')
 def serve_static(path): return send_from_directory(BASE_DIR, path)
 
+from bson.decimal128 import Decimal128
+from bson.objectid import ObjectId
+
+def formatar_dados_mongo(obj):
+    """Recursivamente converte tipos do MongoDB para tipos compatíveis com JSON."""
+    if isinstance(obj, list):
+        return [formatar_dados_mongo(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {k: formatar_dados_mongo(v) for k, v in obj.items()}
+    elif isinstance(obj, Decimal128):
+        return float(str(obj))
+    elif isinstance(obj, ObjectId):
+        return str(obj)
+    return obj
 
 @app.route('/api/initial-data')
 def initial_data():
-#    return jsonify(fetch_data())
+    # 1. Busca os dados (do banco ou processo interno)
     dados = fetch_data()
-    # Se der erro (None), tenta pegar da memória global (cache) em vez de mandar vazio
-    if not dados:
-        if is_local_mode: dados = local_data
-        else: dados = mongo_data
     
-    # Se ainda assim for vazio (início do sistema), manda {}
-    return jsonify(dados if dados else {})
+    # 2. Se falhar, tenta buscar do cache/memória
+    if not dados:
+        if is_local_mode: 
+            dados = local_data
+        else: 
+            dados = mongo_data
+    
+    # 3. APLICA A LIMPEZA (Essencial para não dar erro 500)
+    # Isso transforma o Decimal128 em Float e o ObjectId em String
+    dados_serializaveis = formatar_dados_mongo(dados)
+    
+    # 4. Retorna com segurança
+    return jsonify(dados_serializaveis if dados_serializaveis else {})
 
 
 @app.route('/api/admin/reload_treino')
@@ -3245,6 +3266,7 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
         "mensagem": msg_validacao,        # A mensagem de texto vai num campo separado
         "ganhador": nome_ganhador, 
         "status": "conferindo",
+        "posicaolinha": "NULL",
         "tipo_conferencia": "BINGO_NORMAL"
     })
     
@@ -3465,14 +3487,7 @@ def admin_validar_cartela():
                 if num == ultima_bola: separador = "*" 
                 elif num in bolas_set: separador = "+"
             str_numeros_formatada += separador + num_str
-            
-        # TV Confere
-        db.confere.delete_many({})
-        db.confere.insert_one({
-            "rodada": int(id_evento_ativo), "cartao": cartela_id,
-            "numeros": str_numeros_formatada, "ganhador": nome_ganhador, "status": "conferindo","status": "conferindo","tipo_conferencia": "BINGO_NORMAL"
-        })
-            
+                       
         # Regras 90
         bateu, detalhes, linha_ganha = False, "", ""
         linhas_faltantes = premio_doc.get('buscando_a_linha', '').upper()
@@ -3514,6 +3529,21 @@ def admin_validar_cartela():
             bateu, detalhes = True, "Validação Visual."
 
         status_code = 'WIN' if bateu else 'LOSS'
+
+        # ==============================================================================
+        # 5. TV CONFERE - GRAVAÇÃO MOVIDA PARA CÁ (AGORA SABEMOS O VALOR DE linha_ganha)
+        # ==============================================================================
+        db.confere.delete_many({})
+        db.confere.insert_one({
+            "rodada": int(id_evento_ativo), 
+            "cartao": cartela_id,
+            "numeros": str_numeros_formatada, 
+            "ganhador": nome_ganhador, 
+            "status": "conferindo",
+            "tipo_conferencia": "BINGO_NORMAL", 
+            # Se linha_ganha for "SUP", "CEN" ou "INF", ele salva. Senão salva "NULL".
+            "posicaolinha": linha_ganha.upper() if linha_ganha else "NULL" 
+        })
 
         if bateu:
             premio_registro = f"{premio_nome} ({linha_ganha})" if linha_ganha else premio_nome
@@ -4012,6 +4042,120 @@ def admin_resetar():
         return jsonify({'error': str(e)}), 500
 
 
+# =======================================================
+# ROTA: ATIVAR PRÓXIMO EVENTO
+# =======================================================
+@app.route('/api/admin/ativar_evento', methods=['POST'])
+@cross_origin()
+def admin_ativar_evento():
+    try:
+        dados = request.json
+        novo_id_evento = dados.get('id_evento')
+        
+        if not novo_id_evento:
+            return jsonify({'sucesso': False, 'mensagem': 'ID do evento ausente.'}), 400
+
+        # =========================================================
+        # 1. BUSCA O EVENTO NO BANCO DE VENDAS (sales_db)
+        # =========================================================
+        id_evento_int = int(novo_id_evento)
+        
+        # Conecta no banco de vendas para pescar os dados do evento
+        sales_db = get_sales_db_connection()
+        if sales_db is None: 
+            return jsonify({'sucesso': False, 'mensagem': 'Erro: Banco de Vendas Offline.'}), 500
+
+        busca_query = {
+            '$or': [
+                {'id_evento': id_evento_int},
+                {'id_evento': str(id_evento_int)},
+                {'id': id_evento_int}
+            ]
+        }
+        
+        # Procura no banco de VENDAS
+        evento = sales_db.eventos.find_one(busca_query)
+        
+        if not evento:
+            evento = sales_db.evento.find_one(busca_query)
+            
+        if not evento:
+            return jsonify({'sucesso': False, 'mensagem': f'Evento {id_evento_int} não encontrado no banco de vendas.'}), 404
+
+        # =========================================================
+        # 2. ATUALIZA A RODADA ATIVA (No banco do jogo - db)
+        # =========================================================
+        db.rodada.update_one(
+            {}, 
+            {'$set': {'id_evento': str(id_evento_int), 'status': 'ativo'}}, 
+            upsert=True
+        )
+
+        # =========================================================
+        # 3. ATUALIZA A TABELA DE PREMIAÇÃO (No banco do jogo - db)
+        # =========================================================
+        dados_premio = {
+            'premio_quadra': converter_decimal(evento.get('premio_quadra', 0)),
+            'premio_linha': converter_decimal(evento.get('premio_linha', 0)),
+            'qtde_linha': evento.get('quantidade_de_linhas', 1),
+            'premio_falta_Um': converter_decimal(evento.get('premio_faltaum', 0)),
+            'premio_bingo': converter_decimal(evento.get('premio_bingo', 0)),
+            'premio_duplo_bingo': converter_decimal(evento.get('premio_segundobingo', 0)),
+            'premio_acumulado': converter_decimal(evento.get('premio_acumulado', 0)),
+            'bola_tope_ac': evento.get('bola_tope_acumulado', 0),
+            
+            'preco': evento.get('valor_de_venda', 0), 
+            'multiplo': evento.get('unidade_de_venda', 1), 
+            'serie_em_jogo': evento.get('numero_maximo', 0), 
+            
+            'rodada': str(id_evento_int),
+            'minimo_de_cartelas': 1,
+            'maximo_de_cartelas': 6000,
+            'inicial1': 0,
+            'final1': 0,
+            'inicial2': 0,
+            'final2': 0, 
+            'total_cartelas_em_jogo': 0 
+        }
+
+        db.premio.delete_many({}) 
+        db.premio.insert_one(dados_premio)
+
+        # =========================================================
+        # 4. FAXINA GERAL DA MESA (No banco do jogo - db)
+        # =========================================================
+        db.bolas_sorteadas.delete_many({})
+        db.ranking.delete_many({})
+
+        # =========================================================
+        # 5. RESET DA TABELA "BUSCANDO" (A sua sacada de mestre)
+        # =========================================================
+        # Garante que os terminais mostrem a mensagem de espera assim que o evento ativar
+        db.buscando.update_one(
+            {}, 
+            {'$set': {
+                'buscando_o_premio': "AGUARDANDO INÍCIO SORTEIO...", 
+                'buscando_a_linha': "", 
+                'qtde_linha': 0, 
+                'valor': ""
+            }}, 
+            upsert=True
+        )
+
+        # =========================================================
+        # 6. AVISA OS TERMINAIS (Gatilho visual)
+        # =========================================================
+        broadcast({})
+        
+        return jsonify({'sucesso': True, 'mensagem': f'Evento {id_evento_int} ativado com prêmios carregados com sucesso!'})
+
+    except ValueError:
+        return jsonify({'sucesso': False, 'mensagem': 'Formato de ID inválido. Deve ser um número.'}), 400
+    except Exception as e:
+        print(f"Erro ao ativar evento: {e}")
+        return jsonify({'sucesso': False, 'mensagem': str(e)}), 500
+
+
 # --- ROTA DE DETALHES (COM SINCRONIZAÇÃO AUTOMÁTICA DE CARTELAS)  ---
 @app.route('/api/admin/detalhes_evento', methods=['GET'])
 def get_event_details():
@@ -4075,6 +4219,22 @@ def get_event_details():
                 'error': 'EVENTO VAZIO: Nenhuma cartela vendida encontrada para este evento. O sorteio não pode ser iniciado.'
             }), 400
 
+
+        # ==============================================================================
+        # 👉 NOVA LÓGICA: BUSCA QUANTIDADE DE CUPONS VENDIDOS (SORTE EXTRA)
+        # ==============================================================================
+        qtde_cupons_vendidos = 0
+        try:
+            # Substitua 'vendas_cupons' pelo nome real da sua coleção de cupons se for diferente
+            qtde_cupons_vendidos = sales_db.vendas_cupons.count_documents({
+                'id_evento': {'$in': [int(id_evt), str(id_evt)]}
+            })
+            print(f"🎟️ Sorte Extra: {qtde_cupons_vendidos} cupons encontrados para o evento {id_evt}")
+        except Exception as e_cupom:
+            print(f"⚠️ Erro ao contar cupons: {e_cupom}")
+        # ==============================================================================
+
+
         # 2. Busca detalhes das vendas
         if col_vendas_name in sales_db.list_collection_names():
             col_vendas = sales_db[col_vendas_name]
@@ -4112,6 +4272,7 @@ def get_event_details():
             'tipo_cartela': evento.get('tipo_de_cartela'),
             'numero_inicial': evento.get('numero_inicial', 0),
             'qtde_vendida': qtde_vendida,
+            'qtde_cupons': qtde_cupons_vendidos,
             'ultimo_cartao': ultimo_cartao,
             'total_vendas_reais': converter_decimal(soma_vendas_reais),
             'vendas_detalhadas': vendas_detalhadas,
@@ -4178,14 +4339,15 @@ def get_event_details():
                  'serie_em_jogo': serie_max,
                  'minimo_de_cartelas': 1,
                  'maximo_de_cartelas': 6000,
-                 'total_cartelas_em_jogo': qtde_vendida
+                 'total_cartelas_em_jogo': qtde_vendida,
+                 'total_cupons_em_jogo': qtde_cupons_vendidos
              }
 
              # --- LOGS DE DEBUG (PARA CAÇAR O ERRO DE COMPARAÇÃO) ---
-             print(f"DEBUG: id_evt type={type(id_evt)} value={id_evt}")
-             print(f"DEBUG: inicial_evento type={type(inicial_evento)} value={inicial_evento}")
-             print(f"DEBUG: final_evento type={type(final_evento)} value={final_evento}")
-             print(f"DEBUG: serie_max type={type(serie_max)} value={serie_max}")
+             #print(f"DEBUG: id_evt type={type(id_evt)} value={id_evt}")
+             #print(f"DEBUG: inicial_evento type={type(inicial_evento)} value={inicial_evento}")
+             #print(f"DEBUG: final_evento type={type(final_evento)} value={final_evento}")
+             #print(f"DEBUG: serie_max type={type(serie_max)} value={serie_max}")
 
              # 👉 LÓGICA DOS PERÍODOS (Blindada contra Tipos Diferentes)
              try:
@@ -6777,3 +6939,6 @@ def main():
 # ==============================================================================
 if __name__ == '__main__':
     main()
+
+
+

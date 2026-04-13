@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.7";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.8";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -73,6 +73,12 @@ const btnMenuFullscreen = document.getElementById('menu-btn-fullscreen');
 const statusFullscreen = document.getElementById('menu-status-fullscreen');
 const iconFullscreen = document.getElementById('icon-fullscreen');
 
+
+window.linhasAtivasNoJogo = {
+    SUP: true,
+    CEN: true,
+    INF: true
+};
 
 // Cores
 let corFundoCartela = "bg-gray-900";                 
@@ -843,6 +849,10 @@ function iniciarCompraCartelas(idEvento) {
                 console.log(`📡 Status do Evento Ativo: ${statusReal} (ID: ${idDoBanco})`);
 
                 if (statusReal === 'ativo' && idDoBanco) {
+                    window.eventoAtivoID = String(idDoBanco).trim()
+                    if (typeof idEventoNaTela !== 'undefined') {
+                       idEventoNaTela = String(idDoBanco).trim();
+                    }
                     // ✅ CENÁRIO 1: Existe evento rodando
                     // Abre direto o modal de compra para esse evento
                     abrirModalCompra(idDoBanco);
@@ -864,7 +874,7 @@ function iniciarCompraCartelas(idEvento) {
 }
 
 
-// Funções de busca de cartelas compradas
+// Funções de busca de cartelas compradas - p1
 async function carregarCartelasAutomaticas(idEvento) {
     if (!idEvento) return;
 
@@ -953,8 +963,6 @@ async function verificarNovasCompras() {
         // console.log("Sorteio em andamento. Verificação de vendas pausada.");
         return; 
     }
-    // ---------------------------------------------
-
     
     // Se for localhost, ignoramos qualquer prefixo de sala (/sala1) e vamos na raiz
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
@@ -1721,7 +1729,7 @@ document.addEventListener('mozfullscreenchange', updateFullscreenUI);
 document.addEventListener('msfullscreenchange', updateFullscreenUI);
 
 updateFullscreenUI();
-
+// p2
 function setupCartelasEmJogo(maxCardNumber) {
     const isMobile = isMobileDevice();
     const inputInicial = isMobile ? mobileCartelaInicialInput : cartelaInicialInput;
@@ -1861,7 +1869,7 @@ function adicionarFaixaDeCartelas(disparadoPorUsuario = false) {
     
     return true; // Sucesso
 }
-// --- FIM DA NOVA FUNÇÃO ---
+// --- FIM DA NOVA FUNÇÃO --- p3
 
 
 function displayCartelaRanges() {
@@ -1955,6 +1963,12 @@ function checkTotalCards(total) {
 
 
 async function fetchAndProcessCards() {
+
+   if (window.transicaoEmAndamento) {
+        console.log("🛑 Busca de cartelas cancelada: O painel está em transição.");
+        return;
+    }
+
     if (isFetchingCards) return;
     isFetchingCards = true;
 
@@ -1979,6 +1993,11 @@ async function fetchAndProcessCards() {
         if (!cards || cards.length === 0) {
             displayLoadedCards([]);
             return;
+        }
+
+        if (window.transicaoEmAndamento) {
+            console.log("🛑 Processamento abortado: A fase mudou enquanto baixávamos as cartelas.");
+            return; // Sai da função antes de rodar o processCards!
         }
 
         // --- AJUSTE DE OURO: CAPTURA DE BOLAS ---
@@ -2022,6 +2041,14 @@ async function fetchAndProcessCards() {
 // --- FUNÇÃO PRINCIPAL (Dispatcher) ---
 // Essa é a função que o fetchAndProcessCards chama.
 function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
+    // ============================================================
+    // 🛑 FREIO DE EMERGÊNCIA (Impede falsos ganhadores no limbo) 🛑
+    // ============================================================
+    if (window.transicaoEmAndamento) {
+        console.log("⏳ Transição detectada no Dispatcher. Abortando a conferência das cartelas.");
+        return; 
+    }
+
     // Verifica qual o tipo de jogo (75 ou 90)
     // Se a variável global MAX_BOLAS não estiver definida, assume 90.
 
@@ -2040,9 +2067,16 @@ function processCards(cards, bolasCantadas, premioBuscado, linhasAtivas) {
 
 // --- LÓGICA BINGO 90 (MANTIDA/REFATORADA) ---
 function processCards90(cards, bolasCantadas, premioBuscado, linhasAtivas) {
+    const textoBuscando = (premioBuscado || '').toString().toUpperCase();
+    // O sistema só permite avisos de linha se a palavra "LINHA" estiver no painel.
+    const isFaseDeLinhas = textoBuscando.includes('LINHA');
+
+    // 📸 [CÂMERA 1] O que a função acha que está buscando logo que liga?
+    console.log(`[LOG 1] Iniciando processCards90 | Prêmio Atual: ${textoBuscando} | Fase de Linhas? ${isFaseDeLinhas}`);
+
     const processedCards = [];
     if (premioBuscado === 'BINGO') bingoWinners.clear();
-    
+
     const isMultiLinePrize = premioBuscado.includes('LINHA') && linhasAtivas;
     const activeLinesArray = isMultiLinePrize ? linhasAtivas.split(',') : [];
 
@@ -2077,47 +2111,79 @@ function processCards90(cards, bolasCantadas, premioBuscado, linhasAtivas) {
             type: 90 // Tag para renderização
         };
 
-        // ... (Lógica de Linhas e Quadra do Bingo 90 mantida igual ao seu código original) ...
-        // Vou resumir a lógica de push para focar na estrutura:
-        
-        if (isMultiLinePrize || premioBuscado.includes('QUADRA') || premioBuscado.includes('LINHA')) {
-             const lines = [
-                { id: 'SUP', numbers: superior, count: count.superior },
-                { id: 'CEN', numbers: central, count: count.central },
-                { id: 'INF', numbers: inferior, count: count.inferior }
+        // 🛡️ O Freio Mestre (Fase de Linhas)
+        if ((isFaseDeLinhas || premioBuscado.includes('QUADRA')) && count.geral < 15) {
+            
+            const lines = [
+                { id: 'SUP', numbers: superior, count: count.superior, ativa: window.linhasAtivasNoJogo.SUP },
+                { id: 'CEN', numbers: central, count: count.central, ativa: window.linhasAtivasNoJogo.CEN },
+                { id: 'INF', numbers: inferior, count: count.inferior, ativa: window.linhasAtivasNoJogo.INF }
             ];
+
+            let ganhouLinhaInedita = false;
+            let linhaPremiadaId = null;
+            let linhaPremiadaNumbers = []; // Guarda os números da linha que bateu
+            
+            // Variáveis para o Ranking
+            let maxHitsLinhaAtiva = -1; // Começa em -1 para garantir que ele pegue pelo menos a 1ª linha vazia
+            let melhorLinhaIdParaRanking = null;
+            let melhorLinhaNumbers = []; // Guarda os números da linha que está quase lá
+
             lines.forEach(line => {
-                // ... (Lógica de verificação de linha igual ao original) ...
-                // Se linha válida, processedCards.push(cloneDoObjeto);
-                // ATENÇÃO: Copie a lógica interna do seu 'processCards' original aqui para as linhas
-                // Exemplo rápido:
-                if (!isMultiLinePrize || activeLinesArray.includes(line.id)) {
-                     let lineObj = JSON.parse(JSON.stringify(cardObj));
-                     lineObj.linhaId = line.id;
-                     lineObj.counts.linha = line.count;
-                     lineObj.originalData.linha = line.numbers;
-                     lineObj.missingNumbers = line.numbers.filter(n => !bolasCantadas.includes(n));
-                     
-                     if (premioBuscado.includes('QUADRA') && line.count >= 4) {
-                         lineObj.premioEncontrado = 'QUADRA'; 
-                         // playSound/Gif...
-                     } else if (premioBuscado.includes('LINHA') && line.count === 5) {
-                         lineObj.premioEncontrado = 'LINHA';
-                         // playSound/Gif...
-                     }
-                     processedCards.push(lineObj);
+                if (line.ativa) {
+                    
+                    // 1. GRAVA A MELHOR LINHA (Pega os números dela também!)
+                    if (line.count > maxHitsLinhaAtiva) {
+                        maxHitsLinhaAtiva = line.count;
+                        melhorLinhaIdParaRanking = line.id;
+                        melhorLinhaNumbers = line.numbers; 
+                    }
+
+                    // 2. VERIFICA SE BATEU OS 5 PONTOS
+                    if (line.count === 5) {
+                        ganhouLinhaInedita = true;
+                        linhaPremiadaId = line.id;
+                        linhaPremiadaNumbers = line.numbers;
+                    }
                 }
             });
+
+            // ====================================================================
+            // 🛑 AJUSTE FINAL: SOBRESCREVE OS NÚMEROS FALTANTES 
+            // ====================================================================
+            if (ganhouLinhaInedita) {
+                // A cartela BATEU!
+                cardObj.premioEncontrado = 'LINHA';
+                cardObj.linhaId = linhaPremiadaId; 
+                cardObj.counts.linha = 5; 
+                cardObj.originalData.linha = linhaPremiadaNumbers;
+                // Como bateu, os faltantes serão ZERO, mas mantemos o filtro por segurança visual
+                cardObj.missingNumbers = linhaPremiadaNumbers.filter(n => !bolasCantadas.includes(n)); 
+            } else {
+                // NÃO BATEU, mostra as faltantes apenas da melhor linha!
+                cardObj.linhaId = melhorLinhaIdParaRanking;
+                cardObj.counts.linha = maxHitsLinhaAtiva; 
+                cardObj.originalData.linha = melhorLinhaNumbers;
+                // 👉 O Segredo: Filtra só as 5 bolas dessa linha contra as bolas cantadas
+                cardObj.missingNumbers = melhorLinhaNumbers.filter(n => !bolasCantadas.includes(n)); 
+            }
+            
+            processedCards.push(cardObj);
+
         } else {
-            // Bingo Cheio / Duplo / Falta 1
-            // ... (Lógica original de Bingo Cheio) ...
-            if (count.geral === 15) cardObj.premioEncontrado = 'BINGO'; // Exemplo
+            // Lógica de Bingo / Falta 1
+            if (count.geral === 15) cardObj.premioEncontrado = 'BINGO'; 
             else if (premioBuscado.includes('FALTA') && count.geral === 14) cardObj.premioEncontrado = 'FALTA 1';
+            
+            // Para o bingo, a missingNumbers já foi calculada lá no topo usando as 15 dezenas
             processedCards.push(cardObj);
         }
+
     });
 
     // Ordenação e Atualização Global
+    // 📸 [CÂMERA 3] Resumo do que está saindo da função
+    console.log(`[LOG 3] Fim do processCards90. Enviando ${processedCards.length} cartelas processadas para a tela.`);
     finalizeProcessing(processedCards, premioBuscado);
 }
 
@@ -2481,6 +2547,10 @@ function clearPanels() {
     if (typeof alternarPainelMobile === 'function') {
         alternarPainelMobile('ocultar');
     }
+
+    window.linhasAtivasNoJogo = { SUP: true, CEN: true, INF: true };
+    window.memoriaLinhasPagas = {};
+
     window.primeiraBolaDetectada = false;   
     window.fecharAuditoria();
     precoSerie.textContent = '';    
@@ -2532,9 +2602,7 @@ function clearPanels() {
     resultadoSoma.textContent = '0';
     if (isMobile) {
         mobileCartelasContent.classList.add('hidden');
-        //mobilePrizesContent.classList.add('hidden');
         toggleCartelasButton.textContent = 'INCLUIR Cartelas';
-        //togglePrizesButton.textContent = 'Apresentar Prêmios';
     }   //  2
     displayPrizeInfo([{ buscando_o_premio: null }],[]);
     mostrarBotoesSorteExtra()
@@ -2667,6 +2735,16 @@ function displayPrizeInfo(buscandoData, premioData = null) {
         textoFinal = buscandoValue;
     }
 
+// 🛑 O FREIO DE EMERGÊNCIA (Condição de Corrida) 🛑
+    // =========================================================
+    // Verifica se as linhas esgotaram e geraram os parênteses vazios
+    if (textoFinal.includes("()") || textoFinal.includes("(  )")) {
+        textoFinal = "PREPARANDO BINGO...";
+        window.transicaoEmAndamento = true; // Trava o sistema de conferência
+    } else {
+        window.transicaoEmAndamento = false; // Jogo normal, libera a trava
+    }
+
     // =========================================================
     // --- A BLINDAGEM (O Segredo para não piscar) ---
     // =========================================================
@@ -2682,9 +2760,11 @@ function displayPrizeInfo(buscandoData, premioData = null) {
     const telaTemValor = lastBuscandoJson && (lastBuscandoJson.includes('R$') || /\d+,\d{2}/.test(lastBuscandoJson));
     const novoTemValor = textoFinal.includes('R$') || /\d+,\d{2}/.test(textoFinal);
 
-    if (telaTemValor && !novoTemValor && textoFinal !== '. . .') {
-        // Se a gente tinha valor e agora sumiu (mas não é um reset total), 
-        // assumimos que é um delay do servidor e IGNORAMOS essa atualização.
+    if (telaTemValor && !novoTemValor && 
+        textoFinal !== '. . .' && 
+        textoFinal !== 'PREPARANDO BINGO...' && 
+        textoFinal !== 'AGUARDANDO INÍCIO SORTEIO...') { // <--- Adicione o seu texto exato aqui
+        
         return;
     }
 
@@ -3129,7 +3209,18 @@ function displayConferencePanel(confereData, bolasCantadas) {
         } else {
             // Layout de Bingo Normal
             donoDoModal = 'BINGO';
-            
+ 
+            // ⚡ ATIVAR DISJUNTORES: Captura a posição da linha confirmada
+            if (data.posicaolinha) {
+                const posicao = data.posicaolinha.toUpperCase(); // Garante "SUP", "CEN" ou "INF"
+                
+                // Verifica se o disjuntor global existe e desativa a busca para esta posição
+                if (window.linhasAtivasNoJogo && window.linhasAtivasNoJogo.hasOwnProperty(posicao)) {
+                    window.linhasAtivasNoJogo[posicao] = false;
+                    console.log(`[SISTEMA] ⚡ Linha ${posicao} detectada na conferência. Disjuntor desligado para evitar re-processamento.`);
+                }
+            }
+           
             if (titleEl) {
                 titleEl.textContent = "🎉 Conferência 🎉";
                 titleEl.className = "text-center text-xl text-white uppercase tracking-widest border-b-2 border-yellow-500 pb-0 w-full";
@@ -3785,14 +3876,14 @@ function temaTope10() {
         corNumerosBordaDest = "border-yellow-600";
 
         // --- Cores Numeros Faltantes (Mobile) ---
-        corFundoConteiner = "bg-gray-900/50";
-        corFundoTitulo = "bg-gray-800";
-        corFundoNumeroCartao = "bg-gray-700  border-0";
-        corFundoPosicaoLinha = "bg-gray-800";
-        corFundoNumeros4 = "bg-transparent border-2 border-blue-800";
-        corFundoNumeros23 = "bg-transparent border-2 border-orange-700"; 
-        corFundoNumero1 = "bg-transparent border-2 border-green-500";
-        corTextoNumeros = "text-gray-200";
+        //corFundoConteiner = "bg-gray-900/50";
+        //corFundoTitulo = "bg-gray-800";
+        //corFundoNumeroCartao = "bg-gray-700  border-0";
+        //corFundoPosicaoLinha = "bg-gray-800";
+        //corFundoNumeros4 = "bg-transparent border-2 border-blue-800";
+        //corFundoNumeros23 = "bg-transparent border-2 border-orange-700"; 
+        //corFundoNumero1 = "bg-transparent border-2 border-green-500";
+        //corTextoNumeros = "text-gray-200";
 
     } else {
         // --- TEMA LIGHT (Claro) ---
@@ -3818,16 +3909,16 @@ function temaTope10() {
         corNumerosBordaDest = "border-blue-500";
 
         // --- Cores Numeros Faltantes (Mobile) ---
-        corFundoConteiner = "bg-blue-300/20";
-        corFundoTitulo = "bg-blue-850";
-        corFundoNumeroCartao = "bg-blue-700 border-2 border-blue-900";
-        corFundoPosicaoLinha = "bg-blue-700";
+        //corFundoConteiner = "bg-blue-300/20";
+        //corFundoTitulo = "bg-blue-850";
+        //corFundoNumeroCartao = "bg-blue-700 border-2 border-blue-900";
+        //corFundoPosicaoLinha = "bg-blue-700";
         
         // Ajuste aqui: border-1 não existe padrão, usa-se apenas 'border'
-        corFundoNumeros4 = "bg-transparent border-2 border-blue-950";
-        corFundoNumeros23 = "bg-transparent border-2 border-orange-700";
-        corFundoNumero1 = "bg-blue-800 border-2 border-yellow-500";
-        corTextoNumeros = "text-white";
+        //corFundoNumeros4 = "bg-transparent border-2 border-blue-950";
+        //corFundoNumeros23 = "bg-transparent border-2 border-orange-700";
+        //corFundoNumero1 = "bg-blue-800 border-2 border-yellow-500";
+        //corTextoNumeros = "text-white";
     }
 
     // --- ATUALIZAÇÃO IMEDIATA ---
@@ -5671,7 +5762,9 @@ function calcularTotalCompra() {
     // console.log(`🧮 Cálculo: ${qtd} x ${globalPrecoCartela} = ${total} (Saldo: ${globalUserSaldo})`);
 }
 
-// CONFIRMAR COMPRA (COM RECARREGAMENTO FORÇADO E SPINNER NO BOTÃO)
+// CONFIRMAR COMPRA (COM RECARREGAMENTO FORÇADO E SPINNER NO BOTÃO)   
+//  const idEventoNaTela = (typeof currentEventID !== 'undefined') ? currentEventID : null;
+
 async function confirmarCompra() {
     // 1. Captura a quantidade e limpa o valor
     const elInput = document.getElementById('qtd-manual');
@@ -5713,6 +5806,13 @@ async function confirmarCompra() {
         } else {
             const elLastRound = document.getElementById('mobile-last-round');
             idEventoFinal = parseInt(elLastRound?.textContent) || 0;
+        }
+
+        // 🔥 FORÇAR ATUALIZAÇÃO DA GLOBAL AQUI (O Auto-Reparo)
+        if (idEventoFinal && idEventoFinal !== 0) {
+            window.eventoAtivoID = String(idEventoFinal).trim();
+            if (typeof idEventoNaTela !== 'undefined') idEventoNaTela = String(idEventoFinal).trim();
+            console.log(`[AJUSTE] Global forçada para ${idEventoFinal} antes da validação.`);
         }
 
         // Função auxiliar para converter "R$ 1.200,50" em 1200.50
@@ -5793,19 +5893,43 @@ async function confirmarCompra() {
 
             if (typeof atualizarDadosCliente === 'function') await atualizarDadosCliente(); 
             
-            const idEventoNaTela = (typeof currentEventID !== 'undefined') ? currentEventID : null;
+            // ====================================================================
+            // 📸 RAIO-X: Coleta Segura (Evita ReferenceError)
+            // ====================================================================
+            
+            // Lê as variáveis apenas se elas realmente existirem na memória
+            const eventoCompraStr = (typeof idEventoFinal !== 'undefined' && idEventoFinal !== null) ? String(idEventoFinal).trim() : "0";
+            const eventoTelaStr = (typeof idEventoNaTela !== 'undefined' && idEventoNaTela !== null) ? String(idEventoNaTela).trim() : "0";
+            const idEventoGlobalStr = (typeof window.eventoAtivoID !== 'undefined' && window.eventoAtivoID !== null) ? String(window.eventoAtivoID).trim() : "0";
 
-            if (idEventoNaTela && String(idEventoFinal) === String(idEventoNaTela)) {
-                console.log(`🔄 Compra no evento ATUAL (${idEventoFinal}). Atualizando mesa...`);
+            //console.log(`[RAIO-X COMPRA] Compra: "${eventoCompraStr}" | Tela: "${eventoTelaStr}" | Global: "${idEventoGlobalStr}"`);
+
+            // Se o ID da compra bater com o da tela OU com o ID do evento global
+            if ((eventoTelaStr !== "0" && eventoCompraStr === eventoTelaStr) || (idEventoGlobalStr !== "0" && eventoCompraStr === idEventoGlobalStr)) {
+                
+                // console.log(`🔄 Compra no evento ATUAL (${eventoCompraStr}). Atualizando mesa...`);
+                // ====================================================================
+                // ⚡ DESTRUIÇÃO DO CACHE 
+                // ====================================================================
+                if (typeof cachedRawCards !== 'undefined') {
+                    //console.log("🧹 Limpando cache antigo de cartelas para forçar o download das novas...");
+                    cachedRawCards = []; 
+                    if (typeof isFetchingCards !== 'undefined') isFetchingCards = false; 
+                }
+
                 if (typeof eventoCarregadoAtual !== 'undefined') {
                     eventoCarregadoAtual = null; 
                 }
+                
                 await new Promise(r => setTimeout(r, 500));
+                
+                // Força o recarregamento das cartelas
                 if (typeof carregarCartelasAutomaticas === 'function') {
                     await carregarCartelasAutomaticas(idEventoFinal);
                 } 
+                
             } else {
-                console.log(`📅 Compra Agendada (Evento ${idEventoFinal}). Mesa mantida no Evento ${idEventoNaTela}.`);
+                console.log(`📅 Compra Agendada (Evento ${eventoCompraStr}). Mesa mantida.`);
             }
 
             if (typeof fecharModal === 'function') fecharModal('modal-comprar-cartelas'); 
