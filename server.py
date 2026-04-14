@@ -4894,6 +4894,7 @@ def api_dados_cliente():
         print(f"Erro dados cliente: {e}")
         return jsonify({'erro': str(e)}), 500
 
+
 @app.route('/api/comprar_cartelas', methods=['POST'])
 def api_comprar_cartelas():
     """Processa a compra de forma ATÓMICA e com Rollover perfeito."""
