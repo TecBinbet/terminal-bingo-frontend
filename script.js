@@ -73,6 +73,7 @@ const btnMenuFullscreen = document.getElementById('menu-btn-fullscreen');
 const statusFullscreen = document.getElementById('menu-status-fullscreen');
 const iconFullscreen = document.getElementById('icon-fullscreen');
 
+let isProcessandoCompra = false;
 
 window.linhasAtivasNoJogo = {
     SUP: true,
@@ -949,6 +950,12 @@ async function carregarCartelasAutomaticas(idEvento) {
 
 // --- FUNÇÃO: Sincronia de Compras Externas (COM REGRA DE BLOQUEIO) ---
 async function verificarNovasCompras() {
+    // 🚦 Se estivermos processando uma compra manual, pula esta verificação
+    if (isProcessandoCompra) {
+        console.log("⏳ verificarNovasCompras suspensa: Aguardando conclusão da compra manual...");
+        return; 
+    }
+
     // 1. Verificações básicas de login e IDs
     if (!clienteLogado || !clienteLogadoId || !idRodada) return;
 
@@ -5855,6 +5862,7 @@ async function confirmarCompra() {
         const data = await res.json();
 
         if (res.ok) {
+            isProcessandoCompra = true;
             // SUCESSO - CORREÇÃO DO ALERTA E RECIBO
             const nInicial = String(data.inicial || '0').padStart(6, '0');
             const nFinal = String(data.final || '0').padStart(6, '0');
@@ -5880,16 +5888,16 @@ async function confirmarCompra() {
             }
 
             if (typeof showCustomAlert === 'function') {
-                showCustomAlert(
-                    `<div class="text-center">
-                        <p class="text-gray-300">Sua compra de <b>${qtd}</b> cartelas foi processada!</p>
-                        ${infoSeries}
-                        <p class="text-[18px] text-green-300 mt-2 uppercase font-bold">Boa sorte! 🍀</p>
-                    </div>`, 
+                // O AWAIT aqui é a chave: o código só passa dessa linha quando clicar OK
+                await showCustomAlert(
+                    `<div class="text-center">...</div>`, 
                     "COMPRA CONFIRMADA", 
                     "✅"
                 );
+                console.log("🔓 Usuário clicou em OK. Liberando sistema...");
+                isProcessandoCompra = false; // ✅ Libera o sistema para voltar a atualizar sozinho
             }
+
 
             if (typeof atualizarDadosCliente === 'function') await atualizarDadosCliente(); 
             
