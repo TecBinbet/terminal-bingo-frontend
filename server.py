@@ -4156,6 +4156,39 @@ def admin_ativar_evento():
         return jsonify({'sucesso': False, 'mensagem': str(e)}), 500
 
 
+@app.route('/api/admin/atualizar_buscando', methods=['POST'])
+def atualizar_buscando():
+    try:
+        # Pega os dados enviados pelo admin.js
+        dados = request.get_json()
+        
+        # Valores padrão caso o JSON venha incompleto
+        novo_status = {
+            'buscando_o_premio': dados.get('buscando_o_premio', "AGUARDANDO INÍCIO SORTEIO..."),
+            'buscando_a_linha': dados.get('buscando_a_linha', ""),
+            'qtde_linha': dados.get('qtde_linha', 0),
+            'valor': dados.get('valor', "")
+        }
+
+        # Executa o update no MongoDB
+        # O {} vazio no primeiro parâmetro indica que pegaremos o primeiro (e único) documento
+        resultado = db.buscando.update_one(
+            {}, 
+            {'$set': novo_status}, 
+            upsert=True
+        )
+
+        return jsonify({
+            'sucesso': True, 
+            'mensagem': 'Tabela de busca atualizada com sucesso!',
+            'upserted_id': str(resultado.upserted_id) if resultado.upserted_id else None
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Erro ao atualizar buscando: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # --- ROTA DE DETALHES (COM SINCRONIZAÇÃO AUTOMÁTICA DE CARTELAS)  ---
 @app.route('/api/admin/detalhes_evento', methods=['GET'])
 def get_event_details():

@@ -1216,6 +1216,8 @@ async function ativarNovoEvento(idNovoEvento, automatico = false) {
         } else {
             console.error("❌ Erro ao ativar evento: ", data.mensagem);
         }
+
+
     } catch (e) {
         console.error("Erro na ativação:", e);
     }

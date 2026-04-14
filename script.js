@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.8";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.0";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -5887,17 +5887,26 @@ async function confirmarCompra() {
                 </div>`;
             }
 
+            if (typeof fecharModal === 'function') fecharModal('modal-comprar-cartelas');
+            
             if (typeof showCustomAlert === 'function') {
-                // O AWAIT aqui é a chave: o código só passa dessa linha quando clicar OK
+                // 1. Fechamos o carregamento
+                if (typeof hideFullLoading === 'function') hideFullLoading();
+
+                // 2. Chamamos o alerta passando a variável infoSeries REAL
                 await showCustomAlert(
-                    `<div class="text-center">...</div>`, 
+                    `<div class="text-center">
+                         <p class="text-gray-300 mb-3">Sua compra de cartelas foi processada!</p>
+                         ${infoSeries} 
+                         <p class="text-[18px] text-green-300 mt-4 uppercase font-bold">Boa sorte! 🍀</p>
+                    </div>`, 
                     "COMPRA CONFIRMADA", 
                     "✅"
                 );
-                console.log("🔓 Usuário clicou em OK. Liberando sistema...");
-                isProcessandoCompra = false; // ✅ Libera o sistema para voltar a atualizar sozinho
-            }
 
+                console.log("🔓 Usuário clicou em OK. Liberando sistema...");
+                isProcessandoCompra = false;
+            }
 
             if (typeof atualizarDadosCliente === 'function') await atualizarDadosCliente(); 
             
@@ -6311,7 +6320,6 @@ function toggleLoginPassword() {
 // --- FUNÇÕES DE LOADING ---
 function showFullLoading(mensagem) {
     if (!loader) return;
-    
     // Cria um visual bonito com Spinner + Texto
     loader.innerHTML = `
         <div class="flex flex-col items-center justify-center bg-gray-900/80 p-6 rounded-xl border border-gray-700 shadow-2xl">
@@ -6319,11 +6327,11 @@ function showFullLoading(mensagem) {
             <span class="text-white text-lg font-bold tracking-wide">${mensagem}</span>
         </div>
     `;
-
     // CORREÇÃO CRÍTICA: Remove a classe 'hidden' para vencer o !important do CSS
     loader.classList.remove('hidden');
     loader.style.display = 'flex';
 }
+
 
 function hideFullLoading() {
     if (loader) {
