@@ -813,8 +813,196 @@ def recalcular_ranking_principal():
 # ==============================================================================
 # 🚀 MOTOR DE RANKING BLINDADO COM PROTEÇÃO ANTI-LOOP (90 BOLAS)
 # ==============================================================================
-
 def recalcular_ranking_top10():
+    global db, CACHE_JOGO
+    
+    if not CACHE_JOGO['ativo'] or not CACHE_JOGO['cartelas']: 
+        if db is not None: db.melhores.delete_many({})
+        return
+
+    try:
+        dados_bolas = db.bolas_mesa.find_one({}) or {}
+        bolas_cantadas = set(dados_bolas.get('bolas_cantadas', []))
+        
+        dados_premio = db.buscando.find_one({}) or {}
+        premio_buscado = dados_premio.get('buscando_o_premio', 'BINGO').upper()
+        linhas_config = dados_premio.get('buscando_a_linha', '') 
+
+        busca_quadra   = 'QUADRA' in premio_buscado or '4 CANTOS' in premio_buscado
+        busca_linha    = 'LINHA' in premio_buscado
+        busca_falta_um = 'FALTA' in premio_buscado
+        busca_duplo    = 'DUPLO' in premio_buscado or 'SEGUNDO' in premio_buscado
+        
+        linhas_ja_ganhas = set()
+        ids_vencedores_bingo = set()
+        ids_vencedores_quadra = set()
+        ids_vencedores_falta_um = set()
+
+        # =========================================================
+        # 🚀 OTIMIZAÇÃO: UMA ÚNICA BUSCA NO BANCO DE DADOS
+        # =========================================================
+        todos_ganhadores = list(db.ganhadores.find({}))
+        tabela_premios = db.premio.find_one({}) or {}
+        
+        # Filtramos tudo na Memória RAM (0.01 segundos em vez de 3 segundos)
+        for g in todos_ganhadores:
+            premio_g = (g.get('premio') or '').upper()
+            try: cartela_id = int(g['cartela'])
+            except: cartela_id = None
+            
+            if cartela_id is not None:
+                # Separa Linhas
+                if 'LINHA' in premio_g:
+                    tag = g.get('linha_ganha_tag') 
+                    if tag: linhas_ja_ganhas.add(tag)
+                # Separa Bingo
+                if 'BINGO' in premio_g and 'DUPLO' not in premio_g:
+                    ids_vencedores_bingo.add(cartela_id)
+                # Separa Quadra/Cantos
+                if 'QUADRA' in premio_g or 'CANTOS' in premio_g:
+                    ids_vencedores_quadra.add(cartela_id)
+                # Separa Falta Um
+                if 'FALTA UM' in premio_g or 'FALTAUM' in premio_g:
+                    ids_vencedores_falta_um.add(cartela_id)
+
+        # Regra específica da linha única
+        if busca_linha and int(tabela_premios.get('qtde_linha', 1)) == 1:
+            ganhadores_linha = [g for g in todos_ganhadores if 'LINHA' in (g.get('premio') or '').upper()]
+            if ganhadores_linha:
+                linhas_ja_ganhas.update({'Sup', 'Cen', 'Inf'})
+
+        # =========================================================
+
+        _cartelas = CACHE_JOGO['cartelas']
+        _bolas = bolas_cantadas
+        resultados = [] 
+
+        chk_sup = (not linhas_config or 'SUP' in linhas_config.upper()) and (busca_quadra or 'Sup' not in linhas_ja_ganhas)
+        chk_cen = (not linhas_config or 'CEN' in linhas_config.upper()) and (busca_quadra or 'Cen' not in linhas_ja_ganhas)
+        chk_inf = (not linhas_config or 'INF' in linhas_config.upper()) and (busca_quadra or 'Inf' not in linhas_ja_ganhas)
+
+        for item in _cartelas:
+            c_id = item['id']
+            if c_id in ids_vencedores_bingo: continue
+
+            layout = item['layout']
+            
+            if busca_linha or busca_quadra:
+                opcoes = []
+                if chk_sup: opcoes.append(('Sup', layout['sup'] - _bolas, layout['sup']))
+                if chk_cen: opcoes.append(('Cen', layout['cen'] - _bolas, layout['cen']))
+                if chk_inf: opcoes.append(('Inf', layout['inf'] - _bolas, layout['inf']))
+                
+                if not opcoes and busca_linha:
+                    numeros_base = layout['geral']
+                    tag_posicao = ""
+                    busca_linha_temporaria = False 
+                else:
+                    if not opcoes: opcoes = [('Geral', layout['geral'] - _bolas, layout['geral'])]
+                    melhor = min(opcoes, key=lambda x: len(x[1]))
+                    tag_posicao = melhor[0]
+                    numeros_base = melhor[2] 
+                    busca_linha_temporaria = True
+            else:
+                numeros_base = layout['geral'] 
+                tag_posicao = "" 
+                busca_linha_temporaria = False
+
+            validos_base = {n for n in numeros_base if n > 0}
+            acertos = len(validos_base & _bolas)
+
+            if busca_quadra and busca_linha_temporaria:
+                distancia = max(0, 4 - acertos)
+                faltam_exibicao = validos_base - _bolas
+                
+                if distancia == 0:
+                    if c_id in ids_vencedores_quadra:
+                        distancia = 1
+                        msg_premio = ""
+                    else:
+                        msg_premio = "QUADRA"
+                else:
+                    msg_premio = ""
+                    
+            else:
+                is_premio_falta_um = (busca_falta_um or "FALTAUM" in premio_buscado.replace(" ", "")) and not busca_linha_temporaria
+
+                if is_premio_falta_um:
+                    alvo_necessario = len(validos_base) - 1 
+                    distancia_real = alvo_necessario - acertos
+                    
+                    if distancia_real <= 0: 
+                        if c_id in ids_vencedores_falta_um:
+                            distancia = 1
+                            msg_premio = ""
+                        else:
+                            distancia = 0
+                            msg_premio = "FALTA UM"
+                    else:
+                        distancia = distancia_real
+                        msg_premio = ""
+                        
+                else:
+                    alvo_necessario = len(validos_base) 
+                    distancia = max(0, alvo_necessario - acertos)
+                    
+                    if distancia == 0:
+                        if busca_linha and busca_linha_temporaria: msg_premio = "LINHA"
+                        elif busca_duplo: msg_premio = "DUPLO BINGO"
+                        else: msg_premio = "BINGO"
+                    else:
+                        msg_premio = ""
+
+            faltam_exibicao = validos_base - _bolas
+            resultados.append((distancia, c_id, faltam_exibicao, tag_posicao, msg_premio, item['nome'], validos_base))
+
+        resultados.sort(key=lambda x: (x[0], x[1])) 
+        top_10 = resultados[:10]
+
+        rodada_info = db.rodada.find_one({})
+        id_evento_ativo = rodada_info.get('id_evento', 0) if rodada_info else 0
+
+        novos_docs = []
+        for i, r in enumerate(top_10):
+            base_list = sorted(list(r[6])) 
+            faltantes_list = sorted(list(r[2])) 
+            string_numeros = ",".join(f"{n:02d}" for n in base_list) 
+            pos_letra = r[3][0].upper() if r[3] else "" 
+            
+            doc = {
+                "id_posicao": i + 1,
+                "cartela": str(r[1]),
+                "posicao": pos_letra,
+                "numeros": string_numeros, 
+                "numeros_faltantes": faltantes_list,
+                "premio": r[4], 
+                "nome": r[5],
+                "rodada": int(id_evento_ativo),
+                "qtde": int(r[0]) 
+            }
+            novos_docs.append(doc)
+
+        # =========================================================
+        # 🛡️ O ESCUDO DE PROTEÇÃO (A TRAVA NO BANCO DE DADOS)
+        # =========================================================
+        if not novos_docs and len(bolas_cantadas) > 0:
+            print("⚠️ [PROTEÇÃO DB] Cálculo resultou vazio com jogo em andamento. Abortando deleção da tabela melhores!")
+            return # Sai da função sem apagar nada!
+
+        # Se passou da trava, apaga e grava o novo ranking
+        db.melhores.delete_many({})
+        if novos_docs:
+            db.melhores.insert_many(novos_docs)
+
+    except Exception as e:
+        print(f"❌ [ERRO RANKING 90] {e}")
+        import traceback
+        traceback.print_exc()
+
+
+#############################
+# reservar
+def recalcular_ranking_top10_B():
     global db, CACHE_JOGO
     
     if not CACHE_JOGO['ativo'] or not CACHE_JOGO['cartelas']: 
@@ -994,8 +1182,193 @@ def recalcular_ranking_top10():
         import traceback
         traceback.print_exc()
 
-
 def recalcular_ranking_top10_75():  
+    global db, CACHE_JOGO, valorPremioQuadra
+    if not CACHE_JOGO['ativo'] or not CACHE_JOGO['cartelas']: return
+    
+    try:
+        dados_bolas = db.bolas_mesa.find_one({}) or {}
+        bolas_cantadas = set(dados_bolas.get('bolas_cantadas', []))
+        
+        dados_premio = db.buscando.find_one({}) or {}
+        premio_buscado_texto = dados_premio.get('buscando_o_premio', 'BINGO').upper()
+
+        # =========================================================
+        # 🚀 OTIMIZAÇÃO: UMA ÚNICA BUSCA NO BANCO DE DADOS
+        # =========================================================
+        # Buscamos apenas os campos necessários para economizar banda e memória
+        todos_ganhadores = list(db.ganhadores.find({}, {'premio': 1, 'cartela': 1, '_id': 0}))
+        
+        qtd_linha = 0
+        qtd_cantos = 0
+        cartelas_excluir_bingo = set()
+
+        busca_duplo = 'DUPLO' in premio_buscado_texto or 'SEGUNDO' in premio_buscado_texto
+
+        for g in todos_ganhadores:
+            premio_g = (g.get('premio') or '').upper()
+            
+            # Conta Linhas
+            if 'LINHA' in premio_g:
+                qtd_linha += 1
+            # Conta Cantos/Quadra
+            if 'CANTOS' in premio_g or 'QUADRA' in premio_g:
+                qtd_cantos += 1
+            # Separa ganhadores do primeiro Bingo (para o caso de Duplo)
+            if busca_duplo and 'BINGO' in premio_g and 'DUPLO' not in premio_g:
+                try: cartelas_excluir_bingo.add(g['cartela'])
+                except: pass
+        # =========================================================
+
+        ganhou_linha = qtd_linha > 0
+        ganhou_cantos = qtd_cantos > 0
+
+        buscar_linha_agora = False
+        buscar_cantos_agora = False
+        buscar_bingo_agora = False
+  
+        if valorPremioQuadra == 0: ganhou_cantos = True
+
+        novo_nome_premio = 'BINGO' 
+
+        if 'BINGO' == premio_buscado_texto or 'ACUMULADO' in premio_buscado_texto:
+            buscar_bingo_agora = True
+            novo_nome_premio = premio_buscado_texto
+        elif ganhou_linha and ganhou_cantos:
+            buscar_bingo_agora = True
+            novo_nome_premio = 'BINGO'
+        elif ganhou_linha and not ganhou_cantos:
+            buscar_cantos_agora = True
+            novo_nome_premio = '4 CANTOS'
+        elif ganhou_cantos and not ganhou_linha:
+            buscar_linha_agora = True
+            novo_nome_premio = 'LINHA'
+        else:
+            buscar_linha_agora = True
+            buscar_cantos_agora = True
+            novo_nome_premio = '4 CANTOS E LINHA'
+
+        # Atualiza o status se mudou (isso é rápido porque só executa na transição de prêmios)
+        if novo_nome_premio != dados_premio.get('buscando_o_premio'):
+             db.buscando.update_one({}, {'$set': {'buscando_o_premio': novo_nome_premio}}, upsert=True)
+             db.buscando_mesa.update_one({}, {'$set': {'buscando_o_premio': novo_nome_premio}}, upsert=True)
+
+        resultados = []
+        _cartelas = CACHE_JOGO['cartelas']
+        _bolas = bolas_cantadas
+
+        # Pré-calcula os índices das linhas para não criar listas dentro do loop
+        linhas_indices = [
+            [0, 5, 10, 15, 20], [1, 6, 11, 16, 21], [2, 7, 12, 17, 22], [3, 8, 13, 18, 23], [4, 9, 14, 19, 24]
+        ]
+
+        for item in _cartelas:
+            c_id = item['id']
+            if c_id in cartelas_excluir_bingo: continue
+            if item.get('tipo', 90) != 75: continue
+            
+            layout = item['layout']
+            lista_nums = layout.get('lista_75', [])
+            if not lista_nums or len(lista_nums) < 25: continue
+
+            opcoes_proximidade = []
+            
+            if layout.get('geral'):
+                faltam_bingo = layout['geral'] - _bolas
+                qtde_bingo = len(faltam_bingo)
+                if qtde_bingo == 0:
+                     opcoes_proximidade.append(('BINGO', faltam_bingo, 0, 'BINGO'))
+                elif buscar_bingo_agora:
+                     opcoes_proximidade.append(('Geral', faltam_bingo, qtde_bingo, 'BINGO'))
+
+            if buscar_cantos_agora:
+                alvo_cantos = {lista_nums[0], lista_nums[4], lista_nums[20], lista_nums[24]} - {0}
+                faltam_cantos = alvo_cantos - _bolas
+                qtde_cantos = len(faltam_cantos)
+                if qtde_cantos == 0:
+                    opcoes_proximidade.append(('CANTOS', faltam_cantos, 0, '4 CANTOS'))
+                else:
+                    opcoes_proximidade.append(('Cantos', faltam_cantos, qtde_cantos, '4 CANTOS'))
+
+            if buscar_linha_agora:
+                melhor_linha_set = set()
+                melhor_linha_qtde = 99
+                bateu_linha = False
+                
+                for indices in linhas_indices:
+                    linha_set = {lista_nums[i] for i in indices} - {0}
+                    f_linha = linha_set - _bolas
+                    q_linha = len(f_linha)
+                    if q_linha == 0:
+                        opcoes_proximidade.append(('LINHA', f_linha, 0, 'LINHA'))
+                        bateu_linha = True
+                        break 
+                    if q_linha < melhor_linha_qtde:
+                        melhor_linha_qtde = q_linha
+                        melhor_linha_set = f_linha
+                
+                if not bateu_linha:
+                    opcoes_proximidade.append(('Linha', melhor_linha_set, melhor_linha_qtde, 'LINHA'))
+
+            if not opcoes_proximidade: continue
+
+            vitorias = [op for op in opcoes_proximidade if op[2] == 0]
+            
+            if vitorias:
+                nomes_premios = sorted(list(set([v[3] for v in vitorias])))
+                msg_vitoria = " E ".join(nomes_premios)
+                escolhido = vitorias[0]
+                qtde, faltam, tag = 0, escolhido[1], escolhido[0]
+            else:
+                melhor = min(opcoes_proximidade, key=lambda x: x[2])
+                tag, faltam, qtde, _ = melhor
+                msg_vitoria = "" 
+
+            # Tupla: (qtde, c_id, faltam_set, tag, msg_vitoria, nome)
+            resultados.append((qtde, c_id, faltam, tag, msg_vitoria, item['nome']))
+
+        resultados.sort(key=lambda x: (x[0], x[1]))
+        top_10 = resultados[:10]   
+        
+        rodada_info = db.rodada.find_one({})
+        id_evt = rodada_info.get('id_evento', 0) if rodada_info else 0
+
+        novos_docs = []
+        for i, r in enumerate(top_10):
+            try:
+                qtde_segura = int(r[0])
+                pos_raw = r[3]
+                pos_letra = pos_raw[0] if pos_raw else "" 
+                lista_original = sorted(list(r[2]))
+                string_numeros = ",".join(f"{n:02d}" for n in lista_original)
+                
+                novos_docs.append({
+                    "id_posicao": i + 1, "cartela": str(r[1]), "posicao": pos_letra,
+                    "numeros": string_numeros, "numeros_faltantes": lista_original,
+                    "premio": str(r[4]), "nome": str(r[5]),
+                    "rodada": int(id_evt), "qtde": qtde_segura
+                })
+            except: continue
+
+        # =========================================================
+        # 🛡️ O ESCUDO DE PROTEÇÃO (A TRAVA NO BANCO DE DADOS)
+        # =========================================================
+        if not novos_docs and len(bolas_cantadas) > 0:
+            print("⚠️ [PROTEÇÃO DB 75] Cálculo resultou vazio com jogo em andamento. Abortando deleção da tabela melhores!")
+            return # Sai da função imediatamente, preservando os dados
+
+        # Se passou da trava de segurança, salva o novo Top 10
+        db.melhores.delete_many({})
+        if novos_docs: db.melhores.insert_many(novos_docs)
+
+    except Exception as e:
+        print(f"❌ Erro Ranking 75: {e}")
+        import traceback
+        traceback.print_exc()
+
+########################
+# reserva
+def recalcular_ranking_top10_75_B():  
     global db, CACHE_JOGO, valorPremioQuadra
     if not CACHE_JOGO['ativo'] or not CACHE_JOGO['cartelas']: return
     
@@ -1155,360 +1528,6 @@ def recalcular_ranking_top10_75():
         traceback.print_exc()
 
 
-def recalcular_ranking_top10B():
-    global db, CACHE_JOGO
-    
-    # print("🔄 [RANKING] Iniciando cálculo...")
-
-    if not CACHE_JOGO['ativo']: return
-    if not CACHE_JOGO['cartelas']:
-        db.melhores.delete_many({})
-        return
-
-    try:
-        dados_bolas = db.bolas_mesa.find_one({}) or {}
-        bolas_cantadas = set(dados_bolas.get('bolas_cantadas', []))
-        
-        dados_premio = db.buscando.find_one({}) or {}
-        premio_buscado = dados_premio.get('buscando_o_premio', 'BINGO').upper()
-        linhas_config = dados_premio.get('buscando_a_linha', '') 
-
-        busca_quadra   = 'QUADRA' in premio_buscado
-        busca_linha    = 'LINHA' in premio_buscado
-        busca_falta_um = 'FALTA' in premio_buscado
-        busca_duplo    = 'DUPLO' in premio_buscado or 'SEGUNDO' in premio_buscado
-        
-        # --- NOVO: IDENTIFICA LINHAS JÁ GANHAS (COM CORREÇÃO PARA 1 LINHA) ---
-        linhas_ja_ganhas = set()
-        if busca_linha:
-            rodada_atual = db.rodada.find_one({})
-            id_rodada = rodada_atual.get('id_evento') if rodada_atual else 0
-            
-            ganhadores_linha = list(db.ganhadores.find({'premio': {'$regex': 'LINHA'}}))
-            
-            # Busca a configuração de Quantidade de Linhas do Prêmio
-            tabela_premios = db.premio.find_one({}) or {}
-            qtde_linhas_jogo = int(tabela_premios.get('qtde_linha', 1))
-
-            # SE FOR JOGO DE 1 LINHA E ALGUÉM JÁ GANHOU, BLOQUEIA TODAS AS OUTRAS
-            if qtde_linhas_jogo == 1 and len(ganhadores_linha) > 0:
-                 linhas_ja_ganhas.add('Sup')
-                 linhas_ja_ganhas.add('Cen')
-                 linhas_ja_ganhas.add('Inf')
-            else:
-                # Se for jogo de 2 ou 3 linhas, remove apenas a que saiu
-                for g in ganhadores_linha:
-                    tag = g.get('linha_ganha_tag') 
-                    if tag: linhas_ja_ganhas.add(tag)
-
-        # Mapa de Ganhadores Gerais (Bingo)
-        ids_vencedores_bingo = set()
-
-        if busca_duplo:
-            vencedores = db.ganhadores.find({'premio': {'$regex': 'BINGO', '$options': 'i'}})
-            for v in vencedores:
-                if 'DUPLO' not in (v.get('premio') or '').upper():
-                    try: ids_vencedores_bingo.add(int(v['cartela']))
-                    except: pass
-
-        resultados = []
-
-        for item in CACHE_JOGO['cartelas']:
-            c_id = item['id']
-            if c_id in ids_vencedores_bingo: continue
-
-            layout = item['layout']
-            
-            # Lógica Condicional de Linhas
-            if busca_linha or busca_quadra:
-                f_sup = layout['sup'] - bolas_cantadas
-                f_cen = layout['cen'] - bolas_cantadas
-                f_inf = layout['inf'] - bolas_cantadas
-                
-                opcoes = []
-                
-                # SÓ ADICIONA A OPÇÃO SE A LINHA AINDA NÃO FOI GANHA
-                # (Ou se for Quadra, que não trava linha)
-                
-                # Linha Superior
-                if (not linhas_config or 'SUP' in linhas_config.upper()):
-                    if busca_quadra or 'Sup' not in linhas_ja_ganhas:
-                        opcoes.append({'tag': 'Sup', 'set': f_sup})
-
-                # Linha Central
-                if (not linhas_config or 'CEN' in linhas_config.upper()):
-                    if busca_quadra or 'Cen' not in linhas_ja_ganhas:
-                        opcoes.append({'tag': 'Cen', 'set': f_cen})
-
-                # Linha Inferior
-                if (not linhas_config or 'INF' in linhas_config.upper()):
-                    if busca_quadra or 'Inf' not in linhas_ja_ganhas:
-                        opcoes.append({'tag': 'Inf', 'set': f_inf})
-                
-                # --- FALLBACK IMPORTANTE ---
-                # Se 'opcoes' estiver vazio, significa que TODAS as linhas buscadas já foram ganhas.
-                # Nesse caso, o sistema deve mostrar a distância para o BINGO (Cartela Cheia)
-                # para não travar o ranking nem ficar dando alerta falso.
-                if not opcoes and busca_linha:
-                    faltam = layout['geral'] - bolas_cantadas
-                    tag_posicao = "" # Sem posição, pois é geral
-                    # Força modo Bingo visualmente no ranking
-                    busca_linha_temporaria = False 
-                else:
-                    # Segue normal
-                    if not opcoes: # Fallback de erro (se config vier errada)
-                         opcoes = [{'tag': 'Geral', 'set': layout['geral'] - bolas_cantadas}]
-                    
-                    melhor = min(opcoes, key=lambda x: len(x['set']))
-                    faltam = melhor['set']
-                    tag_posicao = melhor['tag']
-                    busca_linha_temporaria = True
-
-            else:
-                # Bingo/Duplo/FaltaUm
-                faltam = layout['geral'] - bolas_cantadas
-                tag_posicao = "" 
-                busca_linha_temporaria = False
-
-            qtde_falta = len(faltam)
-            msg_premio = ""
-            
-            # Lógica de Status
-            if qtde_falta == 0:
-                if busca_quadra: msg_premio = "QUADRA"
-                elif busca_linha and busca_linha_temporaria: msg_premio = "LINHA"
-                elif busca_duplo: msg_premio = "DUPLO BINGO"
-                else: msg_premio = "BINGO" # Cai aqui se as linhas acabaram
-            
-            elif qtde_falta == 1:
-                if busca_quadra: msg_premio = "QUADRA"
-                elif busca_falta_um: msg_premio = "FALTA UM"
-            
-            resultados.append({
-                'cartela': c_id,
-                'nome': item['nome'],
-                'numeros_faltantes': sorted(list(faltam)),
-                'qtde': qtde_falta,
-                'posicao': tag_posicao,
-                'premio': msg_premio
-            })
-
-        resultados.sort(key=lambda x: (x['qtde'], x['cartela']))
-        top_10 = resultados[:10]
-
-        rodada_info = db.rodada.find_one({})
-        id_evento_ativo = rodada_info.get('id_evento', 0) if rodada_info else 0
-
-        novos_docs = []
-        for i, r in enumerate(top_10):
-            lista_original = r['numeros_faltantes']
-            string_numeros = ",".join(f"{n:02d}" for n in lista_original)
-            
-            pos_letra = r['posicao'][0].upper() if r['posicao'] else ""
-
-            novos_docs.append({
-                "id_posicao": i + 1,
-                "cartela": str(r['cartela']),
-                "posicao": pos_letra,
-                "numeros": string_numeros, 
-                "numeros_faltantes": lista_original,
-                "premio": r['premio'],
-                "nome": r['nome'],
-                "rodada": int(id_evento_ativo)
-            })
-
-        db.melhores.delete_many({})
-        if novos_docs:
-            db.melhores.insert_many(novos_docs)
-
-    except Exception as e:
-        print(f"❌ [ERRO RANKING] {e}")
-        traceback.print_exc()
-
-
-def recalcular_ranking_top10_75B():  
-    """
-    Calcula ranking para BINGO 75 (Lógica Rígida de Fluxo).
-    """
-    global db, CACHE_JOGO, valorPremioQuadra
-    if not CACHE_JOGO['ativo']: return
-    
-    try:
-        dados_bolas = db.bolas_mesa.find_one({}) or {}
-        bolas_cantadas = set(dados_bolas.get('bolas_cantadas', []))
-        
-        # --- BUSCA O ESTADO ATUAL ---
-        dados_premio = db.buscando.find_one({}) or {}
-        premio_buscado_texto = dados_premio.get('buscando_o_premio', 'BINGO').upper()
-
-        # --- 1. VERIFICAÇÃO DE VENCEDORES NO BANCO ---
-        qtd_linha = db.ganhadores.count_documents({'premio': {'$regex': 'LINHA', '$options': 'i'}})
-        qtd_cantos = db.ganhadores.count_documents({'premio': {'$regex': 'CANTOS|QUADRA', '$options': 'i'}})
-
-        ganhou_linha = qtd_linha > 0
-        ganhou_cantos = qtd_cantos > 0
-
-        # --- 2. ÁRVORE DE DECISÃO DO FLUXO ---
-        buscar_linha_agora = False
-        buscar_cantos_agora = False
-        buscar_bingo_agora = False
-  
-        if valorPremioQuadra == 0: 
-            ganhou_cantos = True
-
-        novo_nome_premio = 'BINGO' # Default
-
-        if 'BINGO' == premio_buscado_texto or 'ACUMULADO' in premio_buscado_texto:
-            buscar_bingo_agora = True
-            novo_nome_premio = premio_buscado_texto
-        
-        elif ganhou_linha and ganhou_cantos:
-            buscar_bingo_agora = True
-            novo_nome_premio = 'BINGO'
-            
-        elif ganhou_linha and not ganhou_cantos:
-            buscar_cantos_agora = True
-            novo_nome_premio = '4 CANTOS'
-            
-        elif ganhou_cantos and not ganhou_linha:
-            buscar_linha_agora = True
-            novo_nome_premio = 'LINHA'
-            
-        else:
-            buscar_linha_agora = True
-            buscar_cantos_agora = True
-            novo_nome_premio = '4 CANTOS E LINHA'
-
-        # --- ATUALIZA O NOME DO PRÊMIO ---
-        #print(f"novo_nome_premio                                              > {novo_nome_premio}")
-        #print(f"dados_premio.get('buscando_o_premio')          > {dados_premio.get('buscando_o_premio')}")
-
-        if novo_nome_premio != dados_premio.get('buscando_o_premio'):
-             db.buscando.update_one({}, {'$set': {'buscando_o_premio': novo_nome_premio}}, upsert=True)
-             db.buscando_mesa.update_one({}, {'$set': {'buscando_o_premio': novo_nome_premio}}, upsert=True)
-             print(f"Nome Premio                                       > {novo_nome_premio}")
-             # broadcast_para_clientes({'type': 'UPDATE_PREMIO'}) # Opcional
-
-        # --- EXCLUSÃO DE DUPLO BINGO ---
-        cartelas_excluir_bingo = set()
-        if 'DUPLO' in premio_buscado_texto or 'SEGUNDO' in premio_buscado_texto:
-            vencedores = db.ganhadores.find({'premio': {'$regex': 'BINGO', '$options': 'i'}})
-            for v in vencedores:
-                if 'DUPLO' not in (v.get('premio') or '').upper():
-                    try: cartelas_excluir_bingo.add(v['cartela'])
-                    except: pass
-
-        resultados = []
-
-        for item in CACHE_JOGO['cartelas']:
-            c_id = item['id']
-            if c_id in cartelas_excluir_bingo: continue
-            if item.get('tipo', 90) != 75: continue
-            
-            layout = item['layout']
-            lista_nums = layout.get('lista_75', [])
-            if not lista_nums or len(lista_nums) < 25: continue
-
-            opcoes_proximidade = []
-            
-            # --- CÁLCULO: BINGO ---
-            if layout.get('geral'):
-                faltam_bingo = layout['geral'] - bolas_cantadas
-                qtde_bingo = len(faltam_bingo)
-                if qtde_bingo == 0:
-                     opcoes_proximidade.append({'tag': 'BINGO', 'set': faltam_bingo, 'qtde': 0, 'premio': 'BINGO'})
-                elif buscar_bingo_agora:
-                     opcoes_proximidade.append({'tag': 'Geral', 'set': faltam_bingo, 'qtde': qtde_bingo, 'premio': 'BINGO'})
-
-            # --- CÁLCULO: 4 CANTOS ---
-            if buscar_cantos_agora:
-                alvo_cantos = {lista_nums[0], lista_nums[4], lista_nums[20], lista_nums[24]} - {0}
-                faltam_cantos = alvo_cantos - bolas_cantadas
-                qtde_cantos = len(faltam_cantos)
-                if qtde_cantos == 0:
-                    opcoes_proximidade.append({'tag': 'CANTOS', 'set': faltam_cantos, 'qtde': 0, 'premio': '4 CANTOS'})
-                else:
-                    opcoes_proximidade.append({'tag': 'Cantos', 'set': faltam_cantos, 'qtde': qtde_cantos, 'premio': '4 CANTOS'})
-
-            # --- CÁLCULO: LINHA ---
-            if buscar_linha_agora:
-                linhas_indices = [
-                    [0, 5, 10, 15, 20], [1, 6, 11, 16, 21], [2, 7, 12, 17, 22], [3, 8, 13, 18, 23], [4, 9, 14, 19, 24]
-                ]
-                melhor_linha_set = set()
-                melhor_linha_qtde = 99
-                bateu_linha = False
-                for indices_da_linha in linhas_indices:
-                    linha_set = {lista_nums[i] for i in indices_da_linha} - {0}
-                    f_linha = linha_set - bolas_cantadas
-                    q_linha = len(f_linha)
-                    if q_linha == 0:
-                        opcoes_proximidade.append({'tag': 'LINHA', 'set': f_linha, 'qtde': 0, 'premio': 'LINHA'})
-                        bateu_linha = True
-                        break 
-                    if q_linha < melhor_linha_qtde:
-                        melhor_linha_qtde = q_linha
-                        melhor_linha_set = f_linha
-                if not bateu_linha:
-                    opcoes_proximidade.append({'tag': 'Linha', 'set': melhor_linha_set, 'qtde': melhor_linha_qtde, 'premio': 'LINHA'})
-
-            # --- SELEÇÃO FINAL ---
-            if not opcoes_proximidade: continue
-
-            vitorias = [op for op in opcoes_proximidade if op['qtde'] == 0]
-            
-            if len(vitorias) > 0:
-                nomes_premios = sorted(list(set([v['premio'] for v in vitorias])))
-                msg_vitoria = " E ".join(nomes_premios)
-                escolhido = vitorias[0]
-                qtde, faltam, tag = 0, escolhido['set'], escolhido['tag']
-            else:
-                melhor = min(opcoes_proximidade, key=lambda x: x['qtde'])
-                qtde = melhor['qtde']
-                faltam = melhor['set']
-                tag = melhor['tag']
-                
-                # --- CORREÇÃO AQUI ---
-                # Antes: msg_vitoria = f"Falta {qtde}"
-                # Agora: Deixamos vazio para não sujar o campo 'premio' no banco
-                msg_vitoria = "" 
-
-            resultados.append({
-                'cartela': c_id, 'nome': item['nome'],
-                'numeros_faltantes': sorted(list(faltam)),
-                'qtde': qtde, 'posicao': tag, 'premio': msg_vitoria
-            })
-
-        # --- GRAVAÇÃO ---
-        resultados.sort(key=lambda x: (x['qtde'], x['cartela']))
-        top_10 = resultados[:10]   
-        
-        rodada_info = db.rodada.find_one({})
-        id_evt = rodada_info.get('id_evento', 0) if rodada_info else 0
-
-        novos_docs = []
-        for i, r in enumerate(top_10):
-            try:
-                qtde_segura = int(r.get('qtde', 999))
-                pos_raw = r.get('posicao', "")
-                pos_letra = pos_raw[0] if pos_raw else "" 
-                lista_original = r.get('numeros_faltantes') or []
-                string_numeros = ",".join(f"{n:02d}" for n in lista_original)
-                
-                novos_docs.append({
-                    "id_posicao": i + 1, "cartela": str(r['cartela']), "posicao": pos_letra,
-                    "numeros": string_numeros, "numeros_faltantes": lista_original,
-                    "premio": str(r.get('premio', '')), "nome": str(r.get('nome', '---')),
-                    "rodada": int(id_evt), "qtde": qtde_segura
-                })
-            except: continue
-
-        db.melhores.delete_many({})
-        if novos_docs: db.melhores.insert_many(novos_docs)
-
-    except Exception as e:
-        print(f"❌ Erro Ranking 75: {e}")
-        traceback.print_exc()
 
 # --- FUNÇÃO AUXILIAR PARA ACHAR O PRÓXIMO EVENTO (CORRIGIDA) ---
 def buscar_proximo_evento_automatico(id_evento_atual):

@@ -855,18 +855,30 @@ function processarMensagemWS(event) {
 
             // --- PARTE B: RANKING / TOP 10 (ATIVO!) ---
             if (payload.melhoresData) {
-                let tipoPremioBuscado = "BINGO";
-                if (payload.buscandoMesaData && payload.buscandoMesaData[0]) {
-                    tipoPremioBuscado = payload.buscandoMesaData[0].buscando_o_premio;
-                }
-                
-                // CHAMA A FUNÇÃO QUE DESENHA O RANKING NA TELA
-                if (typeof renderRanking === 'function') {
-                    renderRanking(payload.melhoresData, tipoPremioBuscado);
-                }
+                // 🛡️ O ESCUDO DE PROTEÇÃO 🛡️
+                // Pega a quantidade de bolas do payload (se não existir, assume 0)
+                const qtdBolas = (payload.bolasData && payload.bolasData.length) ? payload.bolasData.length : 0;
 
-                // --- DETECÇÃO DE GANHADORES (PARA PAUSAR O ROBÔ/LOCUTOR) ---
-                verificarVitoriaPeloRanking(payload.melhoresData);
+                // Se a lista veio VAZIA, MAS já temos bolas sorteadas na mesa, IGNORAMOS!
+                if (payload.melhoresData.length === 0 && qtdBolas > 0) {
+                    console.warn("⚠️ [PROTEÇÃO] Servidor retornou Ranking vazio com o jogo em andamento. Protegendo a tela do cliente...");
+                    // O código MORRE aqui. A tela do ranking continua congelada no Top 10 anterior.
+                } 
+                else {
+                    // 🟢 CENÁRIO NORMAL: Veio o ranking atualizado OU é o início do jogo (0 bolas)
+                    let tipoPremioBuscado = "BINGO";
+                    if (payload.buscandoMesaData && payload.buscandoMesaData[0]) {
+                        tipoPremioBuscado = payload.buscandoMesaData[0].buscando_o_premio;
+                    }
+                    
+                    // CHAMA A FUNÇÃO QUE DESENHA O RANKING NA TELA x1
+                    if (typeof renderRanking === 'function') {
+                        renderRanking(payload.melhoresData, tipoPremioBuscado);
+                    }
+
+                    // --- DETECÇÃO DE GANHADORES (PARA PAUSAR O ROBÔ/LOCUTOR) ---
+                    verificarVitoriaPeloRanking(payload.melhoresData);
+                }
             }
 
             // --- PARTE C: STATUS DO PRÊMIO (TEXTO "BUSCANDO LINHA...") ---
@@ -3048,7 +3060,7 @@ async function resetarJogo(force = false) {
 
                     // Verifica se o servidor mandou um ID de evento válido
                     if (idProximoEvento && idProximoEvento !== "None" && idProximoEvento !== "") {
-                        msgSucesso += `\n🔄 O Próximo Evento (#${idProximoEvento}) foi ativado automaticamente!`;
+                        msgSucesso += `\n🔄 O Próximo Evento (${idProximoEvento}) foi ativado automaticamente!`;
                         
                         // Chama a função de ativar no modo "automático" (true) para não pedir confirmação
                         await ativarNovoEvento(idProximoEvento, true);
