@@ -89,7 +89,11 @@ let processandoVitoria = false;
 // Controle de Hardware/Config
 let modoSorteio = 'auto'; 
 let vozAtiva = false;
-let enviarPortaSerial = false;  
+let enviarPortaSerial = false;
+let avancarCarrocel = true;
+let turbinaMotor = false; // false = Desligado, true = Ligado
+let portaAberta = false;  // false = Fechada, true = Aberta
+  
 let portaSerial = null;
  
 let cameraAtiva = false;
@@ -739,6 +743,7 @@ async function carregarDadosIniciaisSilencioso() {
             if(elDelay) elDelay.value = aguardandoVideo; // Adicionei verificação de null aqui
             vozAtiva = data.parametrosInfo.voz_ativa !== undefined ? data.parametrosInfo.voz_ativa : true;
             enviarPortaSerial = data.parametrosInfo.enviar_porta_serial !== undefined ? data.parametrosInfo.enviar_porta_serial : false;
+            avancarCarrocel = enviarPortaSerial;
             buscarSorteExtra =  data.parametrosInfo.buscar_sorte_extra !== undefined ? data.parametrosInfo.buscar_sorte_extra : true;
             const chkExtra = document.getElementById('chk-buscar-sorte-extra');
             if (chkExtra) {
@@ -890,6 +895,7 @@ function processarMensagemWS(event) {
 
                     if (configuracaoServer.enviar_porta_serial !== undefined) {
                         enviarPortaSerial = configuracaoServer.enviar_porta_serial;
+                        avancarCarrocel = enviarPortaSerial;
                     }
                    
                     if (configuracaoServer.modo_sorteio) {
@@ -1638,14 +1644,15 @@ async function inserirBolaManual() {
     console.log(`🎱 LOCUTOR DIGITOU: ${valor} MANUAL`);
 
     if (vozAtiva) falarTextoLocutor(String(valor));
+    // aqui novo
+    if (enviarPortaSerial && avancarCarrocel) {
+        //  Envia Bola Painel
+        //let valorFormatado = String(valor).padStart(2, '0');
+        //let comandoFinal = `F${valorFormatado}`;
+        //enviarComandoHardware(comandoFinal);
 
-    if (enviarPortaSerial) {
-        // 1. Converte para string e garante 2 dígitos (ex: 5 vira "05", 15 vira "15")
-        let valorFormatado = String(valor).padStart(2, '0');
-        // 2. Monta o comando (ex: "F05")
-        let comandoFinal = `F${valorFormatado}`;
-        // 3. Envia
-        enviarComandoHardware(comandoFinal);
+        //  Envia Avanço do Carrocel 'F95'
+        enviarComandoHardware('F95');
     }
 
     bolasCacheLocal.add(valor);
@@ -1933,6 +1940,28 @@ async function executarCarregamentoReal(idEvento) {
     }
 
     try {
+        // aqui novo
+        if (modoSorteio === 'manual') {
+            if (enviarPortaSerial) {
+                // 1. Envia o comando físico para a placa
+                enviarComandoHardware('F96');
+                turbinaMotor = true; 
+
+                // 2. ATUALIZAÇÃO VISUAL DO BOTÃO F2 NA TELA
+                const btnF2 = document.getElementById('btn-ext-f2');
+                if (btnF2) {
+                    // Aplica a cor verde de "Ligado"
+                    btnF2.className = "bg-green-700 hover:bg-green-600 border border-green-500 text-white rounded py-2 flex flex-col items-center shadow transition-all";
+                    
+                    // Atualiza o texto do status para (ON)
+                    const spanTexto = btnF2.querySelector('span:nth-child(2)');
+                    if (spanTexto) spanTexto.innerText = "TURBINA (ON)";
+                }
+                
+                console.log("🚀 [AUTO-START] Turbina ligada e interface atualizada.");
+            }
+        }
+
         console.log("[DEBUG] Resetando jogo para novo evento...");
         await fetch(`${API_BASE_URL}/api/admin/resetar`, { method: 'POST' });
         bolasSorteadasCache = [];
@@ -2914,6 +2943,14 @@ async function resetarJogo(force = false) {
     }
     
     showLoading("Processando encerramento...");
+    
+    // aqui novo
+    if (modoSorteio === 'manual') { 
+        if (enviarPortaSerial) {
+            //  Envia Resetar Extratora 'F98'
+            enviarComandoHardware('F98');
+        }
+    }
 
     if (autoSorteioAtivo) pararAutoSorteio();
     if (modoRoboAtivo && !sucessoConfirmado) pararModoRobo();
@@ -2932,14 +2969,6 @@ async function resetarJogo(force = false) {
 
         jogoFoiFinalizadoComSucesso = false;
         jogoRoboFinalizadoComSucesso = false;
-
-        // Envia o payload completo
-        //await fetch(`${API_BASE_URL}/api/admin/resetar`, { 
-        //    method: 'POST',
-        //    headers: { 'Content-Type': 'application/json' },
-        //    body: JSON.stringify(payload) 
-        //});
-
 
         // ✅ COLOQUE ESTE NO LUGAR (Note o "const responseReset =" no início):
         const responseReset = await fetch(`${API_BASE_URL}/api/admin/resetar`, { 
@@ -3659,6 +3688,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isAuditOpen) return;
  
         if (event.key === 'F1') { event.preventDefault(); abrirSessaoAuditoria(); return; }
+
+        // 👉 NOVOS ATALHOS DA EXTRATORA
+        if (event.key === 'F2') { event.preventDefault(); acionarComandoExtratora('F2'); return; }
+        if (event.key === 'F3') { event.preventDefault(); acionarComandoExtratora('F3'); return; }
+        if (event.key === 'F4') { event.preventDefault(); acionarComandoExtratora('F4'); return; }
+
         if (event.key === 'Enter') {
             if (modoSorteio === 'auto' && !isSorting && !autoSorteioAtivo) {
                 const tagAtiva = document.activeElement.tagName;
@@ -3679,6 +3714,9 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(atualizarVisibilidadeExtratora, 300);
     devolverFocoAoJogo();
 });
+
+
+
 
 
 function obterPesoExtra(nomePremio) {
@@ -3971,6 +4009,11 @@ async function ativarSerial() {
 
         customAlert("Extratora Conectada!");
 
+        // 👉 AQUI ESTÁ O SEGREDO PARA A TELA ATUALIZAR:
+        if (typeof atualizarVisibilidadeExtratora === 'function') {
+            atualizarVisibilidadeExtratora();
+        }
+
     } catch (err) {
         console.error("❌ [HARDWARE] Erro ao conectar:", err);
         
@@ -4031,6 +4074,116 @@ async function enviarComandoHardware(codigoComando) {
         console.error(`[%] ❌ [HARDWARE] Erro de escrita: ${e.message}`);
         return false;
     } 
+}
+
+// ==========================================
+// F2, F3, F4 - CONTROLE DA EXTRATORA
+// ==========================================
+function acionarComandoExtratora(tecla) {
+    if (!enviarPortaSerial) {
+        customAlert("A conexão Serial com a extratora não está ativa.");
+        return; 
+    }
+
+    let cmdHardware = '';
+    
+    // ==========================================
+    // F2 - CONTROLE DA TURBINA (ON/OFF)
+    // ==========================================
+    if (tecla === 'F2') {
+        turbinaMotor = !turbinaMotor; 
+        cmdHardware = turbinaMotor ? 'F96' : 'F97'; 
+
+        // Se ligar o motor, garante que a porta feche (Intertravamento Ativo)
+        if (turbinaMotor && portaAberta) {
+            console.log("🔒 [SEGURANÇA] Motor ligado: fechando porta automaticamente.");
+            portaAberta = false;
+            enviarComandoHardware('F94'); 
+            // Não precisa chamar função visual aqui, a função mestre abaixo resolve tudo!
+        }
+    } 
+    // ==========================================
+    // F3 - CONTROLE DA PORTA (ABRIR/FECHAR)
+    // ==========================================
+    else if (tecla === 'F3') {
+        // 🛡️ REGRA DE OURO: Bloqueia abertura se o motor estiver ON
+        if (!portaAberta && turbinaMotor) {
+            console.warn("🚫 [BLOQUEIO] Tentativa de abrir porta com motor ligado.");
+            customAlert("Segurança: Desligue a turbina antes de abrir a porta!", "Ação Bloqueada", 3);
+            return; 
+        }
+
+        portaAberta = !portaAberta;
+        cmdHardware = portaAberta ? 'F93' : 'F94';
+    } 
+    // ==========================================
+    // F4 - AVANÇAR CARROSSEL
+    // ==========================================
+    else if (tecla === 'F4') {
+        cmdHardware = 'F95'; 
+    }
+
+    // Se houve comando, envia para a placa e atualiza a tela
+    if (cmdHardware) {
+        enviarComandoHardware(cmdHardware);
+        atualizarInterfaceExtratora(tecla); // Chamada da função visual correta!
+    }
+}
+
+// ==========================================
+// ATUALIZAÇÃO VISUAL DOS BOTÕES NA TELA
+// ==========================================
+function atualizarInterfaceExtratora(tecla) {
+    const btnF2 = document.getElementById('btn-ext-f2');
+    const btnF3 = document.getElementById('btn-ext-f3');
+    const btnF4 = document.getElementById('btn-ext-f4');
+
+    // Estilo padrão (Botão Desligado/Cinza)
+    const classDesligado = "bg-gray-700 hover:bg-blue-600 border border-gray-500 text-white rounded py-2 flex flex-col items-center shadow transition-colors";
+
+    // 1. Atualiza visual da Turbina (F2)
+    if (btnF2) {
+        const spanF2 = btnF2.querySelector('span:nth-child(2)');
+        if (turbinaMotor) {
+            btnF2.className = "bg-green-700 hover:bg-green-600 border border-green-500 text-white rounded py-2 flex flex-col items-center shadow transition-all scale-[0.98]";
+            if(spanF2) spanF2.innerText = "TURBINA (ON)";
+        } else {
+            btnF2.className = classDesligado;
+            if(spanF2) spanF2.innerText = "TURBINA (OFF)";
+        }
+    }
+
+    // 2. Atualiza visual da Porta (F3)
+    if (btnF3) {
+        const spanF3 = btnF3.querySelector('span:nth-child(2)');
+        if (portaAberta) {
+            btnF3.className = "bg-yellow-700 hover:bg-yellow-600 border border-yellow-500 text-white rounded py-2 flex flex-col items-center shadow transition-all scale-[0.98]";
+            if(spanF3) spanF3.innerText = "PORTA (ABERTA)";
+        } else {
+            btnF3.className = classDesligado;
+            if(spanF3) spanF3.innerText = "PORTA (FECHADA)";
+        }
+    }
+
+    // 3. Efeito de Clique do Carrossel (F4)
+    if (tecla === 'F4' && btnF4) {
+        btnF4.className = "bg-blue-500 border border-blue-400 text-white rounded py-2 flex flex-col items-center shadow scale-95 transition-all";
+        
+        // Volta para a cor normal após 200ms
+        setTimeout(() => {
+            btnF4.className = classDesligado;
+        }, 200);
+    }
+}
+
+// Função auxiliar para limpar o visual do botão F3 (Porta)
+function atualizarVisualBotaoF3() {
+    const btnF3 = document.getElementById('btn-ext-f3');
+    if (btnF3) {
+        btnF3.className = "bg-gray-700 hover:bg-blue-600 border border-gray-500 text-white rounded py-2 flex flex-col items-center shadow transition-all";
+        const spanTextoF3 = btnF3.querySelector('span:nth-child(2)');
+        if (spanTextoF3) spanTextoF3.innerText = "PORTA (FECHADA)";
+    }
 }
 
 
@@ -4131,22 +4284,68 @@ window.addEventListener("beforeunload", async (event) => {
 // =========================================================
 
 function atualizarVisibilidadeExtratora() {
+    console.log("🔍 --- INICIANDO: atualizarVisibilidadeExtratora ---");
+
     const radioManual = document.querySelector('input[name="modo_sorteio"][value="manual"]');
     const btnExtratora = document.getElementById('btn-ligar-extratora');
     const painelDebug = document.getElementById('painel-debug-serial');
+    const painelF = document.getElementById('painel-comandos-extratora');
+    const checkSerial = document.getElementById('config-enviar-serial');
+
+    // 1. Verifica se os elementos realmente existem no HTML
+    console.log("📦 Status dos Elementos no DOM:", {
+        radioManualEncontrado: !!radioManual,
+        btnExtratoraEncontrado: !!btnExtratora,
+        painelFEncontrado: !!painelF,
+        checkSerialEncontrado: !!checkSerial
+    });
+
+    // 2. Lê os valores
+    if (radioManual) console.log("🔘 radioManual marcado?", radioManual.checked);
+    if (checkSerial) console.log("🔌 checkSerial (Ativar Comando Extratora) marcado?", checkSerial.checked);
 
     if (radioManual && radioManual.checked) {
-        // MODO MANUAL: Mostra o botão
-        if(btnExtratora) btnExtratora.classList.remove('hidden');
-    } else {
-        // MODO DIGITAL: Esconde tudo
-        if(btnExtratora) btnExtratora.classList.add('hidden');
+        console.log("🎯 Rota: MODO MANUAL ativo.");
         
-        // Se o painel de debug estiver aberto, fecha ele também
-        if(painelDebug && !painelDebug.classList.contains('hidden')) {
+        // MODO MANUAL: Mostra o botão principal da Extratora
+        if (btnExtratora) {
+            btnExtratora.classList.remove('hidden');
+            console.log("✅ Botão principal da extratora exibido.");
+        }
+        
+        // MODO MANUAL + SERIAL ATIVA: Mostra o painel de atalhos (F2, F3, F4)
+        if (painelF) {
+            if (checkSerial && checkSerial.checked) {
+                console.log("🟢 Condição satisfeita: Serial Ativa! Mostrando botões F2/F3/F4.");
+                painelF.classList.remove('hidden');
+                painelF.classList.add('flex');
+            } else {
+                console.log("🔴 Condição falhou: Serial Inativa (Checkbox desmarcado). Escondendo botões F2/F3/F4.");
+                painelF.classList.add('hidden');
+                painelF.classList.remove('flex');
+            }
+        } else {
+            console.warn("⚠️ ALERTA: 'painel-comandos-extratora' não encontrado no HTML!");
+        }
+    } else {
+        console.log("📱 Rota: MODO DIGITAL (ou manual não selecionado). Escondendo tudo.");
+        
+        // MODO DIGITAL: Esconde tudo
+        if (btnExtratora) btnExtratora.classList.add('hidden');
+        
+        // Esconde o painel de debug se estiver aberto
+        if (painelDebug && !painelDebug.classList.contains('hidden')) {
             painelDebug.classList.add('hidden');
         }
+        
+        // Esconde o painel de atalhos (F2, F3, F4)
+        if (painelF) {
+            painelF.classList.add('hidden');
+            painelF.classList.remove('flex');
+        }
     }
+    
+    console.log("🏁 --- FIM: atualizarVisibilidadeExtratora ---");
 }
 
 // Adiciona os eventos aos Radio Buttons assim que a página carregar

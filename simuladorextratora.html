@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Extratora - Teste de Hardware</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse-soft {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(0.98); }
+        }
+        .anim-pulse { animation: pulse-soft 2s infinite; }
+
+        /* NOVA ANIMAÇÃO: Giro do Carrossel */
+        @keyframes spin-fast {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .anim-spin-fast { 
+            animation: spin-fast 0.6s cubic-bezier(0.4, 0, 0.2, 1); 
+            display: inline-block;
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-white min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-gray-900 border-2 border-gray-800 rounded-3xl p-8 w-full max-w-3xl shadow-2xl">
+        <div class="flex justify-between items-center mb-8 border-b border-gray-800 pb-4">
+            <div>
+                <h1 class="text-2xl font-black text-blue-500 uppercase tracking-tighter">Simulador de Extratora</h1>
+                <p class="text-gray-500 text-xs font-bold uppercase tracking-widest">Controle de Hardware v1.1</p>
+            </div>
+            <div id="status-conexao" class="bg-red-900/20 text-red-500 border border-red-500/50 px-3 py-1 rounded-full text-[10px] font-bold uppercase">
+                Serial Offline
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4 mb-8">
+            <div id="status-turbina" class="bg-gray-950 border border-gray-800 p-4 rounded-2xl flex flex-col items-center transition-all">
+                <span class="text-gray-500 text-[10px] font-bold uppercase mb-2">Turbina</span>
+                <div class="text-3xl mb-1" id="icon-turbina">⚪</div>
+                <span id="txt-turbina" class="font-black text-xl text-gray-600">OFF</span>
+            </div>
+            
+            <div id="status-porta" class="bg-gray-950 border border-gray-800 p-4 rounded-2xl flex flex-col items-center transition-all">
+                <span class="text-gray-500 text-[10px] font-bold uppercase mb-2">Porta</span>
+                <div class="text-3xl mb-1" id="icon-porta">🔒</div>
+                <span id="txt-porta" class="font-black text-xl text-gray-600">FECHADA</span>
+            </div>
+
+            <div id="status-carrossel" class="bg-gray-950 border border-gray-800 p-4 rounded-2xl flex flex-col items-center transition-all">
+                <span class="text-gray-500 text-[10px] font-bold uppercase mb-2">Carrossel</span>
+                <div class="text-3xl mb-1 text-gray-600" id="icon-carrossel">⚙️</div>
+                <span id="txt-carrossel" class="font-black text-xl text-gray-600">PARADO</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4 mb-8">
+            <button id="btn-f2" onclick="acionarComandoExtratora('F2')" class="bg-gray-800 hover:bg-gray-700 border-b-4 border-gray-950 p-4 rounded-xl transition-all active:translate-y-1 active:border-b-0">
+                <span class="block text-yellow-500 font-black text-xl">F2</span>
+                <span class="text-[10px] font-bold text-gray-400 uppercase">Turbina</span>
+            </button>
+            <button id="btn-f3" onclick="acionarComandoExtratora('F3')" class="bg-gray-800 hover:bg-gray-700 border-b-4 border-gray-950 p-4 rounded-xl transition-all active:translate-y-1 active:border-b-0">
+                <span class="block text-yellow-500 font-black text-xl">F3</span>
+                <span class="text-[10px] font-bold text-gray-400 uppercase">Porta</span>
+            </button>
+            <button id="btn-f4" onclick="acionarComandoExtratora('F4')" class="bg-gray-800 hover:bg-gray-700 border-b-4 border-gray-950 p-4 rounded-xl transition-all active:translate-y-1 active:border-b-0">
+                <span class="block text-yellow-500 font-black text-xl">F4</span>
+                <span class="text-[10px] font-bold text-gray-400 uppercase">Carrossel</span>
+            </button>
+        </div>
+
+        <div class="bg-black rounded-xl p-4 font-mono text-xs h-40 overflow-y-auto border border-gray-800 custom-scrollbar" id="log-comandos">
+            <div class="text-gray-600 italic">// Aguardando comandos...</div>
+        </div>
+    </div>
+
+    <script>
+        // --- VARIÁVEIS DE ESTADO ---
+        let turbinaMotor = false; 
+        let portaAberta = false;
+        let enviarPortaSerial = true; 
+
+        // --- FUNÇÃO DE COMANDO PRINCIPAL ---
+        function acionarComandoExtratora(tecla) {
+            let cmdHardware = '';
+            
+            if (tecla === 'F2') {
+                turbinaMotor = !turbinaMotor;
+                cmdHardware = turbinaMotor ? 'F96' : 'F97';
+
+                if (turbinaMotor && portaAberta) {
+                    registrarLog("🔒 [SINC] Turbina ligada: Fechando porta por segurança.");
+                    portaAberta = false;
+                    enviarComandoHardware('F94'); 
+                    atualizarVisualPorta();
+                }
+            } 
+            else if (tecla === 'F3') {
+                if (!portaAberta && turbinaMotor) {
+                    registrarLog("🚫 [BLOQUEIO] Impossível abrir: Desligue a turbina primeiro!");
+                    alert("Ação Bloqueada: Desligue a turbina antes de abrir a porta!");
+                    return;
+                }
+                portaAberta = !portaAberta;
+                cmdHardware = portaAberta ? 'F93' : 'F94';
+            } 
+            else if (tecla === 'F4') {
+                cmdHardware = 'F95';
+            }
+
+            if (cmdHardware) {
+                enviarComandoHardware(cmdHardware);
+                atualizarInterface(tecla);
+            }
+        }
+
+        // --- ENVIO PARA HARDWARE ---
+        function enviarComandoHardware(comando) {
+            const timestamp = new Date().toLocaleTimeString();
+            registrarLog(`<span class="text-blue-500">[${timestamp}]</span> <span class="text-green-500">TX -> ${comando}</span>`);
+            // Lógica da Web Serial API entra aqui
+        }
+
+        // --- ATUALIZAÇÃO VISUAL ---
+        function atualizarInterface(tecla) {
+            if (tecla === 'F2') {
+                const cardTurbina = document.getElementById('status-turbina');
+                const txtTurbina = document.getElementById('txt-turbina');
+                const iconTurbina = document.getElementById('icon-turbina');
+
+                if (turbinaMotor) {
+                    cardTurbina.classList.add('border-blue-500', 'bg-blue-900/10');
+                    txtTurbina.innerText = "LIGADA (ON)";
+                    txtTurbina.className = "font-black text-xl text-blue-400 anim-pulse";
+                    iconTurbina.innerText = "🌀";
+                } else {
+                    cardTurbina.classList.remove('border-blue-500', 'bg-blue-900/10');
+                    txtTurbina.innerText = "OFF";
+                    txtTurbina.className = "font-black text-xl text-gray-600";
+                    iconTurbina.innerText = "⚪";
+                }
+            }
+
+            if (tecla === 'F3' || tecla === 'F2') {
+                atualizarVisualPorta();
+            }
+
+            // NOVA LÓGICA: Visual do Carrossel (F4)
+            if (tecla === 'F4') {
+                const cardCarrossel = document.getElementById('status-carrossel');
+                const txtCarrossel = document.getElementById('txt-carrossel');
+                const iconCarrossel = document.getElementById('icon-carrossel');
+
+                // Aplica estado de "Movimento"
+                cardCarrossel.classList.add('border-yellow-500', 'bg-yellow-900/10');
+                txtCarrossel.innerText = "AVANÇANDO";
+                txtCarrossel.className = "font-black text-xl text-yellow-400";
+                
+                // Reinicia a animação de giro (truque do reflow)
+                iconCarrossel.classList.remove('anim-spin-fast');
+                void iconCarrossel.offsetWidth; 
+                iconCarrossel.classList.add('anim-spin-fast');
+
+                // Retorna ao estado "Parado" após 600ms
+                setTimeout(() => {
+                    cardCarrossel.classList.remove('border-yellow-500', 'bg-yellow-900/10');
+                    txtCarrossel.innerText = "PARADO";
+                    txtCarrossel.className = "font-black text-xl text-gray-600";
+                }, 600);
+            }
+        }
+
+        function atualizarVisualPorta() {
+            const cardPorta = document.getElementById('status-porta');
+            const txtPorta = document.getElementById('txt-porta');
+            const iconPorta = document.getElementById('icon-porta');
+
+            if (portaAberta) {
+                cardPorta.classList.add('border-yellow-500', 'bg-yellow-900/10');
+                txtPorta.innerText = "ABERTA";
+                txtPorta.className = "font-black text-xl text-yellow-400";
+                iconPorta.innerText = "🔓";
+            } else {
+                cardPorta.classList.remove('border-yellow-500', 'bg-yellow-900/10');
+                txtPorta.innerText = "FECHADA";
+                txtPorta.className = "font-black text-xl text-gray-600";
+                iconPorta.innerText = "🔒";
+            }
+        }
+
+        function registrarLog(msg) {
+            const log = document.getElementById('log-comandos');
+            const novaLinha = document.createElement('div');
+            novaLinha.innerHTML = msg;
+            log.prepend(novaLinha);
+        }
+
+        // Atalhos de Teclado
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'F2') { e.preventDefault(); acionarComandoExtratora('F2'); }
+            if (e.key === 'F3') { e.preventDefault(); acionarComandoExtratora('F3'); }
+            if (e.key === 'F4') { e.preventDefault(); acionarComandoExtratora('F4'); }
+        });
+    </script>
+</body>
+</html>

@@ -371,6 +371,24 @@
                 </div>
             </div>
 
+            <div id="painel-comandos-extratora" class="hidden bg-gray-900 p-1 rounded-xl border-2 border-blue-600 shadow-xl flex-col items-center">
+                <label class="block text-blue-400 text-[10px] font-bold uppercase mb-1">🕹️ Comandos Extratora</label>
+                <div class="grid grid-cols-3 gap-2 w-full">
+                    <button id="btn-ext-f2" onclick="acionarComandoExtratora('F2')" class="bg-gray-700 hover:bg-blue-600 border border-gray-500 text-white rounded py-1 flex flex-col items-center shadow transition-colors" title="Atalho: F2">
+                        <span class="text-yellow-400 font-black text-sm">F2</span>
+                        <span class="text-[9px] font-bold uppercase mt-1">Turbina</span>
+                    </button>
+                    <button id="btn-ext-f3" onclick="acionarComandoExtratora('F3')" class="bg-gray-700 hover:bg-blue-600 border border-gray-500 text-white rounded py-1 flex flex-col items-center shadow transition-colors" title="Atalho: F3">
+                        <span class="text-yellow-400 font-black text-sm">F3</span>
+                        <span class="text-[9px] font-bold uppercase mt-1">Porta</span>
+                    </button>
+                    <button id="btn-ext-f4" onclick="acionarComandoExtratora('F4')" class="bg-gray-700 hover:bg-blue-600 border border-gray-500 text-white rounded py-1 flex flex-col items-center shadow transition-colors" title="Atalho: F4">
+                        <span class="text-yellow-400 font-black text-sm">F4</span>
+                        <span class="text-[9px] font-bold uppercase mt-1">Carrossel</span>
+                    </button>
+                </div>
+            </div>
+
             <div class="bg-gray-900 p-2 rounded-xl border border-gray-700 flex flex-col items-center justify-center">
                 <label class="block text-gray-300 text-[10px] font-bold uppercase mb-0">PRÊMIO DA VEZ (Buscando...)</label>
                 <p id="status-premio" class="text-center text-xl text-yellow-400 font-black animate-pulse mt-0">Buscando: ...</p>
@@ -615,9 +633,9 @@
     </div>
 
     <div class="grid grid-cols-2 gap-2 mb-3">
-        <button onclick="testarEnvio('F01')" class="bg-gray-700 hover:bg-gray-600 text-gray-200 py-1 rounded border border-gray-600">Teste Bola 01</button>
-        <button onclick="testarEnvio('F90')" class="bg-gray-700 hover:bg-gray-600 text-gray-200 py-1 rounded border border-gray-600">Teste Bola 90</button>
-        <button onclick="testarEnvio('TESTE')" class="bg-gray-700 hover:bg-gray-600 text-gray-200 py-1 rounded border border-gray-600">String 'TESTE'</button>
+        <button onclick="testarEnvio('F95')" class="bg-gray-700 hover:bg-gray-600 text-gray-200 py-1 rounded border border-gray-600">Avançar Corrossel</button>
+        <button onclick="testarEnvio('F96')" class="bg-gray-700 hover:bg-gray-600 text-gray-200 py-1 rounded border border-gray-600">Ligar Turbina</button>
+        <button onclick="testarEnvio('F97')" class="bg-gray-700 hover:bg-gray-600 text-gray-200 py-1 rounded border border-gray-600">Desligar Turbina</button>
         <button onclick="testarEnvio('R')" class="bg-red-900 hover:bg-red-700 text-white py-1 rounded border border-red-500">Reset (Ex)</button>
     </div>
 
@@ -631,7 +649,9 @@
 <script src="admin.js"></script>
 
 <script>
-    // --- CORREÇÃO: Removemos a redeclaração de portaSerial para evitar conflito com admin.js ---
+    // ========================================================
+    // 🛠️ FUNÇÕES DO PAINEL DE DEBUG SERIAL (ISOLADAS)
+    // ========================================================
 
     // 1. Função de Conexão (Atualiza a UI do Debug)
     async function ativarSerialDebug() {
@@ -667,7 +687,7 @@
 
     // 3. Função de Teste que chama a função original do admin.js
     async function testarEnvio(comando) {
-        // Verifica conexão
+        // Verifica conexão global que está no admin.js
         if (typeof portaSerial === 'undefined' || !portaSerial) {
             alert("Conecte a extratora primeiro (Clique em LIGAR PORTA COM)!");
             return;
@@ -675,7 +695,7 @@
 
         addLog(`Tentando enviar: "${comando}"...`);
         
-        // Chama a função de envio do admin.js
+        // Chama a função de envio REAL do admin.js
         if (typeof enviarComandoHardware === 'function') {
             const sucesso = await enviarComandoHardware(comando);
             if(sucesso) addLog("✅ Sucesso: Enviado p/ buffer.");
@@ -685,30 +705,22 @@
         }
     }
 
-    // 4. Helper de Log Visual (Apenas para o painel preto)
+    // 4. Helper de Log Visual (Apenas para o painel preto de debug)
     function addLog(msg) {
         const logDiv = document.getElementById('log-debug-serial');
         if (!logDiv) return;
 
         const hora = new Date().toLocaleTimeString().split(' ')[0];
         
-        // Limpa mensagem de "aguardando"
         if(logDiv.innerHTML.includes("Aguardando")) logDiv.innerHTML = "";
-
-        // Adiciona nova linha no topo
         logDiv.innerHTML = `<div class="border-b border-gray-800 pb-1 mb-1"><span class="text-blue-500">[${hora}]</span> <span class="text-gray-300">${msg}</span></div>` + logDiv.innerHTML;
     }
 
     // ========================================================
-    // 🕵️ ATALHO SECRETO PARA ABRIR O DEBUG (COM TRAVA DE MODO)
-    // Pressione: CTRL + SHIFT + S
+    // 🕵️ ATALHO SECRETO PARA ABRIR O DEBUG (CTRL + SHIFT + S)
     // ========================================================
     document.addEventListener('keydown', function(event) {
-        // 1. Verifica as teclas
         if (event.ctrlKey && event.shiftKey && (event.key === 's' || event.key === 'S')) {
-            
-            // 2. VERIFICAÇÃO CRUCIAL: Só abre se estiver no modo MANUAL
-            // Buscamos o radio button que define o modo manual
             const radioManual = document.querySelector('input[name="modo_sorteio"][value="manual"]');
             
             if (radioManual && radioManual.checked) {
@@ -719,20 +731,15 @@
             }
         }
     });
+
     function toggleDebugPainel() {
         const painel = document.getElementById('painel-debug-serial');
         if (painel) {
-            // Remove ou adiciona a classe 'hidden'
             painel.classList.toggle('hidden');
-            
-            // Log para confirmar
             const isVisible = !painel.classList.contains('hidden');
             console.log(isVisible ? "📂 Painel Debug ABERTO" : "📁 Painel Debug FECHADO");
         }
     }
-
 </script>
-
-
 </body>
 </html>
