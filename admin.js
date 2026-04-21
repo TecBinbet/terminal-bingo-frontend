@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "1.2";
+const VERSAO_ATUAL = "1.3";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -20,9 +20,11 @@ const contadorElement = document.getElementById('contador-bolas');
 // --- VARIÁVEIS DE CONTROLE ---
 let textoBuscando = "";
 
-let tempoEsperaConferenciaRobo = 3;
+let tempoVideoOriginalParaComparacao = "";
 
-let tempoInicioTransmissao = 0;
+let tempoInicioTransmissao = sessionStorage.getItem('tempoInicioBackup') ? parseInt(sessionStorage.getItem('tempoInicioBackup')) : 0;
+
+let tempoEsperaConferenciaRobo = 3;
 
 let qtdeCuponsVendidosEvento = 0;
 
@@ -164,27 +166,43 @@ async function processarMatrizEnvio() {
             let urlEndpoint = '';
             let bodyData = {};
 
+            let segundosDesdeOInicio = 0;
+            if (modoSorteio === 'manual' && tempoInicioTransmissao > 0) { 
+                // Pega a hora exata em que o evento (Bola, Prêmio, etc) entrou na fila
+                segundosDesdeOInicio = (item.hora - tempoInicioTransmissao) / 1000;
+            }
+
             // Mapeamento dos tipos para configurar a requisição
             switch (item.tipo) {
                 case 'BOLA_CLIENTE':
-                    //  <<  Ajuste Sincronismo Vídeo 
-                    let segundosDesdeOInicio = 0;
-                    if (modoSorteio === 'manual' && tempoInicioTransmissao > 0) { 
-                       segundosDesdeOInicio = (Date.now() - tempoInicioTransmissao) / 1000;
-                    }
                     urlEndpoint = `${API_BASE_URL}/api/admin/publicar_bola`;
                     bodyData = { 
                         bola: item.valor,
                         tempo_video: segundosDesdeOInicio
                     };
                     break;
+
+                case 'CONFERIR_CARTELA':
+                    //urlEndpoint = `${API_BASE_URL}/api/admin/....`;
+                    bodyData = { 
+                        conferir: item.valor,
+                        tempo_video: segundosDesdeOInicio // 🕒 Carimbo de tempo adicionado!
+                    };
+                    break;
+
                 case 'PREMIO_CLIENTE':
                     urlEndpoint = `${API_BASE_URL}/api/admin/definir_premio_publico`;
-                    bodyData = { premio: item.valor };
+                    bodyData = { 
+                        premio: item.valor,
+                        tempo_video: segundosDesdeOInicio // 🕒 Carimbo de tempo adicionado!
+                    };
                     break;
+                    
                 case 'LIMPAR_PUBLICO':            
-                    urlEndpoint = `${API_BASE_URL}/api/admin/limpar_conferencia_publica`;
-                    bodyData = {}; // Body vazio pode ser necessário dependendo do backend
+                    urlEndpoint = `${API_BASE_URL}/api/admin/limpar_conferencia`;
+                    bodyData = {
+                        tempo_video: segundosDesdeOInicio // 🕒 Carimbo de tempo adicionado!
+                    }; 
                     break;
                 default:
                     console.warn("Tipo desconhecido na matriz, removendo...", item.tipo);
@@ -231,6 +249,134 @@ function atualizarIndicadorFila(qtd) {
         el.style.color = qtd > 0 ? "orange" : "lightgreen";
     }
 }
+
+// ==============================================================
+// ⏱️ PAINEL UNIFICADO DE SINCRONIA E ATRASO
+// ==============================================================
+
+// Variável global para guardar o tempo original e comparar depois
+let tempoVideoOriginalParaComparacao = ""; 
+
+function abrirPainelSincronia() {
+    // 1. Calcula o tempo atual do sistema para preencher o input
+    let tempoAtualSegundos = 0;
+    if (tempoInicioTransmissao > 0) {
+        tempoAtualSegundos = Math.floor((Date.now() - tempoInicioTransmissao) / 1000);
+    }
+    const minutos = Math.floor(tempoAtualSegundos / 60);
+    const segundos = tempoAtualSegundos % 60;
+    const tempoFormatado = `${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
+
+    // Guarda para saber se o locutor mudou algo
+    tempoVideoOriginalParaComparacao = tempoFormatado; 
+
+    // 2. Preenche os campos do Modal
+    document.getElementById('input-tempo-video').value = tempoFormatado;
+    
+    // Puxa o valor atual da variável global 'aguardandoVideo' (ou 0 se não existir)
+    const atrasoAtual = (typeof aguardandoVideo !== 'undefined') ? aguardandoVideo : 0;
+    document.getElementById('input-atraso-dados').value = atrasoAtual;
+
+    // 3. Mostra o Modal na tela
+    document.getElementById('modal-sincronia').classList.remove('hidden');
+}
+
+function fecharPainelSincronia() {
+    document.getElementById('modal-sincronia').classList.add('hidden');
+}
+
+function salvarPainelSincronia() {
+    const inputTempo = document.getElementById('input-tempo-video').value.trim();
+    const inputAtraso = parseInt(document.getElementById('input-atraso-dados').value);
+
+    let mudouTempo = false;
+    let mudouAtraso = false;
+
+    // ==================================================
+    // PARTE 1: VERIFICA RESSINCRONIZAÇÃO (MÁQUINA DO TEMPO)
+    // ==================================================
+    if (inputTempo !== "" && inputTempo !== tempoVideoOriginalParaComparacao) {
+        let novoTempoSegundos = 0;
+        if (inputTempo.includes(':')) {
+            const partes = inputTempo.split(':');
+            if (partes.length === 2) novoTempoSegundos = (parseInt(partes[0]) * 60) + parseInt(partes[1]);
+            else if (partes.length === 3) novoTempoSegundos = (parseInt(partes[0]) * 3600) + (parseInt(partes[1]) * 60) + parseInt(partes[2]);
+        } else {
+            novoTempoSegundos = parseInt(inputTempo);
+        }
+
+        if (!isNaN(novoTempoSegundos) && novoTempoSegundos >= 0) {
+            tempoInicioTransmissao = Date.now() - (novoTempoSegundos * 1000);
+            sessionStorage.setItem('tempoInicioBackup', tempoInicioTransmissao);
+            mudouTempo = true;
+            console.log(`[SYNC] 🔄 Marco Zero atualizado! Tempo de Vídeo agora é: ${novoTempoSegundos}s`);
+        } else {
+            alert("Formato de tempo do vídeo inválido! Use Segundos ou MM:SS.");
+            return; // Aborta se o cara digitou letras no tempo
+        }
+    }
+
+    // ==================================================
+    // PARTE 2: VERIFICA AJUSTE FINO (ATRASO/BUFFER)
+    // ==================================================
+    if (!isNaN(inputAtraso) && inputAtraso >= 0) {
+        let atrasoFinal = inputAtraso;
+        if (typeof modoSorteio !== 'undefined' && modoSorteio !== 'manual' && atrasoFinal > 0) {
+            alert("⚠️ Sorteio Digital detectado!\nO Atraso de Dados será forçado para ZERO (Tempo Real) para evitar lentidão.");
+            atrasoFinal = 0; // Força para zero
+            document.getElementById('input-atraso-dados').value = 0; // Corrige visualmente no campo
+        }
+
+        // Verifica se realmente houve mudança no valor
+        if (typeof aguardandoVideo === 'undefined' || aguardandoVideo !== inputAtraso) {
+            aguardandoVideo = inputAtraso; // Atualiza a variável na memória do JS
+            mudouAtraso = true;
+            
+            console.log(`[SYNC] ⏳ Atraso de dados atualizado para: ${aguardandoVideo}s`);
+            
+            // CHAMA A FUNÇÃO PARA SALVAR NO ARQUIVO/BANCO DE DADOS
+            salvarAtrasoNoServidor(aguardandoVideo);
+        }
+    }
+
+    // ==================================================
+    // FEEDBACK FINAL
+    // ==================================================
+    fecharPainelSincronia();
+
+    if (mudouTempo || mudouAtraso) {
+        let msg = "Ajustes aplicados:\n";
+        if (mudouTempo) msg += "✔️ Tempo de Vídeo Ressincronizado.\n";
+        if (mudouAtraso) msg += `✔️ Atraso de Dados definido para ${aguardandoVideo}s.\n`;
+        
+        if (typeof customAlert === 'function') customAlert(msg);
+        else alert(msg);
+    } else {
+        console.log("[SYNC] Nenhuma alteração foi realizada.");
+    }
+}
+
+// Função responsável por mandar o novo atraso para o Python
+function salvarAtrasoNoServidor(novoAtraso) {
+    fetch('/api/admin/salvar_config', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aguardandoVideo: novoAtraso }) // Envia o dado para gravar no DB/Arquivo
+    })
+    .then(res => res.json())
+    .then(data => console.log("✅ Atraso salvo no servidor com sucesso!"))
+    .catch(err => console.error("❌ Erro ao salvar atraso no servidor:", err));
+}
+
+// ==============================================================
+// ⌨️ ESCUTADOR DE TECLADO (Atalho Ctrl + Shift + S)
+// ==============================================================
+document.addEventListener('keydown', function(event) {
+    if (event.ctrlKey && event.shiftKey && (event.key === 'S' || event.key === 's')) {
+        event.preventDefault(); 
+        abrirPainelSincronia();
+    }
+});
 
 
 // =========================================================
@@ -1189,13 +1335,13 @@ function renderizarListaEventos(eventos) {
                 </div>
             </div>     
             <div class="flex gap-2 items-center">
-                <button onclick="carregarEvento('${evt.id_evento}')" class="px-4 py-3 rounded text-xs font-bold ${isFinalizado ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-green-700 text-white hover:bg-green-600 shadow'}">
+                <button onclick="carregarEvento('${evt.id_evento}')" class="px-1 py-3 rounded text-xs font-bold ${isFinalizado ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-green-700 text-white hover:bg-green-600 shadow'}">
                     ${isFinalizado ? 'ENCERRADO' : 'INICIAR SORTEIO'}
                 </button>   
                 
                 ${!isFinalizado ? `
                 <button onclick="ativarNovoEvento('${evt.id_evento}')" 
-                        class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-3 rounded text-xs shadow">
+                        class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-1 rounded text-xs shadow">
                     ATIVAR P/ COMPRA
                 </button>
                 ` : ''}
@@ -1623,6 +1769,7 @@ function gerarNumeroUnicoLocal() {
 //  <<  Ajuste Sincronismo Vídeo
 function iniciarTransmissao() {
     tempoInicioTransmissao = Date.now(); // Grava os milissegundos atuais
+    sessionStorage.setItem('tempoInicioBackup', tempoInicioTransmissao); // Salva na memória do Chrome
     // Pode enviar este valor para o banco de dados para os clientes saberem quando começou
 }
 
@@ -2161,61 +2308,6 @@ async function definirProximoPremioAutomatico() {
 }
 
 
-async function definirProximoPremioAutomatico2() {
-    if (!dadosEventoAtual || !dadosEventoAtual.premios) return;
-
-    // 1. Identifica o nome do primeiro prêmio na interface (Mesa)
-    // Buscamos o label que você definiu na carregarEvento/executarCarregamentoReal
-    const labelQuadraElement = document.querySelector('#container-premios-lista span');
-    const textoPrimeiroPremio = labelQuadraElement ? labelQuadraElement.textContent.toUpperCase() : "";
-    
-    // 2. Verifica se o sorteio está no "Marco Zero" (Nenhuma bola sorteada)
-    const sorteioNaoIniciado = (bolasSorteadasCache.length === 0);
-
-    let premioAlvo = '';
-
-    // --- LÓGICA DE DECISÃO ---
-    
-    // Se o primeiro prêmio diz "4 CANTOS" e o jogo não começou, 
-    // assumimos a busca simultânea de 25 números. mmm
-    if (textoPrimeiroPremio.includes("4 CANTOS") && sorteioNaoIniciado && MAX_BOLAS === 75) {
-        
-        // Verificamos se a LINHA também tem valor configurado
-        const temLinha = parseFloat(dadosEventoAtual.premios['linha'] || 0) > 0;
-        
-        if (temLinha) {
-            premioAlvo = '4 CANTOS E LINHA';
-        } else {
-            premioAlvo = '4 CANTOS';
-        }
-
-    } else {
-        // Lógica de queda normal (para Bingo 90 ou quando o sorteio já está em andamento)
-        const ordem = ['quadra', 'linha', 'falta_um', 'bingo', 'segundo_bingo'];
-        const nomes = {
-            'quadra': (MAX_BOLAS === 75) ? '4 CANTOS' : 'QUADRA',
-            'linha': 'LINHA',
-            'falta_um': 'FALTA UM',
-            'bingo': 'BINGO',
-            'segundo_bingo': 'DUPLO BINGO'
-        };
-
-        for (const key of ordem) {
-            if (parseFloat(dadosEventoAtual.premios[key] || 0) > 0) {
-                premioAlvo = nomes[key];
-                break; 
-            }
-        }
-    }
-
-    // 3. Dispara a atualização para Mesa e Terminais
-    if (premioAlvo) {
-        console.log(`[AUTO-PREMIO] Status confirmado: ${premioAlvo}`);
-        await mudarPremio(premioAlvo);
-    }
-}
-
-
 // --- FUNÇÕES DE GRID E RANKING ---
 function initGrid() {
     const gridContainer = document.getElementById('grid-bolas');
@@ -2691,18 +2783,30 @@ async function encerrarSessaoConferencia(modoSilencioso = false) {
     devolverFocoAoJogo();
     mostrarSpinner("Avançando Premiação...");
 
+    // Essa rota de linhas restantes é apenas interna do banco, pode continuar sendo chamada direto
     try { await fetch(`${API_BASE_URL}/api/admin/atualizar_linhas_restantes`, { method: 'POST' }); } catch(e) {}
-    try { await fetch(`${API_BASE_URL}/api/admin/limpar_conferencia`, { method: 'POST' }); } catch(e) {}
+    
+    // ❌ REMOVIDO: A chamada direta que furava a fila e ignorava o atraso do vídeo
+    // try { await fetch(`${API_BASE_URL}/api/admin/limpar_conferencia`, { method: 'POST' }); } catch(e) {}
+
+    // ✅ ADICIONADO: Envia o comando para a fila da "Máquina do Tempo"
+    matrizEnvio.push({ 
+        tipo: 'LIMPAR_CONFERENCIA', 
+        valor: 0, 
+        hora: Date.now() 
+    });
 
     // O log que faltava para você debugar no F12
     console.log(`[CONFERÊNCIA] Sessão encerrada. Houve ganhador: ${houveGanhadorNaSessao}`);
 
     if (!modoSilencioso && houveGanhadorNaSessao) {
         processarProximoPremio(); 
+    } else {
+        // MUITO IMPORTANTE: Se não houve ganhador (ou for silencioso), o código não vai 
+        // chamar o processarProximoPremio(). Então temos que matar o spinner aqui!
+        esconderSpinner();
     }
-    
 }
-
 
 async function processarProximoPremio() {
     console.log("[DEBUG] 🔄 Iniciando processamento do próximo prêmio...");
@@ -2872,69 +2976,6 @@ async function processarProximoPremio() {
 }
 
 
-async function processarProximoPremio2() {
-    let info = null;
-    let dadosEvento = null;
-    try {
-        const resp = await fetch(`${API_BASE_URL}/api/initial-data`);
-        const dados = await resp.json();
-        info = dados.buscandoMesaData[0];
-        if (typeof dadosEventoAtual !== 'undefined' && dadosEventoAtual) dadosEvento = dadosEventoAtual;
-    } catch (e) { return; }
-
-    if (!info) return;
-   
-    if (info.buscando_o_premio === 'LINHA' && info.buscando_a_linha && info.buscando_a_linha.length > 0) {
-        return; 
-    }
-    const ordem = ['QUADRA', 'LINHA', 'FALTAUM', 'BINGO', 'DUPLO BINGO'];
-    let atualKey = info.buscando_o_premio;
-    if (atualKey === 'FALTA 1') atualKey = 'FALTAUM';
-    if (atualKey === '3 LINHAS') atualKey = 'LINHA';
-    
-    const indexAtual = ordem.indexOf(atualKey);
-    if (indexAtual === -1) return;
-
-    let proximoKey = null;
-    let dadosPremios = dadosEvento ? dadosEvento.premios : null;
-
-    if (dadosPremios) {
-        for (let i = indexAtual + 1; i < ordem.length; i++) {
-            const keyTeste = ordem[i];
-            let keyDados = keyTeste.toLowerCase();
-            if (keyTeste === 'FALTAUM') keyDados = 'falta_um';
-            if (keyTeste === 'DUPLO BINGO') keyDados = 'segundo_bingo';
-            if (parseFloat(dadosPremios[keyDados] || 0) > 0) {
-                proximoKey = keyTeste;
-                break;
-            }
-        }
-    } else {
-        if (indexAtual + 1 < ordem.length) proximoKey = ordem[indexAtual + 1];
-    }
-
-    if (proximoKey) {
-        setTimeout(async () => {
-            // Removemos o 'if (confirm)' e deixamos apenas o Alert e a Ação
-            // Adicionei um título "Próximo Prêmio" e 3 segundos para fechar sozinho (opcional)
-            await customAlert(
-                `Todas as linhas conferidas!\n\nAvançando prêmio para: ${proximoKey}`, 
-                "Avanço Automático", 
-                3
-            );            
-            await mudarPremio(proximoKey);
-        }, 500);    ///  aqui premio
-    } else {
-        setTimeout(async () => {
-            alternarBotaoReset('finalizar');
-            if (await customConfirm(`⚠️ Fim da sequência de prêmios!\n\nEste foi o último prêmio ativo.\nDeseja FINALIZAR o evento agora?`)) {
-                resetarJogo();
-            }
-        }, 500);
-    }
-}
-
-
 async function mudarPremio(tipo) {
     const elStatus = document.getElementById('status-premio');
     const elTitulo = document.getElementById('premio-atual'); 
@@ -2998,32 +3039,6 @@ async function mudarPremio(tipo) {
     }
 }
 
-async function mudarPremio2(tipo) {
-    const elStatus = document.getElementById('status-premio');
-    if (elStatus) elStatus.textContent = `Buscando: ${tipo} (Mesa)`;
-    const elTitulo = document.getElementById('premio-atual'); 
-    if (elTitulo) elTitulo.textContent = tipo;
-
-    console.log(`[DEBUG] Mudando prêmio para: ${tipo}`);
-
-    try {
-        await fetch(`${API_BASE_URL}/api/admin/definir_premio_mesa`, {
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ premio: tipo })
-        });
-        
-        matrizEnvio.push({
-            tipo: 'PREMIO_CLIENTE',
-            valor: tipo,confirmarGanhadorAtual,
-            hora: Date.now()
-        });
-        atualizarIndicadorFila(matrizEnvio.length);
-        
-    } catch(e) {
-        console.error("[DEBUG] Erro ao mudar prêmio:", e);
-    }
-}
 
 // --- ATUALIZE A FUNÇÃO resetarJogo --- xxx
 async function resetarJogo(force = false) {

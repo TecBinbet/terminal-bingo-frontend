@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.0";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.3";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -1010,32 +1010,7 @@ async function verificarNovasCompras() {
 }
 
 
-// Função auxiliar para transformar [1, 2, 3, 5, 6] em [{inicial:1, final:3}, {inicial:5, final:6}]
-function agruparNumerosEmRanges2(numeros) {
-    if (!Array.isArray(numeros) || numeros.length === 0) return [];
-    
-    // Garante que são números e ordena
-    let sorted = numeros.map(Number).sort((a, b) => a - b);
-    let ranges = [];
-    let start = sorted[0];
-    let prev = sorted[0];
-
-    for (let i = 1; i < sorted.length; i++) {
-        if (sorted[i] === prev + 1) {
-            prev = sorted[i];
-        } else {
-            ranges.push({ inicial: start, final: prev });
-            start = sorted[i];
-            prev = sorted[i];
-        }
-    }
-    ranges.push({ inicial: start, final: prev });
-    return ranges;
-}
-
-
 // --- FUNÇÕES VISUAIS DE CARTELAS ---
-
 function renderizarListaMinhasCartelas(dados) {
 
     let listaBingo = [];
@@ -2951,82 +2926,6 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
         }
     }
 }
-
-
-function displayPrizeValuesB(premioData, topeData = null) {
-    const isMobile = isMobileDevice();
-    const prizeValuesContainerCurrent = mobilePrizeValuesContainer;
-    
-    // --- CORREÇÃO: Cria um fragmento em memória primeiro (Evita Piscar) ---
-    const fragment = document.createDocumentFragment();
-
-    if (premioData && Array.isArray(premioData) && premioData.length > 0) {
-        const validPrizes = premioData.filter(premio => {
-            const cleanedValue = premio.valor.toString().replace('R$', '').replace('.', '').trim();
-            const numericValue = parseFloat(cleanedValue.replace(',', '.'));
-            return numericValue > 0 && !isNaN(numericValue);
-        });
-        
-        if (validPrizes.length === 0) {
-            const defaultMessage = document.createElement('span');
-            defaultMessage.className = 'text-lg text-white';
-            defaultMessage.textContent = 'Nenhum prêmio cadastrado.';
-            fragment.appendChild(defaultMessage);
-        } else {
-            const prizeOrder = ['QUADRA', 'LINHA', '3 LINHAS', 'FALTA 1', 'BINGO', 'DUPLO BINGO', 'TRIPLO BINGO', 'SUPER BINGO', 'ACUMULADO'];
-
-            validPrizes.sort((a, b) => {
-                const indexA = prizeOrder.indexOf(a.tipo_premio);
-                const indexB = prizeOrder.indexOf(b.tipo_premio);
-                const aIsValid = indexA > -1;
-                const bIsValid = indexB > -1;
-                if (aIsValid && !bIsValid) return -1;
-                if (!aIsValid && !bIsValid) return 1;
-                if (!aIsValid && !bIsValid) return 0;
-                return indexA - indexB;
-            });
-
-            validPrizes.forEach(premio => {
-                let prizeText = `${premio.tipo_premio}: ${premio.valor}`;   
-                if (iniciandoRodada && premio.tipo_premio === 'BINGO') {
-                   // Lógica mobile mantida...
-                   const valorLimpo = premio.valor.replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
-                   if (parseFloat(valorLimpo) > 0 && mobilePrizesContent.classList.contains('hidden')) {
-                         seePromocoes = false; 
-                         hidePromocionalPanel();
-                         //startPrizeHideTimer();
-                         mobilePrizesContent.classList.remove('hidden'); 
-                         //togglePrizesButton.textContent = 'Ocultar Prêmios';
-                         //togglePrizesButton.classList.remove('bg-gray-700');
-                         //togglePrizesButton.classList.add('bg-red-800'); 
-                   }
-                }    
-                if (topeData && topeData.length > 0) {
-                    const currentTopeData = topeData[0];
-                    if (premio.tipo_premio.includes('SUPER BINGO') && currentTopeData.bola_tope_sb) {
-                        prizeText += ` (TOPE: ${currentTopeData.bola_tope_sb})`;
-                    } else if (premio.tipo_premio.includes('ACUMULADO') && currentTopeData.bola_tope_ac) {
-                        prizeText += ` (TOPE: ${currentTopeData.bola_tope_ac})`;
-                    }
-                }
-                const prizeItem = document.createElement('div');
-                prizeItem.className = 'text-sm font-bold text-green-300 text-center -mt-1';
-                prizeItem.textContent = prizeText;
-                fragment.appendChild(prizeItem);
-            });
-        }
-    } else {
-        const defaultMessage = document.createElement('span');
-        defaultMessage.className = 'text-lg text-white';
-        defaultMessage.textContent = 'Nenhum prêmio cadastrado.';
-        fragment.appendChild(defaultMessage);
-    }
-
-    // --- ATUALIZAÇÃO ATÔMICA (Só limpa e insere no final) ---
-    prizeValuesContainerCurrent.innerHTML = '';
-    prizeValuesContainerCurrent.appendChild(fragment);
-}
-
 
 
 function updateCardHighlighting(bolasCantadas) {
@@ -5986,180 +5885,6 @@ async function confirmarCompra() {
     }
 }
 
-async function confirmarCompra2() {
-    // 1. Captura a quantidade e limpa o valor
-    const elInput = document.getElementById('qtd-manual');
-    const qtd = elInput ? parseInt(elInput.value) || 0 : 0;
-
-    // --- SUPER TRAVA: IMPEDE O ERRO 500 ---
-    if (qtd <= 0) {
-        console.warn("🚫 Compra abortada: Quantidade zerada.");
-        if (typeof showCustomAlert === 'function') {
-            showCustomAlert("Selecione a quantidade de cartelas antes de finalizar.", "Atenção", "⚠️");
-        } else {
-            alert("Selecione a quantidade.");
-        }
-        return; // FINALIZA A FUNÇÃO AQUI. O FETCH NÃO SERÁ EXECUTADO.
-    }
-
-    let idEventoFinal = 0;
-    
-    // 1. Descobre o ID do evento alvo da compra
-    if (typeof obterIdEventoAlvo === 'function') {
-        idEventoFinal = obterIdEventoAlvo();
-    } else {
-        const elLastRound = document.getElementById('mobile-last-round');
-        idEventoFinal = parseInt(elLastRound?.textContent) || 0;
-    }
-
-    // Função auxiliar para converter "R$ 1.200,50" em 1200.50
-    function lerDinheiro(idElemento) {
-        const el = document.getElementById(idElemento);
-        if (!el) return 0.0;
-        
-        let texto = el.value || el.textContent || "0";
-        texto = texto.toString()
-                      .replace('R$', '')
-                      .replace(/\s/g, '')     
-                      .replace(/\./g, '')     
-                      .replace(',', '.');     
-        
-        return parseFloat(texto) || 0.0;
-    }
-
-    // Validação de Saldo (Client-side)
-    const valorTotalReais = lerDinheiro('total-compra-display');
-    const saldoAtualReais = lerDinheiro('saldo-modal-compra');
-
-    if (valorTotalReais > saldoAtualReais) {
-        if (typeof showCustomAlert === 'function') {
-            showCustomAlert("Seu saldo é insuficiente para esta compra. Faça uma recarga!", "Saldo Insuficiente", "🚫");
-        } 
-        return; 
-    }
-
-    if (typeof showFullLoading === 'function') showFullLoading("Processando compra...");
-
-    try {
-        const res = await fetch(`${API_BASE_URL}/api/comprar_cartelas`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            credentials: 'include',
-            body: JSON.stringify({
-                quantidade: qtd, 
-                id_evento: idEventoFinal 
-            })
-        });
-        
-        const data = await res.json();
-
-        if (res.ok) {
-            // SUCESSO
-// --- INÍCIO DA CORREÇÃO DO ALERTA ---
-            
-            // 1. Garantimos que os números sejam tratados como String para o padStart funcionar
-            const nInicial = String(data.inicial || '0').padStart(6, '0');
-            const nFinal = String(data.final || '0').padStart(6, '0');
-
-            // 2. Montamos o HTML do primeiro intervalo
-            let infoSeries = `
-                <div class="p-1 bg-gray-950/50 rounded-lg border border-gray-800">
-                    <span class="text-[12px] text-gray-500 uppercase font-bold tracking-widest">Período Adquirido</span><br>
-                    <b class="text-yellow-400 font-mono text-lg">
-                        ${nInicial} 
-                        <span class="text-white text-xs mx-1">até</span> 
-                        ${nFinal}
-                    </b>
-                </div>`;
-
-            // 3. Adicionamos o segundo intervalo apenas se ele existir (Rollover)
-            if (data.inicial2 && parseInt(data.inicial2) > 0) {
-                const nInicial2 = String(data.inicial2).padStart(6, '0');
-                const nFinal2 = String(data.final2).padStart(6, '0');
-                
-                infoSeries += `
-                <div class="mt-1 p-1 bg-gray-950/50 rounded-lg border border-gray-800 border-t-0">
-                    <span class="text-[12px] text-gray-500 uppercase font-bold tracking-widest">Período Adicional (Lote Novo)</span><br>
-                    <b class="text-cyan-400 font-mono text-lg">
-                        ${nInicial2} 
-                        <span class="text-white text-xs mx-1">até</span> 
-                        ${nFinal2}
-                    </b>
-                </div>`;
-            }
-
-            // 4. DISPARAMOS O ALERTA IMEDIATAMENTE
-            if (typeof showCustomAlert === 'function') {
-                showCustomAlert(
-                    `<div class="text-center">
-                        <p class="text-gray-300">Sua compra de <b>${qtd}</b> cartelas foi processada!</p>
-                        ${infoSeries}
-                        <p class="text-[18px] text-green-300 mt-2 uppercase font-bold">Boa sorte! 🍀</p>
-                    </div>`, 
-                    "COMPRA CONFIRMADA", 
-                    "✅"
-                );
-            }
-
-            // --- FIM DA CORREÇÃO DO ALERTA ---            
-            // Atualiza Saldo e Extrato (sempre deve acontecer)
-            if (typeof atualizarDadosCliente === 'function') await atualizarDadosCliente(); 
-            
-            // --- AQUI ESTÁ A CORREÇÃO (O FILTRO INTELIGENTE) ---
-            
-            // Verificamos: O evento que acabei de comprar (idEventoFinal) 
-            // é o mesmo que está rolando na tela (currentEventID)?
-            
-            // Pega o ID global do evento ativo (se existir)
-            const idEventoNaTela = (typeof currentEventID !== 'undefined') ? currentEventID : null;
-
-            // Compara como STRING para evitar erros (ex: "17" vs 17)
-            if (idEventoNaTela && String(idEventoFinal) === String(idEventoNaTela)) {
-                
-                console.log(`🔄 Compra no evento ATUAL (${idEventoFinal}). Atualizando mesa...`);
-
-                // Só limpa a memória se for realmente recarregar
-                if (typeof eventoCarregadoAtual !== 'undefined') {
-                    eventoCarregadoAtual = null; 
-                }
-
-                // Delay técnico para o banco processar
-                await new Promise(r => setTimeout(r, 500));
-
-                // Recarrega as cartelas na mesa
-                if (typeof carregarCartelasAutomaticas === 'function') {
-                    await carregarCartelasAutomaticas(idEventoFinal);
-                } 
-
-            } else {
-                // Se for diferente, NÃO FAZ NADA na mesa.
-                console.log(`📅 Compra Agendada (Evento ${idEventoFinal}). Mesa mantida no Evento ${idEventoNaTela}.`);
-            }
-
-            // --- FIM DA CORREÇÃO ---
-
-            // Fecha modal e limpa inputs
-            if (typeof fecharModal === 'function') fecharModal('modal-comprar-cartelas'); 
-            if (typeof limparQuantidade === 'function') {
-               limparQuantidade();
-            } else if (inputQtd) {
-               inputQtd.value = '';
-            }      
-
-        } else {
-            // ERRO DO SERVIDOR
-            if (typeof showCustomAlert === 'function') showCustomAlert(data.erro || "Erro desconhecido.", "Erro", "❌");
-            else alert(data.erro);
-        }
-
-    } catch (e) {
-        console.error(e);
-        if (typeof showCustomAlert === 'function') showCustomAlert("Erro de comunicação.", "Falha", "🌐");
-    } finally {
-        if (typeof hideFullLoading === 'function') hideFullLoading();
-    }
-}
-
 
 // BUSCAR DADOS DO CLIENTE (SALDO E EXTRATO)
 async function atualizarDadosCliente() {
@@ -6924,135 +6649,6 @@ async function abrirModalCompra(idEventoEspecifico = 0) {
     } finally {
         // 9. RESTAURAÇÃO DO BOTÃO
         if (btnCompra && btnCompra.tagName === "BUTTON") {
-            btnCompra.style.pointerEvents = "auto";
-            btnCompra.style.opacity = "1";
-            btnCompra.innerHTML = originalHTML;
-        }
-    }
-}
-
-
-async function abrirModalCompra2(idEventoEspecifico = 0) {
-    // 1. Identifica o botão que foi clicado para aplicar o loading
-    const btnCompra = document.querySelector('.btn-comprar-principal') || document.activeElement;
-    const originalHTML = btnCompra ? btnCompra.innerHTML : "";
-
-    // 2. Verifica Login
-    if (!isUsuarioLogado()) {
-        if (typeof showCustomAlert === 'function') {
-            showCustomAlert("Você precisa fazer login para comprar cartelas.", "Login Necessário", "🔒");
-        }
-        abrirModalLogin();
-        return;
-    }
-
-    // 3. Ativa o estado de Loading no botão
-    if (btnCompra) {
-        btnCompra.style.pointerEvents = "none"; // Impede cliques duplos
-        btnCompra.style.opacity = "0.7";
-        // Adiciona um spinner simples ou apenas troca o texto
-        btnCompra.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Carregando...`;
-    }
-
-    console.log("🛒 Iniciando processo de compra para evento:", idEventoEspecifico);
-
-    // 4. Define qual evento será comprado
-    eventoSelecionadoParaCompra = idEventoEspecifico > 0 ? idEventoEspecifico : 0;
-
-    // 5. Fecha outros modais
-    if (typeof fecharModal === 'function') {
-        fecharModal('modal-carteira');
-        fecharModal('events-panel-container');
-    }
-
-    try {
-        // 6. Busca dados do evento (Aguardando resposta da API)
-        const dadosEvento = await atualizarPrecoDoEvento(idEventoEspecifico);
-   
-        // 7. Validação de Segurança
-        if (!dadosEvento || dadosEvento.status === 'nao_encontrado') {
-            if (typeof showCustomAlert === 'function') {
-                showCustomAlert("Este evento não está disponível ou o ID é inválido.", "Aviso", "⚠️");
-            }
-            return; // O bloco 'finally' cuidará de restaurar o botão
-        } 
-
-        // 1. ATUALIZAÇÃO DO PREÇO GLOBAL IMEDIATA
-        // Garante que o cálculo use o preço real vindo do banco de vendas
-        const precoEncontrado = dadosEvento.valor_de_venda ?? data.preco_cartela;
-        const unidadeEncontrada = dadosEvento.unidade_de_venda ?? 1;
-
-        if (precoEncontrado !== undefined) {
-                globalPrecoCartela = parseFloat(precoEncontrado);
-                console.log(`💰 Preço Global Atualizado: R$ ${globalPrecoCartela}`);
-        }
-
-        // Salva a unidade também
-        globalUnidadeVenda = parseInt(unidadeEncontrada);
-
-        // --- ATUALIZA O TEXTO DO PREÇO NO MODAL ---
-        const elPrecoUnit = document.getElementById('preco-unitario-modal');
-        if (elPrecoUnit) {
-            if (globalUnidadeVenda > 1) {
-                elPrecoUnit.textContent = `Valor do Kit c/ ${globalUnidadeVenda} unidades: R$ ${globalPrecoCartela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            } else {
-                elPrecoUnit.textContent = `Preço Unitário: R$ ${globalPrecoCartela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            }
-        }
-
-        // 2. FORÇA O CÁLCULO INICIAL (Zera o total antes de abrir)
-        if (typeof calcularTotalCompra === 'function') {
-            const inputQtd = document.getElementById('qtd-manual');
-            if (inputQtd) inputQtd.value = ''; // Limpa a quantidade anterior
-            calcularTotalCompra(); // Renderiza R$ 0,00 com o novo preço base
-        }
-
-        // 3. EXIBIÇÃO DO SALDO ATUALIZADO
-        const saldoModal = document.getElementById('saldo-modal-compra');
-        if (saldoModal) {
-            // Usa a globalUserSaldo que o seu WebSocket mantém viva
-            saldoModal.textContent = `R$ ${globalUserSaldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-    
-            // Dica extra: Feedback visual se o saldo for insuficiente
-            if (globalUserSaldo <= 0) {
-                saldoModal.classList.replace('text-green-400', 'text-red-400');
-            } else {
-                saldoModal.classList.replace('text-red-400', 'text-green-400');
-            }
-        }
-
-        // 8. Abre o modal de compra
-        const modal = document.getElementById('modal-comprar-cartelas');
-        if (modal) {
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
-
-            // Preenche a numeração atual
-            const elNum = document.getElementById('numeracao_atual_venda');
-            if (elNum && dadosEvento.numeracao_atual_venda !== undefined) {
-                elNum.textContent = dadosEvento.numeracao_atual_venda.toString().padStart(6, '0');
-            }
-           
-            // Atualização do Saldo
-            const saldoModal = document.getElementById('saldo-modal-compra');
-            if (saldoModal) {
-                saldoModal.textContent = `R$ ${globalUserSaldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-            }
-            
-            // Limpa campos para nova compra
-            const input = document.getElementById('qtd-manual');
-            const totalDisplay = document.getElementById('total-compra-display');
-            if(input) input.value = '';
-            if(totalDisplay) totalDisplay.textContent = 'R$ 0,00';
-            
-            console.log("✅ Modal de compra aberto com numeração:", dadosEvento.numeracao_atual_venda);
-        }
-
-    } catch (error) {
-        console.error("Erro ao carregar dados para compra:", error);
-    } finally {
-        // 9. RESTAURAÇÃO VITAL: Sempre volta o botão ao normal, com sucesso ou erro
-        if (btnCompra) {
             btnCompra.style.pointerEvents = "auto";
             btnCompra.style.opacity = "1";
             btnCompra.innerHTML = originalHTML;
@@ -8121,19 +7717,29 @@ function iniciarMotorSincronia() {
         const proximaMensagem = filaDeMensagens[0];
 
         // Se a mensagem for "imediata" (sem tempo_video) OU o vídeo já a alcançou
-        if (!proximaMensagem.tempo_video || tempoAtualVideo >= proximaMensagem.tempo_video) {
-            
-            // Retira a mensagem da fila
-            filaDeMensagens.shift();
-            
-            // Processa a mensagem normalmente no ecrã
-            executarRenderizacao(proximaMensagem.payload);
+        while (filaDeMensagens.length > 0) {
+            const proximaMensagem = filaDeMensagens[0];
+
+            // Se a mensagem for "imediata" OU o vídeo já a alcançou
+            if (!proximaMensagem.tempo_video || tempoAtualVideo >= proximaMensagem.tempo_video) {
+                // Retira a mensagem da fila
+                filaDeMensagens.shift();
+                
+                // Processa a mensagem normalmente no ecrã
+                executarRenderizacao(proximaMensagem.payload);
+            } else {
+                // Se a primeira mensagem da fila AINDA NÃO chegou no tempo,
+                // paramos o loop (break) e o vigilante volta a checar daqui a 200ms.
+                break; 
+            }
         }
+
     }, 200); // Corre a cada 200 milissegundos para não engasgar
 }
 
 // Extraímos a lógica de renderização para uma função separada
 function executarRenderizacao(payload) {
+    // 1. ATUALIZAÇÃO GERAL DO JOGO (Bolas, Ranking, etc)
     if (payload.type === 'UPDATE') {
         const melhoresData = payload.melhoresData;
         let idSocket = null;
@@ -8150,14 +7756,28 @@ function executarRenderizacao(payload) {
         renderMainContent(payload); 
 
         if (typeof cachedRawCards !== 'undefined' && cachedRawCards && cachedRawCards.length > 0) {
-            //console.log("🔄 WebSocket atualizou bolas. Reprocessando visual...");
             forcarReprocessamentoVisual(); 
          }
         
         if (melhoresData) { renderMelhores(melhoresData); }             
         verificarNovasCompras();
     }
+    
+    // 2. COMANDOS SINCRONIZADOS (A MÁGICA DA TV)
+    else if (payload.type === 'LIMPAR_CONFERENCIA_VISUAL') {
+        console.log("🧹 [SYNC] Fechando conferência na TV no tempo exato!");
+        if (typeof ocultarConferencia === 'function') ocultarConferencia();
+    }
+    
+    else if (payload.type === 'MOSTRAR_CONFERENCIA_VISUAL' || payload.type === 'UPDATE_PREMIO') {
+        console.log(`🎬 [SYNC] Atualizando visual (${payload.type}) no tempo exato!`);
+        // Como o visual mudou, forçamos o cliente a puxar a última foto do banco
+        fetchDataFromCollections().then(data => {
+            if (data) renderMainContent(data);
+        });
+    }
 }
+
 
 // Função que você vai chamar quando receber o link do vídeo do seu servidor
 function carregarVideoSincronizado(linkDoYoutube) {

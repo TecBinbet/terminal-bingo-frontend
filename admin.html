@@ -645,6 +645,29 @@
 
 </div>
 
+<div id="modal-sincronia" class="hidden fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
+    <div class="bg-white text-gray-900 rounded-lg shadow-xl w-96 p-6">
+        <h2 class="text-xl font-bold mb-4 text-center border-b pb-2">⏱️ Controle de Sincronia</h2>
+        
+        <div class="mb-4">
+            <label class="block text-sm font-semibold mb-1">Tempo Atual no Vídeo (MM:SS ou Segundos)</label>
+            <input type="text" id="input-tempo-video" class="w-full border p-2 rounded text-center text-lg font-mono" placeholder="Ex: 02:30 ou 150">
+            <p class="text-xs text-gray-500 mt-1 text-center">Deixe igual para não alterar a linha do tempo.</p>
+        </div>
+
+        <div class="mb-6">
+            <label class="block text-sm font-semibold mb-1">Atraso de Dados - aguardandoVideo (Segundos)</label>
+            <input type="number" id="input-atraso-dados" class="w-full border p-2 rounded text-center text-lg font-mono" placeholder="Ex: 5">
+            <p class="text-xs text-gray-500 mt-1 text-center">Tempo que o sistema segura a bola antes de enviar.</p>
+        </div>
+
+        <div class="flex justify-between space-x-2">
+            <button onclick="fecharPainelSincronia()" class="w-1/2 bg-gray-400 hover:bg-gray-500 text-white py-2 rounded font-bold transition">Cancelar</button>
+            <button onclick="salvarPainelSincronia()" class="w-1/2 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded font-bold transition">Salvar Ajustes</button>
+        </div>
+    </div>
+</div>
+
 <script src="config.js"></script> 
 <script src="admin.js"></script>
 
@@ -717,10 +740,10 @@
     }
 
     // ========================================================
-    // 🕵️ ATALHO SECRETO PARA ABRIR O DEBUG (CTRL + SHIFT + S)
+    // 🕵️ ATALHO SECRETO PARA ABRIR O DEBUG (CTRL + SHIFT + E)
     // ========================================================
     document.addEventListener('keydown', function(event) {
-        if (event.ctrlKey && event.shiftKey && (event.key === 's' || event.key === 'S')) {
+        if (event.ctrlKey && event.shiftKey && (event.key === 'e' || event.key === 'E')) {
             const radioManual = document.querySelector('input[name="modo_sorteio"][value="manual"]');
             
             if (radioManual && radioManual.checked) {
