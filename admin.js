@@ -254,9 +254,6 @@ function atualizarIndicadorFila(qtd) {
 // ⏱️ PAINEL UNIFICADO DE SINCRONIA E ATRASO
 // ==============================================================
 
-// Variável global para guardar o tempo original e comparar depois
-let tempoVideoOriginalParaComparacao = ""; 
-
 function abrirPainelSincronia() {
     // 1. Calcula o tempo atual do sistema para preencher o input
     let tempoAtualSegundos = 0;
