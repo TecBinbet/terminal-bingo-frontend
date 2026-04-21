@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "1.0";
+const VERSAO_ATUAL = "2.0";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -18,6 +18,7 @@ const btnSortear = document.getElementById('btn-sortear');
 const contadorElement = document.getElementById('contador-bolas');
 
 // --- VARIÁVEIS DE CONTROLE ---
+let textoBuscando = "";
 
 let tempoEsperaConferenciaRobo = 3;
 
@@ -1658,8 +1659,8 @@ async function inserirBolaManual() {
     input.value = ''; 
     devolverFocoAoJogo();
     
-   // aquix ativar spinner (bola)
-   mostrarSpinner("Processando a Cartelas...");
+    // aquix ativar spinner (bola)
+    mostrarSpinner("Processando a Cartelas...");
 
     bolaDestaque.textContent = valor;  
     A_Ultima_Bola = parseInt(valor);  
@@ -2806,6 +2807,7 @@ async function processarProximoPremio() {
                 textoExibicao = `${proximoKey} (${linhasTexto})`;
             }
         }
+        textoBuscando = textoExibicao;
 
         console.log(`[DEBUG] ✅ Avançando prêmio para: ${textoExibicao}`);        
         const tempoAlert = modoRoboAtivo ? 1 : 3; 
@@ -2921,8 +2923,9 @@ async function mudarPremio(tipo) {
     }
 
     // 2. Atualização visual na Mesa Controladora (Sem os prefixos)
-    if (elStatus) elStatus.textContent = tipoLimpo;
-    if (elTitulo) elTitulo.textContent = tipoLimpo;
+    // aquix ajuste no titulo da premiação de: tipoLimpo    para: textoBuscando
+    if (elStatus) elStatus.textContent = textoBuscando;
+    if (elTitulo) elTitulo.textContent = textoBuscando;
 
     console.log(`[DEBUG] Mudando prêmio para: ${tipoLimpo}`);
 
