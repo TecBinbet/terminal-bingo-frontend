@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "2.0";
+const VERSAO_ATUAL = "2.1";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -1660,7 +1660,7 @@ async function inserirBolaManual() {
     devolverFocoAoJogo();
     
     // aquix ativar spinner (bola)
-    mostrarSpinner("Processando a Cartelas...");
+    mostrarSpinner("Processando as Cartelas...");
 
     bolaDestaque.textContent = valor;  
     A_Ultima_Bola = parseInt(valor);  
@@ -1718,6 +1718,7 @@ async function inserirBolaManual() {
             bolasCacheLocal.delete(valor); 
             bolasSorteadasCache.pop();
             if(typeof updateGrid === 'function') updateGrid(bolasSorteadasCache);
+            esconderSpinner();
             return;
         }
 
@@ -1756,6 +1757,7 @@ async function inserirBolaManual() {
         bolasCacheLocal.delete(valor);
         bolasSorteadasCache.pop();
         if(typeof updateGrid === 'function') updateGrid(bolasSorteadasCache);
+        esconderSpinner();
     }
 }
 
