@@ -862,6 +862,8 @@ function processarMensagemWS(event) {
                 // Se a lista veio VAZIA, MAS já temos bolas sorteadas na mesa, IGNORAMOS!
                 if (payload.melhoresData.length === 0 && qtdBolas > 0) {
                     console.warn("⚠️ [PROTEÇÃO] Servidor retornou Ranking vazio com o jogo em andamento. Protegendo a tela do cliente...");
+                    // aquix finalizar spinner (bola)
+                    esconderSpinner(); 
                     // O código MORRE aqui. A tela do ranking continua congelada no Top 10 anterior.
                 } 
                 else {
@@ -878,6 +880,9 @@ function processarMensagemWS(event) {
 
                     // --- DETECÇÃO DE GANHADORES (PARA PAUSAR O ROBÔ/LOCUTOR) ---
                     verificarVitoriaPeloRanking(payload.melhoresData);
+             
+                    // aquiX finalizar spinner (bola)
+                    esconderSpinner(); 
                 }
             }
 
@@ -993,6 +998,7 @@ function verificarVitoriaPeloRanking(listaMelhores) {
     const ganhadoresEncontrados = listaMelhores.filter(item => {
         const statusPremio = (item.premio && item.premio !== "null") ? item.premio.toUpperCase() : "";
         // Verifica se o status enviado pelo server bate com nossos termos de vitória
+        esconderSpinner();   
         return termosVitoria.some(termo => statusPremio.includes(termo));
     });
 
@@ -1015,7 +1021,8 @@ function verificarVitoriaPeloRanking(listaMelhores) {
         console.log("🏆 Vitória detectada! Cartelas para conferência:", cartelasPendentesAuditoria);
 
         // Dispara o alerta visual para o locutor
-        if (!modoRoboAtivo) {  
+        if (!modoRoboAtivo) {
+            esconderSpinner();  
             customAlert("🏆 ALERTA DE PREMIAÇÃO! Verifique os ganhadores.");
         } else {                                  // <<< ajustando aquiiii
             if (!processandoVitoria) {
@@ -1642,7 +1649,7 @@ async function inserirBolaManual() {
     }
     
     if (bolasSorteadasCache.includes(valor) || bolasCacheLocal.has(valor)) { 
-        erroLabel.textContent = `Bola ${valor} já foi!`; 
+        erroLabel.textContent = `Bola ${valor} já Sorteada!`; 
         input.value = ""; 
         return; 
     }
@@ -1651,12 +1658,15 @@ async function inserirBolaManual() {
     input.value = ''; 
     devolverFocoAoJogo();
     
+   // aquix ativar spinner (bola)
+   mostrarSpinner("Processando a Cartelas...");
+
     bolaDestaque.textContent = valor;  
     A_Ultima_Bola = parseInt(valor);  
     console.log(`🎱 LOCUTOR DIGITOU: ${valor} MANUAL`);
 
     if (vozAtiva) falarTextoLocutor(String(valor));
-    // aqui novo
+   
     if (enviarPortaSerial && avancarCarrocel) {
         //  Envia Bola Painel
         //let valorFormatado = String(valor).padStart(2, '0');
@@ -1725,6 +1735,8 @@ async function inserirBolaManual() {
                     if (!jaValidouSorteExtraNestaRodada) {
                         jaValidouSorteExtraNestaRodada = true;      
                         console.log("🚨 [GATILHO LOCAL] Atingiu quantidade para Sorte Extra!");
+                        // aquix finalizar spinner (bola) 
+                        esconderSpinner();
                         if (typeof abrirModalValidacaoSorteExtra === 'function') abrirModalValidacaoSorteExtra();             
                     }
                 } else {
@@ -1789,6 +1801,23 @@ function falarTextoLocutor(texto) {
     }
 }
 
+
+// ==========================================
+// CONTROLE DO SPINNER DE CARREGAMENTO
+// ==========================================
+function mostrarSpinner(mensagem = "Processando...") {
+    const overlay = document.getElementById('loading-overlay');
+    const msgEl = document.getElementById('loading-message');
+    
+    if (msgEl) msgEl.innerText = mensagem;
+    if (overlay) overlay.classList.remove('hidden');
+}
+
+function esconderSpinner() {
+    const overlay = document.getElementById('loading-overlay');
+    if (overlay) overlay.classList.add('hidden');
+}
+
 function iniciarRelogio() {
     const relogioElement = document.getElementById('relogio-digital');
     if (!relogioElement) return;
@@ -1842,7 +1871,7 @@ async function carregarEvento(idEvento) {
         // ============================================================
         // 👉 AJUSTE CRUCIAL: INICIALIZAÇÃO DA DESCRIÇÃO DO PRÊMIO
         // ============================================================
-        // Aqui verificamos se é um evento de 25 números (geralmente identificado 
+        // verificamos se é um evento de 25 números (geralmente identificado 
         // pela configuração do evento vinda do banco ou pelo id)
         
         let premioInicial = "4 Cantos e Linha"; // Valor padrão para sua configuração de 25 números
@@ -1952,7 +1981,7 @@ async function executarCarregamentoReal(idEvento) {
     }
 
     try {
-        // aqui novo
+       
         if (modoSorteio === 'manual') {
             if (enviarPortaSerial) {
                 // 1. Envia o comando físico para a placa
@@ -2554,7 +2583,7 @@ async function validarCartelaAuditoria() {
             } 
             // 3. Se contiver QUADRA ou CANTOS (ajustado para aceitar ambos)
             else if (premioBuscado.includes("QUADRA") || premioBuscado.includes("CANTOS")) {
-                // Aqui ele vai exibir "para a 4 CANTOS" ou "para a QUADRA" dependendo do que estiver no elStatus
+                //  ele vai exibir "para a 4 CANTOS" ou "para a QUADRA" dependendo do que estiver no elStatus
                 msgExibicao = `❌ ${data.msg} para a ${premioBuscado}.`;
             }
         }
@@ -2651,8 +2680,10 @@ async function confirmarGanhadorAtual() {
 async function encerrarSessaoConferencia(modoSilencioso = false) {
     document.getElementById('modal-conferencia').classList.add('hidden');
     document.getElementById('modal-conferencia').classList.remove('flex');
-    devolverFocoAoJogo();
     
+    devolverFocoAoJogo();
+    mostrarSpinner("Avançando Premiação...");
+
     try { await fetch(`${API_BASE_URL}/api/admin/atualizar_linhas_restantes`, { method: 'POST' }); } catch(e) {}
     try { await fetch(`${API_BASE_URL}/api/admin/limpar_conferencia`, { method: 'POST' }); } catch(e) {}
 
@@ -2662,6 +2693,7 @@ async function encerrarSessaoConferencia(modoSilencioso = false) {
     if (!modoSilencioso && houveGanhadorNaSessao) {
         processarProximoPremio(); 
     }
+    
 }
 
 
@@ -2676,6 +2708,7 @@ async function processarProximoPremio() {
         infoMesa = dados.buscandoMesaData[0]; 
     } catch (e) { 
         console.error("Erro ao buscar dados da mesa:", e);
+        esconderSpinner(); 
         return; 
     }
 
@@ -2684,11 +2717,15 @@ async function processarProximoPremio() {
     // --- REGRA DE OURO REINSERIDA ---
     if (infoMesa.buscando_o_premio === 'LINHA' && infoMesa.buscando_a_linha && infoMesa.buscando_a_linha.length > 0) {
         console.log("[DEBUG] ⏳ Ainda existem linhas pendentes na fila. Aguardando próximas conferências...");
+        esconderSpinner();
         return; 
     }
 
     const elStatus = document.getElementById('status-premio');
-    if (!elStatus) return;
+    if (!elStatus) {
+        esconderSpinner();
+        return;
+    }
 
     let premioAtualNaTela = elStatus.textContent.toUpperCase();
     let proximoKey = null;
@@ -2780,7 +2817,9 @@ async function processarProximoPremio() {
         );                 
         // Mantemos proximoKey limpo (ex: "LINHA") para o Python processar sem erros
         await mudarPremio(proximoKey);
+        esconderSpinner(); 
     } else {
+        esconderSpinner();
         setTimeout(async () => {
             if (typeof alternarBotaoReset === 'function') alternarBotaoReset('finalizar');
             if (await customConfirm(`⚠️ Fim da sequência de prêmios!\n\nEste foi o último prêmio ativo.\nDeseja FINALIZAR o evento agora?`)) {
@@ -2956,7 +2995,6 @@ async function resetarJogo(force = false) {
     
     showLoading("Processando encerramento...");
     
-    // aqui novo
     if (modoSorteio === 'manual') { 
         if (enviarPortaSerial) {
             //  Envia Resetar Extratora 'F98'
@@ -3460,7 +3498,7 @@ async function buscarGanhadoresExtra() {
             processarFaixa(data.ganhadores.acertos_4, "4 ACERTOS", v4, false); // false = Rateio
             processarFaixa(data.ganhadores.acertos_3, "3 ACERTOS", v3, false); // false = Rateio
             
-            // AQUI ESTÁ A MUDANÇA:
+            // ESTÁ A MUDANÇA:
             processarFaixa(data.ganhadores.acertos_2, "2 ACERTOS", v2, true);  // true = Valor Fixo por cabeça
 
             console.log("📦 Cache Sorte Extra pronto para salvar:", cacheGanhadoresExtraFinal);
@@ -3775,7 +3813,7 @@ async function processarProximoDaFilaExtra() {
         console.log(`▶️ [EXTRA] Processando: ${ganhadorAtual.nome} - ${ganhadorAtual.premio}`);
         // --- AQUI ACONTECE A MÁGIC
 A ---
-        // Aqui chamamos a função que valida/comprova no servidor (igual você faz no Bingo)
+        // chamamos a função que valida/comprova no servidor (igual você faz no Bingo)
         // Isso vai fazer aparecer na TV do cliente.
         await validarGanhadorExtra(ganhadorAtual); 
         
