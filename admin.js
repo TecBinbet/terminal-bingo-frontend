@@ -3998,7 +3998,7 @@ function buscarNomeDaSalaBackend() {
                 // 3. Atualiza o Título
                 const elTitulo = document.getElementById('titulo-sala');
                 if (elTitulo) {
-                    elTitulo.innerText = `🎛️ CENTRAL DE SORTEIO | ${data.nome.toUpperCase()}`;
+                    elTitulo.innerText = `🎛️ CENTRAL DE SORTEIO  |  ${data.nome.toUpperCase()}  |  v${VERSAO_ATUAL}`;
                 }
             }
         })
