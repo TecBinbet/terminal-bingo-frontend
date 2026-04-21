@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.3";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.4";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -4520,6 +4520,120 @@ function lockScreenOrientation() {
 
 
 function connectWebSocket() {
+    // 1. LIMPEZA E RESET (Garante que não existam conexões fantasmas)
+    if (ws) {
+        console.log("♻️ Fechando conexão anterior para garantir um início limpo...");
+        try {
+            ws.onopen = null;
+            ws.onmessage = null;
+            ws.onclose = null;
+            ws.onerror = null;
+            ws.close();
+        } catch (e) {
+            console.error("Erro ao limpar WS antigo:", e);
+        }
+    }
+
+    // 2. MONTAGEM DA URL
+    const wsUrlWithRoom = `${WS_URL}?idsala=${currentSalaId}`;
+    console.log("🔌 [FRONT] Conectando ao Servidor Independente:", wsUrlWithRoom);
+
+    // 3. INICIALIZAÇÃO
+    ws = new WebSocket(wsUrlWithRoom);
+
+    ws.onopen = async () => {
+        console.log("✅ [FRONT] WebSocket Conectado com Sucesso!");
+        
+        // Inicia o motor assim que conecta
+        iniciarMotorSincronia();
+
+        // 🚑 Desliga a reconexão automática (Ambulância)
+        if (reconnectInterval) {
+            clearInterval(reconnectInterval);
+            reconnectInterval = null;
+        }
+        
+        // ==========================================
+        // 💓 A VACINA: O Bate-Coração (Evita o Erro 1006)
+        // ==========================================
+        if (window.pingInterval) clearInterval(window.pingInterval);
+        
+        window.pingInterval = setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                // Envia um ping minúsculo a cada 30s para a DigitalOcean não cortar a rede
+                ws.send(JSON.stringify({ action: "PING" }));
+            }
+        }, 30000); 
+        // ==========================================
+
+        try { if(navigator.wakeLock) navigator.wakeLock.request('screen'); } catch(e){}
+
+        // --- SINCRONIZAÇÃO DUPLA (BINGO + ARQUIVO DO CUPOM) ---
+
+        // A. Solicita estado do Bingo (via WebSocket)
+        ws.send(JSON.stringify({ action: "GET_INITIAL_STATE" }));
+        console.log("📤 Solicitando estado inicial do Bingo.");
+    };
+
+    ws.onmessage = (event) => {
+        try {
+            const payload = JSON.parse(event.data);
+  
+            // Ignora mensagens de erro
+            if (payload.type === 'ERROR') {
+                console.error("Erro do Servidor:", payload);
+                return;
+            }
+
+            // === A MÁGICA DA SINCRONIA AQUI ===
+            // Verifica o tempo que a bola deve esperar (enviado pelo admin)
+            const tempoDeEspera = payload.tempo_video || 0; 
+            
+            if (tempoDeEspera === 0) {
+                executarRenderizacao(payload);
+                return; 
+            }
+
+            // Coloca na fila e não faz mais nada!
+            filaDeMensagens.push({
+                tempo_video: tempoDeEspera,
+                payload: payload
+            });
+
+        } catch (e) {
+            console.error('❌ [FRONT] Erro crítico no processamento da mensagem:', e);
+        }
+    };
+
+    ws.onclose = (event) => {
+        console.warn(`⚠️ [FRONT] Conexão Perdida (Código: ${event.code}). Tentando Reconectar...`);
+        try { releaseWakeLock(); } catch(e){}
+        
+        // ==========================================
+        // 🛑 PARA O BATE-CORAÇÃO
+        // (Não precisa ficar batendo se a linha já caiu)
+        // ==========================================
+        if (window.pingInterval) {
+            clearInterval(window.pingInterval);
+            window.pingInterval = null;
+        }
+        
+        // 🚑 LIGA A AMBULÂNCIA
+        if (!reconnectInterval) {
+            reconnectInterval = setInterval(() => {
+                console.log("🔄 Tentativa de reconexão automática...");
+                connectWebSocket();
+            }, 3000);
+        }
+    };
+
+    ws.onerror = (error) => {
+        console.error('❌ [FRONT] Erro técnico detectado no WebSocket.');
+        if (ws) ws.close();
+    };
+}
+
+function connectWebSocketB() {
     // 1. LIMPEZA E RESET (Garante que não existam conexões fantasmas)
     if (ws) {
         console.log("♻️ Fechando conexão anterior para garantir um início limpo...");

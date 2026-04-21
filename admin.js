@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "1.3";
+const VERSAO_ATUAL = "1.4";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -842,6 +842,20 @@ function connectAdminWS() { // Use o nome que você já está chamando no final 
 
     socket.onopen = function() {
         console.log("✅ [WS] Conectado!");
+
+        // ==========================================
+        // 💓 A VACINA DO LOCUTOR: O Bate-Coração
+        // ==========================================
+        if (window.pingInterval) clearInterval(window.pingInterval);
+        
+        window.pingInterval = setInterval(() => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                // Manda um "Oi" pro servidor a cada 30s pra ele não cortar a linha
+                socket.send(JSON.stringify({ action: "PING" }));
+            }
+        }, 30000); // 30 segundos
+
+
         // O "Locutor Rei" NÃO pede dados ao reconectar.
         // Ele confia no que já está na tela.
         // Apenas registramos a presença na sala.
@@ -856,6 +870,14 @@ function connectAdminWS() { // Use o nome que você já está chamando no final 
 
     socket.onclose = function(e) {
         console.warn(`⚠️ [WS] Fechado (Cod: ${e.code}). Reconectando em 3s...`);
+
+        // ==========================================
+        // 🛑 PARA O BATE-CORAÇÃO (A linha já caiu)
+        // ==========================================
+        if (window.pingInterval) {
+            clearInterval(window.pingInterval);
+            window.pingInterval = null;
+        }
         
         // NÃO CHAMAMOS carregarConfigSorteExtraAdmin AQUI!
         // Apenas agendamos a reconexão do socket.
