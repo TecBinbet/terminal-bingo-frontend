@@ -2926,7 +2926,7 @@ async function mudarPremio(tipo) {
 
     // 2. Atualização visual na Mesa Controladora (Sem os prefixos)
     // aquix ajuste no titulo da premiação de: tipoLimpo    para: textoBuscando
-    if (elStatus) elStatus.textContent = textoBuscando;
+    if (elStatus) elStatus.textContent = tipoLimpo;
     if (elTitulo) elTitulo.textContent = textoBuscando;
 
     console.log(`[DEBUG] Mudando prêmio para: ${tipoLimpo}`);
