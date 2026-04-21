@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "2.1";
+const VERSAO_ATUAL = "2.3";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -2365,8 +2365,12 @@ function renderRanking(lista, tipo) {
 function renderRanking90(lista, tipo) {
     const c = document.getElementById('ranking-lista'); 
     if(!c) return;
-    
-    document.getElementById('label-premio-ranking').textContent = tipo || "";
+    // aquix
+    if (textoBuscando && textoBuscando.length >0) {
+       document.getElementById('label-premio-ranking').textContent = textoBuscando;
+    } else {
+       document.getElementById('label-premio-ranking').textContent = tipo || "";
+    }
     c.innerHTML = '';
     
     if (!lista || lista.length === 0) { 
@@ -2926,7 +2930,7 @@ async function mudarPremio(tipo) {
 
     // 2. Atualização visual na Mesa Controladora (Sem os prefixos)
     // aquix ajuste no titulo da premiação de: tipoLimpo    para: textoBuscando
-    if (elStatus) elStatus.textContent = tipoLimpo;
+    if (elStatus) elStatus.textContent = textoBuscando;
     if (elTitulo) elTitulo.textContent = textoBuscando;
 
     console.log(`[DEBUG] Mudando prêmio para: ${tipoLimpo}`);
@@ -3079,6 +3083,8 @@ async function resetarJogo(force = false) {
         const elContador = document.getElementById('contador-bolas');
         if(elContador) elContador.textContent = `0 / ${MAX_BOLAS}`;
         
+        textoBuscando = "";
+ 
         renderHistorico([]);
         renderRanking([], "");
         renderListaGanhadores([]); 
