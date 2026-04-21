@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "2.3";
+const VERSAO_ATUAL = "1.2";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -863,7 +863,7 @@ function processarMensagemWS(event) {
                 // Se a lista veio VAZIA, MAS já temos bolas sorteadas na mesa, IGNORAMOS!
                 if (payload.melhoresData.length === 0 && qtdBolas > 0) {
                     console.warn("⚠️ [PROTEÇÃO] Servidor retornou Ranking vazio com o jogo em andamento. Protegendo a tela do cliente...");
-                    // aquix finalizar spinner (bola)
+                    // aquiy finalizar spinner (bola)
                     esconderSpinner(); 
                     // O código MORRE aqui. A tela do ranking continua congelada no Top 10 anterior.
                 } 
@@ -882,7 +882,7 @@ function processarMensagemWS(event) {
                     // --- DETECÇÃO DE GANHADORES (PARA PAUSAR O ROBÔ/LOCUTOR) ---
                     verificarVitoriaPeloRanking(payload.melhoresData);
              
-                    // aquiX finalizar spinner (bola)
+                    // aquiy finalizar spinner (bola)
                     esconderSpinner(); 
                 }
             }
@@ -1190,7 +1190,7 @@ function renderizarListaEventos(eventos) {
             </div>     
             <div class="flex gap-2 items-center">
                 <button onclick="carregarEvento('${evt.id_evento}')" class="px-4 py-3 rounded text-xs font-bold ${isFinalizado ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-green-700 text-white hover:bg-green-600 shadow'}">
-                    ${isFinalizado ? 'ENCERRADO' : 'CARREGAR'}
+                    ${isFinalizado ? 'ENCERRADO' : 'INICIAR SORTEIO'}
                 </button>   
                 
                 ${!isFinalizado ? `
@@ -1659,7 +1659,7 @@ async function inserirBolaManual() {
     input.value = ''; 
     devolverFocoAoJogo();
     
-    // aquix ativar spinner (bola)
+    // aquiy ativar spinner (bola)
     mostrarSpinner("Processando as Cartelas...");
 
     bolaDestaque.textContent = valor;  
@@ -1737,7 +1737,7 @@ async function inserirBolaManual() {
                     if (!jaValidouSorteExtraNestaRodada) {
                         jaValidouSorteExtraNestaRodada = true;      
                         console.log("🚨 [GATILHO LOCAL] Atingiu quantidade para Sorte Extra!");
-                        // aquix finalizar spinner (bola) 
+                        // aquiy finalizar spinner (bola) 
                         esconderSpinner();
                         if (typeof abrirModalValidacaoSorteExtra === 'function') abrirModalValidacaoSorteExtra();             
                     }
@@ -2721,11 +2721,45 @@ async function processarProximoPremio() {
 
     if (!infoMesa) return;
 
-    // --- REGRA DE OURO REINSERIDA ---
-    if (infoMesa.buscando_o_premio === 'LINHA' && infoMesa.buscando_a_linha && infoMesa.buscando_a_linha.length > 0) {
+    // --- REGRA DE OURO REINSERIDA --- aquix
+    if (typeof MAX_BOLAS !== 'undefined' && MAX_BOLAS === 90) {
+
+        if (infoMesa.buscando_o_premio === 'LINHA' && infoMesa.buscando_a_linha && infoMesa.buscando_a_linha.length > 0) {
         console.log("[DEBUG] ⏳ Ainda existem linhas pendentes na fila. Aguardando próximas conferências...");
+        
+        // ==============================================================
+        // ATUALIZAÇÃO VISUAL ANTES DE ABORTAR O AVANÇO
+        // ==============================================================
+        let linhasArray = infoMesa.buscando_a_linha;
+        let linhasTexto = "SUP, CEN e INF"; // Valor padrão
+        
+        if (Array.isArray(linhasArray) && linhasArray.length > 0) {
+            const tags = linhasArray.map(l => l.toUpperCase());
+            if (tags.length === 1) {
+                linhasTexto = tags[0]; 
+            } else if (tags.length === 2) {
+                linhasTexto = tags.join(' e '); 
+            } else {
+                linhasTexto = tags.slice(0, -1).join(', ') + ' e ' + tags[tags.length - 1];
+            }
+        } else if (typeof linhasArray === 'string' && linhasArray.trim() !== '') {
+            linhasTexto = linhasArray.toUpperCase();
+        }
+        
+        let textoFinal = `LINHA (${linhasTexto})`;
+
+        // Atualiza a barra de título do Ranking
+        const labelRanking = document.getElementById('label-premio-ranking');
+        if (labelRanking) labelRanking.textContent = textoFinal;
+
+        // Se você tiver aquele painel piscante de Status do prêmio, atualiza ele também
+        const statusPremio = document.getElementById('status-premio');
+        if (statusPremio) statusPremio.textContent = textoFinal;
+        // ==============================================================
+        textoBuscando = textoFinal;
         esconderSpinner();
         return; 
+        }
     }
 
     const elStatus = document.getElementById('status-premio');
@@ -2930,8 +2964,12 @@ async function mudarPremio(tipo) {
 
     // 2. Atualização visual na Mesa Controladora (Sem os prefixos)
     // aquix ajuste no titulo da premiação de: tipoLimpo    para: textoBuscando
-    if (elStatus) elStatus.textContent = textoBuscando;
-    if (elTitulo) elTitulo.textContent = textoBuscando;
+    if (textoBuscando && textoBuscando.length >0) {
+       if (elStatus) elStatus.textContent = textoBuscando;
+    } else {
+       if (elStatus) elStatus.textContent = tipoLimpo;
+    }
+    if (elTitulo) elTitulo.textContent = tipoLimpo;
 
     console.log(`[DEBUG] Mudando prêmio para: ${tipoLimpo}`);
 
