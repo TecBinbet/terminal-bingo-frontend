@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "2.0";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "2.1";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -7938,38 +7938,49 @@ function executarRenderizacao(payload) {
 
 // Função que você vai chamar quando receber o link do vídeo do seu servidor
 function carregarVideoSincronizado(linkDoYoutube) {
-    // 🛑 SEGURANÇA 1: Se a API já está pronta e o player existe, 
-    // não precisamos entrar no modo de espera.
+// 📝 LOG DE ENTRADA: Mostra o que veio do servidor
+    console.group("🔍 Diagnóstico de Vídeo");
+    console.log("🔗 URL Recebida:", linkDoYoutube);
+    console.log("🌐 Origem (globalOriginURL):", globalOriginURL);
+    console.log("🤖 Status API YT:", ytApiPronta ? "PRONTA" : "AGUARDANDO");
+    console.groupEnd();
+
+    // 🛑 SEGURANÇA 1: Se a API já está pronta e o player existe, apenas troca
     if (ytApiPronta && playerYouTube) {
         const videoId = extrairIdDoVideo(linkDoYoutube);
         const videoAtual = playerYouTube.getVideoData ? playerYouTube.getVideoData().video_id : null;
-        if (videoAtual !== videoId) {
+        
+        if (videoId && videoAtual !== videoId) {
+            console.log("🔄 Trocando vídeo: " + videoAtual + " -> " + videoId);
             playerYouTube.loadVideoById(videoId);
         }
         return;
     }
 
-    // 🛑 SEGURANÇA 2: Se já existe um cronômetro rodando, MORRE AQUI.
+    // 🛑 SEGURANÇA 2: Trava de Loop
     if (window.tentandoCarregarPlayer) return;
 
     const videoId = extrairIdDoVideo(linkDoYoutube);
-    if (!videoId) return;
+    if (!videoId) {
+        console.error("❌ Erro: Não foi possível extrair um ID válido da URL:", linkDoYoutube);
+        return;
+    }
 
-    // Se a API não está pronta, vamos criar UM ÚNICO loop
+    // Se a API não está pronta, cria o ciclo de espera
     if (!window.ytApiPronta) {
-        window.tentandoCarregarPlayer = true; // LEVANTA A BARREIRA
+        window.tentandoCarregarPlayer = true;
         
-        // Em vez de logs infinitos, vamos usar um intervalo controlado
         const timerResgate = setInterval(() => {
-            console.log("⏳ Aguardando YouTube (Tentativa controlada)...");
+            // Log discreto para não inundar o console
+            if (Math.random() < 0.1) console.log("⏳ Ciclo de espera: Aguardando onYouTubeIframeAPIReady...");
             
             if (window.ytApiPronta) {
+                console.log("✅ API Detectada! Inicializando player para:", videoId);
                 window.tentandoCarregarPlayer = false;
                 clearInterval(timerResgate);
-                carregarVideoSincronizado(linkDoYoutube); // Chama a versão final
+                carregarVideoSincronizado(linkDoYoutube);
             }
-        }, 2000); // Tenta apenas a cada 2 segundos para não travar a CPU
-        
+        }, 2000);
         return;
     }
  
