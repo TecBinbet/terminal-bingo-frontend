@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "2.2";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "2.3";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -149,17 +149,21 @@ var ytApiPronta = false;
 var tentandoCarregarPlayer = false;
 var globalOriginURL = window.location.origin;
 
-function onYouTubeIframeAPIReady() {
-    ytApiPronta = true;
-    console.log("📺 [VÍDEO] API do YouTube carregada e pronta para uso.");
-}
+window.onYouTubeIframeAPIReady = function() {
+    window.ytApiPronta = true;
+    console.log("✅ [SISTEMA] O Google avisou: API do YouTube está pronta!");
+};
+
 // Helper para extrair o ID
 function extrairIdDoVideo(url) {
     if (!url) return null;
-    if (url.length === 11 && !url.includes('/')) return url;
-    const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
-    const match = url.match(regex);
-    return match ? match[1] : null;
+    // Se já for apenas o ID (11 caracteres e não tem "http")
+    if (url.length === 11 && !url.includes("http")) return url;
+    
+    // Se for URL completa
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : url; 
 }
 
 let cacheIdEvento = null;   // Para saber se o evento mudou
