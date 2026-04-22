@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.4";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.5";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -74,6 +74,8 @@ const statusFullscreen = document.getElementById('menu-status-fullscreen');
 const iconFullscreen = document.getElementById('icon-fullscreen');
 
 let isProcessandoCompra = false;
+
+let playerCarregando = false;
 
 window.linhasAtivasNoJogo = {
     SUP: true,
@@ -4797,34 +4799,64 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 2. BOTÃO DE COMPRA MOBILE (LOGICA BLINDADA COM CHECK DE STATUS)
+// 2. BOTÃO DE COMPRA MOBILE (LOGICA TOTALMENTE BLINDADA)
     const btnCompraMobile = document.getElementById('btn-comprar-cartelas-mobile');
     if (btnCompraMobile) {
         btnCompraMobile.onclick = async function(e) {
             e.preventDefault(); 
             
-            const idParaChecar = (typeof eventoCarregadoAtual !== 'undefined') ? eventoCarregadoAtual : 0;
+            // 1. O que o servidor/socket diz que é o "da vez" (pode vir o 1433)
+            const idServidor = (typeof eventoCarregadoAtual !== 'undefined') ? String(eventoCarregadoAtual).trim() : "0";
+            
+            // 2. O que o usuário está vendo no painel agora (sua âncora de segurança)
+            const elemLastRound = document.getElementById('mobile-last-round');
+            const idNaTela = elemLastRound ? elemLastRound.textContent.replace(/\D/g, "").trim() : "";
 
-            if (!idParaChecar) {
+            // 3. Estado das bolas para saber se o jogo atual já começou
+            const temBolasNoJogo = (typeof bolasSorteadasGlobal !== 'undefined' && bolasSorteadasGlobal.length > 0);
+
+            console.log(`[CHECK COMPRA] ID na Tela: ${idNaTela} | ID no Servidor: ${idServidor} | Já começou? ${temBolasNoJogo}`);
+
+            // 🛡️ TRAVA 1: Se o sorteio da tela já começou, JAMAIS compre direto.
+            // O usuário DEVE ir para a seleção de eventos para escolher o próximo.
+            if (temBolasNoJogo) {
+                console.warn("⚠️ Sorteio em andamento. Forçando painel de seleção para evitar erro de ID.");
                 if (typeof openEventsPanel === 'function') openEventsPanel();
                 return;
             }
 
-            //btnCompraMobile.style.opacity = "0.7";
-            //btnCompraMobile.textContent = "⏳ ...";
+            // 🛡️ TRAVA 2: Se o ID que o servidor quer vender é diferente do que está na tela
+            if (idServidor !== idNaTela && idNaTela !== "") {
+                console.warn(`⚠️ Conflito de IDs: Tela(${idNaTela}) vs Servidor(${idServidor}). Abrindo seleção.`);
+                if (typeof openEventsPanel === 'function') openEventsPanel();
+                return;
+            }
 
+            if (!idServidor || idServidor === "0") {
+                if (typeof openEventsPanel === 'function') openEventsPanel();
+                return;
+            }
+
+            // Se passou pelas travas acima, significa que o ID é coerente e o jogo não começou.
+            // Agora fazemos a checagem de status oficial.
             try {
-                const response = await fetch(`${API_BASE_URL}/api/verificar_status_evento?id_evento=${idParaChecar}`);
+                btnCompraMobile.style.opacity = "0.7";
+                btnCompraMobile.textContent = "⏳ ...";
+
+                const response = await fetch(`${API_BASE_URL}/api/verificar_status_evento?id_evento=${idServidor}`);
                 const data = await response.json();
                 const statusReal = (data.status || '').toLowerCase().trim();
 
+                // Só entra direto na compra se o status for especificamente 'ativo'
                 if (statusReal === 'ativo') {
-                    if (typeof iniciarCompraCartelas === 'function') iniciarCompraCartelas(idParaChecar);
+                    if (typeof iniciarCompraCartelas === 'function') {
+                        console.log(`✅ Iniciando compra direta para o evento ${idServidor}`);
+                        iniciarCompraCartelas(idServidor);
+                    }
                 } else {
+                    console.log("ℹ️ Evento não está 'ativo' para venda direta. Abrindo painel.");
                     if (typeof openEventsPanel === 'function') openEventsPanel();
                 }
-                btnCompraMobile.style.opacity = "1";
-                btnCompraMobile.textContent = "🛒 Comprar"; 
             } catch (err) {
                 console.error("Erro ao checar status:", err);
                 if (typeof openEventsPanel === 'function') openEventsPanel();
@@ -4834,6 +4866,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
     }
+
 
     // 3. LISTENERS DOS PAINÉIS (EVENTOS, CARTELAS, GANHADORES)
     if (typeof btnEventsMenu !== 'undefined' && btnEventsMenu) {
@@ -7895,20 +7928,26 @@ function executarRenderizacao(payload) {
 
 // Função que você vai chamar quando receber o link do vídeo do seu servidor
 function carregarVideoSincronizado(linkDoYoutube) {
+    if (tentandoCarregarPlayer) return;
+
     const videoId = extrairIdDoVideo(linkDoYoutube);
     if (!videoId) return; // Se não for um link válido, ignora
 
-    // Mostra o container na tela
     const container = document.getElementById('video-container');
     if (container) container.classList.remove('hidden');
 
     // Se a API ainda estiver carregando a internet, espera 1 segundo e tenta de novo
     if (!ytApiPronta) {
+        tentandoCarregarPlayer = true;
         console.warn("⏳ Aguardando API do YouTube...");
-        setTimeout(() => carregarVideoSincronizado(linkDoYoutube), 1000);
+        setTimeout(() => { 
+            tentandoCarregarPlayer = false; 
+            carregarVideoSincronizado(linkDoYoutube);
+        },1000);
         return;
     }
-
+ 
+    tentandoCarregarPlayer = false; 
     // Se o player já existe (ex: usuário atualizou a página), apenas troca o vídeo
     if (playerYouTube) {
         playerYouTube.loadVideoById(videoId);
