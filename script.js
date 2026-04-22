@@ -4820,7 +4820,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const idNaTela = elemLastRound ? elemLastRound.textContent.replace(/\D/g, "").trim() : "";
 
             // 3. Estado das bolas para saber se o jogo atual já começou
-            const temBolasNoJogo = (typeof bolasSorteadasGlobal !== 'undefined' && bolasSorteadasGlobal.length > 0);
+            const temBolasNoJogo = (typeof globalBolasCantadas !== 'undefined' && globalBolasCantadas.length > 0);
 
             console.log(`[CHECK COMPRA] ID na Tela: ${idNaTela} | ID no Servidor: ${idServidor} | Já começou? ${temBolasNoJogo}`);
 
@@ -5869,11 +5869,11 @@ async function confirmarCompra() {
         }
 
         // 🔥 FORÇAR ATUALIZAÇÃO DA GLOBAL AQUI (O Auto-Reparo)
-        if (idEventoFinal && idEventoFinal !== 0) {
-            window.eventoAtivoID = String(idEventoFinal).trim();
-            if (typeof idEventoNaTela !== 'undefined') idEventoNaTela = String(idEventoFinal).trim();
-            console.log(`[AJUSTE] Global forçada para ${idEventoFinal} antes da validação.`);
-        }
+        //if (idEventoFinal && idEventoFinal !== 0) {
+        //    window.eventoAtivoID = String(idEventoFinal).trim();
+        //    if (typeof idEventoNaTela !== 'undefined') idEventoNaTela = String(idEventoFinal).trim();
+        //    console.log(`[AJUSTE] Global forçada para ${idEventoFinal} antes da validação.`);
+        //}
 
         // Função auxiliar para converter "R$ 1.200,50" em 1200.50
         function lerDinheiro(idElemento) {
