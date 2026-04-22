@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.6";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.7";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -144,6 +144,7 @@ let eventoSelecionadoParaCompra = 0;
 let filaDeMensagens = [];
 let motorSincroniaAtivo = null;
 let playerYouTube = null;
+
 var ytApiPronta = false;
 var tentandoCarregarPlayer = false;
 
@@ -7950,8 +7951,12 @@ function carregarVideoSincronizado(linkDoYoutube) {
  
     tentandoCarregarPlayer = false; 
     // Se o player já existe (ex: usuário atualizou a página), apenas troca o vídeo
-    if (playerYouTube) {
-        playerYouTube.loadVideoById(videoId);
+    if (playerYouTube && typeof playerYouTube.loadVideoById === 'function') {
+        // Verifica se o vídeo mudou para não ficar reiniciando o mesmo vídeo à toa
+        const videoAtual = playerYouTube.getVideoData ? playerYouTube.getVideoData().video_id : null;
+        if (videoAtual !== videoId) {
+            playerYouTube.loadVideoById(videoId);
+        }
     } else {
         // Se é a primeira vez, cria o player do zero
         playerYouTube = new YT.Player('player-transmissao', {
