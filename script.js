@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.7";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.8";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -147,6 +147,7 @@ let playerYouTube = null;
 
 var ytApiPronta = false;
 var tentandoCarregarPlayer = false;
+var globalOriginURL = window.location.origin;
 
 function onYouTubeIframeAPIReady() {
     ytApiPronta = true;
@@ -4049,6 +4050,10 @@ async function renderMainContent(data) {
         
         const tipoCartelaConfig = parseInt(parametrosInfo.tipo_sorteio || 15);
         MAX_BOLAS = (tipoCartelaConfig === 25) ? 75 : 90;
+        
+        if (parametrosInfo.http_apk) {
+            globalOriginURL = parametrosInfo.http_apk.trim();
+        }
 
         tempoExibicaoGanhador = parseInt(parametrosInfo.tempo_ganhador);
         
@@ -7968,7 +7973,7 @@ function carregarVideoSincronizado(linkDoYoutube) {
                 'controls': 1,
                 'rel': 0, // Não mostra vídeos recomendados no final
                 'playsinline': 1, // Permite tocar direto na tela sem abrir tela cheia no iOS
-                'origin': window.location.origin
+                'origin': globalOriginURL
             },
             events: {
                 'onReady': () => console.log("🎬 [VÍDEO] Player renderizado e pronto para sincronia!")
