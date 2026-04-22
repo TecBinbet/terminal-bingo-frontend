@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.8";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.9";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -7935,7 +7935,7 @@ function executarRenderizacao(payload) {
 
 // Função que você vai chamar quando receber o link do vídeo do seu servidor
 function carregarVideoSincronizado(linkDoYoutube) {
-    if (tentandoCarregarPlayer) return;
+    if (window.tentandoCarregarPlayer === true) return;
 
     const videoId = extrairIdDoVideo(linkDoYoutube);
     if (!videoId) return; // Se não for um link válido, ignora
@@ -7945,16 +7945,16 @@ function carregarVideoSincronizado(linkDoYoutube) {
 
     // Se a API ainda estiver carregando a internet, espera 1 segundo e tenta de novo
     if (!ytApiPronta) {
-        tentandoCarregarPlayer = true;
+        window.tentandoCarregarPlayer = true; // Ativa a trava global
         console.warn("⏳ Aguardando API do YouTube...");
         setTimeout(() => { 
-            tentandoCarregarPlayer = false; 
+            window.tentandoCarregarPlayer = false;
             carregarVideoSincronizado(linkDoYoutube);
         },1000);
         return;
     }
  
-    tentandoCarregarPlayer = false; 
+    window.tentandoCarregarPlayer = false;
     // Se o player já existe (ex: usuário atualizou a página), apenas troca o vídeo
     if (playerYouTube && typeof playerYouTube.loadVideoById === 'function') {
         // Verifica se o vídeo mudou para não ficar reiniciando o mesmo vídeo à toa
