@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "2.1";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "2.2";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -7944,15 +7944,23 @@ function carregarVideoSincronizado(linkDoYoutube) {
     console.log("🌐 Origem (globalOriginURL):", globalOriginURL);
     console.log("🤖 Status API YT:", ytApiPronta ? "PRONTA" : "AGUARDANDO");
     console.groupEnd();
-
-    // 🛑 SEGURANÇA 1: Se a API já está pronta e o player existe, apenas troca
+    
+    // 🛑 SEGURANÇA 1: Se a API já está pronta e o player existe
     if (ytApiPronta && playerYouTube) {
         const videoId = extrairIdDoVideo(linkDoYoutube);
-        const videoAtual = playerYouTube.getVideoData ? playerYouTube.getVideoData().video_id : null;
         
-        if (videoId && videoAtual !== videoId) {
-            console.log("🔄 Trocando vídeo: " + videoAtual + " -> " + videoId);
-            playerYouTube.loadVideoById(videoId);
+        // 🛠️ VALIDAÇÃO CRUCIAL: Só tenta usar o player se a função loadVideoById REALMENTE existir
+        if (typeof playerYouTube.loadVideoById === 'function') {
+            const videoData = playerYouTube.getVideoData ? playerYouTube.getVideoData() : null;
+            const videoAtual = videoData ? videoData.video_id : null;
+            
+            if (videoId && videoAtual !== videoId) {
+                console.log("🔄 Trocando vídeo: " + videoAtual + " -> " + videoId);
+                playerYouTube.loadVideoById(videoId);
+            }
+        } else {
+            // Se o objeto existe mas a função não, significa que ele está inicializando
+            console.warn("⏳ Player detectado, mas métodos ainda não carregados. Aguardando...");
         }
         return;
     }
