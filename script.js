@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.5";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.6";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -144,7 +144,8 @@ let eventoSelecionadoParaCompra = 0;
 let filaDeMensagens = [];
 let motorSincroniaAtivo = null;
 let playerYouTube = null;
-let ytApiPronta = false;
+var ytApiPronta = false;
+var tentandoCarregarPlayer = false;
 
 function onYouTubeIframeAPIReady() {
     ytApiPronta = true;
