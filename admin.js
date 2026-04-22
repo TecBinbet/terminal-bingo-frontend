@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "1.4";
+const VERSAO_ATUAL = "1.5";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -1489,7 +1489,7 @@ function preencherModalConfig(params) {
     document.getElementById('config-url-padrao').value = params.url_padrao || '';
     document.getElementById('config-url-live').value = params.url_live || '';
     document.getElementById('config-url-mongo').value = params.url_mongo_vendas || '';
-    document.getElementById('config-atraso-video').value = params.aguardandoVideo;
+    document.getElementById('config-atraso-video').value = params.aguardandoVideo || 0;
  
     if (params.tipo_sorteio) document.getElementById('config-tipo-sorteio').value = params.tipo_sorteio;
     const selectEntrada = document.getElementById('config-entrada-cartelas');

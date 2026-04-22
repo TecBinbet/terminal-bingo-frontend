@@ -2284,178 +2284,124 @@ def admin_get_config():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
-# --- ROTA PARA SALVAR CONFIGURAÇÕES GLOBAIS (ATUALIZADA) ---
+# --- ROTA PARA SALVAR CONFIGURAÇÕES GLOBAIS (VERSÃO CORRIGIDA 2.5) ---
 @app.route('/api/admin/salvar_config', methods=['POST'])
 def admin_salvar_config():
     if db is None: return jsonify({'error': 'Sem conexão DB'}), 500
     
     data = request.json
+    if not data: return jsonify({'error': 'Nenhum dado enviado'}), 400
     
     # Prepara o objeto de atualização
     update_fields = {}
 
-# --- 1. Nome da Sala de Sorteios ---
-    # Se vier vazio ou não existir, aplica o padrão "LIVE THE BET"
+    # --- 1. Nome da Sala ---
     nome_sala_input = data.get('nome_sala')
-    if nome_sala_input and str(nome_sala_input).strip():
-        update_fields['nome_sala'] = str(nome_sala_input).strip()
-    else:
-        update_fields['nome_sala'] = "LIVE THE BET"
+    update_fields['nome_sala'] = str(nome_sala_input).strip() if nome_sala_input else "LIVE THE BET"
 
-    # 🔒 TRAVA DE SEGURANÇA: Trata o 'aguardandoVideo'
-    if modo_atual != 'manual':
-        # Se for digital (auto), força o banco de dados a registrar ZERO
+    # --- 2. Modo de Sorteio (Importante definir antes de usar na trava do vídeo) ---
+    modo_selecionado = str(data.get('modo_sorteio', 'auto'))
+    update_fields['modo_sorteio'] = modo_selecionado
+
+    # --- 3. TRAVA DE SEGURANÇA: aguardandoVideo ---
+    # Usamos modo_selecionado que acabamos de pegar do JSON
+    if modo_selecionado != 'manual':
         update_fields['aguardandoVideo'] = 0
     else:
-        # Se for manual, aceita o valor que o usuário mandou
         if 'aguardandoVideo' in data:
             try:
                 update_fields['aguardandoVideo'] = int(data['aguardandoVideo'])
-            except ValueError:
-                pass
+            except:
+                update_fields['aguardandoVideo'] = 0
 
-    # --- 2. Controle de Vídeos YouTube ---
+    # --- 4. YouTube e Streaming ---
     if 'url_padrao' in data:
         update_fields['url_padrao'] = str(data['url_padrao']).strip()
-    
     if 'url_live' in data:
         update_fields['url_live'] = str(data['url_live']).strip()
-
-    # 👉 NOVO: PLATAFORMA DE STREAMING
     if 'plataforma_streaming' in data:
         update_fields['plataforma_streaming'] = str(data['plataforma_streaming']).strip().lower()
 
-    # --- 3. Link do Banco de Dados de Vendas ---
-    # Se vier vazio, aplica a URL padrão do cluster tecbin_db_vendas
-    url_vendas_padrao = "mongodb+srv://tecbin_db_vendas:TecBin24@cluster0.blwq4du.mongodb.net/?appName=Cluster0"
-    url_vendas_input = data.get('url_mongo_vendas')
+    # --- 5. Banco de Vendas (URL) com Trava de Segurança e Persistência ---
+    url_vendas_input = data.get('url_mongo_vendas', '').strip()
     
-    if url_vendas_input and str(url_vendas_input).strip():
-        update_fields['url_mongo_vendas'] = str(url_vendas_input).strip()
+    if url_vendas_input:
+        # 🛡️ TRAVA DE SEGURANÇA: Só tenta atualizar se houver conteúdo
+        if 'mongo' in url_vendas_input.lower() and '://' in url_vendas_input:
+            update_fields['url_mongo_vendas'] = url_vendas_input
+            print(f"✅ Nova URL de Vendas validada: {url_vendas_input}")
+        else:
+            print(f"⚠️ URL inválida detectada. A alteração foi descartada para proteger o sistema.")
+            # Não adicionamos ao update_fields, logo o banco manterá o valor atual
     else:
-        update_fields['url_mongo_vendas'] = url_vendas_padrao
+        # 💡 CENÁRIO: Campo vazio no formulário
+        # Não fazemos nada. Ao não incluir 'url_mongo_vendas' no update_fields,
+        # o MongoDB preservará o valor que já existe lá.
+        print("ℹ️ Campo URL MongoDB vazio. Mantendo a configuração atual do banco.")
 
-
-    # --- 4. Tipificação do Jogo Terminal Cliente ---
-    
-    # Tipo Sorteio (int32) - Padrão = 15
-    # Nota: A lógica de ler da tabela "eventos" deve ser feita no carregamento (GET). 
-    # Aqui no (POST/Gravação), salvamos o que vier ou o padrão 15.
+    # --- 6. Tipificação e Tempos ---
     try:
-        t_sorteio = int(data.get('tipo_cartela', 15))
-        update_fields['tipo_cartela'] = t_sorteio
-    except (ValueError, TypeError):
-        update_fields['tipo_cartela'] = 15
+        update_fields['tipo_cartela'] = int(data.get('tipo_sorteio', 15))
+    except: update_fields['tipo_cartela'] = 15
 
-    # Tipo Entrada de Cartelas (int32) - Valores: 1 ou 2 (Padrão = 1)
     try:
         t_entrada = int(data.get('tipo_entrada_de_cartelas', 1))
-        # Validação extra: Só aceita 1 ou 2. Se for outro número, força 1.
-        if t_entrada not in [1, 2]:
-            t_entrada = 1
-        update_fields['tipo_entrada_de_cartelas'] = t_entrada
-    except (ValueError, TypeError):
-        update_fields['tipo_entrada_de_cartelas'] = 1
-    
-    # 1. Tempo Ganhador
+        update_fields['tipo_entrada_de_cartelas'] = t_entrada if t_entrada in [1, 2] else 1
+    except: update_fields['tipo_entrada_de_cartelas'] = 1
+
     if 'tempo_ganhador' in data:
         try: update_fields['tempo_ganhador'] = int(data['tempo_ganhador'])
         except: pass
 
-    # 2. Modo de Sorteio ('auto' ou 'manual')
-    if 'modo_sorteio' in data:
-        update_fields['modo_sorteio'] = str(data['modo_sorteio'])
-
-    # 3. Voz Ativa (Boolean)
-    if 'voz_ativa' in data:
-        update_fields['voz_ativa'] = bool(data['voz_ativa'])
-        
-    # 4. Câmera Ativa (Boolean)
-    if 'camera_ativa' in data:
-        update_fields['camera_ativa'] = bool(data['camera_ativa'])
-
-    # 5. Sorteio Automatizado (Boolean)
-    if 'sorteio_automatizado' in data:
-        update_fields['sorteio_automatizado'] = bool(data['sorteio_automatizado'])
-
-    # 6. Tempo de Espera Pós-Fechamento (Grace Period)
     if 'aviso_fim_das_vendas' in data:
         try: update_fields['aviso_fim_das_vendas'] = int(data['aviso_fim_das_vendas'])
-        except: update_fields['aviso_fim_das_vendas'] = 120 # Padrão
+        except: update_fields['aviso_fim_das_vendas'] = 120
 
-    # 7. Controle da Sorte Extra (Boolean)
+    # --- 7. Booleanos (Tratamento Robusto) ---
+    for field in ['voz_ativa', 'camera_ativa', 'sorteio_automatizado', 'enviar_porta_serial']:
+        if field in data:
+            val = data[field]
+            update_fields[field] = val if isinstance(val, bool) else str(val).lower() == 'true'
+
+    # --- 8. Controle da Sorte Extra (Sincronização) ---
     if 'buscar_sorte_extra' in data:
-        update_fields['buscar_sorte_extra'] = bool(data['buscar_sorte_extra'])
+        val = data['buscar_sorte_extra']
+        status_bool = val if isinstance(val, bool) else str(val).lower() == 'true'
+        update_fields['buscar_sorte_extra'] = status_bool
 
-    # 8. Enviar Porta Serial (Boolean)
-    if 'enviar_porta_serial' in data:
-        update_fields['enviar_porta_serial'] = bool(data['enviar_porta_serial'])
-
-
+    # --- EXECUÇÃO DA GRAVAÇÃO ---
     if update_fields:
         try:
-            # Atualiza no Banco (Coleção parametros)
+            # Grava localmente
             db.parametros.update_one({}, {'$set': update_fields}, upsert=True)
-
-            # ==================================================================
-            # 🛡️ BLOCO DE SINCRONIZAÇÃO (Só roda se mexeu na chave ou se o DB existe)
-            # ==================================================================
-            
-            # Só entra aqui se o usuário mandou alterar ESSE campo especificamente
+           
+            # Sincroniza com Vendas (opcional, sem travar erro 500)
             if 'buscar_sorte_extra' in update_fields:
-                
-                sales_db = get_sales_db_connection()
-                
-                if sales_db:
-                    # Pega o valor booleano já tratado ali em cima
-                    IsSorteExtra = update_fields['buscar_sorte_extra']
-                    
-                    if not IsSorteExtra:
-                        # --- CENÁRIO: DESATIVAR ---
-                        print("🔒 [CONFIG] Chave Geral OFF. Paralisando vendas Sorte Extra.")
-                        sales_db.sorte_extra_config.update_one({}, {
-                            '$set': {
-                                'id_evento': "0",   # Quebra o vínculo
-                                'status': 'inativo' # Marca inativo
-                            }
-                        })
-                    
-                    else:
-                        # --- CENÁRIO: ATIVAR ---
-                        print("🔓 [CONFIG] Chave Geral ON. Reativando Sorte Extra...")
-                        
-                        rodada_local = db.rodada.find_one({}) or {}
-                        id_atual = int(rodada_local.get('id_evento', 0))
-                        
-                        # Verifica status do evento atual
-                        evt_venda = sales_db.eventos.find_one({
-                            'id_evento': {'$in': [id_atual, str(id_atual)]}
-                        })
-                        
-                        status_atual = evt_venda.get('status', 'aberto') if evt_venda else 'aberto'
-                        
-                        if status_atual == 'finalizado':
-                            print(f"👉 Evento {id_atual} já finalizado. Apontando para o PRÓXIMO...")
-                            atualizar_ponteiro_sorte_extra(id_atual)
-                        
-                        else:
-                            print(f"👉 Evento {id_atual} aberto. Reativando vendas para ELE MESMO.")            
+                try:
+                    sales_db = get_sales_db_connection()
+                    if sales_db:
+                        is_extra_on = update_fields['buscar_sorte_extra']
+                        if not is_extra_on:
                             sales_db.sorte_extra_config.update_one({}, {
-                                '$set': {
-                                    'id_evento': str(id_atual),
-                                    'status': 'ativo'
-                                }
-                            })
-                else:
-                    print("⚠️ Aviso: Sales DB offline. Configuração salva localmente, mas não sincronizada.")
+                                '$set': {'id_evento': "0", 'status': 'inativo'}
+                            }, upsert=True)
+                        else:
+                            rodada_local = db.rodada.find_one({}) or {}
+                            id_atual = str(rodada_local.get('id_evento', "0"))
+                            if id_atual != "0":
+                                sales_db.sorte_extra_config.update_one({}, {
+                                    '$set': {'id_evento': id_atual, 'status': 'ativo'}
+                                }, upsert=True)
+                except Exception as sales_err:
+                    print(f"❌ Erro Sinc Sales (Ignorado): {sales_err}")
 
-            return jsonify({'status': 'Configurações salvas', 'campos': update_fields})
+            return jsonify({'success': True, 'message': 'Configurações salvas com sucesso!'}), 200
 
         except Exception as e:
+            print(f"💥 ERRO CRÍTICO: {e}")
             return jsonify({'error': str(e)}), 500
             
-    return jsonify({'error': 'Nenhum dado válido enviado'}), 400
+    return jsonify({'error': 'Nenhum campo para atualizar'}), 400
 
 
 @app.route('/api/admin/publicar_bola', methods=['POST'])
