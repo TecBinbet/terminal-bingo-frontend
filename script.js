@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "2.3";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "2.5";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -7976,6 +7976,11 @@ function carregarVideoSincronizado(linkDoYoutube) {
     if (!videoId) {
         console.error("❌ Erro: Não foi possível extrair um ID válido da URL:", linkDoYoutube);
         return;
+    }
+
+    if (!window.ytApiPronta && window.YT && window.YT.Player) {
+        console.log("🛠️ [RECOVERY] API detectada via objeto global. Forçando status PRONTO.");
+        window.ytApiPronta = true;
     }
 
     // Se a API não está pronta, cria o ciclo de espera
