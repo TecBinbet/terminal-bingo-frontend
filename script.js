@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.9";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "2.0";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -5023,6 +5023,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 8. WATCHDOG DE SEGURANÇA VISUAL
     setInterval(() => {
+        // 🛡️ A TRAVA MESTRE AQUI: Se estivermos carregando o player, o Watchdog espera.
+        if (window.tentandoCarregarPlayer) return; 
+
         const listContainer = document.getElementById('mobile-loaded-cards-list');
         if (typeof cartelasEmJogo !== 'undefined' && cartelasEmJogo > 0) {
             if (!listContainer || listContainer.children.length <= 1) {
@@ -7935,22 +7938,38 @@ function executarRenderizacao(payload) {
 
 // Função que você vai chamar quando receber o link do vídeo do seu servidor
 function carregarVideoSincronizado(linkDoYoutube) {
-    if (window.tentandoCarregarPlayer === true) return;
+    // 🛑 SEGURANÇA 1: Se a API já está pronta e o player existe, 
+    // não precisamos entrar no modo de espera.
+    if (ytApiPronta && playerYouTube) {
+        const videoId = extrairIdDoVideo(linkDoYoutube);
+        const videoAtual = playerYouTube.getVideoData ? playerYouTube.getVideoData().video_id : null;
+        if (videoAtual !== videoId) {
+            playerYouTube.loadVideoById(videoId);
+        }
+        return;
+    }
+
+    // 🛑 SEGURANÇA 2: Se já existe um cronômetro rodando, MORRE AQUI.
+    if (window.tentandoCarregarPlayer) return;
 
     const videoId = extrairIdDoVideo(linkDoYoutube);
-    if (!videoId) return; // Se não for um link válido, ignora
+    if (!videoId) return;
 
-    const container = document.getElementById('video-container');
-    if (container) container.classList.remove('hidden');
-
-    // Se a API ainda estiver carregando a internet, espera 1 segundo e tenta de novo
-    if (!ytApiPronta) {
-        window.tentandoCarregarPlayer = true; // Ativa a trava global
-        console.warn("⏳ Aguardando API do YouTube...");
-        setTimeout(() => { 
-            window.tentandoCarregarPlayer = false;
-            carregarVideoSincronizado(linkDoYoutube);
-        },1000);
+    // Se a API não está pronta, vamos criar UM ÚNICO loop
+    if (!window.ytApiPronta) {
+        window.tentandoCarregarPlayer = true; // LEVANTA A BARREIRA
+        
+        // Em vez de logs infinitos, vamos usar um intervalo controlado
+        const timerResgate = setInterval(() => {
+            console.log("⏳ Aguardando YouTube (Tentativa controlada)...");
+            
+            if (window.ytApiPronta) {
+                window.tentandoCarregarPlayer = false;
+                clearInterval(timerResgate);
+                carregarVideoSincronizado(linkDoYoutube); // Chama a versão final
+            }
+        }, 2000); // Tenta apenas a cada 2 segundos para não travar a CPU
+        
         return;
     }
  

@@ -742,18 +742,36 @@
     // ========================================================
     // 🕵️ ATALHO SECRETO PARA ABRIR O DEBUG (CTRL + SHIFT + E)
     // ========================================================
-    document.addEventListener('keydown', function(event) {
-        if (event.ctrlKey && event.shiftKey && (event.key === 'e' || event.key === 'E')) {
-            const radioManual = document.querySelector('input[name="modo_sorteio"][value="manual"]');
-            
-            if (radioManual && radioManual.checked) {
-                event.preventDefault();
+document.addEventListener('keydown', function(event) {
+    // Verifica se Ctrl e Shift estão pressionados
+    if (event.ctrlKey && event.shiftKey) {
+        const key = event.key.toLowerCase();
+        const radioManual = document.querySelector('input[name="modo_sorteio"][value="manual"]');
+        const isManual = radioManual && radioManual.checked;
+
+        // Atalho: Ctrl + Shift + E (Painel de Debug)
+        if (key === 'e') {
+            if (isManual) {
+                event.preventDefault(); 
                 toggleDebugPainel();
             } else {
                 console.warn("🚫 Atalho ignorado: O sistema não está no modo Manual.");
             }
         }
-    });
+
+        // Atalho: Ctrl + Shift + R (Reset Extratora)
+        if (key === 'r') {
+            if (isManual) {
+                event.preventDefault(); // 🛑 ESSENCIAL: Evita que o navegador dê F5 (Hard Reload)
+                console.log("♻️ Resetando extratora via atalho (F98)...");
+                testarEnvio('F98');
+            } else {
+                console.warn("🚫 Atalho ignorado: O sistema não está no modo Manual.");
+            }
+        }
+    }
+});
+
 
     function toggleDebugPainel() {
         const painel = document.getElementById('painel-debug-serial');
