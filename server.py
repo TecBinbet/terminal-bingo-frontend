@@ -45,7 +45,7 @@ from geventwebsocket.handler import WebSocketHandler
 from geventwebsocket.exceptions import WebSocketError
 import sys
 sys.stdout.reconfigure(line_buffering=True)
-from pymongo import ReturnDocument # Certifique-se de importar isso no topo do arquivo
+from pymongo import ReturnDocument 
 from decimal import Decimal
 MODO_TREINAMENTO_ATIVO = False
 
@@ -1414,7 +1414,6 @@ connected_clients = set()
 # =========================================================
 @app.route('/')
 def serve_index():
-    # --- NOVO: Captura o ID do colaborador da URL (id_col=015) ---
     id_col_url = request.args.get('id_col')
     
     # Se o ID existir, salva na sessão para usar no momento da venda
@@ -1423,8 +1422,6 @@ def serve_index():
         id_limpo = id_col_url.replace('"', '').replace("'", "")
         session['colaborador_referencia'] = id_limpo
         print(f"[SISTEMA] Cliente acessou via QR Code do Colaborador: {id_limpo}")
-    # ------------------------------------------------------------
-
     # Entrega o site normalmente
     return send_from_directory('.', 'index.html')
 
@@ -1474,6 +1471,18 @@ def api_stream():
                     elif acao == 'ping':
                         ws.send(json.dumps({'type': 'pong'}))
 
+                    elif acao == 'convite_video':
+                        print(f"📡 [WS] Repassando convite (Cartela {data.get('cartela')}) para {len(clients)} clientes conectados...")
+                        
+                        # Transforma o 'clients' (Set) em uma lista para iterar com segurança
+                        for cliente in list(clients): 
+                            if not cliente.closed:
+                                try:
+                                    # Envia a mesma mensagem que chegou do Locutor para os terminais
+                                    cliente.send(msg) 
+                                except Exception as e:
+                                    pass
+
                 except Exception as e:
                     print(f"⚠️ Erro ao processar mensagem: {e}")
             else:
@@ -1486,94 +1495,6 @@ def api_stream():
         if ws in clients: clients.discard(ws)
         print(f"👋 Cliente saiu. Restam: {len(clients)}")
     
-    return ""
-
-# ==============================================================================
-# 🔌 ROTA DO WEBSOCKET (AGORA ACEITA COM E SEM PREFIXO)
-# ==============================================================================
-@app.route('/stream_')          # <--- Pega quem chama direto (localhost:3001/stream)
-def api_stream_():
-    # --- DEBUG: PARA PROVAR QUE ENTROU NA FUNÇÃO ---
-    print("👉 [DEBUG EXTREMO] Alguém bateu na porta /stream!") 
-    
-    ws = request.environ.get('wsgi.websocket')
-    
-    # Se não for WebSocket (ex: navegador acessando via http normal), ignora
-    if not ws:
-        print("❌ [DEBUG] Não é requisição WebSocket (provavelmente HTTP normal)")
-        return "Erro: Utilize um cliente WebSocket", 400
-
-    # 2. Registra o cliente
-    global clients
-    clients.add(ws)
-    
-    id_sala = request.args.get('idsala', PARAM_ID_SALA)
-    print(f"👉 [SOCKET] Cliente entrou na Sala {id_sala}. Total online: {len(clients)}")
-
-    try:
-        while not ws.closed:
-            # --- Leitura com Timeout (para não travar) ---
-            try:
-                with gevent.Timeout(0.5, False):
-                    msg = ws.receive()
-                    
-                    if msg:
-                        dados = json.loads(msg)
-                        acao = dados.get('acao') or dados.get('type')
-                        
-                        # LOG DEBUG: O que o cliente pediu?
-                        # print(f"📩 Pedido recebido: {acao}")
-
-                        if acao == 'estado_inicial':
-                            # --- AQUI É ONDE ESTAVA O PERIGO ---
-                            try:
-                                sales_db = get_sales_db_connection()
-                                if sales_db:
-                                    # Busca Bolas
-                                    bolas_doc = sales_db.bolas.find_one({'tipo': 'sorteio_atual'})
-                                    lista_bolas = bolas_doc.get('bolas', []) if bolas_doc else []
-                                    
-                                    # Busca Prêmio
-                                    premio_doc = sales_db.parametros.find_one({'chave': 'premio_atual'})
-                                    premio_atual = premio_doc.get('valor', '') if premio_doc else ''
-
-                                    # Monta Resposta
-                                    resposta = {
-                                        'tipo': 'ESTADO_INICIAL',
-                                        'bolas': lista_bolas,
-                                        'premio': premio_atual,
-                                        'sala': id_sala
-                                    }
-                                    
-                                    # ENVIA COM PROTEÇÃO DE SERIALIZAÇÃO (default=str)
-                                    # Isso evita erro se tiver ObjectId ou Datetime no meio
-                                    ws.send(json.dumps(resposta, default=str))
-                                    print(f"✅ [SOCKET] Estado inicial enviado para Sala {id_sala}")
-                                else:
-                                    print("❌ [SOCKET] Erro: Sem conexão com o Banco de Dados.")
-                            
-                            except Exception as e_banco:
-                                print(f"🔥 [ERRO NO BANCO] Ao buscar estado inicial: {e_banco}")
-                                traceback.print_exc() # MOSTRA ONDE O CÓDIGO QUEBROU
-
-                        elif acao == 'ping':
-                            ws.send(json.dumps({'type': 'pong'}))
-
-            except Exception:
-                pass # Timeout normal de leitura, segue o jogo
-
-            # --- Mantém vivo e evita 100% CPU ---
-            gevent.sleep(0.5)
-
-    except Exception as e_fatal:
-        print(f"☠️ [FATAL] O WebSocket morreu: {e_fatal}")
-        traceback.print_exc()
-        
-    finally:
-        if ws in clients:
-            clients.discard(ws)
-        print(f"👋 [SOCKET] Cliente saiu. Restam: {len(clients)}")
-
     return ""
 
 
@@ -4244,75 +4165,68 @@ def registrar_transacao_cliente(db_vendas, id_cliente, valor, tipo, descricao, i
         return False, str(e)
 
 
-def registrar_transacao_cliente_old(db_vendas, id_cliente, valor, tipo, descricao, id_evento=None, id_venda=None, origem="WEB_CLIENTE", registrado_por="SISTEMA"):
+def registrar_comissao_vendedor(db, id_colaborador, valor, tipo, id_evento, id_venda, taxa_aplicada, descricao=""):
     """
-    Centraliza TODA movimentação financeira do cliente no terminal.
-    Usa Operação Atômica ($inc) para evitar corrupção de saldo em acessos simultâneos.
+    MOTOR FINANCEIRO DOS COLABORADORES (SERVER.PY)
+    Sincronizado com o padrão de segurança das transações de clientes.
     """
-    from pymongo import ReturnDocument
     try:
-        valor_float = float(valor)
-        if valor_float == 0:
-            return True, "Transação de valor zero ignorada."
+        # 1. Blindagem e Normalização de Valores
+        valor_float = round(float(valor), 2)
+        if valor_float <= 0:
+            return True, "Comissão zero ou negativa ignorada."
 
-        # 1. Classificação
-        natureza = "ENTRADA" if valor_float > 0 else "SAIDA"
         valor_decimal = Decimal128(str(valor_float))
+        
+        # Fallback de ID (mesma lógica usada nos clientes)
+        id_busca = int(id_colaborador) if str(id_colaborador).isdigit() else id_colaborador
+        id_evento_meta = int(id_evento) if str(id_evento).isdigit() else id_evento
 
-        # 2. OPERAÇÃO ATÔMICA (Soma e retorna o saldo já atualizado)
-        # Tenta buscar como INT primeiro (Padrão novo)
-        cliente_atualizado = db_vendas.clientes.find_one_and_update(
-            {'id_cliente': int(id_cliente) if str(id_cliente).isdigit() else id_cliente},
-            {
-                '$inc': {'saldo_atual': valor_decimal},
-                '$set': {'ultima_movimentacao': hora_brasil()}
-            },
+        # 2. OPERAÇÃO ATÔMICA ($inc)
+        # Mantém a precisão absoluta no saldo acumulado do vendedor
+        colab_atualizado = db.colaboradores.find_one_and_update(
+            {"id_colaborador": id_busca},
+            {"$inc": {"saldo_comissao": valor_decimal}},
             return_document=ReturnDocument.AFTER
         )
 
-        # Fallback de segurança caso o ID no banco esteja como String
-        if not cliente_atualizado:
-            cliente_atualizado = db_vendas.clientes.find_one_and_update(
-                {'id_cliente': str(id_cliente)},
-                {
-                    '$inc': {'saldo_atual': valor_decimal},
-                    '$set': {'ultima_movimentacao': hora_brasil()}
-                },
+        if not colab_atualizado:
+            # Fallback para String
+            colab_atualizado = db.colaboradores.find_one_and_update(
+                {"id_colaborador": str(id_colaborador)},
+                {"$inc": {"saldo_comissao": valor_decimal}},
                 return_document=ReturnDocument.AFTER
             )
-            
-        if not cliente_atualizado:
-            print(f"⚠️ [FINANCEIRO] Cliente {id_cliente} não encontrado para a transação: {descricao}")
-            return False, "Cliente não encontrado."
 
-        # 3. Matemática Reversa (Descobrir o saldo anterior)
-        saldo_posterior_float = converter_decimal(cliente_atualizado.get('saldo_atual', 0.0))
+        if not colab_atualizado:
+            print(f"⚠️ [COMISSÃO TERMINAL] Vendedor {id_colaborador} não encontrado.")
+            return False, "Vendedor não encontrado."
+
+        # 3. Matemática Reversa para Auditoria do Vendedor
+        # (Segue o padrão do Livro-Razão dos Clientes)
+        saldo_posterior_decimal = colab_atualizado.get('saldo_comissao', Decimal128("0.00"))
+        saldo_posterior_float = float(saldo_posterior_decimal.to_decimal())
         saldo_anterior_float = saldo_posterior_float - valor_float
 
-        # 4. Gravação no Livro-Razão (Extrato)
-        doc_transacao = {
-            'id_transacao': f"TRX{int(time.time()*1000)}",
-            'id_cliente': cliente_atualizado['id_cliente'],
-            'data_hora': hora_brasil(),
-            'natureza': natureza,
-            'tipo': tipo,
-            'valor': valor_decimal,
-            'saldo_anterior': Decimal128(str(saldo_anterior_float)),
-            'saldo_posterior': Decimal128(str(saldo_posterior_float)),
-            'descricao': descricao,
-            'id_evento': id_evento,
-            'id_venda': id_venda,
-            'origem': origem,
-            'registrado_por': registrado_por
+        # 4. Gravação no Extrato de Colaboradores (Campos Reduzidos)
+        doc_extrato = {
+            "id_v": id_venda,       # Chave única para evitar duplicidade (Índice Unique)
+            "id_c": colab_atualizado['id_colaborador'],
+            "id_e": id_evento_meta,
+            "tp": tipo,             # 'ind_a' para autoatendimento
+            "v": valor_decimal,
+            "tx": float(taxa_aplicada),
+            "sd_a": Decimal128(str(saldo_anterior_float)),
+            "sd_p": saldo_posterior_decimal,
+            "dt": hora_brasil(),
+            "desc": descricao
         }
-        
-        db_vendas.transacoes_clientes.insert_one(doc_transacao)
-        return True, "Sucesso"
+
+        db.transacoes_colaboradores.insert_one(doc_extrato)
+        return True, saldo_posterior_float
 
     except Exception as e:
-        print(f"❌ [ERRO CRÍTICO FINANCEIRO] Falha ao registrar transação do cliente {id_cliente}: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ [ERRO CRÍTICO COMISSÃO TERMINAL] Falha no colaborador {id_colaborador}: {e}")
         return False, str(e)
 
 
@@ -4625,7 +4539,20 @@ def api_comprar_cartelas():
 
         nome_do_cliente_db = cliente.get('nick', 'Cliente')
         id_colaborador_indicacao = cliente.get('id_colaborador', 0)
-  
+       
+        id_regional_carimbo = 1  # Valor padrão (Matriz) conforme sua regra
+
+        # --- BUSCA DA REGIONAL VIA COLABORADOR (FASE 4) ---
+        if id_colaborador_indicacao and int(id_colaborador_indicacao) > 0:
+            # Buscamos o colaborador para saber a qual regional ele pertence
+            colaborador_doc = sales_db.colaboradores.find_one({'id_colaborador': int(id_colaborador_indicacao)})
+            if colaborador_doc:
+                # Se o colaborador tiver uma regional, usamos ela; caso contrário, mantém 1
+                id_regional_carimbo = int(colaborador_doc.get('id_regional', 1))
+        
+        print(f"📍 Venda vinculada à Regional: {id_regional_carimbo}")
+        # --------------------------------------------------
+
         # Verifica Saldo
         valor_unit = converter_decimal(evento.get('valor_de_venda', 0))
         custo_total = valor_unit * qtd_desejada
@@ -4684,6 +4611,7 @@ def api_comprar_cartelas():
             "id_venda": f"WEB{id_venda_global}", 
             "id_evento": id_evento_oficial,
             "id_cliente": id_cli,
+            "id_regional": id_regional_carimbo,
             "nome_cliente": nome_do_cliente_db,                            
             "nick_colaborador": "AUTO-ATENDIMENTO",
             "id_colaborador": id_colaborador_indicacao,
@@ -4727,6 +4655,36 @@ def api_comprar_cartelas():
             origem="WEB_CLIENTE",
             registrado_por="AUTO-ATENDIMENTO"
         )
+
+        # ==============================================================================
+        # 💰 NOVO: GATILHO DE COMISSÃO INDIRETA A (Autoatendimento)
+        # ==============================================================================
+        if sucesso and id_colaborador_indicacao and int(id_colaborador_indicacao) > 0:
+            try:
+                # 1. Busca a taxa atual de Indireta A nos parâmetros
+                params = sales_db.parametros.find_one({}) or {}
+                taxa_ind_a = float(str(params.get('perc_venda_indireta_a', 0.05))) # Default 5%
+
+                # 2. Calcula o valor (custo_total já é Decimal ou Float vindo do seu código)
+                valor_comissao = float(custo_total) * taxa_ind_a
+
+                # 3. Registra a comissão para o vendedor "dono" do cliente
+                # Certifique-se de que a função registrar_comissao_vendedor esteja disponível neste backend
+                registrar_comissao_vendedor(
+                    db=sales_db,
+                    id_colaborador=id_colaborador_indicacao,
+                    valor=valor_comissao,
+                    tipo='ind_a', # Sigla para Indireta A (Passiva)
+                    id_evento=id_evento_oficial,
+                    id_venda=f"WEB{id_venda_global}",
+                    taxa_aplicada=taxa_ind_a,
+                    descricao=f"Comissão Autoatendimento: Cliente {id_cli}"
+                )
+                print(f"💸 Comissão Indireta A (Auto) gerada para Colab {id_colaborador_indicacao}: R$ {valor_comissao:.2f}")
+            except Exception as e_com:
+                print(f"⚠️ Erro ao processar comissão autoatendimento: {e_com}")
+        # ==============================================================================
+
         
         #saldo_atual_novo = saldo_cliente - custo_total
         saldo_atual_novo = retorno_transacao if sucesso else float(saldo_cliente - custo_total)        

@@ -17,6 +17,8 @@ const bolaDestaque = document.getElementById('bola-destaque');
 const btnSortear = document.getElementById('btn-sortear');
 const contadorElement = document.getElementById('contador-bolas');
 
+var nomeSincronizadoSala = "bingolive";
+
 // --- VARIÁVEIS DE CONTROLE ---
 let textoBuscando = "";
 
@@ -2670,6 +2672,9 @@ async function validarCartelaAuditoria() {
     const input = document.getElementById('input-auditoria');
     const cartela = input.value;
     const btnConfirmar = document.getElementById('btn-confirmar-ganhador');
+    
+    // --- 🎥 NOVO: Pega o botão de convite ---
+    const btnConvite = document.getElementById('btn-disparar-convite');
 
     if(!cartela) return;
     
@@ -2701,7 +2706,6 @@ async function validarCartelaAuditoria() {
             } 
             // 3. Se contiver QUADRA ou CANTOS (ajustado para aceitar ambos)
             else if (premioBuscado.includes("QUADRA") || premioBuscado.includes("CANTOS")) {
-                //  ele vai exibir "para a 4 CANTOS" ou "para a QUADRA" dependendo do que estiver no elStatus
                 msgExibicao = `❌ ${data.msg} para a ${premioBuscado}.`;
             }
         }
@@ -2721,21 +2725,50 @@ async function validarCartelaAuditoria() {
                 if (!modoRoboAtivo && btnConfirmar) {
                     btnConfirmar.classList.remove('hidden'); 
                     btnConfirmar.onclick = () => confirmarGanhadorAtual(); 
+                    
                     // --- 🔒 TRAVA O BOTÃO DE ENCERRAR ---
-                    const btnEncerrar = document.getElementById('btn-encerrar-auditoria'); // <--- Coloque o ID correto aqui
+                    const btnEncerrar = document.getElementById('btn-encerrar-auditoria'); 
                     if (btnEncerrar) {
                         btnEncerrar.disabled = true;
-                        btnEncerrar.style.opacity = '0.5'; // Deixa visualmente apagado
+                        btnEncerrar.style.opacity = '0.5'; 
                         btnEncerrar.style.cursor = 'not-allowed';
                     }
-                    // ------------------------------------
+
+                    // ==========================================
+                    // --- 🎥 NOVO: ATIVA O BOTÃO DE CONVITE ---
+                    // ==========================================
+                    if (btnConvite) {
+                        btnConvite.classList.remove('hidden'); // Exibe o botão
+                        
+                        btnConvite.onclick = function() {
+                            enviarConviteLive(cartela); // Dispara o WebSocket
+                            
+                            // Efeito visual de Sucesso
+                            btnConvite.innerHTML = "✅ CONVITE ENVIADO";
+                            btnConvite.classList.replace('bg-purple-700', 'bg-gray-600');
+                            btnConvite.disabled = true; 
+                            
+                            // Retorna ao normal após 5 segundos
+                            setTimeout(() => {
+                                btnConvite.innerHTML = '<span class="text-xl">🎥</span> CONVIDAR PARA LIVE';
+                                btnConvite.classList.replace('bg-gray-600', 'bg-purple-700');
+                                btnConvite.disabled = false;
+                            }, 5000);
+                        };
+                    }
+                    // ==========================================
+
                     setTimeout(() => btnConfirmar.focus(), 100);
                 }
             } else {
                 msgLabel.textContent = msgExibicao; 
                 if (data.status_code === 'NOT_SOLD') msgLabel.className = "text-xl font-black text-yellow-500";
                 else msgLabel.className = "text-xl font-black text-red-400";
+                
                 if(btnConfirmar) btnConfirmar.classList.add('hidden');
+
+                // --- 🎥 NOVO: ESCONDE O BOTÃO SE A CARTELA NÃO FOR VENCEDORA ---
+                if (btnConvite) btnConvite.classList.add('hidden');
             }
         }
 
@@ -2814,6 +2847,16 @@ async function encerrarSessaoConferencia(modoSilencioso = false) {
         valor: 0, 
         hora: Date.now() 
     });
+
+    const btnConvite = document.getElementById('btn-disparar-convite');
+    if (btnConvite) {
+        btnConvite.classList.add('hidden');
+        // Reseta o estado caso estivesse desabilitado
+        btnConvite.innerHTML = '<span class="text-xl">🎥</span> CONVIDAR PARA LIVE';
+        btnConvite.classList.remove('bg-gray-600');
+        btnConvite.classList.add('bg-purple-700');
+        btnConvite.disabled = false;
+    }
 
     // O log que faltava para você debugar no F12
     console.log(`[CONFERÊNCIA] Sessão encerrada. Houve ganhador: ${houveGanhadorNaSessao}`);
@@ -4058,11 +4101,8 @@ async function dispararVerificacaoRobo() {
 }
 
 function buscarNomeDaSalaBackend() {
-    // 1. Pega o ID da variável que você disse que já tem. 
-    // (Substitua 'globalIdSala' pelo nome real da sua variável)
     let idParaBusca = typeof currentSalaId !== 'undefined' ? currentSalaId : null;
 
-    // Fallback: Se a variável não existir, tenta pegar da URL (?sala=3)
     if (!idParaBusca) {
         const params = new URLSearchParams(window.location.search);
         idParaBusca = params.get('sala') || '1'; // Padrão 1 se não achar nada
@@ -4083,6 +4123,15 @@ function buscarNomeDaSalaBackend() {
                 if (elTitulo) {
                     elTitulo.innerText = `🎛️ CENTRAL DE SORTEIO  |  ${data.nome.toUpperCase()}  |  v${VERSAO_ATUAL}`;
                 }
+
+                // 2. 🚀 GUARDA NA GLOBAL (Limpo para URL)
+                nomeSincronizadoSala = data.nome
+                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove acentos
+                    .replace(/[^a-zA-Z0-9\s]/g, "") // Remove símbolos
+                    .replace(/\s+/g, '_') // Espaço vira _
+                    .toLowerCase();
+                
+                console.log("✅ Nome da sala sincronizado para convites:", nomeSincronizadoSala);
             }
         })
         .catch(err => console.error("Erro ao carregar nome da sala:", err));
@@ -4705,4 +4754,22 @@ function forcarAtualizacaoClientes() {
             setTimeout(forcarAtualizacaoClientes, 2000);
         }
     }
+}
+
+
+function enviarConviteLive(numeroCartelaGanhadora) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.error("Erro: WebSocket desconectado!");
+        return;
+    }
+
+    const payload = {
+        type: 'convite_video',
+        cartela: numeroCartelaGanhadora,
+        // Usa a global que foi preenchida pela função de busca
+        sala_vdo: `${nomeSincronizadoSala}_ganhador`
+    };
+
+    ws.send(JSON.stringify(payload));
+    console.log("🚀 Convite enviado via Global:", payload.sala_vdo);
 }

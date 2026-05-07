@@ -73,6 +73,8 @@ const btnMenuFullscreen = document.getElementById('menu-btn-fullscreen');
 const statusFullscreen = document.getElementById('menu-status-fullscreen');
 const iconFullscreen = document.getElementById('icon-fullscreen');
 
+let janelaVideoLive = null;
+
 let isProcessandoCompra = false;
 
 let playerCarregando = false;
@@ -3156,6 +3158,9 @@ function displayConferencePanel(confereData, bolasCantadas) {
 // Função auxiliar para esconder e limpar (ATUALIZADA)
 function ocultarConferencia() {
     const container = document.getElementById('conference-panel-container');
+    if (!container || container.classList.contains('hidden')) {
+        return; 
+    }
     
     // Pega o título para resetar o estilo (volta de Amarelo para Branco)
     const titleEl = container.querySelector('h2');
@@ -3179,6 +3184,17 @@ function ocultarConferencia() {
         cardGridElement.innerHTML = '';
         // Importante: Remove as classes Flex do Sorte Extra para não quebrar o Grid do Bingo Normal
         cardGridElement.className = ''; 
+    }
+
+    const btnLive = document.getElementById('btn-live-ganhador');
+    if (btnLive) {
+        btnLive.style.display = 'none';
+        // console.log("🧹 Tela limpa: Ocultando botão da Live (Conferência Encerrada).");
+    }
+    if (janelaVideoLive && !janelaVideoLive.closed) {
+        janelaVideoLive.close(); // Manda o comando de fechar para o navegador
+        janelaVideoLive = null;  // Limpa a variável para a próxima rodada
+        // console.log("🔌 Aba de vídeo fechada remotamente pelo locutor.");
     }
     
     // Garante que a lógica interna também limpe
@@ -4597,6 +4613,29 @@ function connectWebSocket() {
                 console.error("Erro do Servidor:", payload);
                 return;
             }
+
+            // ==========================================
+            // 🎥 NOVO: INTERCEPTADOR DE CONVITE DE VÍDEO
+            // ==========================================
+            if (payload.type === 'convite_video') {
+                //console.log("💌 Convite de vídeo recebido para a cartela:", payload.cartela);
+    
+                // Converte a cartela que veio do painel admin para número inteiro
+                const cartelaPremiada = parseInt(payload.cartela);
+    
+                // Como seu backend já entrega um array de inteiros, o includes() mata a charada em 1 milissegundo
+                const souDonoDaCartela = globalMinhasCartelas.cartelas.includes(cartelaPremiada);
+    
+                if (souDonoDaCartela) {
+                    //console.log("🎉 Esta cartela é minha! Exibindo botão da Live.");
+                    mostrarBotaoLive(payload.sala_vdo);
+                } else {
+                    console.log("🔒 Convite ignorado. A cartela " + cartelaPremiada + " não pertence a este jogador.");
+                }
+    
+                return; // 🛑 Para aqui! A mensagem não vai para a fila de renderização.
+            }
+            // ==========================================
 
             // === A MÁGICA DA SINCRONIA AQUI ===
             // Verifica o tempo que a bola deve esperar (enviado pelo admin)
@@ -8251,6 +8290,81 @@ async function realizarInstalacao() {
     const { outcome } = await deferredPrompt.userChoice;
     deferredPrompt = null;
 }
+
+
+function convidarGanhadorAoVivo(idGanhador, idEvento) {
+    // Criamos um nome de sala único para não cruzar com outros sorteios
+    const nomeSala = `BingoTeste`;
+    
+    // Este é o link que o Ganhador vai abrir
+    const linkPush = `https://vdo.ninja/?push=${nomeSala}&autostart&clean&ad=1&vd=1&hd&ac=1`;
+    
+    // Este é o link que você cola no seu OBS
+    const linkView = `https://vdo.ninja/?view=${nomeSala}&autoplay&nomenu`;
+
+    console.log("🔗 Link para enviar ao Ganhador:", linkPush);
+    console.log("📺 Link para colocar no OBS:", linkView);
+
+    // Abre o link do ganhador (simulando o clique dele)
+    window.open(linkPush, '_blank');
+}
+
+// Função para exibir o botão flutuante para o Ganhador
+function mostrarBotaoLive(salaVdo) {
+    let btn = document.getElementById('btn-live-ganhador');
+    
+    // Se o botão ainda não existir, cria ele dinamicamente
+    if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'btn-live-ganhador';
+        btn.innerHTML = '📺 Entrar ao Vivo na Live!';
+        
+        // Estilização direta pelo JS (Botão flutuante chamativo)
+        Object.assign(btn.style, {
+            position: 'fixed',
+            bottom: '40px',       // Afastado do fundo da tela
+            left: '0',            // Estrutura para centralizar...
+            right: '0',           // ...horizontalmente sem quebrar...
+            margin: '0 auto',     // ...a animação do transform
+            width: 'max-content', // Mantém a largura exata do texto 
+            backgroundColor: '#25d366', // Verde WhatsApp
+            color: 'white',
+            border: 'none',
+            borderRadius: '50px',
+            padding: '15px 35px',
+            fontSize: '18px',
+            fontWeight: '900',
+            boxShadow: '0 8px 25px rgba(0,0,0,0.6)',
+            cursor: 'pointer',
+            zIndex: '9999',
+            transition: 'transform 0.2s'
+        });
+
+        // Efeito de pulso para chamar atenção
+        setInterval(() => {
+            btn.style.transform = btn.style.transform === 'scale(1.05)' ? 'scale(1)' : 'scale(1.05)';
+        }, 800);
+
+        // Adiciona ao corpo da página (ou pode adicionar abaixo do contêiner de conferência)
+        document.body.appendChild(btn);
+    }
+    
+    // Garante que fique visível
+    btn.style.display = 'block';
+    
+    // Ação ao clicar
+    btn.onclick = function() {
+        // O link mágico do VDO.ninja que já liga a câmera do cliente
+        const urlVdo = `https://vdo.ninja/?push=${salaVdo}&autostart&clean&ad=1&vd=1&hd&ac=1`;
+        
+        console.log("Abrindo conexão com o estúdio... URL:", urlVdo);
+        janelaVideoLive = window.open(urlVdo, '_blank');
+        
+        // Esconde o botão após clicar para não clicar duas vezes
+        btn.style.display = 'none';
+    };
+}
+
 
 window.mostrarAjudaInstalacao = function() {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
