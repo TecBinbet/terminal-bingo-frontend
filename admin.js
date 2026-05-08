@@ -846,13 +846,13 @@ function connectAdminWS() { // Use o nome que você já está chamando no final 
         // 💓 A VACINA DO LOCUTOR: O Bate-Coração
         // ==========================================
         if (window.pingInterval) clearInterval(window.pingInterval);
-        
+
         window.pingInterval = setInterval(() => {
             if (socket && socket.readyState === WebSocket.OPEN) {
-                // Manda um "Oi" pro servidor a cada 30s pra ele não cortar a linha
-                socket.send(JSON.stringify({ action: "PING" }));
+                // 👇 Corrigido para 'acao' e 'ping' minúsculo para o Python entender
+                socket.send(JSON.stringify({ acao: "ping" })); 
             }
-        }, 30000); // 30 segundos
+        }, 30000);
 
 
         // O "Locutor Rei" NÃO pede dados ao reconectar.
@@ -4756,9 +4756,9 @@ function forcarAtualizacaoClientes() {
     }
 }
 
-
 function enviarConviteLive(numeroCartelaGanhadora) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    // 👇 Mudou de 'ws' para 'socket' aqui
+    if (!socket || socket.readyState !== WebSocket.OPEN) { 
         console.error("Erro: WebSocket desconectado!");
         return;
     }
@@ -4766,10 +4766,10 @@ function enviarConviteLive(numeroCartelaGanhadora) {
     const payload = {
         type: 'convite_video',
         cartela: numeroCartelaGanhadora,
-        // Usa a global que foi preenchida pela função de busca
-        sala_vdo: `${nomeSincronizadoSala}_ganhador`
+        sala_vdo: `${nomeSincronizadoSala}_ganhador` 
     };
 
-    ws.send(JSON.stringify(payload));
+    // 👇 Mudou de 'ws' para 'socket' aqui também
+    socket.send(JSON.stringify(payload)); 
     console.log("🚀 Convite enviado via Global:", payload.sala_vdo);
 }
