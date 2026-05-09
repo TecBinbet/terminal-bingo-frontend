@@ -8355,7 +8355,7 @@ function mostrarBotaoLive(salaVdo) {
     // Ação ao clicar
     btn.onclick = function() {
         // O link mágico do VDO.ninja que já liga a câmera do cliente
-        const urlVdo = `https://vdo.ninja/?push=${salaVdo}&autostart&clean&ad=1&vd=1&hd&ac=1`;
+        const urlVdo = `https://vdo.ninja/?push=${salaVdo}&autostart&clean&ad=1&ss=0&vd=1&hd&ac=1`;
         
         console.log("Abrindo conexão com o estúdio... URL:", urlVdo);
         janelaVideoLive = window.open(urlVdo, '_blank');
