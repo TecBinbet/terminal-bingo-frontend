@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "2.6";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.9";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -8292,23 +8292,6 @@ async function realizarInstalacao() {
 }
 
 
-function convidarGanhadorAoVivo(idGanhador, idEvento) {
-    // Criamos um nome de sala único para não cruzar com outros sorteios
-    const nomeSala = `BingoTeste`;
-    
-    // Este é o link que o Ganhador vai abrir
-    // const linkPush = `https://vdo.ninja/?push=${nomeSala}&autostart&clean&ad=1&vd=1&hd&ac=1`;
-    const linkPush = `https://vdo.ninja/?push=${nomeSala}&autostart&webcam&skipmenu&clean&ad=1&vd=1&hd&ac=1`;
-    
-    // Este é o link que você cola no seu OBS
-    const linkView = `https://vdo.ninja/?view=${nomeSala}&autoplay&nomenu`;
-
-    console.log("🔗 Link para enviar ao Ganhador:", linkPush);
-    console.log("📺 Link para colocar no OBS:", linkView);
-
-    // Abre o link do ganhador (simulando o clique dele)
-    window.open(linkPush, '_blank');
-}
 
 // Função para exibir o botão flutuante para o Ganhador
 function mostrarBotaoLive(salaVdo) {
@@ -8356,7 +8339,8 @@ function mostrarBotaoLive(salaVdo) {
     // Ação ao clicar
     btn.onclick = function() {
         // O link mágico do VDO.ninja que já liga a câmera do cliente
-        const urlVdo = `https://vdo.ninja/?push=${salaVdo}&autostart&clean&ad=1&ss=0&vd=1&hd&ac=1`;
+        // const urlVdo = `https://vdo.ninja/?push=${salaVdo}&autostart&clean&ad=1&ss=0&vd=1&hd&ac=1`;
+        const urlVdo = `https://vdo.ninja/?push=${salaVdo}&autostart&webcam&skipmenu&clean&ad=1&vd=1&hd&ac=1`;
         
         console.log("Abrindo conexão com o estúdio... URL:", urlVdo);
         janelaVideoLive = window.open(urlVdo, '_blank');
