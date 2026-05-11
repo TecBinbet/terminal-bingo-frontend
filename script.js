@@ -8297,7 +8297,8 @@ function convidarGanhadorAoVivo(idGanhador, idEvento) {
     const nomeSala = `BingoTeste`;
     
     // Este é o link que o Ganhador vai abrir
-    const linkPush = `https://vdo.ninja/?push=${nomeSala}&autostart&clean&ad=1&vd=1&hd&ac=1`;
+    // const linkPush = `https://vdo.ninja/?push=${nomeSala}&autostart&clean&ad=1&vd=1&hd&ac=1`;
+    const linkPush = `https://vdo.ninja/?push=${nomeSala}&autostart&webcam&skipmenu&clean&ad=1&vd=1&hd&ac=1`;
     
     // Este é o link que você cola no seu OBS
     const linkView = `https://vdo.ninja/?view=${nomeSala}&autoplay&nomenu`;
