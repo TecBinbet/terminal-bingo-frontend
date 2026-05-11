@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "1.8";
+const VERSAO_ATUAL = "1.5";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -200,7 +200,8 @@ async function processarMatrizEnvio() {
                     };
                     break;
                     
-                case 'LIMPAR_PUBLICO':            
+                case 'LIMPAR_PUBLICO':
+                case 'LIMPAR_CONFERENCIA':            
                     urlEndpoint = `${API_BASE_URL}/api/admin/limpar_conferencia`;
                     bodyData = {
                         tempo_video: segundosDesdeOInicio // 🕒 Carimbo de tempo adicionado!

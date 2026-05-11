@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.9";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.5";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -1862,7 +1862,6 @@ function adicionarFaixaDeCartelas(disparadoPorUsuario = false) {
     
     return true; // Sucesso
 }
-// --- FIM DA NOVA FUNÇÃO --- p3
 
 
 function displayCartelaRanges() {
@@ -2581,7 +2580,7 @@ function clearPanels() {
             txtPainel.innerText = ""; 
         }
     }
-  
+    forcarFechamentoVideo();
     bingoWinners.clear();
     ultimaBolaCantada = null;
     buscando_o_premio = '';
@@ -4013,7 +4012,9 @@ async function renderMainContent(data) {
 
     // Localize onde você trata a 'bolaMudou' e ajuste:
     if (bolaMudou) {
+        forcarFechamentoVideo();
         falarTexto(`${ultimaBolaDaLista}`);
+        
         ultimaBolaCantada = ultimaBolaDaLista;
         ultimaBolaExibida = ultimaBolaDaLista; 
 
@@ -8291,6 +8292,17 @@ async function realizarInstalacao() {
     deferredPrompt = null;
 }
 
+
+function forcarFechamentoVideo() {
+    if (janelaVideoLive && !janelaVideoLive.closed) {
+        console.log("🛡️ [SEGURANÇA] Forçando fechamento da transmissão.");
+        janelaVideoLive.close();
+        janelaVideoLive = null;
+    }
+    // Esconde o botão caso ele ainda esteja visível
+    const btn = document.getElementById('btn-live-ganhador');
+    if (btn) btn.style.display = 'none';
+}
 
 
 // Função para exibir o botão flutuante para o Ganhador
