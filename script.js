@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.6";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.8";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -72,6 +72,8 @@ const bolaDigitalElement = document.getElementById('bola-digital');
 const btnMenuFullscreen = document.getElementById('menu-btn-fullscreen');
 const statusFullscreen = document.getElementById('menu-status-fullscreen');
 const iconFullscreen = document.getElementById('icon-fullscreen');
+
+let ultimoPremioCelebrado = null;
 
 let janelaVideoLive = null;
 
@@ -2063,6 +2065,140 @@ function processCards90(cards, bolasCantadas, premioBuscado, linhasAtivas) {
     // O sistema só permite avisos de linha se a palavra "LINHA" estiver no painel.
     const isFaseDeLinhas = textoBuscando.includes('LINHA');
 
+    const alvoAcertos = premioBuscado.includes('QUADRA') ? 4 : 5;
+    const nomeDoPremio = premioBuscado.includes('QUADRA') ? 'QUADRA' : 'LINHA';
+
+    let avisarFesta = false;
+    // 📸 [CÂMERA 1] O que a função acha que está buscando logo que liga?
+    console.log(`[LOG 1] Iniciando processCards90 | Prêmio Atual: ${textoBuscando} | Fase de Linhas? ${isFaseDeLinhas}`);
+
+    const processedCards = [];
+    if (premioBuscado === 'BINGO') bingoWinners.clear();
+
+    const isMultiLinePrize = premioBuscado.includes('LINHA') && linhasAtivas;
+    const activeLinesArray = isMultiLinePrize ? linhasAtivas.split(',') : [];
+
+    cards.forEach(card => {
+        // Lógica de Parsing 90 (Sup, Cen, Inf)
+        let superior = typeof card.superior === 'string' ? card.superior.split(',').map(Number) : (card.superior || []);
+        let central = typeof card.central === 'string' ? card.central.split(',').map(Number) : (card.central || []);
+        let inferior = typeof card.inferior === 'string' ? card.inferior.split(',').map(Number) : (card.inferior || []);
+        
+        let emOrdem = [...superior, ...central, ...inferior];
+        let layoutGrid = emOrdem; // Para 90 bolas, o grid é linear (3 linhas)
+
+        let count = { geral: 0, superior: 0, central: 0, inferior: 0 };
+
+        bolasCantadas.forEach(bola => {
+            if (emOrdem.includes(bola)) count.geral++;
+            if (superior.includes(bola)) count.superior++;
+            if (central.includes(bola)) count.central++;
+            if (inferior.includes(bola)) count.inferior++;
+        });
+
+        if (premioBuscado.includes('BINGO') && count.geral === 15) bingoWinners.add(card.cartao);
+
+        let cardObj = {
+            cartao: card.cartao,
+            linhaId: null,
+            counts: { geral: count.geral },
+            premioEncontrado: null,
+            originalData: { geral: emOrdem, linha: [] },
+            layoutGrid: layoutGrid,
+            missingNumbers: emOrdem.filter(n => !bolasCantadas.includes(n)),
+            type: 90 // Tag para renderização
+        };
+
+        // 🛡️ O Freio Mestre (Fase de Linhas)
+        if ((isFaseDeLinhas || premioBuscado.includes('QUADRA')) && count.geral < 15) {
+            
+            const lines = [
+                { id: 'SUP', numbers: superior, count: count.superior, ativa: window.linhasAtivasNoJogo.SUP },
+                { id: 'CEN', numbers: central, count: count.central, ativa: window.linhasAtivasNoJogo.CEN },
+                { id: 'INF', numbers: inferior, count: count.inferior, ativa: window.linhasAtivasNoJogo.INF }
+            ];
+
+            // 🎯 O PULO DO GATO: Define o alvo dependendo do prêmio
+
+            let ganhouLinhaInedita = false;
+            let linhaPremiadaId = null;
+            let linhaPremiadaNumbers = []; 
+            
+            let maxHitsLinhaAtiva = -1; 
+            let melhorLinhaIdParaRanking = null;
+            let melhorLinhaNumbers = []; 
+
+            lines.forEach(line => {
+                if (line.ativa) {
+                    
+                    if (line.count > maxHitsLinhaAtiva) {
+                        maxHitsLinhaAtiva = line.count;
+                        melhorLinhaIdParaRanking = line.id;
+                        melhorLinhaNumbers = line.numbers; 
+                    }
+
+                    // 🚨 AJUSTE AQUI: Verifica se bateu o alvo (4 para Quadra, 5 para Linha)
+                    if (line.count === alvoAcertos) {
+                        ganhouLinhaInedita = true;
+                        linhaPremiadaId = line.id;
+                        linhaPremiadaNumbers = line.numbers;
+                        avisarFesta = true; // 🎉 Agora a festa dispara na Quadra também!
+                    }
+                }
+            });
+
+            // ====================================================================
+            // 🛑 AJUSTE FINAL: SOBRESCREVE OS NÚMEROS FALTANTES 
+            // ====================================================================
+            if (ganhouLinhaInedita) {
+                // 🚨 AJUSTE AQUI: Grava o nome correto do prêmio e a quantidade de acertos
+                cardObj.premioEncontrado = nomeDoPremio;
+                cardObj.linhaId = linhaPremiadaId; 
+                cardObj.counts.linha = alvoAcertos; 
+                cardObj.originalData.linha = linhaPremiadaNumbers;
+                cardObj.missingNumbers = linhaPremiadaNumbers.filter(n => !bolasCantadas.includes(n)); 
+            } else {
+                cardObj.linhaId = melhorLinhaIdParaRanking;
+                cardObj.counts.linha = maxHitsLinhaAtiva; 
+                cardObj.originalData.linha = melhorLinhaNumbers;
+                cardObj.missingNumbers = melhorLinhaNumbers.filter(n => !bolasCantadas.includes(n)); 
+            }           
+            processedCards.push(cardObj);
+        } else {
+            // Lógica de Bingo / Falta 1
+            if (count.geral === 15) {
+                cardObj.premioEncontrado = 'BINGO';
+                avisarFesta = true;
+            } else {
+                if (premioBuscado.includes('FALTA') && count.geral === 14) {
+                    cardObj.premioEncontrado = 'FALTA 1';
+                    avisarFesta = true;
+                }
+            } 
+            // Para o bingo, a missingNumbers já foi calculada lá no topo usando as 15 dezenas
+            processedCards.push(cardObj);
+        }
+
+    });
+
+    if (avisarFesta) {
+        // A função vai tocar o som e travar o cadeado para este prêmio específico
+        celebrarPremioIntermediario(premioBuscado);
+    }
+
+    // Ordenação e Atualização Global
+    // 📸 [CÂMERA 3] Resumo do que está saindo da função
+    console.log(`[LOG 3] Fim do processCards90. Enviando ${processedCards.length} cartelas processadas para a tela.`);
+    finalizeProcessing(processedCards, premioBuscado);
+}
+
+// --- LÓGICA BINGO 90 (MANTIDA/REFATORADA) ---
+function processCards90b2(cards, bolasCantadas, premioBuscado, linhasAtivas) {
+    const textoBuscando = (premioBuscado || '').toString().toUpperCase();
+    // O sistema só permite avisos de linha se a palavra "LINHA" estiver no painel.
+    const isFaseDeLinhas = textoBuscando.includes('LINHA');
+
+    let avisarFesta = false;
     // 📸 [CÂMERA 1] O que a função acha que está buscando logo que liga?
     console.log(`[LOG 1] Iniciando processCards90 | Prêmio Atual: ${textoBuscando} | Fase de Linhas? ${isFaseDeLinhas}`);
 
@@ -2136,6 +2272,7 @@ function processCards90(cards, bolasCantadas, premioBuscado, linhasAtivas) {
                         ganhouLinhaInedita = true;
                         linhaPremiadaId = line.id;
                         linhaPremiadaNumbers = line.numbers;
+                        avisarFesta = true;
                     }
                 }
             });
@@ -2164,14 +2301,25 @@ function processCards90(cards, bolasCantadas, premioBuscado, linhasAtivas) {
 
         } else {
             // Lógica de Bingo / Falta 1
-            if (count.geral === 15) cardObj.premioEncontrado = 'BINGO'; 
-            else if (premioBuscado.includes('FALTA') && count.geral === 14) cardObj.premioEncontrado = 'FALTA 1';
-            
+            if (count.geral === 15) {
+                cardObj.premioEncontrado = 'BINGO';
+                avisarFesta = true;
+            } else {
+                if (premioBuscado.includes('FALTA') && count.geral === 14) {
+                    cardObj.premioEncontrado = 'FALTA 1';
+                    avisarFesta = true;
+                }
+            } 
             // Para o bingo, a missingNumbers já foi calculada lá no topo usando as 15 dezenas
             processedCards.push(cardObj);
         }
 
     });
+
+    if (avisarFesta) {
+        // A função vai tocar o som e travar o cadeado para este prêmio específico
+        celebrarPremioIntermediario(premioBuscado);
+    }
 
     // Ordenação e Atualização Global
     // 📸 [CÂMERA 3] Resumo do que está saindo da função
@@ -2179,10 +2327,171 @@ function processCards90(cards, bolasCantadas, premioBuscado, linhasAtivas) {
     finalizeProcessing(processedCards, premioBuscado);
 }
 
-
 // --- LÓGICA BINGO 75 (CORRIGIDA: VISUALIZAÇÃO E ORDENAÇÃO) ---
+// --- LÓGICA BINGO 75 (CORRIGIDA: VISUALIZAÇÃO, ORDENAÇÃO E FESTA) ---
 function processCards75(cards, bolasCantadas, premioBuscado) {
+    let avisarFesta = false;
     const processedCards = [];
+    
+    const premioUpper = (premioBuscado || "").toUpperCase();
+    if (premioUpper.includes('BINGO')) bingoWinners.clear();
+    
+    const bolasSet = new Set(bolasCantadas);
+    
+    // --- CONFIGURAÇÃO IDÊNTICA AO SERVER.PY ---
+    // Índices do Array 0..24 (Colunas no Banco -> Linhas Visuais)
+    const linhasIndices = [
+        [0, 5, 10, 15, 20], // Linha 1 (Superior)
+        [1, 6, 11, 16, 21], // Linha 2
+        [2, 7, 12, 17, 22], // Linha 3 (Central - Inclui Free)
+        [3, 8, 13, 18, 23], // Linha 4
+        [4, 9, 14, 19, 24]  // Linha 5 (Inferior)
+    ];
+    const indicesCantos = [0, 4, 20, 24]; // B1, B5, O1, O5
+    
+    // Decide o Modo de Jogo baseado no Prêmio
+    const buscarBingo = premioUpper.includes('BINGO') || premioUpper.includes('ACUMULADO');
+    // Se não for Bingo, verifica se é fase de Linha ou Cantos
+    const buscarLinha = !buscarBingo && (premioUpper.includes('LINHA') || premioUpper.includes('4 CANTOS E LINHA'));
+    const buscarCantos = !buscarBingo && (premioUpper.includes('CANTOS') || premioUpper.includes('QUADRA'));
+    
+    cards.forEach(card => {
+        let rawList = card.numeros || card.em_ordem || card.lista_75 || [];
+        // Normaliza string para array se necessário
+        if (typeof rawList === 'string') rawList = rawList.split(',').map(Number);
+        if (!Array.isArray(rawList) || rawList.length < 24) return;
+
+        // 1. CÁLCULO GERAL (BINGO CHEIO)
+        // Filtra: não é 0 (Free) E não foi sorteado
+        const faltamGeral = rawList.filter(n => n !== 0 && !bolasSet.has(n));
+        const countGeral = faltamGeral.length;
+
+        // 2. CÁLCULO LINHA (Melhor Linha Horizontal)
+        let melhorLinhaFaltam = 99;
+        let numerosFaltantesLinha = [];
+        let linhaCompleta = false;
+        
+        linhasIndices.forEach(indices => {
+            // Pega os números desta linha específica
+            const faltamNesta = indices
+                .map(i => rawList[i])
+                .filter(n => n !== 0 && !bolasSet.has(n));
+            
+            const qtd = faltamNesta.length;
+            // Se esta linha for melhor (menos faltantes), guarda ela
+            if (qtd < melhorLinhaFaltam) {
+                melhorLinhaFaltam = qtd;
+                numerosFaltantesLinha = faltamNesta;
+            }
+            if (qtd === 0) linhaCompleta = true;
+        });
+
+        // 3. CÁLCULO CANTOS
+        const faltamCantos = indicesCantos
+            .map(i => rawList[i])
+            .filter(n => n !== 0 && !bolasSet.has(n));
+        const countCantos = faltamCantos.length;
+        const cantosCompleto = (countCantos === 0);
+        
+        // 4. DECISÃO FINAL (O que mostrar na tela?)
+        let missingToDisplay = [];
+        let qtdeParaRanking = 99;
+        let premioEncontrado = null;
+        
+        if (buscarBingo) {
+            // Modo Bingo: Mostra tudo o que falta
+            missingToDisplay = faltamGeral;
+            qtdeParaRanking = countGeral;
+            
+            if (countGeral === 0) {
+                premioEncontrado = 'BINGO';
+                avisarFesta = true; // 🎉
+            } else if (premioUpper.includes('FALTA') && countGeral === 1) {
+                premioEncontrado = 'FALTA 1';
+                avisarFesta = true; // 🎉
+            }
+        } 
+        else if (buscarLinha && buscarCantos) {
+            // Modo Híbrido (4 Cantos E Linha): Mostra o mais próximo
+            if (melhorLinhaFaltam <= countCantos) {
+                missingToDisplay = numerosFaltantesLinha;
+                qtdeParaRanking = melhorLinhaFaltam;
+            } else {
+                missingToDisplay = faltamCantos;
+                qtdeParaRanking = countCantos;
+            }
+            // Checa vitórias
+            if (linhaCompleta) {
+                premioEncontrado = 'LINHA';
+                avisarFesta = true; // 🎉
+            }
+            if (cantosCompleto) {
+                premioEncontrado = (premioEncontrado ? premioEncontrado + ' E ' : '') + '4 CANTOS';
+                avisarFesta = true; // 🎉
+            }
+        }
+        else if (buscarLinha) {
+            // Modo Só Linha: Mostra só a melhor linha
+            missingToDisplay = numerosFaltantesLinha;
+            qtdeParaRanking = melhorLinhaFaltam;
+            if (linhaCompleta) {
+                premioEncontrado = 'LINHA';
+                avisarFesta = true; // 🎉
+            }
+        }
+        else if (buscarCantos) {
+            // Modo Só Cantos: Mostra só os cantos
+            missingToDisplay = faltamCantos;
+            qtdeParaRanking = countCantos;
+            if (cantosCompleto) {
+                premioEncontrado = '4 CANTOS';
+                avisarFesta = true; // 🎉
+            }
+        }
+        else {
+            // Fallback: Mostra Geral
+            missingToDisplay = faltamGeral;
+            qtdeParaRanking = countGeral;
+        }
+
+        // Sons e Efeitos específicos da cartela (se necessário)
+        if (premioEncontrado && !bingoWinners.has(card.cartao + '_' + premioEncontrado)) {
+             bingoWinners.add(card.cartao + '_' + premioEncontrado);
+        }
+
+        processedCards.push({
+            cartao: card.cartao,
+            counts: {
+                ranking: qtdeParaRanking // Usado para ordenar
+            },
+            missingNumbers: missingToDisplay, 
+            premioEncontrado: premioEncontrado,
+            layoutGrid: rawList, 
+            type: 75
+        });
+    });
+
+    // 5. ORDENAÇÃO (Menos faltantes no topo)
+    processedCards.sort((a, b) => a.counts.ranking - b.counts.ranking);
+    loadedCards = processedCards;
+
+    // ==========================================
+    // 🎉 GATILHO DA FESTA GLOBAL
+    // ==========================================
+    if (avisarFesta) {
+        // Usa a variável global premioUpper (sem erro de escopo)
+        celebrarPremioIntermediario(premioUpper);
+    }
+    
+    // Renderiza
+    displayLoadedCards(bolasCantadas); 
+}
+
+function processCards75b2(cards, bolasCantadas, premioBuscado) {
+    let avisarFesta = false;
+
+    const processedCards = [];
+   
     if (premioBuscado === 'BINGO') bingoWinners.clear();
     const premioUpper = (premioBuscado || "").toUpperCase();
     const bolasSet = new Set(bolasCantadas);
@@ -2237,15 +2546,24 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
             .filter(n => n !== 0 && !bolasSet.has(n));
         const countCantos = faltamCantos.length;
         const cantosCompleto = (countCantos === 0);
+
         // 4. DECISÃO FINAL (O que mostrar na tela?)
         let missingToDisplay = [];
         let qtdeParaRanking = 99;
         let premioEncontrado = null;
+
         if (buscarBingo) {
             // Modo Bingo: Mostra tudo o que falta
             missingToDisplay = faltamGeral;
             qtdeParaRanking = countGeral;
-            if (countGeral === 0) premioEncontrado = 'BINGO';
+            
+            if (countGeral === 0) {
+                premioEncontrado = 'BINGO';
+                avisarFesta = true; // 🎉 Gatilho!
+            } else if (premioUpper.includes('FALTA') && countGeral === 1) {
+                premioEncontrado = 'FALTA 1';
+                avisarFesta = true; // 🎉 Gatilho!
+            }
         } 
         else if (buscarLinha && buscarCantos) {
             // Modo Híbrido (4 Cantos E Linha): Mostra o mais próximo
@@ -2257,26 +2575,39 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
                 qtdeParaRanking = countCantos;
             }
             // Checa vitórias
-            if (linhaCompleta) premioEncontrado = 'LINHA';
-            if (cantosCompleto) premioEncontrado = (premioEncontrado ? premioEncontrado + ' E ' : '') + '4 CANTOS';
+            if (linhaCompleta) {
+                premioEncontrado = 'LINHA';
+                avisarFesta = true; // 🎉 Gatilho!
+            }
+            if (cantosCompleto) {
+                premioEncontrado = (premioEncontrado ? premioEncontrado + ' E ' : '') + '4 CANTOS';
+                avisarFesta = true; // 🎉 Gatilho!
+            }
         }
         else if (buscarLinha) {
             // Modo Só Linha: Mostra só a melhor linha
             missingToDisplay = numerosFaltantesLinha;
             qtdeParaRanking = melhorLinhaFaltam;
-            if (linhaCompleta) premioEncontrado = 'LINHA';
+            if (linhaCompleta) {
+                premioEncontrado = 'LINHA';
+                avisarFesta = true; // 🎉 Gatilho!
+            }
         }
         else if (buscarCantos) {
             // Modo Só Cantos: Mostra só os cantos
             missingToDisplay = faltamCantos;
             qtdeParaRanking = countCantos;
-            if (cantosCompleto) premioEncontrado = '4 CANTOS';
+            if (cantosCompleto) {
+                premioEncontrado = '4 CANTOS';
+                avisarFesta = true; // 🎉 Gatilho!
+            }
         }
         else {
             // Fallback: Mostra Geral
             missingToDisplay = faltamGeral;
             qtdeParaRanking = countGeral;
         }
+
         // Sons e Efeitos
         if (premioEncontrado && !bingoWinners.has(card.cartao + '_' + premioEncontrado)) {
              // Lógica de disparo de som/gif aqui se necessário
@@ -2295,7 +2626,12 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
     // 5. ORDENAÇÃO (Menos faltantes no topo)
     processedCards.sort((a, b) => a.counts.ranking - b.counts.ranking);
     loadedCards = processedCards;
-    
+ 
+    if (avisarFesta) {
+        // A função vai tocar o som e travar o cadeado para este prêmio específico
+        celebrarPremioIntermediario(premioEncontrado);
+    }
+   
     // Renderiza
     displayLoadedCards(bolasCantadas); 
 }
@@ -2534,6 +2870,7 @@ function clearPanels() {
     closeAvisoPanel(); // <--- Adicione 
     lastAvisoTimestamp = 0; // Reseta para permitir novos avisos iguais
 
+    ultimoPremioCelebrado = null;
     ultima_bola_render = -1;
     updateDigitalBola("--");  
     if (typeof alternarPainelMobile === 'function') {
@@ -8583,6 +8920,70 @@ function carregarVideoAntMedia(url) {
     // Aqui entrará o SDK da Ant Media (webrtc_adaptor.js) quando você contratar o serviço.
     // Por enquanto, o sistema apenas reconhece a mudança sem quebrar.
 }
+
+function tocarCampainhaAlegre() {
+    // Inicia o motor de áudio nativo do navegador
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return; // Proteção para navegadores muito antigos
+    
+    const ctx = new AudioContext();
+
+    // Função interna para criar cada "toque" da campainha
+    function playNote(frequencia, tempoInicio, duracao) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine'; // Onda senoidal gera um som limpo, parecido com um sino/taça
+        osc.frequency.setValueAtTime(frequencia, ctx.currentTime + tempoInicio);
+
+        // Efeito de fade out (o som diminui suavemente)
+        gain.gain.setValueAtTime(0, ctx.currentTime + tempoInicio);
+        gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + tempoInicio + 0.05); // Volume
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + tempoInicio + duracao);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(ctx.currentTime + tempoInicio);
+        osc.stop(ctx.currentTime + tempoInicio + duracao);
+    }
+
+    // Dispara o "Ding-Ding" (duas notas rápidas e alegres)
+    playNote(523.25, 0, 0.5);    // Primeira nota (C5)
+    playNote(659.25, 0.15, 0.6); // Segunda nota (E5) um pouquinho depois e mais aguda
+}
+
+function celebrarPremioIntermediario(identificadorDoPremio) {
+    // 1. TRAVA ANTI-REPLICAÇÃO
+    if (ultimoPremioCelebrado === identificadorDoPremio) {
+        console.log("🛡️ [FESTA] Prêmio já celebrado, ignorando repetição.");
+        return; 
+    }
+
+    ultimoPremioCelebrado = identificadorDoPremio;
+
+    // 2. DISPARO DO ÁUDIO SINTETIZADO (Nativo e super leve)
+    tocarCampainhaAlegre();
+
+    // 3. EFEITO VISUAL RÁPIDO (Pop de Confetes no centro da tela)
+    if (typeof confetti === 'function') {
+        confetti({
+            particleCount: 100,
+            spread: 80,
+            origin: { y: 0.5 }, // Estoura no meio da tela
+            colors: ['#FFD700', '#FF8C00', '#00FF00'], // Cores vibrantes
+            zIndex: 9999,
+            disableForReducedMotion: true
+        });
+    }
+}
+
+// Lá no seu bloco que recebe os dados do ganhador do prêmio:
+// * const idUnicoFesta = data.premio_nome + "_" + data.cartela_ganhadora; 
+// *celebrarPremioIntermediario(idUnicoFesta);
+
+// Limpar ao trocar de premiação ou reiniciar rodada
+/ *ultimoPremioCelebrado = null;
 
 // FIM DO SEU SCRIPT.JS - Certifique-se de que não existem mais chaves "}" soltas debaixo disto!
 //  APP_USR-4102968123853317-030915-554488ce7119ab34a742fafc45b0f1e9-3255401766
