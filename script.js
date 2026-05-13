@@ -4366,6 +4366,7 @@ async function renderMainContent(data) {
 
     // --- AÇÃO QUANDO A BOLA MUDA ---
     if (premioMudou) {
+        ultimoPremioCelebrado = null;
         buscando_o_premio = premioBuscadoDaAPI;
         buscando_a_linha = linhasAtivasDaAPI;
         bolaBuscandoPremio = bolasCantadas.length;
@@ -6969,7 +6970,7 @@ async function realizarLogin() {
 
             // Mensagem discreta
             if (typeof showCustomAlert === 'function') {
-                showCustomAlert(`Bem-vindo de volta, ${data.nick || usuario}!`, "Login Sucesso", "✅");
+                showCustomAlert(`Bem-vindo de volta, ${(data.nick || usuario || "").toLowerCase().split(' ').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')}!`, "Login Sucesso", "✅");
             }
 
         } else {
