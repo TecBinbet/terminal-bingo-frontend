@@ -8983,7 +8983,7 @@ function celebrarPremioIntermediario(identificadorDoPremio) {
 // *celebrarPremioIntermediario(idUnicoFesta);
 
 // Limpar ao trocar de premiação ou reiniciar rodada
-/ *ultimoPremioCelebrado = null;
+// *ultimoPremioCelebrado = null;
 
 // FIM DO SEU SCRIPT.JS - Certifique-se de que não existem mais chaves "}" soltas debaixo disto!
 //  APP_USR-4102968123853317-030915-554488ce7119ab34a742fafc45b0f1e9-3255401766
