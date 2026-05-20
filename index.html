@@ -674,6 +674,11 @@
             <button onclick="fecharModal('modal-login')" class="w-full bg-gray-400 mt-4 text-gray-700 font-bold py-3 hover:bg-gray-100 rounded-lg">
                   Cancelar
             </button>
+
+            <button type="button" onclick="abrirRegras()" class="w-full text-xs text-blue-900 hover:text-blue-950 font-bold hover:underline mt-4 text-center block transition-colors">
+              ⚖️ Legislação e Regras do Jogo
+            </button>
+
         </div>
     </div>
 
@@ -1140,6 +1145,24 @@
     <span class="text-3xl">🍀</span>
     <span class="text-[10px] mt-1">SORTE EXTRA</span>
 </button>
+
+
+<div id="modal-regras" class="hidden fixed inset-0 z-[10000] flex flex-col bg-gray-950 p-3 sm:p-6 select-none animate-fade-in">
+    
+    <div class="flex flex-wrap items-center justify-between bg-gray-900 p-3 rounded-t-xl border border-gray-800 gap-2 shrink-0">
+        <div class="flex items-center gap-2">
+            <span class="text-base font-bold text-yellow-400 tracking-wider uppercase">⚖️ REGRAS DO JOGO</span>
+        </div>
+        <div class="flex items-center gap-1.5 sm:gap-2">
+            <button onclick="alterarZoomRegras(1)" class="bg-gray-800 hover:bg-gray-700 text-white font-extrabold px-3 py-1.5 rounded-lg text-xs sm:text-sm shadow">🔍 Zoom +</button>
+            <button onclick="alterarZoomRegras(-1)" class="bg-gray-800 hover:bg-gray-700 text-white font-extrabold px-3 py-1.5 rounded-lg text-xs sm:text-sm shadow">🔍 Zoom -</button>
+            <button onclick="fecharRegras()" class="ml-2 bg-red-700 hover:bg-red-600 text-white font-bold px-4 py-1.5 rounded-lg text-xs sm:text-sm shadow">✕ FECHAR</button>
+        </div>
+    </div>
+
+    <div id="texto-regras-corpo" class="flex-1 overflow-y-auto p-4 sm:p-8 bg-gray-900 rounded-b-xl border border-t-0 border-gray-800 font-sans text-gray-300 text-justify" style="font-size: 14px;">
+        </div>
+</div>
 
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script> 
     <script src="config.js"></script>

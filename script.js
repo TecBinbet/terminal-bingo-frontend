@@ -8955,6 +8955,60 @@ function carregarVideoAntMedia(url) {
     // Por enquanto, o sistema apenas reconhece a mudança sem quebrar.
 }
 
+// =========================================================
+// ⚖️ SISTEMA DE LEGISLAÇÃO: BUSCA DINÂMICA E ZOOM
+// =========================================================
+let tamanhoFonteRegras = 14; 
+let regrasJaCarregadas = false; // Evita baixar o arquivo várias vezes se o cliente abrir e fechar
+
+async function abrirRegras() {
+    const modalRegras = document.getElementById('modal-regras');
+    const corpoTexto = document.getElementById('texto-regras-corpo');
+
+    if (modalRegras) {
+        modalRegras.classList.remove('hidden');
+        
+        // Se já baixou antes, não gasta internet de novo
+        if (regrasJaCarregadas) return;
+
+        // Mostra o loading visual
+        corpoTexto.innerHTML = '<div class="text-center text-gray-500 py-10 animate-pulse font-bold">⏳ Carregando documento legal...</div>';
+
+        try {
+            // Vai no servidor buscar o arquivo (Pode ser /regras.html ou /termos.txt)
+            // O cache: 'no-store' garante que se você atualizar o arquivo no servidor, o cliente pega o novo
+            const resposta = await fetch('/regras.html', { cache: 'no-store' });
+            
+            if (!resposta.ok) throw new Error('Arquivo não encontrado no servidor.');
+
+            const textoHTML = await resposta.text();
+            
+            // Injeta o texto na tela
+            corpoTexto.innerHTML = textoHTML;
+            corpoTexto.scrollTop = 0; 
+            regrasJaCarregadas = true; // Marca como carregado
+
+        } catch (erro) {
+            console.error("Erro ao buscar as regras:", erro);
+            corpoTexto.innerHTML = '<div class="text-center text-red-500 py-10 font-bold">❌ Erro ao carregar o documento.<br><br>Verifique sua conexão ou tente novamente mais tarde.</div>';
+        }
+    }
+}
+
+function fecharRegras() {
+    const modalRegras = document.getElementById('modal-regras');
+    if (modalRegras) modalRegras.classList.add('hidden');
+}
+
+function alterarZoomRegras(direcao) {
+    tamanhoFonteRegras += (direcao * 2);
+    if (tamanhoFonteRegras < 10) tamanhoFonteRegras = 10; 
+    if (tamanhoFonteRegras > 28) tamanhoFonteRegras = 28; 
+    
+    const corpoTexto = document.getElementById('texto-regras-corpo');
+    if (corpoTexto) corpoTexto.style.fontSize = `${tamanhoFonteRegras}px`;
+}
+
 function tocarCampainhaAlegre() {
     // Inicia o motor de áudio nativo do navegador
     const AudioContext = window.AudioContext || window.webkitAudioContext;
