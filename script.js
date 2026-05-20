@@ -75,6 +75,8 @@ const iconFullscreen = document.getElementById('icon-fullscreen');
 
 let ultimoPremioCelebrado = null;
 
+let ultimaOrdemSorteio = 0;
+
 let janelaVideoLive = null;
 
 let isProcessandoCompra = false;
@@ -2666,7 +2668,7 @@ function displayLoadedCards(bolasCantadas) {
     }
     
     if (qtdBolasAtuais > 0 && !window.primeiraBolaDetectada) {
-        // Verifica se o painel ainda está oculto antes de mudar xxxyyy
+        // Verifica se o painel ainda está oculto antes de mudar 
         const painelAtual = document.getElementById('mobile-panels-container');
         const estaOculto = painelAtual && painelAtual.classList.contains('hidden');
         
@@ -3709,65 +3711,86 @@ async function fetchDataFromCollections() {
 
 // Função para renderizar os dados de "Melhores"
 function renderMelhores(melhoresData) {
-    estatisticasBody.innerHTML = ''; 
+    // =========================================================
+    // 🛡️ PROTEÇÃO ANTI-APAGÃO NO RANKING
+    // Verifica se o jogo está rodando usando a variável global
+    // =========================================================
+    const jogoEmAndamento = (typeof ultimaOrdemSorteio !== 'undefined' && ultimaOrdemSorteio > 0);
+
+    // 1. Filtro de Array Vazio
     if (!melhoresData || melhoresData.length === 0) {
+        if (jogoEmAndamento) {
+            console.warn("🛡️ [RANKING] Pacote vazio recebido durante o jogo. Ignorando para evitar apagão.");
+            return; // 🛑 Aborta a função AQUI. O HTML antigo continua intacto na tela!
+        }
+        // Se o jogo realmente não começou ou foi resetado:
         estatisticasBody.innerHTML = '<p class="text-center text-gray-500 mt-6 text-xs">Nenhuma cartela no topo.</p>';
         return;
     }
-    if (melhoresData[0].cartela === "null") {
+
+    // 2. Filtro de Cartela "null" (Outro formato de erro comum)
+    if (melhoresData[0] && melhoresData[0].cartela === "null") {
+        if (jogoEmAndamento) return; // Mesmo princípio de blindagem
+        
         estatisticasBody.innerHTML = '<p class="text-center text-gray-500 mt-6 text-xs">Nenhuma cartela no topo.</p>';
         return;
     }
+
+    // =========================================================
+    // ✅ DADOS VÁLIDOS RECEBIDOS: Agora sim limpamos a tela
+    // =========================================================
+    estatisticasBody.innerHTML = ''; 
+
     melhoresData.forEach(item => {
-        let posicaoWidth = '15px'; // 13Largura padrão se 'posicao' não for vazio
+        let posicaoWidth = '15px'; // Largura padrão se 'posicao' não for vazio
         let haGanhador = false;
+        
         // Verifica se 'posicao' é uma string vazia ("") ou nula.
         if (!item.posicao || item.posicao === "") {
             posicaoWidth = '4px'; 
         }
+        
         // 2. Constrói a string da classe
-        // Usa template literals (crase `) para injetar a variável   // 23 - 55
         const gridClasses = `grid-cols-[30px_${posicaoWidth}_1fr_100px]`;
         const row = document.createElement('div');
         row.className = `grid ${gridClasses} text-[8px] leading-none text-white rounded hover:bg-gray-800`;
+        
         // 1. Cartela
         const cartela = document.createElement('span');
         cartela.className = 'text-[9px] text-center font-bold text-yellow-600';
         cartela.textContent = item.cartela;
+        
         // 2. Posição
         const posicao = document.createElement('span');
         posicao.className = 'text-center';
         posicao.textContent = item.posicao;
-        if (posicaoWidth === '0px') {
+        if (posicaoWidth === '4px') { // Corrigi de '0px' para '4px' conforme sua variável acima
             posicao.classList.add('hidden');
         }
-        // 3. Números Faltantes (A chave é 'numeros_faltantes')
+        
+        // 3. Números Faltantes
         let winnerPremio = ''; 
         if (item.premio && item.premio !== null  && item.premio !== "null") {
            winnerPremio = item.premio;
            haGanhador = true; 
         }
 
-       const numerosFaltantes = document.createElement('span');    
-       // 1. Tenta pegar o valor (aceita tanto a chave antiga 'numeros_faltantes' quanto a nova 'numeros')
-        const rawNums = item.numeros_faltantes || item.numeros || ""; 
-        
-        let listaLimpa = [];
+       const numerosFaltantes = document.createElement('span');   
+       const rawNums = item.numeros_faltantes || item.numeros || ""; 
+       
+       let listaLimpa = [];
+       if (Array.isArray(rawNums)) {
+           listaLimpa = rawNums;
+       } else if (typeof rawNums === 'string') {
+           listaLimpa = rawNums.split(',').map(n => n.trim()).filter(n => n !== "");
+       }
 
-        if (Array.isArray(rawNums)) {
-            listaLimpa = rawNums;
-        } else if (typeof rawNums === 'string') {
-            listaLimpa = rawNums.split(',').map(n => n.trim()).filter(n => n !== "");
-        }
-
-        // 2. CORTE RIGOROSO: Pega apenas os primeiros 24 números
-        // O resto é ignorado completamente.
+        // CORTE RIGOROSO: Pega apenas os primeiros 24 números
         const primeiros24 = listaLimpa.slice(0, 24);
 
-        // 3. Formata e exibe
+        // Formata e exibe
         const numerosFormatados = primeiros24.map(n => n.toString().padStart(2, '0')).join(' . ');
         
-        // Se houver prêmio (winnerPremio), adiciona ao final
         numerosFaltantes.textContent = `${numerosFormatados} ${winnerPremio || ''}`;
         numerosFaltantes.className = 'text-[9px] text-green-600';  
 
@@ -4273,7 +4296,6 @@ async function renderMainContent(data) {
         // NOVO: Limpa a memória local de bolas já cantadas
         if (typeof bolasProcessadasLocal !== 'undefined') bolasProcessadasLocal.clear();
         ultimaBolaExibida = null;
-        
         // return; 
     } else if (rodadaState !== null) {
         lastRodadaState = rodadaState;
@@ -4304,28 +4326,39 @@ async function renderMainContent(data) {
     }
     
     const bolasCantadas = bolasCantadasRaw;
-    globalBolasCantadas = bolasCantadas; // Atualiza a global
+    
+    // =========================================================
+    // 🛡️ O NOVO FILTRO DE ORDEM (FIM DO PISCA-PISCA)
+    // =========================================================
+    const novaOrdem = bolasCantadas.length;
+
+    // 1. REGRA DO RESET: A ordem caiu drasticamente (Sorteio reiniciado)
+    if (novaOrdem <= 1) {
+        ultimaOrdemSorteio = 0; 
+    } 
+    // 2. O BLOQUEIO FANTASMA: Se a ordem for menor ou igual à atual, descarta pacote!
+    else if (novaOrdem > 0 && novaOrdem <= ultimaOrdemSorteio) {
+        console.warn(`🚫 [REDE] Pacote atrasado barrado! Ordem recebida: ${novaOrdem} | Atual: ${ultimaOrdemSorteio}`);
+        return; // 🛑 ABORTA AQUI! O código para, a tela não pisca e a bola velha não volta.
+    }
+
+    // 3. Tudo Validado! Atualiza as globais apenas se o pacote for novo
+    ultimaOrdemSorteio = novaOrdem;
+    globalBolasCantadas = bolasCantadas; 
+
+    // =========================================================
 
     const proximaBola = (bolasData && bolasData.length > 0 && bolasData[0].proxima_bola) ? bolasData[0].proxima_bola : "--";
     
-    // --- LÓGICA DA MATRIZ (SET) AQUI ---
-    // Pega a última bola da lista do servidor
+    // --- LÓGICA DE MUDANÇA DA BOLA (Simplificada) ---
     const ultimaBolaDaLista = bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : null;
-    
-    // Determina se a bola realmente mudou usando TRÊS critérios:
-    // 1. É diferente da última registrada globalmente?
-    // 2. Não é nula?
-    // 3. (NOVO) Ainda não está na nossa matriz local de processados? (Proteção Extra)
     let bolaMudou = false;
 
     if (ultimaBolaDaLista !== null && ultimaBolaDaLista !== undefined) {
-        // Verifica se já processamos essa bola nesta rodada
-        const jaProcessada = (typeof bolasProcessadasLocal !== 'undefined') ? bolasProcessadasLocal.has(ultimaBolaDaLista) : false;
-
-        if (ultimaBolaDaLista !== ultimaBolaCantada && !jaProcessada) {
+        // Como o código sobreviveu ao 'return', é GARANTIA que o pacote é novo.
+        if (ultimaBolaDaLista !== ultimaBolaCantada) {
             bolaMudou = true;
-            // Adiciona na matriz para não processar de novo se o pacote repetir
-            if (typeof bolasProcessadasLocal !== 'undefined') bolasProcessadasLocal.add(ultimaBolaDaLista);
+            ultimaBolaCantada = ultimaBolaDaLista; // Grava a bola atual para não repetir o áudio/animação
         }
     }
 
