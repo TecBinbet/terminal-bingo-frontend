@@ -14,7 +14,11 @@ import os
 
 mp_sdk = None
 # Busca o token de forma segura no arquivo .env
-MERCADO_PAGO_ACCESS_TOKEN = os.getenv("MERCADO_PAGO_ACCESS_TOKEN")
+#>> MERCADO_PAGO_ACCESS_TOKEN = os.getenv("MERCADO_PAGO_ACCESS_TOKEN")
+
+########################
+# O "CHAVE_FALSA..." só entra em ação se não existir nada no .env
+MERCADO_PAGO_ACCESS_TOKEN = os.getenv("MERCADO_PAGO_ACCESS_TOKEN", "APP_USR-CHAVE-FALSA-SO-PARA-TESTAR")
 
 # Trava de segurança: avisa no terminal se você esquecer de colocar a chave no .env
 if not MERCADO_PAGO_ACCESS_TOKEN:
@@ -4372,7 +4376,7 @@ def api_login_cliente():
                     'id': str(cli['id_cliente']),
                     'id_evento_ativo': id_evento_ativo,
                     'receber_pix': receberemos_pix,
-                    'texto_saque': texto_saque,              # 👉 Envia para o Front
+                    'texto_saque': texto_saque,                                # 👉 Envia para o Front
                     'tem_saque_pendente': tem_saque_pendente # 👉 Envia para o Front
                 })
             else:
@@ -6302,6 +6306,27 @@ def webhook_mercado_pago():
 
     except Exception as e:
         print(f"❌ Erro no Webhook MP: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pagamento/status_pix/<transacao_id>', methods=['GET'])
+def verificar_status_pix(transacao_id):
+    if 'id_cliente' not in session:
+        return jsonify({'error': 'Não autorizado'}), 401
+        
+    try:
+        sales_db = get_sales_db_connection()
+        # Busca rápido apenas os campos necessários, validando se é do próprio cliente (Segurança)
+        transacao = sales_db.transacoes_pix.find_one(
+            {'transacao_id': transacao_id, 'cliente_id': session['id_cliente']},
+            {'_id': 0, 'status': 1}
+        )
+        
+        if not transacao:
+            return jsonify({'error': 'Transação não encontrada'}), 404
+            
+        return jsonify({'sucesso': True, 'status': transacao.get('status')}), 200
+        
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 

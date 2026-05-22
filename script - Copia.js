@@ -75,8 +75,6 @@ const iconFullscreen = document.getElementById('icon-fullscreen');
 
 let ultimoPremioCelebrado = null;
 
-let ultimaOrdemSorteio = 0;
-
 let janelaVideoLive = null;
 
 let isProcessandoCompra = false;
@@ -2668,7 +2666,7 @@ function displayLoadedCards(bolasCantadas) {
     }
     
     if (qtdBolasAtuais > 0 && !window.primeiraBolaDetectada) {
-        // Verifica se o painel ainda está oculto antes de mudar 
+        // Verifica se o painel ainda está oculto antes de mudar xxxyyy
         const painelAtual = document.getElementById('mobile-panels-container');
         const estaOculto = painelAtual && painelAtual.classList.contains('hidden');
         
@@ -3711,86 +3709,65 @@ async function fetchDataFromCollections() {
 
 // Função para renderizar os dados de "Melhores"
 function renderMelhores(melhoresData) {
-    // =========================================================
-    // 🛡️ PROTEÇÃO ANTI-APAGÃO NO RANKING
-    // Verifica se o jogo está rodando usando a variável global
-    // =========================================================
-    const jogoEmAndamento = (typeof ultimaOrdemSorteio !== 'undefined' && ultimaOrdemSorteio > 0);
-
-    // 1. Filtro de Array Vazio
-    if (!melhoresData || melhoresData.length === 0) {
-        if (jogoEmAndamento) {
-            console.warn("🛡️ [RANKING] Pacote vazio recebido durante o jogo. Ignorando para evitar apagão.");
-            return; // 🛑 Aborta a função AQUI. O HTML antigo continua intacto na tela!
-        }
-        // Se o jogo realmente não começou ou foi resetado:
-        estatisticasBody.innerHTML = '<p class="text-center text-gray-500 mt-6 text-xs">Nenhuma cartela no topo.</p>';
-        return;
-    }
-
-    // 2. Filtro de Cartela "null" (Outro formato de erro comum)
-    if (melhoresData[0] && melhoresData[0].cartela === "null") {
-        if (jogoEmAndamento) return; // Mesmo princípio de blindagem
-        
-        estatisticasBody.innerHTML = '<p class="text-center text-gray-500 mt-6 text-xs">Nenhuma cartela no topo.</p>';
-        return;
-    }
-
-    // =========================================================
-    // ✅ DADOS VÁLIDOS RECEBIDOS: Agora sim limpamos a tela
-    // =========================================================
     estatisticasBody.innerHTML = ''; 
-
+    if (!melhoresData || melhoresData.length === 0) {
+        estatisticasBody.innerHTML = '<p class="text-center text-gray-500 mt-6 text-xs">Nenhuma cartela no topo.</p>';
+        return;
+    }
+    if (melhoresData[0].cartela === "null") {
+        estatisticasBody.innerHTML = '<p class="text-center text-gray-500 mt-6 text-xs">Nenhuma cartela no topo.</p>';
+        return;
+    }
     melhoresData.forEach(item => {
-        let posicaoWidth = '15px'; // Largura padrão se 'posicao' não for vazio
+        let posicaoWidth = '15px'; // 13Largura padrão se 'posicao' não for vazio
         let haGanhador = false;
-        
         // Verifica se 'posicao' é uma string vazia ("") ou nula.
         if (!item.posicao || item.posicao === "") {
             posicaoWidth = '4px'; 
         }
-        
         // 2. Constrói a string da classe
+        // Usa template literals (crase `) para injetar a variável   // 23 - 55
         const gridClasses = `grid-cols-[30px_${posicaoWidth}_1fr_100px]`;
         const row = document.createElement('div');
         row.className = `grid ${gridClasses} text-[8px] leading-none text-white rounded hover:bg-gray-800`;
-        
         // 1. Cartela
         const cartela = document.createElement('span');
         cartela.className = 'text-[9px] text-center font-bold text-yellow-600';
         cartela.textContent = item.cartela;
-        
         // 2. Posição
         const posicao = document.createElement('span');
         posicao.className = 'text-center';
         posicao.textContent = item.posicao;
-        if (posicaoWidth === '4px') { // Corrigi de '0px' para '4px' conforme sua variável acima
+        if (posicaoWidth === '0px') {
             posicao.classList.add('hidden');
         }
-        
-        // 3. Números Faltantes
+        // 3. Números Faltantes (A chave é 'numeros_faltantes')
         let winnerPremio = ''; 
         if (item.premio && item.premio !== null  && item.premio !== "null") {
            winnerPremio = item.premio;
            haGanhador = true; 
         }
 
-       const numerosFaltantes = document.createElement('span');   
-       const rawNums = item.numeros_faltantes || item.numeros || ""; 
-       
-       let listaLimpa = [];
-       if (Array.isArray(rawNums)) {
-           listaLimpa = rawNums;
-       } else if (typeof rawNums === 'string') {
-           listaLimpa = rawNums.split(',').map(n => n.trim()).filter(n => n !== "");
-       }
+       const numerosFaltantes = document.createElement('span');    
+       // 1. Tenta pegar o valor (aceita tanto a chave antiga 'numeros_faltantes' quanto a nova 'numeros')
+        const rawNums = item.numeros_faltantes || item.numeros || ""; 
+        
+        let listaLimpa = [];
 
-        // CORTE RIGOROSO: Pega apenas os primeiros 24 números
+        if (Array.isArray(rawNums)) {
+            listaLimpa = rawNums;
+        } else if (typeof rawNums === 'string') {
+            listaLimpa = rawNums.split(',').map(n => n.trim()).filter(n => n !== "");
+        }
+
+        // 2. CORTE RIGOROSO: Pega apenas os primeiros 24 números
+        // O resto é ignorado completamente.
         const primeiros24 = listaLimpa.slice(0, 24);
 
-        // Formata e exibe
+        // 3. Formata e exibe
         const numerosFormatados = primeiros24.map(n => n.toString().padStart(2, '0')).join(' . ');
         
+        // Se houver prêmio (winnerPremio), adiciona ao final
         numerosFaltantes.textContent = `${numerosFormatados} ${winnerPremio || ''}`;
         numerosFaltantes.className = 'text-[9px] text-green-600';  
 
@@ -4296,6 +4273,7 @@ async function renderMainContent(data) {
         // NOVO: Limpa a memória local de bolas já cantadas
         if (typeof bolasProcessadasLocal !== 'undefined') bolasProcessadasLocal.clear();
         ultimaBolaExibida = null;
+        
         // return; 
     } else if (rodadaState !== null) {
         lastRodadaState = rodadaState;
@@ -4326,39 +4304,28 @@ async function renderMainContent(data) {
     }
     
     const bolasCantadas = bolasCantadasRaw;
-    
-    // =========================================================
-    // 🛡️ O NOVO FILTRO DE ORDEM (FIM DO PISCA-PISCA)
-    // =========================================================
-    const novaOrdem = bolasCantadas.length;
-
-    // 1. REGRA DO RESET: A ordem caiu drasticamente (Sorteio reiniciado)
-    if (novaOrdem <= 1) {
-        ultimaOrdemSorteio = 0; 
-    } 
-    // 2. O BLOQUEIO FANTASMA: Se a ordem for menor ou igual à atual, descarta pacote!
-    else if (novaOrdem > 0 && novaOrdem <= ultimaOrdemSorteio) {
-        console.warn(`🚫 [REDE] Pacote atrasado barrado! Ordem recebida: ${novaOrdem} | Atual: ${ultimaOrdemSorteio}`);
-        return; // 🛑 ABORTA AQUI! O código para, a tela não pisca e a bola velha não volta.
-    }
-
-    // 3. Tudo Validado! Atualiza as globais apenas se o pacote for novo
-    ultimaOrdemSorteio = novaOrdem;
-    globalBolasCantadas = bolasCantadas; 
-
-    // =========================================================
+    globalBolasCantadas = bolasCantadas; // Atualiza a global
 
     const proximaBola = (bolasData && bolasData.length > 0 && bolasData[0].proxima_bola) ? bolasData[0].proxima_bola : "--";
     
-    // --- LÓGICA DE MUDANÇA DA BOLA (Simplificada) ---
+    // --- LÓGICA DA MATRIZ (SET) AQUI ---
+    // Pega a última bola da lista do servidor
     const ultimaBolaDaLista = bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : null;
+    
+    // Determina se a bola realmente mudou usando TRÊS critérios:
+    // 1. É diferente da última registrada globalmente?
+    // 2. Não é nula?
+    // 3. (NOVO) Ainda não está na nossa matriz local de processados? (Proteção Extra)
     let bolaMudou = false;
 
     if (ultimaBolaDaLista !== null && ultimaBolaDaLista !== undefined) {
-        // Como o código sobreviveu ao 'return', é GARANTIA que o pacote é novo.
-        if (ultimaBolaDaLista !== ultimaBolaCantada) {
+        // Verifica se já processamos essa bola nesta rodada
+        const jaProcessada = (typeof bolasProcessadasLocal !== 'undefined') ? bolasProcessadasLocal.has(ultimaBolaDaLista) : false;
+
+        if (ultimaBolaDaLista !== ultimaBolaCantada && !jaProcessada) {
             bolaMudou = true;
-            ultimaBolaCantada = ultimaBolaDaLista; // Grava a bola atual para não repetir o áudio/animação
+            // Adiciona na matriz para não processar de novo se o pacote repetir
+            if (typeof bolasProcessadasLocal !== 'undefined') bolasProcessadasLocal.add(ultimaBolaDaLista);
         }
     }
 
@@ -8468,16 +8435,11 @@ function carregarVideoSincronizado(linkDoYoutube) {
 // 💸 MÓDULO DE PAGAMENTOS PIX
 // ============================================================================
 
-// Variável global para controlar o nosso "radar" de pagamento
-let radarPixInterval = null;
-
 // 1. Abre a tela inicial do PIX
 function abrirModalPix() {
-    fecharModal('modal-carteira'); 
+    fecharModal('modal-carteira'); // Fecha a carteira antiga para não encavalar
     
-    // Se o cara abrir de novo, desliga qualquer radar antigo rodando no fundo
-    if (radarPixInterval) clearInterval(radarPixInterval);
-    
+    // Reseta o visual para o Passo 1
     document.getElementById('pix-step-1').classList.remove('hidden');
     document.getElementById('pix-step-2').classList.add('hidden');
     document.getElementById('pix-step-2').classList.remove('flex');
@@ -8487,7 +8449,7 @@ function abrirModalPix() {
     if (modal) modal.classList.remove('hidden');
 }
 
-// 2. Chama a API Python REAL para gerar a transação
+// 2. Chama a API Python para gerar a transação
 async function gerarPagamentoPix() {
     const valorInput = document.getElementById('valor-deposito-pix').value;
     const valor = parseFloat(valorInput);
@@ -8500,31 +8462,33 @@ async function gerarPagamentoPix() {
         }
         return;
     }
-    
+   // xyx apagar termo "_simulador"  / no html adcionar "hidden" no final da linha "<button id="btn-simular-pix" onclick="" cl
     try {
-        // 👉 ALTERADO: Agora bate na rota REAL do Mercado Pago
-        const response = await fetch('/api/pagamento/gerar_pix', {
+        const response = await fetch('/api/pagamento/gerar_pix_simulador', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ valor: valor }) 
+            // Não precisamos mandar o ID, o Python já pega da Sessão!
         });
 
         const data = await response.json();
 
         if (data.sucesso) {
+            // Preenche o QR Code e o Copia e Cola na tela
             document.getElementById('pix-qr-code').src = "data:image/png;base64," + data.qr_code_base64;
             document.getElementById('pix-copia-cola').value = data.copia_e_cola;
             
+            // "Ensina" o botão de simular qual é a transação que ele vai pagar
+            const btnSimular = document.getElementById('btn-simular-pix');
+            btnSimular.setAttribute('onclick', `simularPagamentoConfirmado('${data.transacao_id}')`);
+
             // Avança para o Passo 2
             document.getElementById('pix-step-1').classList.add('hidden');
             document.getElementById('pix-step-2').classList.remove('hidden');
             document.getElementById('pix-step-2').classList.add('flex');
-            
-            // 👉 LIGA O RADAR: Começa a checar se o webhook já alterou o status no banco!
-            monitorarPagamentoPix(data.transacao_id);
-
         } else {
             if (typeof showCustomAlert === 'function') {  
+                // CORREÇÃO 1: Voltei com o data.error para mostrar o motivo da falha
                 showCustomAlert("Erro ao gerar PIX: " + (data.error || "Desconhecido"), "Erro na Geração", "🚫");    
             } else {            
                 alert("Erro ao gerar PIX: " + (data.error || "Desconhecido"));
@@ -8532,6 +8496,7 @@ async function gerarPagamentoPix() {
         }
     } catch (err) {
         console.error(err);
+        // CORREÇÃO 2: Apliquei a verificação de segurança e removi o alert() vazio
         if (typeof showCustomAlert === 'function') {
             showCustomAlert("Falha de conexão com o servidor de pagamentos.", "Falha na Conexão", "📶");
         } else {
@@ -8539,44 +8504,6 @@ async function gerarPagamentoPix() {
         }
     }
 }
-
-// 👉 NOVO MOTOR: Fica checando o status no banco até o cliente pagar
-function monitorarPagamentoPix(transacaoId) {
-    if (radarPixInterval) clearInterval(radarPixInterval);
-    
-    // A cada 3 segundos ele faz uma pergunta leve e silenciosa ao servidor
-    radarPixInterval = setInterval(async () => {
-        try {
-            const response = await fetch(`/api/pagamento/status_pix/${transacaoId}`);
-            const data = await response.json();
-
-            // Se o Webhook do Mercado Pago atualizou o banco para 'PAGO', nós agimos!
-            if (data.sucesso && data.status === 'PAGO') {
-                
-                clearInterval(radarPixInterval); // Desliga o radar
-                fecharModal('modal-pagamento-pix'); // Esconde o QR Code
-                
-                // Comemora com o cliente
-                if (typeof showCustomAlert === 'function') {
-                    showCustomAlert("Pagamento Confirmado! Seu saldo já foi atualizado.", "PIX Aprovado", "🚀");
-                } else {
-                    alert("Pagamento Confirmado! Saldo Atualizado.");
-                }
-                
-                // Atualiza a tela (moedinhas e carteira) na mesma hora!
-                if (typeof atualizarDadosCliente === 'function') {
-                    atualizarDadosCliente();
-                } else {
-                    setTimeout(() => window.location.reload(), 1500);
-                }
-            }
-        } catch (error) {
-            console.error("Erro no radar do PIX:", error);
-            // Não fazemos nada, apenas deixamos tentar de novo no próximo ciclo de 3s
-        }
-    }, 3000); 
-}
-
 
 // 3. Botão simples de Copiar
 function copiarPix() {
@@ -8993,60 +8920,6 @@ function carregarVideoAntMedia(url) {
     
     // Aqui entrará o SDK da Ant Media (webrtc_adaptor.js) quando você contratar o serviço.
     // Por enquanto, o sistema apenas reconhece a mudança sem quebrar.
-}
-
-// =========================================================
-// ⚖️ SISTEMA DE LEGISLAÇÃO: BUSCA DINÂMICA E ZOOM
-// =========================================================
-let tamanhoFonteRegras = 14; 
-let regrasJaCarregadas = false; // Evita baixar o arquivo várias vezes se o cliente abrir e fechar
-
-async function abrirRegras() {
-    const modalRegras = document.getElementById('modal-regras');
-    const corpoTexto = document.getElementById('texto-regras-corpo');
-
-    if (modalRegras) {
-        modalRegras.classList.remove('hidden');
-        
-        // Se já baixou antes, não gasta internet de novo
-        if (regrasJaCarregadas) return;
-
-        // Mostra o loading visual
-        corpoTexto.innerHTML = '<div class="text-center text-gray-500 py-10 animate-pulse font-bold">⏳ Carregando documento legal...</div>';
-
-        try {
-            // Vai no servidor buscar o arquivo (Pode ser /regras.html ou /termos.txt)
-            // O cache: 'no-store' garante que se você atualizar o arquivo no servidor, o cliente pega o novo
-            const resposta = await fetch('/regras.html', { cache: 'no-store' });
-            
-            if (!resposta.ok) throw new Error('Arquivo não encontrado no servidor.');
-
-            const textoHTML = await resposta.text();
-            
-            // Injeta o texto na tela
-            corpoTexto.innerHTML = textoHTML;
-            corpoTexto.scrollTop = 0; 
-            regrasJaCarregadas = true; // Marca como carregado
-
-        } catch (erro) {
-            console.error("Erro ao buscar as regras:", erro);
-            corpoTexto.innerHTML = '<div class="text-center text-red-500 py-10 font-bold">❌ Erro ao carregar o documento.<br><br>Verifique sua conexão ou tente novamente mais tarde.</div>';
-        }
-    }
-}
-
-function fecharRegras() {
-    const modalRegras = document.getElementById('modal-regras');
-    if (modalRegras) modalRegras.classList.add('hidden');
-}
-
-function alterarZoomRegras(direcao) {
-    tamanhoFonteRegras += (direcao * 2);
-    if (tamanhoFonteRegras < 10) tamanhoFonteRegras = 10; 
-    if (tamanhoFonteRegras > 28) tamanhoFonteRegras = 28; 
-    
-    const corpoTexto = document.getElementById('texto-regras-corpo');
-    if (corpoTexto) corpoTexto.style.fontSize = `${tamanhoFonteRegras}px`;
 }
 
 function tocarCampainhaAlegre() {

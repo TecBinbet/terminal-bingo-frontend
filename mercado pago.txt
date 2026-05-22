@@ -1,0 +1,26 @@
+
+[RESTORE POINT: INTEGRAÇÃO PIX MERCADO PAGO - TERMINAL DO CLIENTE]
+Olá! Quero continuar a implementação do PIX Automático a partir do ponto em que paramos. Aqui está o contexto atual do sistema:
+
+1. ARQUITETURA E STATUS:
+- O módulo de pagamentos no "Terminal do Cliente" foi 100% migrado do modo simulação para o modo real usando a SDK do Mercado Pago no Flask (Python).
+- O banco de dados (MongoDB) já possui a coleção 'transacoes_pix' configurada para registrar transações PENDENTES e PAGAS.
+- A mágica de crédito ('registrar_transacao_cliente') está blindada e atômica.
+
+2. BACKEND (server.py) PRONTO:
+- Rota POST '/api/pagamento/gerar_pix': Comunica com MP, gera ID, extrai QR Code/Copia-e-Cola e salva como PENDENTE.
+- Rota GET '/api/pagamento/status_pix/<id>': Endpoint rápido para o frontend consultar o status (Radar).
+- Rota POST '/api/webhook/pix_confirmado': Ouve o MP, valida o status 'approved', altera no banco para PAGO e credita o saldo do cliente. O SDK do MP ('mp_sdk') está configurado com fail-safe aguardando a chave no '.env'.
+
+3. FRONTEND (script.js) PRONTO:
+- O botão de simular foi ocultado com a classe 'hidden'.
+- A função 'gerarPagamentoPix()' agora chama a rota real.
+- Criamos a 'monitorarPagamentoPix()' que funciona como um "Radar" (polling de 3 em 3 segundos) escutando o backend. Quando o status vira 'PAGO', ele fecha a modal, exibe o alerta verde e atualiza o saldo na tela automaticamente.
+
+4. NOSSO PRÓXIMO PASSO:
+Já tenho o Access Token de Produção do Mercado Pago e meu servidor já possui uma URL pública. Vamos realizar a inserção da chave no arquivo .env, configurar o Webhook no painel do MP e fazer a primeira transação real de teste de R$ 1,00. Pode me orientar nos próximos passos?
+
+5. Chave de Teste
+Para testar a visualização do botão de "compra de crédito" usei uma chave false, deve ser apagada. 
+# O "CHAVE_FALSA..." só entra em ação se não existir nada no .env
+-MERCADO_PAGO_ACCESS_TOKEN = os.getenv("MERCADO_PAGO_ACCESS_TOKEN", "APP_USR-CHAVE-FALSA-SO-PARA-TESTAR")
