@@ -3488,6 +3488,7 @@ function displayConferencePanel(confereData, bolasCantadas) {
         } else {
             // Layout de Bingo Normal
             donoDoModal = 'BINGO';
+            console.log(`[SISTEMA-Confereencia] ⚡o cartão:  ${numeroDoCartao}`);
  
             // ⚡ ATIVAR DISJUNTORES: Captura a posição da linha confirmada
             if (data.posicaolinha) {
@@ -4331,6 +4332,7 @@ async function renderMainContent(data) {
     // 🛡️ O NOVO FILTRO DE ORDEM (FIM DO PISCA-PISCA)
     // =========================================================
     const novaOrdem = bolasCantadas.length;
+    let deveProcessarNovaBola = true;
 
     // 1. REGRA DO RESET: A ordem caiu drasticamente (Sorteio reiniciado)
     if (novaOrdem <= 1) {
@@ -4339,28 +4341,28 @@ async function renderMainContent(data) {
     // 2. O BLOQUEIO FANTASMA: Se a ordem for menor ou igual à atual, descarta pacote!
     else if (novaOrdem > 0 && novaOrdem <= ultimaOrdemSorteio) {
         console.warn(`🚫 [REDE] Pacote atrasado barrado! Ordem recebida: ${novaOrdem} | Atual: ${ultimaOrdemSorteio}`);
-        return; // 🛑 ABORTA AQUI! O código para, a tela não pisca e a bola velha não volta.
+        deveProcessarNovaBola = false;
     }
 
     // 3. Tudo Validado! Atualiza as globais apenas se o pacote for novo
-    ultimaOrdemSorteio = novaOrdem;
-    globalBolasCantadas = bolasCantadas; 
-
-    // =========================================================
-
-    const proximaBola = (bolasData && bolasData.length > 0 && bolasData[0].proxima_bola) ? bolasData[0].proxima_bola : "--";
-    
-    // --- LÓGICA DE MUDANÇA DA BOLA (Simplificada) ---
-    const ultimaBolaDaLista = bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : null;
     let bolaMudou = false;
+    if (deveProcessarNovaBola) {
+       ultimaOrdemSorteio = novaOrdem;
+       globalBolasCantadas = bolasCantadas; 
 
-    if (ultimaBolaDaLista !== null && ultimaBolaDaLista !== undefined) {
-        // Como o código sobreviveu ao 'return', é GARANTIA que o pacote é novo.
-        if (ultimaBolaDaLista !== ultimaBolaCantada) {
-            bolaMudou = true;
-            ultimaBolaCantada = ultimaBolaDaLista; // Grava a bola atual para não repetir o áudio/animação
-        }
-    }
+       const proximaBola = (bolasData && bolasData.length > 0 && bolasData[0].proxima_bola) ? bolasData[0].proxima_bola : "--";
+    
+       // --- LÓGICA DE MUDANÇA DA BOLA (Simplificada) ---
+       const ultimaBolaDaLista = bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : null;
+
+       if (ultimaBolaDaLista !== null && ultimaBolaDaLista !== undefined) {
+           // Como o código sobreviveu ao 'return', é GARANTIA que o pacote é novo.
+           if (ultimaBolaDaLista !== ultimaBolaCantada) {
+               bolaMudou = true;
+               ultimaBolaCantada = ultimaBolaDaLista; // Grava a bola atual para não repetir o áudio/animação
+           }
+       }
+    }  // fecha deveProcessarNovaBola
 
     if (tipoDoSorteio !== 'manual') updateDigitalBola(proximaBola);
 
@@ -4388,12 +4390,10 @@ async function renderMainContent(data) {
     const linhasAtivasDaAPI = dadosBuscando.buscando_a_linha || '';
 
     // Detecta mudanças
- 
-//console.error("premioBuscadoDaAPI                   :",premioBuscadoDaAPI);
-//console.error( "buscando_o_premio                      :",buscando_o_premio.replace(/\s+/g, '').trim()); 
-
-//console.error("linhasAtivasDaAPI                           :", linhasAtivasDaAPI );
-//console.error("buscando_a_linha                           :",buscando_a_linha); 
+    //console.error("premioBuscadoDaAPI                   :",premioBuscadoDaAPI);
+    //console.error( "buscando_o_premio                      :",buscando_o_premio.replace(/\s+/g, '').trim()); 
+    //console.error("linhasAtivasDaAPI                           :", linhasAtivasDaAPI );
+    //console.error("buscando_a_linha                           :",buscando_a_linha); 
 
     const premioMudou = (premioBuscadoDaAPI !== buscando_o_premio.replace(/\s+/g, '').trim() || linhasAtivasDaAPI !== buscando_a_linha);
 
