@@ -4346,11 +4346,13 @@ async function renderMainContent(data) {
 
     // 3. Tudo Validado! Atualiza as globais apenas se o pacote for novo
     let bolaMudou = false;
+    let proximaBola = "--";
+
     if (deveProcessarNovaBola) {
        ultimaOrdemSorteio = novaOrdem;
        globalBolasCantadas = bolasCantadas; 
 
-       const proximaBola = (bolasData && bolasData.length > 0 && bolasData[0].proxima_bola) ? bolasData[0].proxima_bola : "--";
+       proximaBola = (bolasData && bolasData.length > 0 && bolasData[0].proxima_bola) ? bolasData[0].proxima_bola : "--";
     
        // --- LÓGICA DE MUDANÇA DA BOLA (Simplificada) ---
        const ultimaBolaDaLista = bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : null;
@@ -4360,8 +4362,15 @@ async function renderMainContent(data) {
            if (ultimaBolaDaLista !== ultimaBolaCantada) {
                bolaMudou = true;
                ultimaBolaCantada = ultimaBolaDaLista; // Grava a bola atual para não repetir o áudio/animação
+               window.proximaBolaAtual = ultimaBolaCantada;
            }
        }
+    } else {
+        // SE O PACOTE É ANTIGO (deveProcessarNovaBola === false):
+        // Mantemos a proximaBola como o valor que ela já tinha ou um estado seguro.
+        // Se você tiver uma variável global 'proximaBolaAtual', use-a aqui.
+        // Caso contrário, apenas não fazemos nada e ela mantém o último valor validado.
+        proximaBola = (typeof window.proximaBolaAtual !== 'undefined') ? window.proximaBolaAtual : "--";
     }  // fecha deveProcessarNovaBola
 
     if (tipoDoSorteio !== 'manual') updateDigitalBola(proximaBola);
