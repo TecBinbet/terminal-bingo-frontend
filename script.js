@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.8";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.9";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -4347,6 +4347,7 @@ async function renderMainContent(data) {
     // 3. Tudo Validado! Atualiza as globais apenas se o pacote for novo
     let bolaMudou = false;
     let proximaBola = "--";
+    let ultimaBolaDaLista = "--";
 
     if (deveProcessarNovaBola) {
        ultimaOrdemSorteio = novaOrdem;
@@ -4355,7 +4356,7 @@ async function renderMainContent(data) {
        proximaBola = (bolasData && bolasData.length > 0 && bolasData[0].proxima_bola) ? bolasData[0].proxima_bola : "--";
     
        // --- LÓGICA DE MUDANÇA DA BOLA (Simplificada) ---
-       const ultimaBolaDaLista = bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : null;
+       ultimaBolaDaLista = bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : null;
 
        if (ultimaBolaDaLista !== null && ultimaBolaDaLista !== undefined) {
            // Como o código sobreviveu ao 'return', é GARANTIA que o pacote é novo.
