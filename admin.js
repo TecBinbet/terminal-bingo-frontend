@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "1.9";
+const VERSAO_ATUAL = "2.0";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -2489,11 +2489,8 @@ function gerenciarEstadoBotoes(estadoRaw) {
     }
 }
 
-/**
- * Força a paralisar/limpar o aviso de "Calculando Ranking"
- */
 function paralisarAvisoCalculando() {
-    const c = document.getElementById('id-do-seu-container-de-ranking'); // Ajuste o ID conforme seu HTML
+    const c = document.getElementById('ranking-lista'); 
     if (c) {
         c.innerHTML = `
             <div class="flex flex-col items-center justify-center py-10 opacity-50">
