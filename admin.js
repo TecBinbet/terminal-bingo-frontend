@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "1.5";
+const VERSAO_ATUAL = "1.9";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -997,6 +997,21 @@ async function carregarDadosIniciaisSilencioso() {
     }
 }
 
+
+// A cada 3 segundos, verifica se o ranking parou de processar
+setInterval(() => {
+    const agora = Date.now();
+    // Se não processa ranking há mais de 15 segundos (mas o jogo deveria estar rodando)
+    if (window.ultimaExecucaoRanking && (agora - window.ultimaExecucaoRanking > 15000)) {
+        console.error("🚨 [WATCHDOG] Ranking travado! Forçando reprocessamento...");
+        // Força uma nova tentativa de processamento se você tiver os dados em cache
+        if (typeof forcarReprocessamento === 'function') {
+            forcarReprocessamento();
+        }
+        window.ultimaExecucaoRanking = Date.now(); // Reseta para não disparar em loop
+    }
+}, 3000);
+
 // =========================================================
 // === PROCESSADOR HÍBRIDO (75/90) COM RANKING E GANHADORES ===
 // =========================================================
@@ -1036,23 +1051,29 @@ function processarMensagemWS(event) {
                     // O código MORRE aqui. A tela do ranking continua congelada no Top 10 anterior.
                 } 
                 else {
-                    // 🟢 CENÁRIO NORMAL: Veio o ranking atualizado OU é o início do jogo (0 bolas)
-                    let tipoPremioBuscado = "BINGO";
-                    if (payload.buscandoMesaData && payload.buscandoMesaData[0]) {
-                        tipoPremioBuscado = payload.buscandoMesaData[0].buscando_o_premio;
-                    }
-                    
-                    // CHAMA A FUNÇÃO QUE DESENHA O RANKING NA TELA x1
-                    if (typeof renderRanking === 'function') {
-                        renderRanking(payload.melhoresData, tipoPremioBuscado);
-                    }
+                    // 🚀 DESACOPLAMENTO: Usamos setTimeout para não travar o WS
+                   setTimeout(() => {
+                       try {
+                           let tipoPremioBuscado = "BINGO";
+                           if (payload.buscandoMesaData && payload.buscandoMesaData[0]) {
+                               tipoPremioBuscado = payload.buscandoMesaData[0].buscando_o_premio;
+                           }
+                
+                           if (typeof renderRanking === 'function') {
+                              renderRanking(payload.melhoresData, tipoPremioBuscado);
+                           }
 
-                    // --- DETECÇÃO DE GANHADORES (PARA PAUSAR O ROBÔ/LOCUTOR) ---
-                    verificarVitoriaPeloRanking(payload.melhoresData);
-             
-                    // aquiy finalizar spinner (bola)
-                    esconderSpinner(); 
-                }
+                           verificarVitoriaPeloRanking(payload.melhoresData);
+                
+                           // Marca o horário da última execução bem-sucedida
+                           window.ultimaExecucaoRanking = Date.now(); 
+                
+                           esconderSpinner();
+                       } catch (err) {
+                           console.error("❌ Erro crítico no renderRanking:", err);
+                       }
+                   }, 0);
+                }  
             }
 
             // --- PARTE C: STATUS DO PRÊMIO (TEXTO "BUSCANDO LINHA...") ---
@@ -1283,7 +1304,7 @@ function fecharCustomModal() {
 function toggleAdminMenu() {
     const menu = document.getElementById('admin-side-menu');
     const overlay = document.getElementById('admin-menu-overlay');
-    
+    paralisarAvisoCalculando();
     if (!menu || !overlay) return;
 
     const isClosed = menu.classList.contains('-translate-x-full');
@@ -1318,6 +1339,8 @@ async function abrirModalEventos() {
         customAlert("⚠️ ATENÇÃO: Jogo em andamento.\nRESET o jogo antes de trocar de evento.");
         toggleAdminMenu(); return;
     }
+    
+    paralisarAvisoCalculando();
 
     const modal = document.getElementById('modal-eventos');
     const container = document.getElementById('lista-eventos-container');
@@ -2466,6 +2489,23 @@ function gerenciarEstadoBotoes(estadoRaw) {
     }
 }
 
+/**
+ * Força a paralisar/limpar o aviso de "Calculando Ranking"
+ */
+function paralisarAvisoCalculando() {
+    const c = document.getElementById('id-do-seu-container-de-ranking'); // Ajuste o ID conforme seu HTML
+    if (c) {
+        c.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-10 opacity-50">
+                <span class="text-gray-500 text-sm font-bold tracking-widest uppercase">
+                    Aguardando início da rodada...
+                </span>
+            </div>
+        `;
+    }
+    console.log("🛑 [SISTEMA] Aviso de cálculo paralisado pelo intervalo.");
+}
+
 // --- FUNÇÃO ROTEADORA (DECIDE QUAL VISUAL USAR) ---
 function renderRanking(lista, tipo) {
     if (MAX_BOLAS === 75) {
@@ -3102,9 +3142,10 @@ async function mudarPremio(tipo) {
     }
 }
 
-
 // --- ATUALIZE A FUNÇÃO resetarJogo --- xxx
 async function resetarJogo(force = false) {
+    paralisarAvisoCalculando();
+
     let msgConfirmacao = "TEM CERTEZA? Isso limpará a tela e encerrará o jogo atual.";
     
     const sucessoConfirmado = (jogoFoiFinalizadoComSucesso || jogoRoboFinalizadoComSucesso);
@@ -3112,7 +3153,7 @@ async function resetarJogo(force = false) {
     // Se o jogo foi finalizado com sucesso (botão verde), muda a mensagem
     if (sucessoConfirmado && !modoRoboAtivo) {
         msgConfirmacao = "Deseja FINALIZAR este evento, pagar os prêmios e carregar o PRÓXIMO?";
-    }
+    }  
 
     if(!force && !modoRoboAtivo && !(await customConfirm(msgConfirmacao))) { 
         devolverFocoAoJogo(); return; 
@@ -3275,7 +3316,6 @@ function alternarBotaoReset(modo) {
         btn.innerHTML = "⚠️ REINICIAR SORTEIO";
     }
 }
-
 
 // --- FUNÇÃO CORRIGIDA ---
 //async function carregarConfigSorteExtraAdmin() {
