@@ -2981,6 +2981,30 @@ def admin_validar_cartela():
         status_code = 'WIN' if bateu else 'LOSS'
 
         # ==============================================================================
+        # 👉 NOVO: BUSCA REGIONAL DA CARTELA VENCEDORA PARA O LOCUTOR
+        # ==============================================================================
+        if bateu:
+            try:
+                sales_db = get_sales_db_connection()
+                if sales_db is not None:
+                    col_vendas = sales_db[f"vendas{id_evento_ativo}"]
+                    venda_doc = col_vendas.find_one({
+                        '$or': [
+                            {'numero_inicial': {'$lte': cartela_id}, 'numero_final': {'$gte': cartela_id}},
+                            {'numero_inicial2': {'$lte': cartela_id}, 'numero_final2': {'$gte': cartela_id}}
+                        ]
+                    })
+                    if venda_doc:
+                        id_reg_cartela = int(venda_doc.get('id_regional', 1))
+                        reg_doc = sales_db.regionais.find_one({'id_regional': id_reg_cartela})
+                        nome_regional = reg_doc.get('descricao', f"Reg {id_reg_cartela}") if reg_doc else f"Reg {id_reg_cartela}"
+                        
+                        # Injeta a regional na mensagem que vai para a tela do admin
+                        detalhes = f"{detalhes} | Venda: {nome_regional}"
+            except Exception as e_reg:
+                print(f"⚠️ Erro ao buscar regional para o painel: {e_reg}")
+
+        # ==============================================================================
         # 5. TV CONFERE - GRAVAÇÃO MOVIDA PARA CÁ (AGORA SABEMOS O VALOR DE linha_ganha)
         # ==============================================================================
         db.confere.delete_many({})
@@ -3231,6 +3255,7 @@ def admin_resetar():
         
         lista_osganhadores = []      
         lista_resultados_ganhadores = [] 
+        premios_por_regional_dict = {}
 
         if ganhadores_ativos:
             grupos_rateio = {}
@@ -3300,6 +3325,25 @@ def admin_resetar():
                     item_local = obj_ganhador.copy()
                     item_local['rodada'] = id_evento
                     lista_osganhadores.append(item_local)
+
+                    # 👉 NOVO: IDENTIFICA A REGIONAL DO VENCEDOR DO BINGO
+                    id_regional_vencedor = 1
+                    try:
+                        num_cartela_vencedora = int(w.get('cartela', 0))
+                        if sales_db is not None:
+                            venda_doc = sales_db[f"vendas{id_evento}"].find_one({
+                                '$or': [
+                                    {'numero_inicial': {'$lte': num_cartela_vencedora}, 'numero_final': {'$gte': num_cartela_vencedora}},
+                                    {'numero_inicial2': {'$lte': num_cartela_vencedora}, 'numero_final2': {'$gte': num_cartela_vencedora}}
+                                ]
+                            })
+                            if venda_doc: id_regional_vencedor = int(venda_doc.get('id_regional', 1))
+                    except: pass
+
+                    # Acumula o valor do prêmio pago no cofre dessa regional
+                    str_rid = str(id_regional_vencedor)
+                    premios_por_regional_dict[str_rid] = premios_por_regional_dict.get(str_rid, 0.0) + val_rateio_float
+
                     lista_resultados_ganhadores.append(obj_ganhador)
 
                     # ====================================================================
@@ -3379,6 +3423,23 @@ def admin_resetar():
                 
                 lista_resultados_ganhadores.append(obj_extra)
 
+                # 👉 NOVO: IDENTIFICA A REGIONAL DO VENCEDOR DA SORTE EXTRA
+                id_regional_vencedor_extra = 1
+                try:
+                    num_cartela_extra = int(g_extra.get('cartela', 0))
+                    if sales_db is not None:
+                        venda_doc = sales_db[f"vendas{id_evento}"].find_one({
+                            '$or': [
+                                {'numero_inicial': {'$lte': num_cartela_extra}, 'numero_final': {'$gte': num_cartela_extra}},
+                                {'numero_inicial2': {'$lte': num_cartela_extra}, 'numero_final2': {'$gte': num_cartela_extra}}
+                            ]
+                        })
+                        if venda_doc: id_regional_vencedor_extra = int(venda_doc.get('id_regional', 1))
+                except: pass
+
+                str_rid_ext = str(id_regional_vencedor_extra)
+                premios_por_regional_dict[str_rid_ext] = premios_por_regional_dict.get(str_rid_ext, 0.0) + rateio_float
+
                 # 3. PAGAMENTO DO SORTE EXTRA (Seguindo a nova regra de pagar no reset)
                 if finalizar_com_sucesso and rateio_float > 0:
                     try:
@@ -3441,6 +3502,11 @@ def admin_resetar():
                     }
                     print("📝 [DEBUG] Inserindo documento na coleção 'resultados'...")
                     result = sales_db.resultados.insert_one(doc_resultado)
+                    # 👉 NOVO: SALVA A AUDITORIA DOS PRÊMIOS NA TABELA EVENTOS
+                    sales_db.eventos.update_one(
+                        {'id_evento': {'$in': [id_evento, str(id_evento)]}},
+                        {'$set': {'premios_pagos_por_regional': premios_por_regional_dict}}
+                    )
                     print(f"✅ [DEBUG] Histórico salvo! ID do documento: {result.inserted_id}")
                 else:
                     print("❌ [DEBUG] IMPOSSÍVEL SALVAR: sales_db é None (Conexão perdida).")
