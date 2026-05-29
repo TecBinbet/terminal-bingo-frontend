@@ -4359,7 +4359,6 @@ def api_login_cliente():
                 except Exception as e_saque:
                     print(f"⚠️ Aviso ao buscar saques: {e_saque}")
 
-
                 # 2. Olha para o sistema (A capacidade técnica do servidor)
                 # (Lembrando que lá no topo do ficheiro deixámos mp_sdk = None se não houver .env)
                 servidor_tem_token = (mp_sdk is not None)
@@ -4367,6 +4366,28 @@ def api_login_cliente():
                 # 3. A SUA VARIÁVEL GLOBAL UNIFICADA:
                 # Só mostra o PIX se o Admin quiser E o servidor tiver a chave!
                 receberemos_pix = (admin_quer_pix == True) and servidor_tem_token
+
+                # ========================================================
+                # --- FASE 2: VERIFICAÇÃO DE CORTESIAS NO LOGIN ---
+                # ========================================================
+                from datetime import datetime
+                hoje_str = datetime.now().strftime('%d/%m/%Y')
+                data_cortesia_cliente = cli.get('data_cortesia')
+                
+                tem_cortesia = False
+                
+                # Se a data guardada for diferente de hoje (ou null), investigamos a tabela de eventos
+                if data_cortesia_cliente != hoje_str:
+                    eventos_com_cortesia = list(sales_db.eventos.find({
+                        'status': 'ativo',
+                        'data_evento': hoje_str,
+                        'distribuir_cortesia': {'$gt': 0}
+                    }))
+                    
+                    if len(eventos_com_cortesia) > 0:
+                        tem_cortesia = True
+
+                # ========================================================
 
                 return jsonify({
                     'status': 'ok', 
@@ -4377,7 +4398,8 @@ def api_login_cliente():
                     'id_evento_ativo': id_evento_ativo,
                     'receber_pix': receberemos_pix,
                     'texto_saque': texto_saque,                                # 👉 Envia para o Front
-                    'tem_saque_pendente': tem_saque_pendente # 👉 Envia para o Front
+                    'tem_saque_pendente': tem_saque_pendente, # 👉 Envia para o Front
+                    'tem_cortesia': tem_cortesia     # 👉 Enviamos o sinal para o Frontend!
                 })
             else:
                 print("⛔ [DEBUG] Senha incorreta.")
@@ -4390,7 +4412,6 @@ def api_login_cliente():
         import traceback
         traceback.print_exc()
         return jsonify({'erro': f'Erro no servidor: {str(e)}'}), 500
-
 
 @app.route('/api/dados_cliente', methods=['GET'])
 def api_dados_cliente():
@@ -4480,6 +4501,142 @@ def api_dados_cliente():
         print(f"Erro dados cliente: {e}")
         return jsonify({'erro': str(e)}), 500
 
+@app.route('/api/resgatar_cortesias', methods=['POST'])
+def api_resgatar_cortesias():
+    """Gera cartelas gratuitas (cortesia) com rastreio regional para auditoria."""
+    if 'id_cliente' not in session:
+        return jsonify({'status': 'error', 'message': 'Sessão expirada. Faça login novamente.'}), 401
+        
+    sales_db = get_sales_db_connection()
+    if sales_db is None: 
+        return jsonify({'status': 'error', 'message': 'Banco de Vendas offline.'}), 500
+
+    try:
+        id_cli = int(session['id_cliente'])
+        from datetime import datetime
+        hoje_str = datetime.now().strftime('%d/%m/%Y')
+        
+        # 1. Verifica duplicação (Double-check de segurança)
+        cliente = sales_db.clientes.find_one({'id_cliente': id_cli})
+        if not cliente:
+            return jsonify({'status': 'error', 'message': 'Cliente não encontrado.'}), 400
+            
+        if cliente.get('data_cortesia') == hoje_str:
+            return jsonify({'status': 'error', 'message': 'Cortesias já resgatadas hoje!'}), 400
+            
+        nome_do_cliente_db = cliente.get('nick', 'Cliente')
+        id_colaborador_indicacao = cliente.get('id_colaborador', 0)
+
+        # ==============================================================================
+        # --- BUSCA DA REGIONAL (PARA AUDITORIA) ---
+        # ==============================================================================
+        id_regional_carimbo = 1  # Valor padrão (Matriz)
+        if id_colaborador_indicacao and int(id_colaborador_indicacao) > 0:
+            colaborador_doc = sales_db.colaboradores.find_one({'id_colaborador': int(id_colaborador_indicacao)})
+            if colaborador_doc:
+                id_regional_carimbo = int(colaborador_doc.get('id_regional', 1))
+        # ==============================================================================
+
+        # 2. Busca eventos ATIVOS de HOJE que distribuem cortesia
+        eventos_com_cortesia = list(sales_db.eventos.find({
+            'status': 'ativo',
+            'data_evento': hoje_str,
+            'distribuir_cortesia': {'$gt': 0}
+        }))
+        
+        if len(eventos_com_cortesia) == 0:
+            return jsonify({'status': 'error', 'message': 'Não há cortesias disponíveis para hoje.'}), 400
+            
+        # 3. Processamento de cada evento para gerar as cartelas
+        qtd_eventos_processados = 0
+        
+        for evento in eventos_com_cortesia:
+            id_evento_oficial = evento.get('id_evento')
+            qtd_kits_cortesia = int(evento.get('distribuir_cortesia', 0))
+            unidade_venda = int(evento.get('unidade_de_venda', evento.get('unidade_venda', 1)))
+            total_cartelas_geradas = qtd_kits_cortesia * unidade_venda
+            
+            limite_maximo_cartelas = int(evento.get('numero_maximo', 72000))
+            numero_inicial_evento = int(evento.get('numero_inicial', 1))
+
+            # MOTOR ATÓMICO (Rollover)
+            numero_inicial_atual = get_next_bilhete_sequence(
+                db=sales_db, 
+                id_evento=id_evento_oficial, 
+                increment_field='inicial_proxima_venda', 
+                qtd=total_cartelas_geradas, 
+                limite_maximo=limite_maximo_cartelas 
+            )
+                                                                           
+            if numero_inicial_atual is None:
+                continue 
+
+            if numero_inicial_atual == 1: 
+                numero_inicial_atual = numero_inicial_evento
+                sales_db.controle_venda.update_one(
+                    {'id_evento': id_evento_oficial},
+                    {'$set': {'inicial_proxima_venda': numero_inicial_atual + total_cartelas_geradas}}
+                )
+
+            numero_final_atual = numero_inicial_atual + total_cartelas_geradas - 1
+            numero_inicial2_atual = 0 
+            numero_final2_atual = 0 
+            
+            if numero_final_atual > limite_maximo_cartelas:
+                numero_inicial2_atual = 1
+                numero_final2_atual = numero_final_atual - limite_maximo_cartelas
+                numero_final_atual = limite_maximo_cartelas
+
+            retorno_global = sales_db.contadores.find_one_and_update(
+                {'_id': 'global'}, 
+                {'$inc': {'id_vendas_global': 1}},
+                upsert=True,
+                return_document=ReturnDocument.AFTER
+            )
+            id_venda_global = retorno_global.get('id_vendas_global')
+            
+            # Grava na Tabela de Vendas do Evento (CUSTO 0, MAS COM REGIONAL CORRETA)
+            venda_doc = {
+                "id_venda": f"CORTESIA{id_venda_global}", 
+                "id_evento": id_evento_oficial,
+                "id_cliente": id_cli,
+                "id_regional": id_regional_carimbo, # 🎯 REGISTRADO PARA AUDITORIA
+                "nome_cliente": nome_do_cliente_db,                            
+                "nick_colaborador": "SISTEMA CORTESIA",
+                "id_colaborador": 0, # Mantemos 0 para não gerar comissão acidental
+                "id_vendedor": 0,                      
+                "data_venda": hora_brasil(),  
+                "quantidade_unidades": qtd_kits_cortesia, 
+                "quantidade_cartelas": total_cartelas_geradas,
+                "numero_inicial": numero_inicial_atual,
+                "numero_final": numero_final_atual,
+                "numero_inicial2": numero_inicial2_atual,
+                "numero_final2": numero_final2_atual,
+                "valor_total": Decimal128("0.00"), 
+                "origem": "cortesia_diaria"
+            }
+            
+            col_vendas_nome = f"vendas{id_evento_oficial}"
+            sales_db[col_vendas_nome].insert_one(venda_doc)
+            print(f"🎁 Cortesia gravada: {col_vendas_nome} | Regional: {id_regional_carimbo} | Cartelas: {numero_inicial_atual}-{numero_final_atual}")
+            
+            qtd_eventos_processados += 1
+
+        # 4. Finalização
+        if qtd_eventos_processados > 0:
+            sales_db.clientes.update_one(
+                {'id_cliente': id_cli},
+                {'$set': {'data_cortesia': hoje_str}}
+            )
+            return jsonify({'status': 'success', 'message': f'Cortesias resgatadas em {qtd_eventos_processados} evento(s).'})
+        else:
+            return jsonify({'status': 'error', 'message': 'Erro ao gerar as cartelas. Tente novamente.'}), 500
+
+    except Exception as e:
+        print(f"Erro crítico resgate cortesias: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': 'Erro interno.'}), 500
 
 @app.route('/api/comprar_cartelas', methods=['POST'])
 def api_comprar_cartelas():

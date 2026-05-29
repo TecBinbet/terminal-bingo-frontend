@@ -6038,6 +6038,57 @@ function isUsuarioLogado() {
     return false;
 }
 
+// Função resgatar cortesias
+async function resgatarCortesias() {
+    const btn = document.getElementById('btn-cortesia-flutuante');
+    
+    // Mantém a estrutura visual do Tailwind enquanto processa
+    btn.innerHTML = '<span class="text-3xl">⏳</span><span class="text-[10px] mt-1 text-center uppercase">Aguarde...</span>';
+    btn.style.pointerEvents = 'none'; 
+    
+    try {
+        const res = await fetch('/api/resgatar_cortesias', { method: 'POST' });
+        const dados = await res.json();
+        
+        if (dados.status === 'success') {
+            btn.classList.add('hidden');
+            btn.classList.remove('flex');
+            
+            // ALERTA CUSTOMIZADO DE SUCESSO
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert("Cortesias carregadas com sucesso! Suas cartelas já estão disponíveis.", "Sucesso!", "🎉");
+            } else {
+                alert("🎉 Cortesias carregadas com sucesso! Suas cartelas já estão disponíveis.");
+            }
+            
+            if (typeof carregarMinhasCartelas === 'function') carregarMinhasCartelas();
+            
+        } else {
+            // ALERTA CUSTOMIZADO DE AVISO/ERRO
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert(dados.message, "Atenção", "⚠️");
+            } else {
+                alert("Erro: " + dados.message);
+            }
+            
+            // Restaura o visual do botão em caso de falha
+            btn.innerHTML = '<span class="text-3xl">🎁</span><span class="text-[10px] mt-1 text-center uppercase">Tentar<br>Novamente</span>';
+            btn.style.pointerEvents = 'auto';
+        }
+    } catch (error) {
+        console.error("Erro ao resgatar:", error);
+        
+        // ALERTA CUSTOMIZADO DE FALHA DE CONEXÃO
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Ocorreu um erro de conexão com o servidor.", "Falha", "🌐");
+        } else {
+            alert("Ocorreu um erro de conexão.");
+        }
+        
+        btn.innerHTML = '<span class="text-3xl">🎁</span><span class="text-[10px] mt-1 text-center uppercase">Tentar<br>Novamente</span>';
+        btn.style.pointerEvents = 'auto';
+    }
+}
 
 // ABRIR CARTEIRA (CHAMA ATUALIZAÇÃO DO EXTRATO)
 function abrirModalCarteira() {
@@ -7006,6 +7057,27 @@ async function realizarLogin() {
 
             // Garante que a carteira esteja fechada
             if (typeof fecharModal === 'function') fecharModal('modal-carteira');
+
+            // =====================================================
+            // --- FASE 2: MOSTRA O BOTÃO DE CORTESIA SE EXISTIR ---
+            // =====================================================
+            if (data.tem_cortesia === true) {
+                const btnCortesia = document.getElementById('btn-cortesia-flutuante');
+                if (btnCortesia) {
+                    btnCortesia.classList.remove('hidden');
+                    btnCortesia.classList.add('flex');
+                    
+                    // Chama a atenção do cliente suavemente
+                    setTimeout(() => {
+                        if (typeof showCustomAlert === 'function') {
+                            showCustomAlert("Você tem cartelas de Cortesia liberadas para hoje! Clique no botão pulsante para carregar.", "Presente Disponível!", "🎁");
+                        } else {
+                            alert("🎁 Você tem cartelas de Cortesia liberadas para hoje! Clique no botão pulsante para carregar.");
+                        }
+                    }, 500);
+                }
+            }
+            // =====================================================
 
             // Limpa campos visuais (segurança), mas já salvamos no storage
             userInput.value = '';
