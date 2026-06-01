@@ -3771,6 +3771,7 @@ function renderMelhores(melhoresData) {
         
         // 3. Números Faltantes
         let winnerPremio = ''; 
+        let haGanhador = false;
         if (item.premio && item.premio !== null  && item.premio !== "null") {
            winnerPremio = item.premio;
            haGanhador = true; 
