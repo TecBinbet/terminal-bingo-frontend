@@ -3803,7 +3803,12 @@ function renderMelhores(melhoresData) {
         } else {   
            nome.className = 'truncate  text-[10px]  text-yellow-500 font-semibold';
         }
-        nome.textContent = item.nome;
+        const nomeLimpo = item.nome || "";
+        const nomeFormatado = nomeLimpo.toLowerCase().split(' ').map(palavra => {
+            return palavra.charAt(0).toUpperCase() + palavra.slice(1);
+        }).join(' ');
+
+        nome.textContent = nomeFormatado;
 
         row.appendChild(cartela);
         row.appendChild(posicao);
