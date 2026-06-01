@@ -2,7 +2,7 @@
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
 
-const VERSAO_ATUAL = "1.9";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "2.0";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -7157,7 +7157,7 @@ async function atualizarPrecoDoEvento(idForcado = 0) {
     const idAlvo = idForcado > 0 ? idForcado : (typeof obterIdEventoAlvo === 'function' ? obterIdEventoAlvo() : 0);
 
     if (!idAlvo || idAlvo === 0) {
-        console.warn(`⚠️ Evento ${idAlvo} não existe no banco de vendas A1.`);
+        console.warn(`⚠️ Evento ${idAlvo} não existe no banco de vendas.`);
         return null;
     }
 

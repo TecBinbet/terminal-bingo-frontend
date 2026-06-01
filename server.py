@@ -3313,6 +3313,8 @@ def admin_resetar():
                     {'$set': {'valor_total_premio': str_total, 'valor_rateio': str_rateio}}
                 )
                 
+                print(f"💰 [AUDITORIA PAGAMENTO A0]")  
+ 
                 for w in lista_vencedores:
                     obj_ganhador = {
                         "premio": chave,

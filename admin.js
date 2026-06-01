@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "2.0";
+const VERSAO_ATUAL = "2.1";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
