@@ -3351,15 +3351,18 @@ def admin_resetar():
                     # Só paga se o evento for finalizado com SUCESSO (botão verde)
                     # ====================================================================
                     # Dentro do loop de vencedores na rota /api/admin/resetar
+                    print(f"💰 [AUDITORIA PAGAMENTO A1]")
+   
+
                     if finalizar_com_sucesso and val_rateio_float > 0 and sales_db is not None:
                         try:
                             # 1. Busca o dono da cartela (essencial para saber quem pagar)
                             num_cartela_vencedora = int(w.get('cartela', 0))
                             id_cli_pagto = buscar_id_cliente_por_cartela(sales_db, id_evento, num_cartela_vencedora)
-        
+                        
                             if id_cli_pagto:
                                 desc_pagto = f"🏆 Prêmio {chave} - Evento {id_evento}"
-            
+                                print(f"💰 [AUDITORIA PAGAMENTO A2]") 
                                 # 2. CHAMADA DA FUNÇÃO CENTRALIZADA
                                 # Note que passamos os parâmetros que a função centralizada espera
                                 sucesso = registrar_transacao_cliente(
@@ -4151,7 +4154,8 @@ def registrar_transacao_cliente(db_vendas, id_cliente, valor, tipo, descricao, i
     - Exige um tipo de transação válido (Dicionário Rigoroso).
     - Trava Matemática: Impede que "saques" somem dinheiro se o frontend enviar valor positivo.
     """
-    
+    print(f"💰 [AUDITORIA PAGAMENTO] ID: {id_cliente} | Valor: {valor} | Tipo: {tipo} | Evento: {id_evento}")
+
     # 1. Dicionário Rigoroso do Livro-Razão (Bloqueia Categorias Fantasmas)
     tipos_entrada = ['compra_credito_pix', 'credito_manual_admin', 'premio_bingo', 'premio_sorte_extra', 'estorno_saque', 'estorno_geral']
     tipos_saida = ['compra_cartela', 'compra_sorte_extra', 'saque_solicitado', 'debito_manual_admin']
