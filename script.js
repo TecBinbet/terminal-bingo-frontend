@@ -3742,16 +3742,19 @@ function renderMelhores(melhoresData) {
     estatisticasBody.innerHTML = ''; 
 
     melhoresData.forEach(item => {
-        let posicaoWidth = '15px'; // Largura padrão se 'posicao' não for vazio
-        let haGanhador = false;
+        // ✅ TRECHO CORRIGIDO (Nomes de classe completos para o Tailwind)
+        let gridClasses = "grid-cols-[30px_15px_1fr_100px]";
+        let isPosicaoOculta = false;
         
-        // Verifica se 'posicao' é uma string vazia ("") ou nula.
         if (!item.posicao || item.posicao === "") {
-            posicaoWidth = '4px'; 
+            gridClasses = "grid-cols-[30px_4px_1fr_100px]";
+            isPosicaoOculta = true;
         }
         
-        // 2. Constrói a string da classe
-        const gridClasses = `grid-cols-[30px_${posicaoWidth}_1fr_100px]`;
+        const row = document.createElement('div');
+        row.className = `grid ${gridClasses} text-[8px] leading-none text-white rounded hover:bg-gray-800 items-center gap-1`; 
+        // Nota: adicionei 'items-center' e 'gap-1' para o alinhamento ficar perfeito
+
         const row = document.createElement('div');
         row.className = `grid ${gridClasses} text-[8px] leading-none text-white rounded hover:bg-gray-800`;
         
@@ -3764,8 +3767,8 @@ function renderMelhores(melhoresData) {
         const posicao = document.createElement('span');
         posicao.className = 'text-center';
         posicao.textContent = item.posicao;
-        if (posicaoWidth === '4px') { // Corrigi de '0px' para '4px' conforme sua variável acima
-            posicao.classList.add('hidden');
+        if (isPosicaoOculta) { 
+            posicao.classList.add('invisible'); // Mantém a gaveta de 4px existindo
         }
         
         // 3. Números Faltantes
@@ -3792,7 +3795,7 @@ function renderMelhores(melhoresData) {
         const numerosFormatados = primeiros24.map(n => n.toString().padStart(2, '0')).join(' . ');
         
         numerosFaltantes.textContent = `${numerosFormatados} ${winnerPremio || ''}`;
-       numerosFaltantes.className = 'text-[9px] text-green-600 truncate whitespace-nowrap overflow-hidden'; 
+        numerosFaltantes.className = 'text-[9px] text-green-600 truncate whitespace-nowrap overflow-hidden'; 
 
         // 4. Nome (Player)
         const nome = document.createElement('span');
