@@ -3709,7 +3709,6 @@ async function fetchDataFromCollections() {
     }
 }
 
-
 // Função para renderizar os dados de "Melhores"
 function renderMelhores(melhoresData) {
     // =========================================================
@@ -3793,7 +3792,7 @@ function renderMelhores(melhoresData) {
         const numerosFormatados = primeiros24.map(n => n.toString().padStart(2, '0')).join(' . ');
         
         numerosFaltantes.textContent = `${numerosFormatados} ${winnerPremio || ''}`;
-        numerosFaltantes.className = 'text-[9px] text-green-600';  
+       numerosFaltantes.className = 'text-[9px] text-green-600 truncate whitespace-nowrap overflow-hidden'; 
 
         // 4. Nome (Player)
         const nome = document.createElement('span');
