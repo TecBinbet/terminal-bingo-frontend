@@ -3755,10 +3755,8 @@ function renderMelhores(melhoresData) {
         row.className = `grid ${gridClasses} text-[8px] leading-none text-white rounded hover:bg-gray-800 items-center gap-1`; 
         // Nota: adicionei 'items-center' e 'gap-1' para o alinhamento ficar perfeito
 
-        const row = document.createElement('div');
-        row.className = `grid ${gridClasses} text-[8px] leading-none text-white rounded hover:bg-gray-800`;
-        
-        // 1. Cartela
+      
+        // 1. Cartela  dfsadsafasfs
         const cartela = document.createElement('span');
         cartela.className = 'text-[9px] text-center font-bold text-yellow-600';
         cartela.textContent = item.cartela;
