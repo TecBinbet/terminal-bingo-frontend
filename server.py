@@ -3371,7 +3371,7 @@ def admin_resetar():
                                     db_vendas=sales_db, 
                                     id_cliente=id_cli_pagto, 
                                     valor=float(val_rateio_float),  # Valor positivo para crédito
-                                    tipo='premio', 
+                                    tipo='premio_bingo', 
                                     descricao=desc_pagto, 
                                     id_evento=id_evento,
                                     id_venda=f"PRM-{id_evento}-{chave.replace(' ', '')}-{num_cartela_vencedora}",
@@ -4147,7 +4147,7 @@ def admin_preparar_evento():
 
 
 # ==============================================================================
-# 🛡️ MOTOR FINANCEIRO CENTRALIZADO E ATÓMICO (SERVER.PY)
+# 🛡️ MOTOR FINANCEIRO CENTRALIZADO E ATÓMICO (SERVER.PY) xxx
 # ==============================================================================
 def registrar_transacao_cliente(db_vendas, id_cliente, valor, tipo, descricao, id_evento=None, id_venda=None, id_colaborador=None, origem="WEB_CLIENTE", registrado_por="SISTEMA"):
     """

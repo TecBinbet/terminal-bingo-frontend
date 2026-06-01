@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "2.1";
+const VERSAO_ATUAL = "2.2";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -1046,7 +1046,6 @@ function processarMensagemWS(event) {
                 // Se a lista veio VAZIA, MAS já temos bolas sorteadas na mesa, IGNORAMOS!
                 if (payload.melhoresData.length === 0 && qtdBolas > 0) {
                     console.warn("⚠️ [PROTEÇÃO] Servidor retornou Ranking vazio com o jogo em andamento. Protegendo a tela do cliente...");
-                    // aquiy finalizar spinner (bola)
                     esconderSpinner(); 
                     // O código MORRE aqui. A tela do ranking continua congelada no Top 10 anterior.
                 } 
