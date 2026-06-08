@@ -1,6 +1,7 @@
 // ======================================================
 // 1. CONFIGURAÇÃO AUTOMÁTICA (LOCAL vs PRODUÇÃO)
 // ======================================================
+// linhasAtivasNoJogo
 
 const VERSAO_ATUAL = "2.1";   // Mude isso sempre que atualizar o JS
 
@@ -2072,7 +2073,7 @@ function processCards90(cards, bolasCantadas, premioBuscado, linhasAtivas) {
 
     let avisarFesta = false;
     // 📸 [CÂMERA 1] O que a função acha que está buscando logo que liga?
-    console.log(`[LOG 1] Iniciando processCards90 | Prêmio Atual: ${textoBuscando} | Fase de Linhas? ${isFaseDeLinhas}`);
+    //console.log(`[LOG 1] Iniciando processCards90 | Prêmio Atual: ${textoBuscando} | Fase de Linhas? ${isFaseDeLinhas}`);
 
     const processedCards = [];
     if (premioBuscado === 'BINGO') bingoWinners.clear();
@@ -2190,7 +2191,7 @@ function processCards90(cards, bolasCantadas, premioBuscado, linhasAtivas) {
 
     // Ordenação e Atualização Global
     // 📸 [CÂMERA 3] Resumo do que está saindo da função
-    console.log(`[LOG 3] Fim do processCards90. Enviando ${processedCards.length} cartelas processadas para a tela.`);
+    //console.log(`[LOG 3] Fim do processCards90. Enviando ${processedCards.length} cartelas processadas para a tela.`);
     finalizeProcessing(processedCards, premioBuscado);
 }
 
@@ -2241,7 +2242,7 @@ function processCards90b2(cards, bolasCantadas, premioBuscado, linhasAtivas) {
             type: 90 // Tag para renderização
         };
 
-        // 🛡️ O Freio Mestre (Fase de Linhas)
+        //x 🛡️ O Freio Mestre (Fase de Linhas)
         if ((isFaseDeLinhas || premioBuscado.includes('QUADRA')) && count.geral < 15) {
             
             const lines = [
@@ -2329,7 +2330,6 @@ function processCards90b2(cards, bolasCantadas, premioBuscado, linhasAtivas) {
     finalizeProcessing(processedCards, premioBuscado);
 }
 
-// --- LÓGICA BINGO 75 (CORRIGIDA: VISUALIZAÇÃO E ORDENAÇÃO) ---
 // --- LÓGICA BINGO 75 (CORRIGIDA: VISUALIZAÇÃO, ORDENAÇÃO E FESTA) ---
 function processCards75(cards, bolasCantadas, premioBuscado) {
     let avisarFesta = false;
@@ -2485,155 +2485,6 @@ function processCards75(cards, bolasCantadas, premioBuscado) {
         celebrarPremioIntermediario(premioUpper);
     }
     
-    // Renderiza
-    displayLoadedCards(bolasCantadas); 
-}
-
-function processCards75b2(cards, bolasCantadas, premioBuscado) {
-    let avisarFesta = false;
-
-    const processedCards = [];
-   
-    if (premioBuscado === 'BINGO') bingoWinners.clear();
-    const premioUpper = (premioBuscado || "").toUpperCase();
-    const bolasSet = new Set(bolasCantadas);
-    // --- CONFIGURAÇÃO IDÊNTICA AO SERVER.PY ---
-    // Índices do Array 0..24 (Colunas no Banco -> Linhas Visuais)
-    const linhasIndices = [
-        [0, 5, 10, 15, 20], // Linha 1 (Superior)
-        [1, 6, 11, 16, 21], // Linha 2
-        [2, 7, 12, 17, 22], // Linha 3 (Central - Inclui Free)
-        [3, 8, 13, 18, 23], // Linha 4
-        [4, 9, 14, 19, 24]  // Linha 5 (Inferior)
-    ];
-    const indicesCantos = [0, 4, 20, 24]; // B1, B5, O1, O5
-    // Decide o Modo de Jogo baseado no Prêmio
-    const buscarBingo = premioUpper.includes('BINGO') || premioUpper.includes('ACUMULADO');
-    // Se não for Bingo, verifica se é fase de Linha ou Cantos
-    const buscarLinha = !buscarBingo && (premioUpper.includes('LINHA') || premioUpper.includes('4 CANTOS E LINHA'));
-    const buscarCantos = !buscarBingo && (premioUpper.includes('CANTOS') || premioUpper.includes('QUADRA'));
-    cards.forEach(card => {
-        let rawList = card.numeros || card.em_ordem || card.lista_75 || [];
-        // Normaliza string para array se necessário
-        if (typeof rawList === 'string') rawList = rawList.split(',').map(Number);
-        if (!Array.isArray(rawList) || rawList.length < 24) return;
-
-        // 1. CÁLCULO GERAL (BINGO CHEIO)
-        // Filtra: não é 0 (Free) E não foi sorteado
-        const faltamGeral = rawList.filter(n => n !== 0 && !bolasSet.has(n));
-        const countGeral = faltamGeral.length;
-
-        // 2. CÁLCULO LINHA (Melhor Linha Horizontal)
-        let melhorLinhaFaltam = 99;
-        let numerosFaltantesLinha = [];
-        let linhaCompleta = false;
-        linhasIndices.forEach(indices => {
-            // Pega os números desta linha específica
-            const faltamNesta = indices
-                .map(i => rawList[i])
-                .filter(n => n !== 0 && !bolasSet.has(n));
-            
-            const qtd = faltamNesta.length;
-            // Se esta linha for melhor (menos faltantes), guarda ela
-            if (qtd < melhorLinhaFaltam) {
-                melhorLinhaFaltam = qtd;
-                numerosFaltantesLinha = faltamNesta;
-            }
-            if (qtd === 0) linhaCompleta = true;
-        });
-
-        // 3. CÁLCULO CANTOS
-        const faltamCantos = indicesCantos
-            .map(i => rawList[i])
-            .filter(n => n !== 0 && !bolasSet.has(n));
-        const countCantos = faltamCantos.length;
-        const cantosCompleto = (countCantos === 0);
-
-        // 4. DECISÃO FINAL (O que mostrar na tela?)
-        let missingToDisplay = [];
-        let qtdeParaRanking = 99;
-        let premioEncontrado = null;
-
-        if (buscarBingo) {
-            // Modo Bingo: Mostra tudo o que falta
-            missingToDisplay = faltamGeral;
-            qtdeParaRanking = countGeral;
-            
-            if (countGeral === 0) {
-                premioEncontrado = 'BINGO';
-                avisarFesta = true; // 🎉 Gatilho!
-            } else if (premioUpper.includes('FALTA') && countGeral === 1) {
-                premioEncontrado = 'FALTA 1';
-                avisarFesta = true; // 🎉 Gatilho!
-            }
-        } 
-        else if (buscarLinha && buscarCantos) {
-            // Modo Híbrido (4 Cantos E Linha): Mostra o mais próximo
-            if (melhorLinhaFaltam <= countCantos) {
-                missingToDisplay = numerosFaltantesLinha;
-                qtdeParaRanking = melhorLinhaFaltam;
-            } else {
-                missingToDisplay = faltamCantos;
-                qtdeParaRanking = countCantos;
-            }
-            // Checa vitórias
-            if (linhaCompleta) {
-                premioEncontrado = 'LINHA';
-                avisarFesta = true; // 🎉 Gatilho!
-            }
-            if (cantosCompleto) {
-                premioEncontrado = (premioEncontrado ? premioEncontrado + ' E ' : '') + '4 CANTOS';
-                avisarFesta = true; // 🎉 Gatilho!
-            }
-        }
-        else if (buscarLinha) {
-            // Modo Só Linha: Mostra só a melhor linha
-            missingToDisplay = numerosFaltantesLinha;
-            qtdeParaRanking = melhorLinhaFaltam;
-            if (linhaCompleta) {
-                premioEncontrado = 'LINHA';
-                avisarFesta = true; // 🎉 Gatilho!
-            }
-        }
-        else if (buscarCantos) {
-            // Modo Só Cantos: Mostra só os cantos
-            missingToDisplay = faltamCantos;
-            qtdeParaRanking = countCantos;
-            if (cantosCompleto) {
-                premioEncontrado = '4 CANTOS';
-                avisarFesta = true; // 🎉 Gatilho!
-            }
-        }
-        else {
-            // Fallback: Mostra Geral
-            missingToDisplay = faltamGeral;
-            qtdeParaRanking = countGeral;
-        }
-
-        // Sons e Efeitos
-        if (premioEncontrado && !bingoWinners.has(card.cartao + '_' + premioEncontrado)) {
-             // Lógica de disparo de som/gif aqui se necessário
-        }
-        processedCards.push({
-            cartao: card.cartao,
-            counts: {
-                ranking: qtdeParaRanking // Usado para ordenar
-            },
-            missingNumbers: missingToDisplay, // Números específicos do prêmio (Destaque)
-            premioEncontrado: premioEncontrado,
-            layoutGrid: rawList, // Grid completo para desenho
-            type: 75
-        });
-    });
-    // 5. ORDENAÇÃO (Menos faltantes no topo)
-    processedCards.sort((a, b) => a.counts.ranking - b.counts.ranking);
-    loadedCards = processedCards;
- 
-    if (avisarFesta) {
-        // A função vai tocar o som e travar o cadeado para este prêmio específico
-        celebrarPremioIntermediario(premioEncontrado);
-    }
-   
     // Renderiza
     displayLoadedCards(bolasCantadas); 
 }
@@ -2869,7 +2720,7 @@ function clearPanels() {
     bolasProcessadasLocal.clear();
     ultimaBolaExibida = null;
     cartelasDoJogador = [];
-    closeAvisoPanel(); // <--- Adicione 
+    closeAvisoPanel();  
     lastAvisoTimestamp = 0; // Reseta para permitir novos avisos iguais
 
     ultimoPremioCelebrado = null;
@@ -4346,7 +4197,7 @@ async function renderMainContent(data) {
     } 
     // 2. O BLOQUEIO FANTASMA: Se a ordem for menor ou igual à atual, descarta pacote!
     else if (novaOrdem > 0 && novaOrdem <= ultimaOrdemSorteio) {
-        console.warn(`🚫 [REDE] Pacote atrasado barrado! Ordem recebida: ${novaOrdem} | Atual: ${ultimaOrdemSorteio}`);
+        //console.warn(`🚫 [REDE] Pacote atrasado barrado! Ordem recebida: ${novaOrdem} | Atual: ${ultimaOrdemSorteio}`);
         deveProcessarNovaBola = false;
     }
 
@@ -5932,6 +5783,31 @@ async function verificarUsuarioExistente(usuario) {
     }
 }
 
+
+function validarBotaoCadastro() {
+    const checkbox = document.getElementById('termos-maioridade');
+    const btn = document.getElementById('btn-concluir-cadastro');
+
+    if (checkbox.checked) {
+        // Libera o clique
+        btn.disabled = false;
+        
+        // Remove as cores de "bloqueado"
+        btn.classList.remove('bg-gray-800', 'text-gray-500', 'cursor-not-allowed');
+        
+        // Adiciona as cores verde e o efeito de clique
+        btn.classList.add('bg-green-500', 'hover:bg-green-700', 'text-white', 'active:scale-95');
+    } else {
+        // Trava o clique novamente
+        btn.disabled = true;
+        
+        // Remove o visual ativo
+        btn.classList.remove('bg-green-500', 'hover:bg-green-700', 'text-white', 'active:scale-95');
+        
+        // Devolve o visual cinza/bloqueado
+        btn.classList.add('bg-gray-800', 'text-gray-500', 'cursor-not-allowed');
+    }
+}
 
 // --- FUNÇÃO: Salvar Novo Usuário (Atualizada) ---
 async function salvarNovoUsuario() {
