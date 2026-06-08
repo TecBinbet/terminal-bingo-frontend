@@ -1818,9 +1818,17 @@ def verificar_status_evento():
 
         # 4. Busca controle de venda (Próxima cartela)
         controle = sales_db.controle_venda.find_one({'id_evento': id_evento})
-        proximo_numero = 1
+        
+        # 🔥 CORREÇÃO: Pega o número inicial real configurado no evento (ou 1 se não existir)
+        numero_inicial_evento = int(evento.get('numero_inicial', 1))
+        
+        # O padrão passa a ser a base do evento, e não mais "1"
+        proximo_numero = numero_inicial_evento
+        
         if controle and isinstance(controle, dict):
-            proximo_numero = controle.get('inicial_proxima_venda', 1)
+            # Se já houver controle de vendas, pega o próximo número.
+            # Se a chave não existir no dicionário, usa o fallback correto.
+            proximo_numero = int(controle.get('inicial_proxima_venda', numero_inicial_evento))
 
         # === TRATAMENTO ESPECIAL PARA DECIMAL128 (DINHEIRO) ===
         # O Flask não aceita Decimal128 direto, precisamos converter para float.
