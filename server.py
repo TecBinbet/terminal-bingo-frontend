@@ -1416,6 +1416,41 @@ def gerar_snapshot_vendas(id_evt, sales_db):
     print(f"✅ Snapshot gerado para Evento {id_evt}: {len(lista_snapshot)} registros.")
 
 
+
+def gravar_premio_extra_evento(sales_db, id_evento, valor_acumulado, valor_bingo_base):
+    """
+    Grava os dados financeiros do Acumulado diretamente no documento do Evento.
+    """
+    try:
+        if sales_db is None: return False
+
+        # 1. Arredondamento contábil preciso
+        val_acumulado = round(float(valor_acumulado), 2)
+        val_bingo = round(float(valor_bingo_base), 2)
+        
+        # 2. Calcula a diferença (Prêmio Extra)
+        val_extra = round(val_acumulado - val_bingo, 2)
+        
+        # Proteção contra valores negativos bizarros
+        if val_extra < 0: val_extra = 0.0
+
+        # 3. Atualiza o banco de dados (Sales DB -> Coleção Eventos)
+        sales_db.eventos.update_one(
+            {'id_evento': {'$in': [id_evento, str(id_evento)]}},
+            {'$set': {
+                'bingo_acumulado': Decimal128(str(val_acumulado)),
+                'premio_extra': Decimal128(str(val_extra))
+            }}
+        )
+        
+        print(f"🏦 [FINANCEIRO] Evento {id_evento}: Acumulado (R$ {val_acumulado}) | Extra contabilizado (R$ {val_extra})")
+        return True
+
+    except Exception as e:
+        print(f"❌ [FINANCEIRO] Erro ao gravar prêmio extra no evento {id_evento}: {e}")
+        return False
+
+
 ###### Inicio das Rotas
 # --- ROTAS HTTP ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -3321,10 +3356,31 @@ def admin_resetar():
         hora_atual = now.strftime("%H:%M")
         hora_inicial = timeStart.strftime("%H:%M") if timeStart else hora_atual
 
-        # --- 1. PROCESSAMENTO DOS GANHADORES (NORMAL - BINGO) ---
-        ganhadores_ativos = list(db.ganhadores.find({}))
-        print(f"🏆 [DEBUG] Ganhadores (Bingo Normal) no banco local: {len(ganhadores_ativos)}")
+        # --- 1. PROCESSAMENTO DOS GANHADORES (NORMAL - BINGO E ACUMULADO) ---
+        ganhadores_ativos_brutos = list(db.ganhadores.find({}))
+        print(f"🏆 [DEBUG] Ganhadores brutos no banco local: {len(ganhadores_ativos_brutos)}")
         
+        # ====================================================================
+        # 🛡️ 1. SOBREPOSIÇÃO: Tratamento de Prioridade (Acumulado > Bingo)
+        # ====================================================================
+        cartelas_acumulado = set()
+        for g in ganhadores_ativos_brutos:
+            if 'ACUMULADO' in g.get('premio', '').upper():
+                cartelas_acumulado.add(g.get('cartela'))
+
+        ganhadores_ativos = []
+        for g in ganhadores_ativos_brutos:
+            premio_str = g.get('premio', '').upper()
+            cartela = g.get('cartela')
+            
+            # Se a cartela ganhou ACUMULADO, ela tem prioridade.
+            # O prêmio de BINGO padrão é ignorado para não gerar pagamento duplicado.
+            if premio_str == 'BINGO' and cartela in cartelas_acumulado:
+                print(f"🛡️ [SOBREPOSIÇÃO] Cartela {cartela} promovida a ACUMULADO. Registro de 'BINGO' descartado.")
+                continue
+                
+            ganhadores_ativos.append(g)
+
         tabela_premios = db.premio.find_one({}) or {}
         
         lista_osganhadores = []      
@@ -3352,7 +3408,14 @@ def admin_resetar():
                 if chave_base not in grupos_rateio: grupos_rateio[chave_base] = []
                 grupos_rateio[chave_base].append(g)
 
-            # Calcula Rateios Bingo Normal
+            # ====================================================================
+            # 🧮 2. CÁLCULO E RATEIO JUSTO
+            # ====================================================================
+            houve_acumulado = False
+            valor_total_acumulado = 0.0
+            # Pega o valor base do bingo para fazer a subtração depois
+            valor_base_bingo = converter_decimal(tabela_premios.get('premio_bingo'))
+
             for chave, lista_vencedores in grupos_rateio.items():
                 qtde_ganhadores = len(lista_vencedores)
                 val_total_float = 0.0
@@ -3362,7 +3425,10 @@ def admin_resetar():
                 elif chave == "BINGO": val_total_float = converter_decimal(tabela_premios.get('premio_bingo'))
                 elif chave == "DUPLO BINGO": val_total_float = converter_decimal(tabela_premios.get('premio_duplo_bingo'))
                 elif chave == "FALTA UM": val_total_float = converter_decimal(tabela_premios.get('premio_falta_Um'))
-                elif chave == "ACUMULADO": val_total_float = converter_decimal(tabela_premios.get('premio_acumulado'))
+                elif chave == "ACUMULADO": 
+                    val_total_float = converter_decimal(tabela_premios.get('premio_acumulado'))
+                    houve_acumulado = True                 # ✅ Marca que saiu
+                    valor_total_acumulado = val_total_float  # ✅ Guarda o valor
                 
                 if val_total_float == 0.0 and len(lista_vencedores) > 0:
                      val_str_temp = lista_vencedores[0].get('valor_total_premio', '0')
@@ -3370,11 +3436,8 @@ def admin_resetar():
 
                 if qtde_ganhadores > 0: 
                     divisao_bruta = val_total_float / qtde_ganhadores
-                    # Arredonda para baixo  
-                    #val_rateio_float = float(int(divisao_bruta))
-
-                    # Arredonda para baixo
-                    val_rateio_float = float(math.ceil(divisao_bruta))
+                    # RATEIO EXATO: Arredondamento contábil de 2 casas (sem ceil)
+                    val_rateio_float = round(divisao_bruta, 2)
                 else:
                     val_rateio_float = 0.0
 
@@ -3387,22 +3450,26 @@ def admin_resetar():
                     {'$set': {'valor_total_premio': str_total, 'valor_rateio': str_rateio}}
                 )
                 
-                #print(f"💰 [AUDITORIA PAGAMENTO A0]")  
- 
+                # ====================================================================
+                # 📜 3. HISTÓRICO IMPECÁVEL (AUDITORIA)
+                # ====================================================================
                 for w in lista_vencedores:
+                    # Determina o tipo exato para a auditoria
+                    tipo_auditoria = "Acumulado" if chave == "ACUMULADO" else "Normal"
+                    
                     obj_ganhador = {
                         "premio": chave,
                         "valor_total_premio": str_total,
                         "cartela": str(w.get('cartela', '0')),
                         "nome": str(w.get('nome', '---')),
                         "valor_rateio": str_rateio,
-                        "tipo_premiacao": "Normal" 
+                        "tipo_premiacao": tipo_auditoria  # <-- Tag essencial para os relatórios
                     }
                     item_local = obj_ganhador.copy()
                     item_local['rodada'] = id_evento
                     lista_osganhadores.append(item_local)
 
-                    # 👉 NOVO: IDENTIFICA A REGIONAL DO VENCEDOR DO BINGO
+                    # Identifica a Regional (Mantido como você fez)
                     id_regional_vencedor = 1
                     try:
                         num_cartela_vencedora = int(w.get('cartela', 0))
@@ -3416,36 +3483,26 @@ def admin_resetar():
                             if venda_doc: id_regional_vencedor = int(venda_doc.get('id_regional', 1))
                     except: pass
 
-                    # Acumula o valor do prêmio pago no cofre dessa regional
                     str_rid = str(id_regional_vencedor)
                     premios_por_regional_dict[str_rid] = premios_por_regional_dict.get(str_rid, 0.0) + val_rateio_float
 
                     lista_resultados_ganhadores.append(obj_ganhador)
 
-                    # ====================================================================
-                    # 👉 NOVO: PAGAMENTO DO RATEIO NO FECHAMENTO DO EVENTO
-                    # Só paga se o evento for finalizado com SUCESSO (botão verde)
-                    # ====================================================================
-                    # Dentro do loop de vencedores na rota /api/admin/resetar
-                    #print(f"💰 [AUDITORIA PAGAMENTO A1]")
-   
-
+                    # Pagamento do Rateio
                     if finalizar_com_sucesso and val_rateio_float > 0 and sales_db is not None:
                         try:
-                            # 1. Busca o dono da cartela (essencial para saber quem pagar)
-                            num_cartela_vencedora = int(w.get('cartela', 0))
                             id_cli_pagto = buscar_id_cliente_por_cartela(sales_db, id_evento, num_cartela_vencedora)
                         
                             if id_cli_pagto:
                                 desc_pagto = f"🏆 Prêmio {chave} - Evento {id_evento}"
-                                print(f"💰 [AUDITORIA PAGAMENTO A2]") 
-                                # 2. CHAMADA DA FUNÇÃO CENTRALIZADA
-                                # Note que passamos os parâmetros que a função centralizada espera
+                                # Define o tipo de carteira (essencial para o Financeiro)
+                                tipo_transacao_financeira = 'premio_acumulado' if chave == "ACUMULADO" else 'premio_bingo'
+                                
                                 sucesso = registrar_transacao_cliente(
                                     db_vendas=sales_db, 
                                     id_cliente=id_cli_pagto, 
-                                    valor=float(val_rateio_float),  # Valor positivo para crédito
-                                    tipo='premio_bingo', 
+                                    valor=float(val_rateio_float),  
+                                    tipo=tipo_transacao_financeira, # <-- Informa ao DB de clientes o tipo exato
                                     descricao=desc_pagto, 
                                     id_evento=id_evento,
                                     id_venda=f"PRM-{id_evento}-{chave.replace(' ', '')}-{num_cartela_vencedora}",
@@ -3454,16 +3511,26 @@ def admin_resetar():
                                 )
 
                                 if sucesso:
-                                    print(f"✅ [PAGAMENTO CENTRALIZADO] R$ {val_rateio_float:.2f} creditado ao cliente {id_cli_pagto} (Cartela {num_cartela_vencedora})")
+                                    print(f"✅ [PAGAMENTO] R$ {val_rateio_float:.2f} creditado ao cliente {id_cli_pagto} (Cartela {num_cartela_vencedora}) - {chave}")
                                 else:
-                                    print(f"❌ [PAGAMENTO CENTRALIZADO] Falha ao processar crédito para cliente {id_cli_pagto}")
+                                    print(f"❌ [PAGAMENTO] Falha ao processar crédito para cliente {id_cli_pagto}")
         
                             else:
-                                # Se cair aqui, a cartela foi sorteada mas não existe registro de venda dela
                                 print(f"⚠️ [PAGAMENTO RATEIO] Cartela {num_cartela_vencedora} sem dono identificado nas vendas.")
 
                         except Exception as err_pagto:
-                            print(f"❌ [PAGAMENTO RATEIO] Erro crítico ao pagar cartela {w.get('cartela')}: {err_pagto}")     
+                            print(f"❌ [PAGAMENTO RATEIO] Erro crítico ao pagar cartela {w.get('cartela')}: {err_pagto}")    
+
+            # ====================================================================
+            # 🏦 FECHAMENTO DE CAIXA: GRAVA O PRÊMIO EXTRA DO EVENTO
+            # ====================================================================
+            if finalizar_com_sucesso and houve_acumulado:
+                gravar_premio_extra_evento(
+                    sales_db=sales_db,
+                    id_evento=id_evento,
+                    valor_acumulado=valor_total_acumulado,
+                    valor_bingo_base=valor_base_bingo
+                ) 
            
         # ======================================================================
         # 🔥 PROCESSAMENTO DOS GANHADORES SORTE EXTRA (COM RATEIO CEIL)
