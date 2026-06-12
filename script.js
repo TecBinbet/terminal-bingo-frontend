@@ -74,6 +74,8 @@ const btnMenuFullscreen = document.getElementById('menu-btn-fullscreen');
 const statusFullscreen = document.getElementById('menu-status-fullscreen');
 const iconFullscreen = document.getElementById('icon-fullscreen');
 
+let acumuladoCelebradoNestaRodada = false;
+
 let ultimoPremioCelebrado = null;
 
 let ultimaOrdemSorteio = 0;
@@ -2732,6 +2734,8 @@ function clearPanels() {
 
     window.linhasAtivasNoJogo = { SUP: true, CEN: true, INF: true };
     window.memoriaLinhasPagas = {};
+
+    acumuladoCelebradoNestaRodada = false;
 
     window.primeiraBolaDetectada = false;   
     window.fecharAuditoria();
@@ -6611,7 +6615,7 @@ function hideFullLoading() {
  * Substituto bonito para o alert()
  * Uso: showCustomAlert("Sua mensagem aqui", "Título Opcional", "emoji")
  */
-function showCustomAlert(mensagem, titulo = "Aviso", icone = "ℹ️") {
+function showCustomAlert(mensagem, titulo = "Aviso", icone = "ℹ️", sobreporLogin = false) {
     return new Promise((resolve) => {
         // 1. BUSCA O BOTÃO ATUAL NO DOM (Essencial para evitar o erro de null)
         const btnConfirm = document.getElementById('btn-modal-confirm');
@@ -6644,6 +6648,11 @@ function showCustomAlert(mensagem, titulo = "Aviso", icone = "ℹ️") {
         if(customModal) {
             customModal.classList.remove('hidden');
             customModal.classList.add('flex');
+            
+            // ✅ Usa a flag para decidir se eleva o z-index ou não
+            if (sobreporLogin) {
+                customModal.classList.add('z-[99999]');
+            }
         }
     });
 }
@@ -6695,9 +6704,10 @@ function showCustomConfirm(mensagem, titulo = "Confirmação", icone = "❓") {
 }
 
 function closeCustomModal() {
-    if(customModal) {
+    if (customModal) {
         customModal.classList.add('hidden');
         customModal.classList.remove('flex');
+        customModal.classList.remove('z-[99999]'); // 🔥 Limpa o z-index ao fechar
     }
 }
 
@@ -6740,7 +6750,7 @@ async function fazerLogin() {
     const pass = document.getElementById('login-pass').value.trim();
     
     if (!user || !pass) {
-        showCustomAlert("Por favor, preencha usuário e senha.", "Erro de Acesso", "❌");
+        showCustomAlert("Por favor, preencha usuário e senha.", "Erro de Acesso", "❌",true);
         return;
     }
 
@@ -6828,12 +6838,12 @@ async function fazerLogin() {
             // Se o login falhar (senha errada, etc), verifica se tem erro específico
             // Se o backend mandou data.erro (ex: "Senha incorreta"), usamos ele.
             const msgErro = data.erro || "Senha incorreta ou usuário não encontrado.";
-            showCustomAlert(msgErro, "Acesso Negado", "❌");
+            showCustomAlert(msgErro, "Acesso Negado", "❌",true);
         }
 
     } catch (e) {
         console.error("Falha no login:", e);
-        showCustomAlert("Falha na comunicação: " + e.message, "Erro de Conexão", "❌");
+        showCustomAlert("Falha na comunicação: " + e.message, "Erro de Conexão", "❌", true);
     } finally {
         // 2. DESATIVA O LOADING (Sempre, ao final de tudo)
         hideFullLoading();
@@ -6854,7 +6864,7 @@ async function realizarLogin() {
     const senha = passInput.value.trim();
 
     if (!usuario || !senha) {
-        if (typeof showCustomAlert === 'function') showCustomAlert("Preencha usuário e senha.", "Atenção", "⚠️");
+        if (typeof showCustomAlert === 'function') showCustomAlert("Preencha usuário e senha.", "Atenção", "⚠️",true);
         else alert("Preencha usuário e senha.");
         return;
     }
@@ -6869,16 +6879,46 @@ async function realizarLogin() {
             body: JSON.stringify({ usuario, senha })
         });
 
-        const data = await response.json();
-
-        if (data.status === 'troca_senha_obrigatoria') {
-            // Backend mandou trocar a senha. Redirecionar imediatamente.
-            // if (data.mensagem) alert(data.mensagem); // Opcional: avisar antes de ir
-            window.location.href = data.redirect_url;
-            return; // Pára tudo aqui para não dar erro embaixo
+        // ====================================================================
+        // CORREÇÃO: Lê a resposta como texto primeiro para evitar Crash de JSON
+        // ====================================================================
+        const responseText = await response.text();
+        let data = {};
+        
+        try {
+            // Tenta converter o texto recebido para JSON
+            data = responseText ? JSON.parse(responseText) : {};
+        } catch (jsonError) {
+            console.warn("Resposta não-JSON do servidor (provável erro HTTP):", responseText);
+            // Se falhar, cria um objeto genérico para tratar o erro com segurança
+            data = { status: 'erro', erro: "Usuário ou senha incorretos." };
         }
 
-        if (response.ok && data.status === 'ok') {
+        // ====================================================================
+        // LIDA COM ERROS (Senha incorreta, usuário não existe, etc.)
+        // ====================================================================
+        if (!response.ok || data.status === 'erro' || data.status === 'error') {
+            // Cobre todas as possibilidades de chave de erro que o backend possa enviar
+            const msgErro = data.erro || data.mensagem || data.error || data.msg || "Usuário ou senha incorretos.";
+            
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert(msgErro, "Erro no Login", "❌",true);
+            } else {
+                alert(msgErro);
+            }
+            
+            return; // PARA A EXECUÇÃO AQUI, impedindo que o código tente fazer login
+        }
+
+        // ====================================================================
+        // LIDA COM SUCESSO E REDIRECIONAMENTOS
+        // ====================================================================
+        if (data.status === 'troca_senha_obrigatoria') {
+            window.location.href = data.redirect_url;
+            return; 
+        }
+
+        if (data.status === 'ok') {
             
             // === NOVA LÓGICA: SALVAR NO LOCALSTORAGE ===
             if (checkLembrar && checkLembrar.checked) {
@@ -6894,20 +6934,16 @@ async function realizarLogin() {
             }
             // ===========================================
 
-           // xyx
            const pTextoSaque = document.getElementById('texto-aviso-saque');
            if (pTextoSaque && data.texto_saque) {
-               // Substitui o texto pelo que veio do banco de dados
                pTextoSaque.innerHTML = data.texto_saque;
            }
 
            const btnPix = document.getElementById('btn-depositar-pix');
            if (btnPix) {
-               // Se receber_pix for exatamente 'true', tira o hidden e mostra o botão
                if (data.receber_pix === true) {
                    btnPix.classList.remove('hidden');
                } else {
-                   // Se for false, undefined, ou não existir, garante que continua escondido
                    btnPix.classList.add('hidden');
                }
            }
@@ -6915,7 +6951,6 @@ async function realizarLogin() {
             // 1. GRAVA DADOS
             const idSeguro = data.id_cliente || data.id || data._id || data.userId;
             
-            // Atualiza variáveis novas e antigas
             clienteLogado = true;              
             clienteLogadoId = idSeguro;        
             globalIdCliente = idSeguro;        
@@ -6937,51 +6972,41 @@ async function realizarLogin() {
                 if (modal) modal.classList.add('hidden');
             }
 
-            // Garante que a carteira esteja fechada
             if (typeof fecharModal === 'function') fecharModal('modal-carteira');
 
-            // =====================================================
             // --- FASE 2: MOSTRA O BOTÃO DE CORTESIA SE EXISTIR ---
-            // =====================================================
             if (data.tem_cortesia === true) {
                 const btnCortesia = document.getElementById('btn-cortesia-flutuante');
                 if (btnCortesia) {
                     btnCortesia.classList.remove('hidden');
                     btnCortesia.classList.add('flex');
                     
-                    // Chama a atenção do cliente suavemente
                     setTimeout(() => {
                         if (typeof showCustomAlert === 'function') {
-                            showCustomAlert("Você tem cartelas de Cortesia liberadas para hoje! Clique no botão pulsante para carregar.", "Presente Disponível!", "🎁");
+                            showCustomAlert("Você tem cartelas de Cortesia liberadas para hoje! Clique no botão pulsante para carregar.", "Presente Disponível!", "🎁",true);
                         } else {
                             alert("🎁 Você tem cartelas de Cortesia liberadas para hoje! Clique no botão pulsante para carregar.");
                         }
                     }, 500);
                 }
             }
-            // =====================================================
 
-            // Limpa campos visuais (segurança), mas já salvamos no storage
+            // Limpa campos visuais (segurança)
             userInput.value = '';
             passInput.value = '';
 
             // Mensagem discreta
             if (typeof showCustomAlert === 'function') {
-                showCustomAlert(`Bem-vindo de volta, ${(data.nick || usuario || "").toLowerCase().split(' ').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')}!`, "Login Sucesso", "✅");
+                showCustomAlert(`Bem-vindo de volta, ${(data.nick || usuario || "").toLowerCase().split(' ').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')}!`, "Login Sucesso", "✅",true);
             }
-
-        } else {
-            if (typeof showCustomAlert === 'function') showCustomAlert(data.erro || "Dados incorretos.", "Erro", "❌");
-            else alert(data.erro || "Dados incorretos.");
         }
     } catch (error) {
         console.error("Erro no login:", error);
-        if (typeof showCustomAlert === 'function') showCustomAlert("Erro de conexão.", "Falha", "🌐");
+        if (typeof showCustomAlert === 'function') showCustomAlert("Erro de conexão ao tentar validar a senha.", "Falha", "🌐");
     } finally {
         if (typeof hideFullLoading === 'function') hideFullLoading();
     }
 }
-
 
 // 4. ATUALIZAR SALDO NA TELA (Busca os IDs corretos do seu HTML)
 function atualizarInterfaceAposLogin(dados) {
@@ -9069,6 +9094,33 @@ function celebrarPremioIntermediario(identificadorDoPremio) {
         });
     }
 }
+
+function dispararEfeitoAcumulado() {
+    // 🛡️ PROTEÇÃO: Se o modo Robô estiver ativo, aborta a animação para poupar memória
+    if (typeof modoRoboAtivo !== 'undefined' && modoRoboAtivo) {
+        console.log("🤖 [ROBÔ] Acumulado validado. Efeito visual suprimido.");
+        return; 
+    }
+
+    const div = document.createElement('div');
+    div.className = "fixed inset-0 pointer-events-none z-[9999] flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm transition-opacity duration-500";
+    
+    div.innerHTML = `
+        <div class="text-[100px] animate-bounce mb-2 drop-shadow-[0_0_20px_rgba(255,200,0,0.8)]">🧨🔥💸🔥🧨</div>
+        <div class="text-5xl md:text-7xl font-black text-yellow-400 drop-shadow-[0_0_30px_rgba(255,50,0,1)] animate-pulse text-center tracking-widest uppercase">
+            ACUMULADO<br><span class="text-white text-4xl md:text-5xl">LIBERADO!</span>
+        </div>
+    `;
+    
+    document.body.appendChild(div);
+
+    // Remove a explosão da tela após 4.5 segundos
+    setTimeout(() => {
+        div.style.opacity = '0';
+        setTimeout(() => div.remove(), 500);
+    }, 3000);
+}
+
 
 // Lá no seu bloco que recebe os dados do ganhador do prêmio:
 // * const idUnicoFesta = data.premio_nome + "_" + data.cartela_ganhadora; 

@@ -62,24 +62,34 @@ MODO_TREINAMENTO_ATIVO = False
 #PARAM_ID_SALA = os.environ.get("IDSALA", "001")
 
 # ==============================================================================
-# 🛠️ CONFIGURAÇÃO LIMPA DA SALA (ARGUMENTO > ENV > PADRÃO)
+# 🛠️ CONFIGURAÇÃO LIMPA DA SALA E REGIONAL (ARGUMENTO > ENV > PADRÃO)
 # ==============================================================================
-PARAM_ID_SALA = "001" # Padrãozão
+PARAM_ID_SALA = "001"      # Padrãozão
+PARAM_ID_REGIONAL = 1      # Padrão Matriz (Int32)
 
-# 1. Tenta pegar do argumento do Python (O jeito novo que você gostou)
+# --- 1. CONFIGURAÇÃO DA SALA ---
+# Tenta pegar do argumento do Python (O jeito novo que você gostou)
 if len(sys.argv) > 1:
     arg_sala = sys.argv[1]
     if arg_sala.isdigit():
         PARAM_ID_SALA = str(arg_sala).zfill(3)
         print(f"👉 [BOOT] Sala definida via ARGUMENTO: {PARAM_ID_SALA}")
 
-# 2. Se não veio argumento, tenta variável de ambiente (Docker)
+# Se não veio argumento, tenta variável de ambiente (Docker)
 elif os.environ.get("IDSALA"):
     PARAM_ID_SALA = str(os.environ.get("IDSALA")).zfill(3)
     print(f"👉 [BOOT] Sala definida via DOCKER ENV: {PARAM_ID_SALA}")
 
-print(f"✅ [SISTEMA] Rodando servidor para SALA ID: {PARAM_ID_SALA}")
+# --- 2. CONFIGURAÇÃO DA REGIONAL PADRÃO (OPÇÃO 2) ---
+# Captura de forma flexível (aceita tanto 'id_reg' quanto 'ID_REG')
+raw_reg = os.environ.get("id_reg") or os.environ.get("ID_REG")
+if raw_reg and str(raw_reg).isdigit():
+    PARAM_ID_REGIONAL = int(raw_reg)
+    print(f"👉 [BOOT] Regional padrão definida via ENV: {PARAM_ID_REGIONAL}")
+else:
+    print(f"👉 [BOOT] Regional padrão assumida (Fallback): {PARAM_ID_REGIONAL}")
 
+print(f"✅ [SISTEMA] Rodando servidor para SALA ID: {PARAM_ID_SALA} | REGIONAL ANCORA: {PARAM_ID_REGIONAL}")
 print("==================================================")
 
 app = Flask(__name__, static_folder='.')
@@ -110,9 +120,9 @@ def carregar_configuracao_treinamento():
     global MODO_TREINAMENTO_ATIVO
     try:
         # Tenta ler do banco de Vendas apenas no BOOT do servidor
-        from database import get_sales_db_connection # Garante que a função de conexão exista
-        s_db = get_sales_db_connection()
-        if s_db:
+        s_db = get_sales_db_connection() # Chama a função diretamente (já existe no arquivo)
+        
+        if s_db is not None: # Usando 'is not None' para evitar problemas com pymongo
             conf = s_db.parametros.find_one({}, {"em_treinamento": 1})
             if conf:
                 MODO_TREINAMENTO_ATIVO = bool(conf.get("em_treinamento", False))
@@ -384,6 +394,7 @@ CACHE_JOGO = {
 
 def carregar_cache_evento(id_evento, sales_db):
     global CACHE_JOGO, db
+    
     print(f"🚀 Iniciando carregamento em memória do Evento {id_evento}...")
     
     CACHE_JOGO['ativo'] = False
@@ -462,13 +473,12 @@ def carregar_cache_evento(id_evento, sales_db):
                 'layout': layout_data
             })
 
-
-
         CACHE_JOGO['cartelas'] = lista_cache
         CACHE_JOGO['ativo'] = True
         print(f"✅ CACHE CARREGADO: {len(lista_cache)} cartelas.")
         
-        recalcular_ranking_principal()         
+        recalcular_ranking_principal()
+         
 
     except Exception as e:
         print(f"❌ Erro cache: {e}")
@@ -943,7 +953,7 @@ def recalcular_ranking_top10():
                     alvo_necessario = len(validos_base) 
                     distancia = max(0, alvo_necessario - acertos)
                     
-                    if distancia == 0:
+                    if distancia == 0:  
                         if busca_linha and busca_linha_temporaria: msg_premio = "LINHA"
                         elif busca_duplo: msg_premio = "DUPLO BINGO"
                         else: msg_premio = "BINGO"
@@ -2389,31 +2399,32 @@ def admin_sortear_mesa():
     
     try:
         data = request.json or {}
-        print(f"\n📥 [API BOLA] Dados recebidos do painel: {data}")
+        #print(f"\n📥 [API BOLA] Dados recebidos do painel: {data}")
 
         # 1. PEGAMOS A BOLA QUE O LOCUTOR ESCOLHEU
         nova_bola = data.get('bola') 
         id_evento = data.get('id_evento')
-
+        em_conferencia = data.get('emConferencia', False)
+        
         # 🚀 FORÇA A CONVERSÃO E LOGA OS TIPOS DE DADOS
         if id_evento is not None:
             id_evento = int(id_evento)
             
-        print(f"🔍 [API BOLA] Analisando: Bola={nova_bola} (Tipo: {type(nova_bola).__name__}) | Evento={id_evento} (Tipo: {type(id_evento).__name__})")
+        #print(f"🔍 [API BOLA] Analisando: Bola={nova_bola} (Tipo: {type(nova_bola).__name__}) | Evento={id_evento} (Tipo: {type(id_evento).__name__})")
 
         if nova_bola is None:
-            print("❌ [API BOLA] ERRO: O JSON não continha a chave 'bola'!")
+            #print("❌ [API BOLA] ERRO: O JSON não continha a chave 'bola'!")
             return jsonify({'error': 'Nenhuma bola enviada pelo Admin'}), 400
 
         # 2. BUSCAMOS A LISTA ATUAL DA TABELA OFICIAL (bolas)
         doc_oficial = db.bolas.find_one({}) or {}
         bolas_cantadas = doc_oficial.get('bolas_cantadas', [])        
-        print(f"📋 [API BOLA] Tabela atual tem {len(bolas_cantadas)} bolas. Lista: {bolas_cantadas}")
+        #print(f"📋 [API BOLA] Tabela atual tem {len(bolas_cantadas)} bolas. Lista: {bolas_cantadas}")
 
         # 3. SEGURANÇA: Se a bola já estiver lá, não duplicamos
         if int(nova_bola) not in bolas_cantadas:
             bolas_cantadas.append(int(nova_bola))
-            print(f"✅ [API BOLA] Bola {nova_bola} inédita. Adicionada com sucesso!")
+            #print(f"✅ [API BOLA] Bola {nova_bola} inédita. Adicionada com sucesso!")
         else:
             print(f"⚠️ [API BOLA] AVISO: A bola {nova_bola} já estava sorteada. Ignorando duplicata.")
 
@@ -2431,21 +2442,25 @@ def admin_sortear_mesa():
             }
         }
 
-        print(f"💾 [API BOLA] Atualizando as duas tabelas no MongoDB (bolas e bolas_mesa)...")
+        #print(f"💾 [API BOLA] Atualizando as duas tabelas no MongoDB (bolas e bolas_mesa)...")
 
         # Como era no original: Atualiza o único registo existente nas tabelas
         #db.bolas.update_one({}, update_data, upsert=True)
         db.bolas_mesa.update_one({}, update_data, upsert=True)
         
         # 5. DISPARA O RANKING   # aqui demora
-        print(f"⚙️ [API BOLA] Iniciando Thread para recalcular o Ranking nas cartelas...")
-        threading.Thread(target=recalcular_ranking_principal).start()
+        #print(f"⚙️ [API BOLA] Iniciando Thread para recalcular o Ranking nas cartelas...")
+        if not em_conferencia:
+            print(f"⚙️ [API BOLA] Sorteio Normal: Iniciando recalculo de ranking...")
+            threading.Thread(target=recalcular_ranking_principal).start()
+        else:
+            print(f"🔮 [API BOLA] Modo Conferência: Ranking ignorado para bola {nova_bola}.")
 
-        print(f"🚀 [API BOLA] Fluxo concluído! Retornando OK para o JavaScript.")
+        #print(f"🚀 [API BOLA] Fluxo concluído! Retornando OK para o JavaScript.")
         return jsonify({'status': 'sincronizado', 'bola': nova_bola, 'total': len(bolas_cantadas)})
         
     except Exception as e:
-        print(f"❌ [API BOLA] ERRO CRÍTICO NA SINCRONIZAÇÃO DA BOLA: {e}")
+        #print(f"❌ [API BOLA] ERRO CRÍTICO NA SINCRONIZAÇÃO DA BOLA: {e}")
         traceback.print_exc() # Isso vai mostrar no terminal qual linha exata causou o erro!
         return jsonify({'error': str(e)}), 500
 
@@ -2460,6 +2475,7 @@ def admin_sortear():
         # Pega dados enviados (se houver)
         data = request.json or {}
         bola_manual = data.get('bola_manual') # Pode ser None
+        em_conferencia = data.get('emConferencia', False)
 
         # 1. Busca bolas já sorteadas
         dados_bolas = db.bolas.find_one({})
@@ -2506,14 +2522,16 @@ def admin_sortear():
         
         # threading.Thread(target=recalcular_ranking_principal).start()
   
-        gevent.spawn(recalcular_ranking_principal)
+        if not em_conferencia:
+            gevent.spawn(recalcular_ranking_principal)
+        else:
+            print(f"🔮 [CONFERÊNCIA] Bola {nova_bola} sorteada. Ranking ignorado.")
 
         return jsonify({'bola': nova_bola, 'total_sorteadas': len(bolas_cantadas)})
         
     except Exception as e:
         print(f"Erro ao sortear: {e}")
         return jsonify({'error': str(e)}), 500
-
 
 
 # --- SUBSTITUIÇÃO DA ROTA ANTIGA DE PRÊMIO ---
@@ -2667,6 +2685,25 @@ def logica_validacao_bingo_75(cartela_id, cartela_doc, bolas_lista, premio_nome,
     if 'BINGO' == premio_nome or 'ACUMULADO' in premio_nome:
         if bateu_bingo:
             eh_valido, msg_validacao, tag_premio = True, "BINGO (Cartela Cheia)!", "BINGO"
+
+            # 🏆 --- INÍCIO DA TRAVA DO ACUMULADO (75 BOLAS) --- 🏆
+            tabela_premios = db.premio.find_one({}) or {}
+            try:
+                bola_tope = int(tabela_premios.get('bola_tope', 0))
+                val_str = str(tabela_premios.get('premio_acumulado', '0')).replace(',', '.')
+                valor_acumulado = float(val_str)
+            except:
+                bola_tope = 0
+                valor_acumulado = 0.0
+
+            bolas_mesa = db.bolas_mesa.find_one({}) or {}
+            ordem_batida = len(bolas_mesa.get('bolas_cantadas', []))
+
+            if bola_tope > 0 and valor_acumulado > 0 and ordem_batida <= bola_tope:
+                tag_premio = "ACUMULADO" # <- Sobrescreve para o banco salvar
+                msg_validacao = "🏆 PRÊMIO DE ACUMULADO BATIDO! 🏆" # <- Alerta visual
+                print(f"🔥 [ACUMULADO 75] Ganhador validado na bola {ordem_batida} (Tope: {bola_tope})!")
+            # 🏆 --- FIM DA TRAVA DO ACUMULADO --- 🏆
         else:
             msg_validacao = f"Faltam {len(alvo_geral - bolas_set)} p/ Bingo."
     else:
@@ -2860,7 +2897,7 @@ def admin_validar_cartela_75():
 @app.route('/api/admin/validar_cartela', methods=['POST'])
 def admin_validar_cartela():
     global db
-    print("📥 [VALIDAÇÃO 90] Recebendo requisição...") # Log para debug
+    print("📥 [VALIDAÇÃO 90] Recebendo requisição...") # xxx adicionar fogos aqui
     
     if db is None: 
         print("❌ Erro: DB desconectado.")
@@ -2985,8 +3022,37 @@ def admin_validar_cartela():
             detalhes = "Falta 1!" if bateu else f"Faltam {len(faltam)}."
         else:
             bateu, detalhes = True, "Validação Visual."
-
+        
         status_code = 'WIN' if bateu else 'LOSS'
+
+        # 🏆 --- INÍCIO DA TRAVA DO ACUMULADO (90 BOLAS) --- 🏆
+        print(f"\n🔍 [DEBUG ACUMULADO 90] Avaliando: status={status_code}, premio_nome={premio_nome}")
+        
+        if status_code == 'WIN' and 'BINGO' in premio_nome and 'DUPLO' not in premio_nome:
+            tabela_premios = db.premio.find_one({}) or {}
+                
+            try:
+                bola_tope = int(tabela_premios.get('bola_tope_ac', 0))
+                val_str = str(tabela_premios.get('premio_acumulado', '0')).replace(',', '.')
+                valor_acumulado = float(val_str)
+            except Exception as e:
+                print(f"⚠️ [DEBUG ACUMULADO 90] Erro ao converter valores: {e}")
+                bola_tope = 0
+                valor_acumulado = 0.0
+
+            bolas_mesa = db.bolas_mesa.find_one({}) or {}
+            ordem_batida = len(bolas_mesa.get('bolas_cantadas', []))
+
+            print(f"📊 [DEBUG ACUMULADO 90] Valores -> Tope: {bola_tope} | Valor R$: {valor_acumulado} | Bola Atual: {ordem_batida}")
+
+            # O GATILHO: Se está dentro da ordem e tem grana no prêmio
+            if bola_tope > 0 and valor_acumulado > 0 and ordem_batida <= bola_tope:
+                premio_nome = "ACUMULADO"  
+                detalhes = "🏆 PRÊMIO DE ACUMULADO BATIDO! 🏆" 
+                print(f"🔥 [ACUMULADO 90] Ganhador validado na bola {ordem_batida} (Tope: {bola_tope})!")
+            else:
+                print(f"❌ [DEBUG ACUMULADO 90] Gatilho falhou. A condição (Tope > 0 E Valor > 0 E Ordem <= Tope) não foi satisfeita.")
+        # 🏆 --- FIM DA TRAVA DO ACUMULADO --- 🏆
 
         # ==============================================================================
         # 👉 NOVO: BUSCA REGIONAL DA CARTELA VENCEDORA PARA O LOCUTOR
@@ -3321,7 +3387,7 @@ def admin_resetar():
                     {'$set': {'valor_total_premio': str_total, 'valor_rateio': str_rateio}}
                 )
                 
-                print(f"💰 [AUDITORIA PAGAMENTO A0]")  
+                #print(f"💰 [AUDITORIA PAGAMENTO A0]")  
  
                 for w in lista_vencedores:
                     obj_ganhador = {
@@ -3361,7 +3427,7 @@ def admin_resetar():
                     # Só paga se o evento for finalizado com SUCESSO (botão verde)
                     # ====================================================================
                     # Dentro do loop de vencedores na rota /api/admin/resetar
-                    print(f"💰 [AUDITORIA PAGAMENTO A1]")
+                    #print(f"💰 [AUDITORIA PAGAMENTO A1]")
    
 
                     if finalizar_com_sucesso and val_rateio_float > 0 and sales_db is not None:
@@ -4330,162 +4396,154 @@ def buscar_id_cliente_por_cartela(sales_db, id_evento, cartela_id):
     except:
         return None
 
-
 @app.route('/api/login_cliente', methods=['POST'])
 def api_login_cliente():
-    # print("📍 [DEBUG] 999. Requisição recebida na rota de login.")
     try:
-        # CORREÇÃO 1: Use get_json() é mais seguro que .json direto
         data = request.get_json()
-        
-        # Proteção caso data seja None
         if not data:
             return jsonify({'erro': 'Corpo da requisição inválido (JSON esperado).'}), 400
 
         usuario = data.get('usuario', '').strip()
         senha = data.get('senha', '').strip()
-        
-        # print(f"📍 [DEBUG] 02. Dados extraídos. Usuario: {usuario}")
 
         if not usuario or not senha:
             return jsonify({'erro': 'Preencha usuário e senha.'}), 400
 
-        # --- PONTO DE TRAVAMENTO 1: CONEXÃO ---
-        # print("📍 [DEBUG] 03. Chamando get_sales_db_connection()...")
         sales_db = get_sales_db_connection()
-        
         if sales_db is None:
-            # print("❌ [DEBUG] Falha: sales_db retornou None.")
             return jsonify({'erro': 'Erro interno: Banco de clientes inacessível.'}), 500
-        # print("📍 [DEBUG] 04. Conexão obtida com sucesso.")
 
-        # --- PONTO DE TRAVAMENTO 2: CONSULTA MONGO ---
-        # print("📍 [DEBUG] 05. Executando find_one no Mongo...")
-        cli = sales_db.clientes.find_one({'nick': {'$regex': f'^{usuario}$', '$options': 'i'}})
-        # print(f"📍 [DEBUG] 06. Consulta finalizada. Cliente encontrado? {cli is not None}")
+        # =====================================================================
+        # CORREÇÃO 1: Proteção contra injeção de Regex no MongoDB
+        # =====================================================================
+        usuario_seguro = re.escape(usuario) 
+        cli = sales_db.clientes.find_one({'nick': {'$regex': f'^{usuario_seguro}$', '$options': 'i'}})
 
-        if not cli:
-            return jsonify({'erro': 'Usuário não encontrado.'}), 401
+        # Mensagem genérica para não revelar se o usuário existe
+        msg_erro_generica = 'Usuário ou senha incorretos.'
 
-        # --- PONTO DE TRAVAMENTO 3: BCRYPT (PROCESSAMENTO PESADO) ---
-        if 'senha' in cli:
+        if not cli or 'senha' not in cli:
+            return jsonify({'erro': msg_erro_generica}), 401
 
-            # ATENÇÃO: Capitalize aqui pode impedir login se a senha real for "batata" e virar "Batata"
-            # O ideal seria testar a senha original primeiro, e depois o capitalize como fallback.
-            senha_fmt = senha.capitalize()
-
-            senha_banco = cli['senha']
+        # =====================================================================
+        # CORREÇÃO 2: Teste de senha (Bcrypt + Fallback para Texto Puro)
+        # =====================================================================
+        senha_valida = False
+        senha_banco = cli['senha']
+        senha_banco_bytes = senha_banco.encode('utf-8')
+        
+        try:
+            # 1º TENTATIVA: Testa se a senha é um hash bcrypt válido
+            if bcrypt.checkpw(senha.encode('utf-8'), senha_banco_bytes):
+                senha_valida = True
+            elif bcrypt.checkpw(senha.capitalize().encode('utf-8'), senha_banco_bytes):
+                senha_valida = True
+                
+        except ValueError: 
+            # Captura o erro "Invalid salt" (Senha em texto puro no banco)
+            print("⚠️ [DEBUG] A senha no banco não tem criptografia. Testando texto direto...")
             
-            # print("📍 [DEBUG] 07. Iniciando verificação de senha (bcrypt)...")
-            
-            # ATENÇÃO: Se travar aqui, é incompatibilidade do Gevent com C-Extensions
-            try:
-                # Testa com capitalize (como estava no seu código original)
-                senha_valida = bcrypt.checkpw(senha_fmt.encode('utf-8'), cli['senha'].encode('utf-8'))
-            except:
-                senha_valida = False
-
-            # print(f"📍 [DEBUG] 08. Bcrypt finalizado. Senha válida? {senha_valida}")
-
-            if senha_valida:
-                # --- SUCESSO NO LOGIN ---
-                session['id_cliente'] = str(cli['id_cliente'])
-                session['nick_cliente'] = cli['nick']
-                
-                saldo = converter_decimal(cli.get('saldo_atual', 0.0))
-                
-                # --- VERIFICAÇÃO DE TROCA DE SENHA OBRIGATÓRIA ---
-                # CUIDADO: No seu código estava "@senha@". Voltei para "senha".
-                # Se a sua senha padrão for realmente "@senha@", altere abaixo.
-                if senha.lower() == "senha": 
-                    session['id_cliente'] = str(cli['id_cliente']) 
-                    session['nick_cliente'] = cli['nick']
-                    session['troca_senha_pendente'] = True
-
-                    return jsonify({
-                        "status": "troca_senha_obrigatoria",
-                        "mensagem": "Por segurança, você deve atualizar sua senha.",
-                        "redirect_url": url_for('cliente_troca_senha_obrigatoria')
-                     })
-                    
-                # Busca Evento Ativo
-                id_evento_ativo = None
-                try:
-                    evt_ativo = sales_db.eventos.find_one({'status': 'ativo'})
-                    if evt_ativo:
-                        id_evento_ativo = str(evt_ativo.get('id_evento') or evt_ativo.get('numero') or evt_ativo.get('seq') or evt_ativo['_id'])
-                except Exception as e_evt:
-                    print(f"⚠️ Aviso no evento: {e_evt}")
-                
-                # 👉 NOVO: Busca o parâmetro receber_pix da tabela parametros
-                parametros = sales_db.parametros.find_one({}) or {}
-
-                admin_quer_pix = parametros.get('receber_pix', False)
-
-                # 👉 NOVO 1: Puxa o texto de saque personalizado (se não existir, usa o padrão)
-                texto_padrao_saque = "ℹ️ O valor solicitado ficará pendente de aprovação. Seu saldo continuará disponível para jogo até o pagamento ser processado pelo operador."
-                texto_saque = parametros.get('texto_requisicao_saque', texto_padrao_saque)
-
-                # 👉 NOVO 2: Verifica se o cliente tem saques pendentes
-                tem_saque_pendente = False
-                try:
-                    # Procure na sua tabela de saques. Adapte 'saques' para o nome real da sua tabela!
-                    busca_saque = sales_db.saques.find_one({
-                        'id_cliente': int(cli['id_cliente']), 
-                        'status': 'pendente' 
-                    })
-                    if busca_saque:
-                        tem_saque_pendente = True
-                except Exception as e_saque:
-                    print(f"⚠️ Aviso ao buscar saques: {e_saque}")
-
-                # 2. Olha para o sistema (A capacidade técnica do servidor)
-                # (Lembrando que lá no topo do ficheiro deixámos mp_sdk = None se não houver .env)
-                servidor_tem_token = (mp_sdk is not None)
-
-                # 3. A SUA VARIÁVEL GLOBAL UNIFICADA:
-                # Só mostra o PIX se o Admin quiser E o servidor tiver a chave!
-                receberemos_pix = (admin_quer_pix == True) and servidor_tem_token
-
-                # ========================================================
-                # --- FASE 2: VERIFICAÇÃO DE CORTESIAS NO LOGIN ---
-                # ========================================================
-                from datetime import datetime
-                hoje_str = datetime.now().strftime('%d/%m/%Y')
-                data_cortesia_cliente = cli.get('data_cortesia')
-                
-                tem_cortesia = False
-                
-                # Se a data guardada for diferente de hoje (ou null), investigamos a tabela de eventos
-                if data_cortesia_cliente != hoje_str:
-                    eventos_com_cortesia = list(sales_db.eventos.find({
-                        'status': 'ativo',
-                        'data_evento': hoje_str,
-                        'distribuir_cortesia': {'$gt': 0}
-                    }))
-                    
-                    if len(eventos_com_cortesia) > 0:
-                        tem_cortesia = True
-
-                # ========================================================
-
-                return jsonify({
-                    'status': 'ok', 
-                    'msg': 'Logado com sucesso!',
-                    'nick': cli['nick'],
-                    'saldo': saldo,
-                    'id': str(cli['id_cliente']),
-                    'id_evento_ativo': id_evento_ativo,
-                    'receber_pix': receberemos_pix,
-                    'texto_saque': texto_saque,                                # 👉 Envia para o Front
-                    'tem_saque_pendente': tem_saque_pendente, # 👉 Envia para o Front
-                    'tem_cortesia': tem_cortesia     # 👉 Enviamos o sinal para o Frontend!
-                })
+            # 2º TENTATIVA (FALLBACK): Compara o texto puro
+            if senha == senha_banco or senha.capitalize() == senha_banco:
+                senha_valida = True
+                print("✅ [DEBUG] Login aceito via texto puro (Legacy).")
             else:
-                print("⛔ [DEBUG] Senha incorreta.")
-                return jsonify({'erro': 'Senha incorreta.'}), 401
-        else:
-            return jsonify({'erro': 'Usuário sem senha cadastrada.'}), 401
+                senha_valida = False
+                
+        except Exception as e:
+            print(f"⚠️ [DEBUG] Erro interno na checagem bcrypt: {e}")
+            senha_valida = False
+
+        if not senha_valida:
+            return jsonify({'erro': msg_erro_generica}), 401
+
+        # =====================================================================
+        # --- SUCESSO NO LOGIN ---
+        # =====================================================================
+        session['id_cliente'] = str(cli['id_cliente'])
+        session['nick_cliente'] = cli['nick']
+        
+        saldo = converter_decimal(cli.get('saldo_atual', 0.0))
+        
+        # --- VERIFICAÇÃO DE TROCA DE SENHA OBRIGATÓRIA ---
+        if senha.lower() == "senha": 
+            session['troca_senha_pendente'] = True
+            return jsonify({
+                "status": "troca_senha_obrigatoria",
+                "mensagem": "Por segurança, você deve atualizar sua senha.",
+                "redirect_url": url_for('cliente_troca_senha_obrigatoria')
+             })
+                
+        # Busca Evento Ativo
+        id_evento_ativo = None
+        try:
+            evt_ativo = sales_db.eventos.find_one({'status': 'ativo'})
+            if evt_ativo:
+                id_evento_ativo = str(evt_ativo.get('id_evento') or evt_ativo.get('numero') or evt_ativo.get('seq') or evt_ativo['_id'])
+        except Exception as e_evt:
+            print(f"⚠️ Aviso no evento: {e_evt}")
+        
+        # 👉 NOVO: Busca o parâmetro receber_pix da tabela parametros
+        parametros = sales_db.parametros.find_one({}) or {}
+
+        admin_quer_pix = parametros.get('receber_pix', False)
+
+        # 👉 NOVO 1: Puxa o texto de saque personalizado (se não existir, usa o padrão)
+        texto_padrao_saque = "ℹ️ O valor solicitado ficará pendente de aprovação. Seu saldo continuará disponível para jogo até o pagamento ser processado pelo operador."
+        texto_saque = parametros.get('texto_requisicao_saque', texto_padrao_saque)
+
+        # 👉 NOVO 2: Verifica se o cliente tem saques pendentes
+        tem_saque_pendente = False
+        try:
+            busca_saque = sales_db.saques.find_one({
+                'id_cliente': int(cli['id_cliente']), 
+                'status': 'pendente' 
+            })
+            if busca_saque:
+                tem_saque_pendente = True
+        except Exception as e_saque:
+            print(f"⚠️ Aviso ao buscar saques: {e_saque}")
+
+        # 2. Olha para o sistema (A capacidade técnica do servidor)
+        servidor_tem_token = (mp_sdk is not None)
+
+        # 3. A SUA VARIÁVEL GLOBAL UNIFICADA:
+        receberemos_pix = (admin_quer_pix == True) and servidor_tem_token
+
+        # ========================================================
+        # --- FASE 2: VERIFICAÇÃO DE CORTESIAS NO LOGIN ---
+        # ========================================================
+        from datetime import datetime
+        hoje_str = datetime.now().strftime('%d/%m/%Y')
+        data_cortesia_cliente = cli.get('data_cortesia')
+        
+        tem_cortesia = False
+        
+        # Se a data guardada for diferente de hoje (ou null), investigamos a tabela de eventos
+        if data_cortesia_cliente != hoje_str:
+            eventos_com_cortesia = list(sales_db.eventos.find({
+                'status': 'ativo',
+                'data_evento': hoje_str,
+                'distribuir_cortesia': {'$gt': 0}
+            }))
+            
+            if len(eventos_com_cortesia) > 0:
+                tem_cortesia = True
+
+        # ========================================================
+
+        return jsonify({
+            'status': 'ok', 
+            'msg': 'Logado com sucesso!',
+            'nick': cli['nick'],
+            'saldo': saldo,
+            'id': str(cli['id_cliente']),
+            'id_evento_ativo': id_evento_ativo,
+            'receber_pix': receberemos_pix,
+            'texto_saque': texto_saque,
+            'tem_saque_pendente': tem_saque_pendente,
+            'tem_cortesia': tem_cortesia
+        })
 
     except Exception as e:
         print(f"❌ [DEBUG] ERRO CRÍTICO (EXCEPTION): {e}")
@@ -5083,7 +5141,7 @@ def cadastrar_cliente():
 
         cidade = data.get('cidade', '').strip().title()
  
-        # --- NOVO TRECHO DE VALIDAÇÃO --- aquix
+        # --- NOVO TRECHO DE VALIDAÇÃO --
         valido, erro_msg = nick_eh_valido(nick)
         if not valido:
             return jsonify({'erro': erro_msg}), 400
@@ -5142,6 +5200,24 @@ def cadastrar_cliente():
         except (ValueError, TypeError):
             id_colaborador_final = 0
 
+        # ==============================================================================
+        # 🏢 --- RESOLUÇÃO DA REGIONAL EM CASCATA EM TEMPO REAL ---
+        # ==============================================================================
+        # Passo A: Carrega o fallback direto da variável global definida no BOOT
+        id_regional_final = PARAM_ID_REGIONAL
+
+        # Passo B: Tenta buscar a regional do Colaborador que indicou (Tem prioridade)
+        if id_colaborador_final > 0:
+            colaborador_doc = sales_db.colaboradores.find_one({'id_colaborador': id_colaborador_final})
+            if colaborador_doc:
+                try:
+                    id_regional_final = int(colaborador_doc.get('id_regional', id_regional_final))
+                    print(f"📌 [CADASTRO] Regional vinculada via Colaborador {id_colaborador_final}: Regional {id_regional_final}")
+                except (ValueError, TypeError):
+                    pass
+        # ==============================================================================
+
+
         # 5. Montagem do Documento
         novo_cliente = {
             'id_cliente': novo_id_cliente, 
@@ -5155,6 +5231,7 @@ def cadastrar_cliente():
             'origem': 'auto_cadastro_site',
             'cidade': cidade,
             'id_colaborador': id_colaborador_final,
+            'id_regional': id_regional_final,
             'em_treinamento': modo_treino
         }
 
@@ -5202,18 +5279,19 @@ def cadastrar_cliente():
 #  FUNÇÃO AUXILIAR: NOTIFICAÇÃO TELEGRAM
 # ==============================================================================
 def enviar_notificacao_telegram(mensagem):
+    print(f"\n🔄 [TELEGRAM] Iniciando processo de notificação...")
     try:
         # 1. Tenta aceder à base de dados de vendas
         sales_db = get_sales_db_connection()
         
         if sales_db is None:
-            print("⚠️ [TELEGRAM] Sem ligação à base de dados. Notificação ignorada.")
+            print("⚠️ [TELEGRAM] Sem ligação à base de dados (sales_db). Notificação ignorada.")
             return
 
         # 2. Procura os parâmetros da sala
         parametros = sales_db.parametros.find_one({}) or {}
         
-        # 3. Extrai as chaves (se não existirem, retorna None)
+        # 3. Extrai as chaves (exigindo input explícito para maior estabilidade)
         BOT_TOKEN = parametros.get('token_telegram')
         CHAT_ID = parametros.get('chat_id_telegram')
 
@@ -5225,6 +5303,10 @@ def enviar_notificacao_telegram(mensagem):
         # Limpa possíveis espaços em branco acidentais no cadastro
         BOT_TOKEN = str(BOT_TOKEN).strip()
         CHAT_ID = str(CHAT_ID).strip()
+        
+        # Cria uma máscara para o log (exibe apenas o início e o fim do token por segurança)
+        token_mascarado = f"{BOT_TOKEN[:8]}...{BOT_TOKEN[-4:]}"
+        print(f"📡 [TELEGRAM] Preparando disparo para Chat ID: {CHAT_ID} | Token: {token_mascarado}")
 
         # 5. Envia a notificação
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -5234,14 +5316,18 @@ def enviar_notificacao_telegram(mensagem):
             "parse_mode": "HTML"
         }
         
+        print("⏳ [TELEGRAM] A enviar requisição para a API...")
         resposta = requests.post(url, json=payload, timeout=5)
         
-        if resposta.status_code != 200:
+        if resposta.status_code == 200:
+            print("✅ [TELEGRAM] Mensagem entregue com sucesso ao administrativo!")
+        else:
             print(f"⚠️ [TELEGRAM] Falha ao enviar. Código: {resposta.status_code} - Erro: {resposta.text}")
             
+    except requests.exceptions.Timeout:
+        print("⏳ [TELEGRAM] Erro: Tempo de requisição esgotado (Timeout). A API demorou a responder.")
     except Exception as e:
-        print(f"❌ Erro crítico ao enviar Telegram: {e}")
-
+        print(f"❌ [TELEGRAM] Erro crítico na função: {e}")
 
 # ==============================================================================
 #  ROTA DE SOLICITAÇÃO DE SAQUE (COM LOGS DE DEBUG)
@@ -5261,7 +5347,12 @@ def solicitar_saque():
         print(f"DEBUG: ID na Sessão: {id_sessao} | Tipo: {type(id_sessao)}")
 
         data = request.get_json() # get_json() é mais seguro
-        valor_solicitado = float(data.get('valor', 0))
+        
+        # Converte o valor para float de forma segura, evitando strings vazias
+        try:
+            valor_solicitado = float(data.get('valor', 0))
+        except (ValueError, TypeError):
+            return jsonify({'erro': 'Valor numérico inválido.'}), 400
         
         # Conexão com Banco
         sales_db = get_sales_db_connection()
@@ -5332,7 +5423,7 @@ def solicitar_saque():
         id_novo_saque = str(resultado_saque.inserted_id)
 
         # 👉 NOVO: Debita o saldo e registra no extrato de forma segura
-        sucesso, saldo_apos_atomo = registrar_transacao_cliente(
+        registrar_transacao_cliente(
             db_vendas=sales_db,
             id_cliente=id_sessao,
             valor=-abs(valor_solicitado), # Saque é negativo
@@ -5343,21 +5434,26 @@ def solicitar_saque():
             registrado_por="SISTEMA_SAQUE"
         )
 
-        saldo_exato = saldo_apos_atomo if sucesso else novo_saldo
+        # Como já fizemos a conta "saldo_atual - valor_solicitado" lá em cima, 
+        # basta usar a variável novo_saldo e esquecer o que a função retorna!
+        saldo_exato = float(novo_saldo)
 
         # Envia Notificação ao Telegram
         try:
             data_formatada = hora_brasil().strftime('%d/%m/%Y às %H:%M:%S')
-            valor_str = f"{valor_solicitado:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            #saldo_str = f"{novo_saldo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            saldo_str = f"{saldo_exato:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            
+            # Formatação limpa usando o valor numérico garantido
+            v_num = abs(float(valor_solicitado)) 
+            s_num = float(saldo_exato)
+
+            v_str = f"{v_num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            s_str = f"{s_num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
             msg_telegram = (
-                f"💰 <b>SOLICITAÇÃO DE SAQUE</b>\n"
-                f"\n"
-                f"👤 <b>ID: {cliente.get('id_cliente')} - {cliente.get('nick')}</b>\n"
-                f"💲 Valor Solicitado: R$ {valor_str}\n" 
-                f"🏦 Saldo Restante: R$ {saldo_str}\n"
+                f"💰 <b>SOLICITAÇÃO DE SAQUE</b>\n\n"
+                f"👤 <b>ID: {cliente.get('id_cliente')} - {cliente.get('nick')}</b>\n\n"
+                f"💲 <b>Valor Solicitado: R$ {v_str}</b>\n\n"
+                f"🏦 Saldo Restante: R$ {s_str}\n"
                 f"🔑 <b>PIX: {novo_saque['chave_pix']}</b>\n"
                 f"🔄 Data: {data_formatada}"
             )
@@ -5365,6 +5461,8 @@ def solicitar_saque():
 
         except Exception as e_msg:
             print(f"Erro ao notificar Telegram: {e_msg}")
+            import traceback
+            traceback.print_exc()
 
         print(f"✅ Saque solicitado e saldo atualizado: {cliente.get('nick')} - R$ {valor_solicitado}")
         print("--- FIM DEBUG ---\n")
@@ -5372,7 +5470,7 @@ def solicitar_saque():
         return jsonify({
             'status': 'ok', 
             'msg': 'Solicitação enviada! O valor foi retido para análise.',
-            'novo_saldo': novo_saldo # Devolvemos o novo saldo para o Front atualizar a tela!
+            'novo_saldo': saldo_exato # Devolvemos o saldo_exato para o Front atualizar a tela!
         })
 
     except Exception as e:
@@ -6642,6 +6740,8 @@ def main():
             spawn=pool_de_conexoes # <--- AQUI A MÁGICA ACONTECE
         )
         
+        #gevent.spawn(enviar_notificacao_telegram, "🚀 <b>Sistema Iniciado!</b>\nO motor do bingo está online e pronto para o sorteio.")
+
         print("✅ [5] Servidor ONLINE e PRONTO. Aguardando conexões...")
         server.serve_forever()
 

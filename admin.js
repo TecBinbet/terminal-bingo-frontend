@@ -28,7 +28,13 @@ let tempoInicioTransmissao = sessionStorage.getItem('tempoInicioBackup') ? parse
 
 let tempoEsperaConferenciaRobo = 3;
 
+let emConferencia = false; // Chave mestre para o modo de auditoria de globo
+
 let qtdeCuponsVendidosEvento = 0;
+
+let qtdeCartelasVendidosEvento = 0;
+
+let acumuladoCelebradoNestaRodada = false;
 
 let A_Ultima_Bola = 0;
 
@@ -1037,6 +1043,12 @@ function processarMensagemWS(event) {
             }
             */
 
+            if (payload.ganhadoresData) {
+                if (typeof renderListaGanhadores === 'function') {
+                    renderListaGanhadores(payload.ganhadoresLive);
+                }
+            }
+
             // --- PARTE B: RANKING / TOP 10 (ATIVO!) ---
             if (payload.melhoresData) {
                 // 🛡️ O ESCUDO DE PROTEÇÃO 🛡️
@@ -1756,7 +1768,8 @@ async function sortearBola() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 bola: numero, 
-                id_evento: parseInt(id_evento_ativo) 
+                id_evento: parseInt(id_evento_ativo),
+                emConferencia: emConferencia 
             })
         }).catch(e => console.warn("⚠️ Aviso: Envio ao servidor demorou, mas o jogo segue."));
         
@@ -1818,7 +1831,7 @@ function iniciarTransmissao() {
 }
 
 async function inserirBolaManual() {
-    //  <<  Ajuste Sincronismo Vídeo 
+    //  <<  Ajuste Sincronismo Vídeo
     if (tempoInicioTransmissao === 0) {
         customAlert("Inicie a transmissão primeiro!");
         return; 
@@ -1892,7 +1905,8 @@ async function inserirBolaManual() {
 
         const payload = { 
             bola: valor,
-           id_evento: parseInt(id_evento_ativo)
+           id_evento: parseInt(id_evento_ativo),
+           emConferencia: emConferencia 
         };
 
         const response = await fetch(`${API_BASE_URL}/api/admin/sortear_mesa`, {
@@ -2218,7 +2232,7 @@ async function executarCarregamentoReal(idEvento) {
         }
 
         dadosEventoAtual = dados; 
-
+        qtdeCartelasVendidosEvento = dados.qtde_vendida || 0;
         qtdeCuponsVendidosEvento = dados.qtde_cupons || 0; 
         console.log(`%c🎟️ SORTE EXTRA: ${qtdeCuponsVendidosEvento} cupons em jogo.`, "color: #fbbf24; font-weight: bold;");
 
@@ -2296,6 +2310,94 @@ async function executarCarregamentoReal(idEvento) {
     }
 }
 
+function customPrompt(pergunta, titulo = "📝 Seleção", valorPadrao = "75") {
+    return new Promise((resolve) => {
+        // Usa os mesmos elementos que você já usa no customAlert/Confirm
+        modalTitle.textContent = titulo;
+        modalMessage.innerText = pergunta;
+        modalActions.innerHTML = ''; // Limpa botões antigos
+
+        // Cria o campo de entrada
+        const input = document.createElement('input');
+        input.type = "text";
+        input.value = valorPadrao;
+        input.className = "w-full p-3 mb-4 bg-gray-800 border border-gray-600 rounded text-white text-center text-lg focus:outline-none focus:border-blue-500";
+        modalActions.appendChild(input);
+
+        // Cria os botões
+        const btnCancel = document.createElement('button');
+        btnCancel.className = "bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-4 rounded-lg mr-2";
+        btnCancel.textContent = "Cancelar";
+        btnCancel.onclick = () => { fecharCustomModal(); resolve(null); };
+
+        const btnConfirm = document.createElement('button');
+        btnConfirm.className = "bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg";
+        btnConfirm.textContent = "Confirmar";
+        btnConfirm.onclick = () => { 
+            const val = input.value;
+            fecharCustomModal(); 
+            resolve(val); 
+        };
+
+        modalActions.appendChild(btnCancel);
+        modalActions.appendChild(btnConfirm);
+        
+        abrirCustomModal();
+        input.focus();
+        input.select();
+    });
+}
+
+async function iniciarConferenciaDeBolas() {
+    // 1. Pergunta o tipo de jogo
+    const tipo = await customPrompt("Qual o tipo de sorteio?", "Configurar Conferência", "75");
+    if (!tipo || (tipo !== "75" && tipo !== "90")) {
+        customAlert("Operação cancelada ou tipo inválido.");
+        return; 
+    }
+
+    const maxBolas = parseInt(tipo) === 75 ? 75 : 90;
+    
+    // 2. Configura o Estado
+    emConferencia = true;
+    MAX_BOLAS = maxBolas;
+
+    initGrid();
+    
+    // Se o seu sistema tiver uma função para enviar essa config aos terminais, chame-a aqui:
+    //if (typeof enviarConfiguracaoParaTerminais === 'function') {
+    //    enviarConfiguracaoParaTerminais({ max_bolas: maxBolas });
+    //}
+
+
+    // 3. Reset Limpo (Sem carregar vendas ou ranking)
+    showLoading("Iniciando Conferência Técnica...");
+    try {
+        await fetch(`${API_BASE_URL}/api/admin/resetar`, { method: 'POST' });
+        
+        bolasSorteadasCache = [];
+        updateGrid([]); // Limpa grid visual
+        if (bolaDestaque) bolaDestaque.textContent = "--";
+        
+        // 4. Preparação da Mesa
+        // Força o título para o modo técnico
+        const elTitulo = document.getElementById('premio-atual');
+        if (elTitulo) elTitulo.textContent = "EM CONFERÊNCIA DE BOLAS";
+        
+        // Ativa hardware se necessário
+        if (modoSorteio === 'manual') {
+            iniciarTransmissao();
+            if (enviarPortaSerial) enviarComandoHardware('F96');
+        }
+
+        console.warn(`🔮 [CONFERÊNCIA] Modo Ativado para ${MAX_BOLAS} bolas.`);
+        toggleAdminMenu(); // Fecha o menu
+    } catch (e) {
+        customAlert("Erro ao iniciar conferência.");
+    } finally {
+        hideLoading();
+    }
+}
 
 async function definirProximoPremioAutomatico() {
     if (!dadosEventoAtual || !dadosEventoAtual.premios) return;
@@ -2760,6 +2862,21 @@ async function validarCartelaAuditoria() {
                 msgLabel.className = "text-xl font-black text-green-400 animate-pulse";
                 
                 if (!modoRoboAtivo && btnConfirmar) {
+
+                    // ====================================================================
+                    // 🔥 GATILHO DOS FOGOS: Dispara no momento exato em que a cartela bate!
+                    // ====================================================================
+                    const textoValidacao = data.msg || "";
+                    if (textoValidacao.includes("ACUMULADO")) {
+                        if (typeof acumuladoCelebradoNestaRodada !== 'undefined' && !acumuladoCelebradoNestaRodada) {
+                            if (typeof dispararEfeitoAcumulado === 'function') {
+                                dispararEfeitoAcumulado();
+                                acumuladoCelebradoNestaRodada = true; // Trava para não explodir nas próximas
+                            }
+                        }
+                    }
+
+
                     btnConfirmar.classList.remove('hidden'); 
                     btnConfirmar.onclick = () => confirmarGanhadorAtual(); 
                     
@@ -2820,6 +2937,47 @@ async function validarCartelaAuditoria() {
 }
 
 
+function dispararEfeitoAcumulado() {
+    // 1. Cria o container principal da animação (fixo na tela toda)
+    const div = document.createElement('div');
+    div.className = "fixed inset-0 pointer-events-none z-[9999] flex flex-col items-center justify-center bg-black/85 backdrop-blur-md transition-opacity duration-500 opacity-0";
+    
+    // 2. Injeta a estrutura com textos, emojis e classes de animação nativas do Tailwind
+    div.innerHTML = `
+        <div class="text-[80px] md:text-[120px] animate-bounce mb-4 select-none filter drop-shadow-[0_0_20px_rgba(234,179,8,0.8)]">
+            ⚡🔥🏆🔥⚡
+        </div>
+        
+        <div class="text-center tracking-wider px-4">
+            <h2 class="text-6xl md:text-8xl font-black text-yellow-400 font-mono uppercase tracking-widest drop-shadow-[0_0_30px_rgba(220,38,38,1)] animate-pulse">
+                ACUMULADO
+            </h2>
+            <h3 class="text-white font-extrabold text-3xl md:text-5xl mt-2 tracking-wide uppercase drop-shadow-[0_2px_10px_rgba(0,0,0,1)]">
+                💥 LIBERADO NA MESA! 💥
+            </h3>
+        </div>
+        
+        <div class="text-5xl md:text-7xl mt-6 animate-pulse select-none">
+            💸✨💸✨💸
+        </div>
+    `;
+    
+    // 3. Adiciona o elemento ao corpo da página
+    document.body.appendChild(div);
+
+    // 4. Efeito de Fade-In (Suavidade ao aparecer)
+    setTimeout(() => {
+        div.classList.remove('opacity-0');
+    }, 50);
+
+    // 5. Efeito de Fade-Out e Auto-destruição após 4.5 segundos
+    setTimeout(() => {
+        div.classList.add('opacity-0');
+        // Espera a transição do fade terminar para remover fisicamente do DOM
+        setTimeout(() => div.remove(), 500);
+    }, 3000);
+}
+
 async function confirmarGanhadorAtual() {
     houveGanhadorNaSessao = true; 
     const input = document.getElementById('input-auditoria');
@@ -2869,7 +3027,6 @@ async function encerrarSessaoConferencia(modoSilencioso = false) {
     document.getElementById('modal-conferencia').classList.add('hidden');
     document.getElementById('modal-conferencia').classList.remove('flex');
     
-    devolverFocoAoJogo();
     mostrarSpinner("Avançando Premiação...");
 
     // Essa rota de linhas restantes é apenas interna do banco, pode continuar sendo chamada direto
@@ -2905,6 +3062,8 @@ async function encerrarSessaoConferencia(modoSilencioso = false) {
         // chamar o processarProximoPremio(). Então temos que matar o spinner aqui!
         esconderSpinner();
     }
+    devolverFocoAoJogo();
+
 }
 
 async function processarProximoPremio() {
@@ -3062,6 +3221,7 @@ async function processarProximoPremio() {
         );                 
         // Mantemos proximoKey limpo (ex: "LINHA") para o Python processar sem erros
         await mudarPremio(proximoKey);
+        devolverFocoAoJogo();  // <<< posso usar esta função aqui - ajustar o foco
         esconderSpinner(); 
     } else {
         esconderSpinner();
@@ -3210,15 +3370,26 @@ async function resetarJogo(force = false) {
         // =======================================================
         
         // =======================================================
-        // 🧹 RESET LOCAL DAS VARIÁVEIS
+        // 🧹 RESET LOCAL DAS VARIÁVEIS - limpeza
         // =======================================================
         bolasCacheLocal = new Set(); 
         bolasSorteadasCache = [];
         matrizEnvio = [];
         A_Ultima_Bola = 0;
+        qtdeCuponsVendidosEvento = 0;
+        qtdeCartelasVendidosEvento = 0;
+        acumuladoCelebradoNestaRodada = false;
+ 
         idsConfirmadosNestaRodada = new Set();
         ultimoTotalBolasProcessadas = -1; 
         jaAlertouNestaBola = false;
+
+        emConferencia = false;
+        const statusText = document.getElementById('status-conferencia-text');
+        if (statusText) {
+            statusText.textContent = "Modo: Normal";
+            statusText.className = "text-xs text-yellow-600";
+        }
 
         // --- RESET ESPECÍFICO DO SORTE EXTRA ---
         cacheGanhadoresExtraFinal = []; // Limpa o cache para não duplicar no próximo
@@ -3842,7 +4013,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const novoInput = inputManual.cloneNode(true);
         inputManual.parentNode.replaceChild(novoInput, inputManual);
 
-        // --- NOVA LÓGICA: LIMITAR A 2 DÍGITOS (SHIFT LEFT) ---
+        // Lógica de 2 dígitos
         novoInput.addEventListener('input', function(e) {
             // 1. Remove qualquer coisa que não seja número
             let valorLimpo = this.value.replace(/\D/g, '');
@@ -3860,6 +4031,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Mantém a lógica da tecla ENTER e do atalho '99'
         novoInput.addEventListener('keydown', function(event) {
+            // Verifica se não há evento ativo (qtdeCartelasVendidosEvento == 0)
+            if ((typeof qtdeCartelasVendidosEvento === 'undefined' || qtdeCartelasVendidosEvento <= 0) && !emConferencia) {
+                if (event.key === 'Enter' || this.value.length > 0) {
+                    event.preventDefault();
+                    this.value = ''; // Limpa o campo
+                    console.warn(`🚫 [SEGURANÇA] Bloqueado: Nenhum evento ativo. Cartelas: ${typeof qtdeCartelasVendidosEvento !== 'undefined' ? qtdeCartelasVendidosEvento : 0}`);
+                    // Opcional: mostrar um aviso visual ao locutor
+                    return; 
+                }
+            }             
+   
             if (this.value === '99') { 
                 event.preventDefault(); 
                 this.value = ''; 
@@ -3927,10 +4109,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(atualizarVisibilidadeExtratora, 300);
     devolverFocoAoJogo();
 });
-
-
-
-
 
 function obterPesoExtra(nomePremio) {
     // Garante que é string maiúscula
@@ -4810,3 +4988,4 @@ function enviarConviteLive(numeroCartelaGanhadora) {
     socket.send(JSON.stringify(payload)); 
     console.log("🚀 Convite enviado via Global:", payload.sala_vdo);
 }
+
