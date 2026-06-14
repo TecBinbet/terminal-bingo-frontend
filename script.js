@@ -5717,12 +5717,32 @@ function toggleVisualizarSenha(inputId, btnElement) {
     }
 }
 
-function autocadastro() {
-    // Fecha o modal de login se estiver aberto
+async function autocadastro() {
+    // 1. Fecha o modal de login se estiver aberto
     fecharModal('modal-login');
     
-    // Abre o modal de cadastro
+    // 2. Prepara o modal de cadastro e o box de indicação
     const modal = document.getElementById('modal-cadastro');
+    const boxInd = document.getElementById('box-indicacao');
+    const textoInd = document.getElementById('texto-indicacao');
+    
+    if (boxInd) boxInd.classList.add('hidden'); // Esconde por precaução
+    
+    // 3. Busca a informação de indicação no Back-end
+    try {
+        const response = await fetch('/api/info_indicacao');
+        const data = await response.json();
+
+        // Se houver indicação salva na sessão, exibe o banner
+        if (data.tem_indicacao && boxInd && textoInd) {
+            textoInd.textContent = data.texto;
+            boxInd.classList.remove('hidden');
+        }
+    } catch (e) {
+        console.warn("Aviso: Não foi possível checar a indicação no momento.", e);
+    }
+
+    // 4. Exibe o modal para o cliente
     if (modal) {
         modal.classList.remove('hidden');
         modal.classList.add('flex');

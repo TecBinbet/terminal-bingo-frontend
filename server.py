@@ -1600,6 +1600,55 @@ def config_ambiente():
         "versao": "1.0.4-stable"
     })
 
+
+@app.route('/api/info_indicacao', methods=['GET'])
+def api_info_indicacao():
+    # Verifica se há um ID de colaborador salvo na sessão (capturado na rota '/')
+    id_col_sessao = session.get('colaborador_referencia')
+    
+    if not id_col_sessao:
+        return jsonify({'tem_indicacao': False})
+
+    try:
+        sales_db = get_sales_db_connection()
+        if sales_db is None:
+            return jsonify({'tem_indicacao': False})
+
+        # Tenta converter o ID para int (padrão do seu banco)
+        try:
+            id_busca = int(id_col_sessao)
+        except ValueError:
+            id_busca = str(id_col_sessao)
+
+        # 1. Tenta achar na coleção de colaboradores
+        colab = sales_db.colaboradores.find_one({'id_colaborador': id_busca})
+        if colab:
+            nome = colab.get('nome', colab.get('nome_colaborador', 'Colaborador'))
+            return jsonify({
+                'tem_indicacao': True,
+                'texto': f"🤝 Indicação: {id_col_sessao} - {nome.upper()}"
+            })
+
+        # 2. Se não for colaborador, tenta achar na coleção de regionais
+        reg = sales_db.regionais.find_one({'id_regional': id_busca})
+        if reg:
+            nome_reg = reg.get('descricao', reg.get('nome_regional', 'Regional'))
+            return jsonify({
+                'tem_indicacao': True,
+                'texto': f"📍 Indicado por Reg.: {id_col_sessao} - {nome_reg.upper()}"
+            })
+
+        # 3. Fallback: Se o ID existe mas não tem nome no banco
+        return jsonify({
+            'tem_indicacao': True,
+            'texto': f"🤝 Indicação vinculada ao ID: {id_col_sessao}"
+        })
+
+    except Exception as e:
+        print(f"⚠️ Erro ao buscar info de indicação: {e}")
+        return jsonify({'tem_indicacao': False})
+
+
 # ==============================================================================
 #  ROTA DE AUDITORIA cliente
 # ==============================================================================
