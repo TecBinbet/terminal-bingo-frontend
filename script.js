@@ -2719,6 +2719,9 @@ function clearPanels() {
     ball2.textContent = '';
     ball3.textContent = '';
 
+    btnCompraMobile.style.opacity = "1";
+    btnCompraMobile.textContent = "🛒 Comprar"; 
+
     bolasProcessadasLocal.clear();
     ultimaBolaExibida = null;
     cartelasDoJogador = [];
@@ -2892,6 +2895,7 @@ function displayPrizeInfo(buscandoData, premioData = null) {
     if (qtdeLinhas === 3 && (buscandoValue === "LINHA" || buscandoValue === "L I N H A"))  {
         const linhasEmJogo = `L I N H A S: ( ${linhasTaisLinhas.toUpperCase()} )`  
         buscandoValue = linhasEmJogo;
+        sincronizarDisjuntoresComServidor(dadosBuscando);
         prizeToFind = '3LINHAS'
     }
     // Ajuste Falta Um
@@ -2970,6 +2974,23 @@ function displayPrizeInfo(buscandoData, premioData = null) {
     prizeInfoContainerCurrent.appendChild(prizeItem);
 }
 
+
+function sincronizarDisjuntoresComServidor(dadosBuscando) {
+    // Só cria o objeto global se ele não existir
+    if (typeof window.linhasAtivasNoJogo === 'undefined') {
+        window.linhasAtivasNoJogo = { 'SUP': true, 'CEN': true, 'INF': true };
+    }
+
+    // Lê o que o servidor diz (ex: "SUP,INF")
+    const linhasRestantes = dadosBuscando.buscando_a_linha ? dadosBuscando.buscando_a_linha.toUpperCase() : "";
+
+    // Atualiza os disjuntores baseando-se no que AINDA está ativo
+    window.linhasAtivasNoJogo['SUP'] = linhasRestantes.includes('SUP');
+    window.linhasAtivasNoJogo['CEN'] = linhasRestantes.includes('CEN');
+    window.linhasAtivasNoJogo['INF'] = linhasRestantes.includes('INF');
+
+    console.log("[SISTEMA] Disjuntores sincronizados:", window.linhasAtivasNoJogo);
+}
 
 function displayPrizeValues(premioData, topeData = null, rawData = null) {
     const prizeValuesContainerCurrent = mobilePrizeValuesContainer;
@@ -5168,6 +5189,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (statusReal === 'ativo') {
                     if (typeof iniciarCompraCartelas === 'function') {
                         console.log(`✅ Iniciando compra direta para o evento ${idServidor}`);
+                        btnCompraMobile.style.opacity = "1";
+                        btnCompraMobile.textContent = "🛒 Comprar";
                         iniciarCompraCartelas(idServidor);
                     }
                 } else {

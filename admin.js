@@ -1139,19 +1139,6 @@ function processarMensagemWS(event) {
 }
 
 
-function forcarBotaoExtratora(modo) {
-    const btn = document.getElementById('btn-ligar-extratora');
-    if (!btn) return;
-
-    if (modo === 'manual') {
-        // Isso aqui vence qualquer 'hidden' que exista no sistema
-        btn.style.setProperty('display', 'flex', 'important'); 
-    } else {
-        btn.style.setProperty('display', 'none', 'important');
-    }
-}
-
-
 // Função definitiva e limpa para gerenciar a Extratora
 function atualizarVisibilidadeExtratora() {
     const btn = document.getElementById('btn-ligar-extratora');
@@ -1554,24 +1541,78 @@ function preencherModalConfig(params) {
 
 }
 
-function toggleOpcaoAutomatizado() {
-    const radioAuto = document.querySelector('input[name="modo_sorteio"][value="auto"]');
-    const container = document.getElementById('container-check-auto');
-    if (radioAuto && radioAuto.checked) container.classList.remove('hidden');
-    else container.classList.add('hidden');
+function aplicarVisualModoSorteio(modo) {
+    const cd = document.getElementById('container-sorteio-digital');
+    const cm = document.getElementById('container-entrada-manual');
+    const bc = document.getElementById('bloco-conferencia-bolas');
+    
+    // 👉 NOVAS CONSTANTES DA EXTRATORA (Ajuste os IDs conforme seu HTML)
+    const avisoExtratora = document.getElementById('container-aviso-extratora'); 
+    const comandosExtratora = document.getElementById('container-comandos-extratora');
+
+    if (modo === 'manual') { 
+        if (cd) cd.classList.add('hidden'); 
+        if (cm) cm.classList.remove('hidden'); 
+        if (bc) bc.classList.remove('hidden');
+        
+        // Mostra a extratora apenas no modo manual
+        if (avisoExtratora) avisoExtratora.classList.remove('hidden');
+        if (comandosExtratora) comandosExtratora.classList.remove('hidden');
+        
+        if (autoSorteioAtivo) pararAutoSorteio(); 
+    } else { 
+        if (cd) cd.classList.remove('hidden'); 
+        if (cm) cm.classList.add('hidden'); 
+        if (bc) bc.classList.add('hidden');
+        
+        // Esconde a extratora em qualquer outro modo
+        if (avisoExtratora) avisoExtratora.classList.add('hidden');
+        if (comandosExtratora) comandosExtratora.classList.add('hidden');
+    }
+    
+    // Passamos o 'modo' diretamente para não depender do clique do radio no HTML
+    toggleOpcaoAutomatizado(modo); 
+    toggleOpcaoSerial(modo);       
+    forcarBotaoExtratora(modo);
 }
 
-function toggleOpcaoSerial() {
-    // Verifica se o modo MANUAL está selecionado
-    const radioManual = document.querySelector('input[name="modo_sorteio"][value="manual"]');
-    // Pega o container azul que criamos
-    const container = document.getElementById('container-check-serial');
+// ==========================================
+// FUNÇÕES AUXILIARES OTIMIZADAS
+// ==========================================
+
+function toggleOpcaoAutomatizado(modo) {
+    const container = document.getElementById('container-check-auto');
+    if (!container) return;
     
-    // Se existe e está marcado, mostra. Senão, esconde.
-    if (radioManual && radioManual.checked) {
+    // Usa a variável que veio do servidor/clique em vez do radio HTML
+    if (modo === 'auto') {
         container.classList.remove('hidden');
     } else {
         container.classList.add('hidden');
+    }
+}
+
+function toggleOpcaoSerial(modo) {
+    const container = document.getElementById('container-check-serial');
+    if (!container) return;
+    
+    // Usa a variável que veio do servidor/clique
+    if (modo === 'manual') {
+        container.classList.remove('hidden');
+    } else {
+        container.classList.add('hidden');
+    }
+}
+
+function forcarBotaoExtratora(modo) {
+    const btn = document.getElementById('btn-ligar-extratora');
+    if (!btn) return;
+
+    if (modo === 'manual') {
+        // Isso aqui vence qualquer 'hidden' que exista no sistema
+        btn.style.setProperty('display', 'flex', 'important'); 
+    } else {
+        btn.style.setProperty('display', 'none', 'important');
     }
 }
 
@@ -2042,12 +2083,6 @@ function devolverFocoAoJogo() {
     }, 100);
 }
 
-function aplicarVisualModoSorteio(modo) {
-    const cd = document.getElementById('container-sorteio-digital');
-    const cm = document.getElementById('container-entrada-manual');
-    if (modo === 'manual') { cd.classList.add('hidden'); cm.classList.remove('hidden'); if (autoSorteioAtivo) pararAutoSorteio(); } 
-    else { cd.classList.remove('hidden'); cm.classList.add('hidden'); }
-}
 
 async function carregarEvento(idEvento) {
     const confirmou = await customConfirm(`Deseja INICIAR este evento?\n\nIsso irá preparar a base de cartelas e iniciar o timer.`);
