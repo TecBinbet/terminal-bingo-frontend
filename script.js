@@ -8331,10 +8331,18 @@ function iniciarMotorSincronia() {
         // Se a fila estiver vazia, ignora
         if (filaDeMensagens.length === 0) return;
 
-        // Se o player do YouTube não estiver pronto ou não existir, forçamos a mostrar os dados
-        // (Isso garante que pessoas que minimizaram o vídeo ainda vejam o bingo)
         let tempoAtualVideo = 0;
-        if (typeof playerYouTube !== 'undefined' && playerYouTube && typeof playerYouTube.getCurrentTime === 'function') {
+        
+        // ========================================================
+        // 🛑 A MÁGICA DA CORREÇÃO AQUI: Verifica se estamos no intervalo
+        // ========================================================
+        const isIntervalo = (typeof lastRodadaState !== 'undefined' && lastRodadaState === 'intervalo');
+
+        if (isIntervalo) {
+            // Se for intervalo, ignora o player e destrava o sincronismo!
+            tempoAtualVideo = 999999; 
+        } 
+        else if (typeof playerYouTube !== 'undefined' && playerYouTube && typeof playerYouTube.getCurrentTime === 'function') {
             tempoAtualVideo = playerYouTube.getCurrentTime();
         } else {
             // Fallback: Se não há player (ex: só áudio ou falha no YouTube), mostra tudo sem delay
