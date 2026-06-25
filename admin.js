@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "2.3";
+const VERSAO_ATUAL = "2.4";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -4071,6 +4071,8 @@ async function limparTelaPublicaExtra() {
 // =========================================================
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(buscarNomeDaSalaBackend, 500);
+    carregarDadosIniciaisSilencioso();
+
     // 1. Config Local
     const savedMode = localStorage.getItem('admin_draw_mode');
     if (savedMode) {
