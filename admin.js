@@ -301,7 +301,7 @@ function salvarPainelSincronia() {
     // ==================================================
     // PARTE 1: VERIFICA RESSINCRONIZAÇÃO (MÁQUINA DO TEMPO)
     // ==================================================
-    if (inputTempo !== "" && inputTempo !== tempoVideoOriginalParaComparacao) {
+    if (inputTempo !== "" && inputTempo !== (typeof tempoVideoOriginalParaComparacao !== 'undefined' ? tempoVideoOriginalParaComparacao : "")) {
         let novoTempoSegundos = 0;
         if (inputTempo.includes(':')) {
             const partes = inputTempo.split(':');
@@ -312,6 +312,7 @@ function salvarPainelSincronia() {
         }
 
         if (!isNaN(novoTempoSegundos) && novoTempoSegundos >= 0) {
+            // Se o tempoInicioTransmissao não for global, declare-o no topo do arquivo.
             tempoInicioTransmissao = Date.now() - (novoTempoSegundos * 1000);
             sessionStorage.setItem('tempoInicioBackup', tempoInicioTransmissao);
             mudouTempo = true;
@@ -327,52 +328,56 @@ function salvarPainelSincronia() {
     // ==================================================
     if (!isNaN(inputAtraso) && inputAtraso >= 0) {
         let atrasoFinal = inputAtraso;
+        
+        // Verifica se é sorteio digital
         if (typeof modoSorteio !== 'undefined' && modoSorteio !== 'manual' && atrasoFinal > 0) {
             alert("⚠️ Sorteio Digital detectado!\nO Atraso de Dados será forçado para ZERO (Tempo Real) para evitar lentidão.");
             atrasoFinal = 0; // Força para zero
-            document.getElementById('input-atraso-dados').value = 0; // Corrige visualmente no campo
+            document.getElementById('input-atraso-dados').value = 0; // Corrige visualmente no campo do Modal Sincronia
         }
 
-        // Verifica se realmente houve mudança no valor
-        if (typeof aguardandoVideo === 'undefined' || aguardandoVideo !== inputAtraso) {
-            aguardandoVideo = inputAtraso; // Atualiza a variável na memória do JS
+        // Verifica se houve mudança real
+        if (typeof aguardandoVideo === 'undefined' || aguardandoVideo !== atrasoFinal) {
+            aguardandoVideo = atrasoFinal; // Atualiza a variável global
             mudouAtraso = true;
-            
             console.log(`[SYNC] ⏳ Atraso de dados atualizado para: ${aguardandoVideo}s`);
             
-            // CHAMA A FUNÇÃO PARA SALVAR NO ARQUIVO/BANCO DE DADOS
-            salvarAtrasoNoServidor(aguardandoVideo);
+            // 🛑 MÁGICA AQUI: 
+            // Como vamos usar o salvarConfiguracoes() (que lê os dados do modal global), 
+            // precisamos injetar o novo valor lá dentro primeiro!
+            const inputGlobalAtraso = document.getElementById('config-atraso-video');
+            if (inputGlobalAtraso) {
+                inputGlobalAtraso.value = aguardandoVideo;
+            }
+            
+            // Agora sim, chamamos a função global que manda TUDO para o servidor
+            salvarConfiguracoes();
         }
     }
 
     // ==================================================
     // FEEDBACK FINAL
     // ==================================================
-    fecharPainelSincronia();
+    // Se a função fecharPainelSincronia fechar o painel (modal), ok.
+    if (typeof fecharPainelSincronia === 'function') fecharPainelSincronia();
 
     if (mudouTempo || mudouAtraso) {
         let msg = "Ajustes aplicados:\n";
         if (mudouTempo) msg += "✔️ Tempo de Vídeo Ressincronizado.\n";
         if (mudouAtraso) msg += `✔️ Atraso de Dados definido para ${aguardandoVideo}s.\n`;
         
-        if (typeof customAlert === 'function') customAlert(msg);
-        else alert(msg);
+        // Usando um setTimeout minúsculo apenas para que a mensagem de salvamento global
+        // não atropele essa do painel de sincronia (já que salvarConfiguracoes também tem um alert).
+        setTimeout(() => {
+             if (typeof customAlert === 'function') customAlert(msg);
+             else alert(msg);
+        }, 300);
+
     } else {
         console.log("[SYNC] Nenhuma alteração foi realizada.");
     }
 }
 
-// Função responsável por mandar o novo atraso para o Python
-function salvarAtrasoNoServidor(novoAtraso) {
-    fetch('/api/admin/salvar_config', { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aguardandoVideo: novoAtraso }) // Envia o dado para gravar no DB/Arquivo
-    })
-    .then(res => res.json())
-    .then(data => console.log("✅ Atraso salvo no servidor com sucesso!"))
-    .catch(err => console.error("❌ Erro ao salvar atraso no servidor:", err));
-}
 
 // ==============================================================
 // ⌨️ ESCUTADOR DE TECLADO (Atalho Ctrl + Shift + S)
@@ -1139,27 +1144,68 @@ function processarMensagemWS(event) {
 }
 
 
-// Função definitiva e limpa para gerenciar a Extratora
+// =========================================================
+// === CONTROLE MESTRE DE VISIBILIDADE DA EXTRATORA ===
+// =========================================================
 function atualizarVisibilidadeExtratora() {
-    const btn = document.getElementById('btn-ligar-extratora');
-    if (!btn) return;
-
-    // Tenta ler a variável global do sistema. Se ela ainda não existir 
-    // (porque o evento não foi selecionado), ele tenta ler o botão rádio da tela.
-    let modoAtual = 'digital'; // padrão seguro
+    console.log("🔍 --- SINCRONIZANDO INTERFACE DA EXTRATORA ---");
     
-    if (typeof modoSorteio !== 'undefined' && modoSorteio) {
-        modoAtual = modoSorteio;
+    const btnExtratora = document.getElementById('btn-ligar-extratora');
+    const painelDebug = document.getElementById('painel-debug-serial');
+    
+    // Suporta os dois IDs de painel de comandos que você usou nas versões
+    const avisoExtratora = document.getElementById('container-aviso-extratora'); 
+    const painelF = document.getElementById('container-comandos-extratora') || document.getElementById('painel-comandos-extratora');
+    
+    // 1. Descobre a verdade sobre o MODO (Prioridade: Variável global > Rádio HTML)
+    let isManual = false;
+    if (typeof modoSorteio !== 'undefined' && modoSorteio !== null && modoSorteio !== 'auto') {
+        isManual = (modoSorteio === 'manual');
     } else {
-        const radioMarcado = document.querySelector('input[name="modo_sorteio"]:checked');
-        if (radioMarcado) modoAtual = radioMarcado.value;
+        const radioManual = document.querySelector('input[name="modo_sorteio"][value="manual"]');
+        if (radioManual) isManual = radioManual.checked;
     }
 
-    // Aplica o visual correto baseado no que descobrimos
-    if (modoAtual === 'manual') {
-        btn.classList.remove('hidden');
+    // 2. Descobre a verdade sobre a SERIAL (Prioridade: Variável global > Checkbox HTML)
+    let isSerialActive = false;
+    if (typeof enviarPortaSerial !== 'undefined' && enviarPortaSerial !== null) {
+        isSerialActive = enviarPortaSerial;
     } else {
-        btn.classList.add('hidden');
+        const checkSerial = document.getElementById('config-enviar-serial');
+        if (checkSerial) isSerialActive = checkSerial.checked;
+    }
+
+    // 3. Aplica a Visibilidade Visual e Física
+    if (isManual) {
+        // Modo Manual: Mostra o botão conector da extratora e o aviso
+        if (btnExtratora) {
+            btnExtratora.classList.remove('hidden');
+            btnExtratora.style.display = ''; // Limpa bugs do flex!important antigo
+        }
+        if (avisoExtratora) avisoExtratora.classList.remove('hidden');
+        
+        // Comandos F2/F3/F4 só aparecem se a Serial estiver ATIVA
+        if (painelF) {
+            if (isSerialActive) {
+                painelF.classList.remove('hidden');
+                painelF.classList.add('flex');
+            } else {
+                painelF.classList.add('hidden');
+                painelF.classList.remove('flex');
+            }
+        }
+    } else {
+        // Modo Digital: Oculta 100% de tudo que for de Hardware
+        if (btnExtratora) {
+            btnExtratora.classList.add('hidden');
+            btnExtratora.style.display = '';
+        }
+        if (avisoExtratora) avisoExtratora.classList.add('hidden');
+        if (painelDebug) painelDebug.classList.add('hidden');
+        if (painelF) {
+            painelF.classList.add('hidden');
+            painelF.classList.remove('flex');
+        }
     }
 }
 
@@ -1526,19 +1572,20 @@ function preencherModalConfig(params) {
     const radiosModo = document.querySelectorAll('input[name="modo_sorteio"]');
     
     radiosModo.forEach(radio => {
-        // Usar o 'onchange' substitui automaticamente qualquer evento anterior, 
-        // evitando a duplicação sem precisar do removeEventListener!
         radio.onchange = () => {
             toggleOpcaoAutomatizado();
             toggleOpcaoSerial();
+            atualizarVisibilidadeExtratora(); // Adiciona no clique manual também
         };
     });
 
-    // 🎯 A SOLUÇÃO VEM AQUI:
-    // Chama as funções logo no carregamento para ler o estado inicial (checked)
-    toggleOpcaoAutomatizado();
-    toggleOpcaoSerial();
-
+    // 🎯 A SOLUÇÃO FINAL DA INICIALIZAÇÃO:
+    // Chama as funções com o parâmetro correto recebido do banco
+    toggleOpcaoAutomatizado(params.modo_sorteio);
+    toggleOpcaoSerial(params.modo_sorteio);
+    
+    // Força a UI a respeitar o novo estado assim que a página receber a config WS
+    atualizarVisibilidadeExtratora();
 }
 
 function aplicarVisualModoSorteio(modo) {
@@ -1546,34 +1593,24 @@ function aplicarVisualModoSorteio(modo) {
     const cm = document.getElementById('container-entrada-manual');
     const bc = document.getElementById('bloco-conferencia-bolas');
     
-    // 👉 NOVAS CONSTANTES DA EXTRATORA (Ajuste os IDs conforme seu HTML)
-    const avisoExtratora = document.getElementById('container-aviso-extratora'); 
-    const comandosExtratora = document.getElementById('container-comandos-extratora');
-
     if (modo === 'manual') { 
         if (cd) cd.classList.add('hidden'); 
         if (cm) cm.classList.remove('hidden'); 
         if (bc) bc.classList.remove('hidden');
         
-        // Mostra a extratora apenas no modo manual
-        if (avisoExtratora) avisoExtratora.classList.remove('hidden');
-        if (comandosExtratora) comandosExtratora.classList.remove('hidden');
-        
-        if (autoSorteioAtivo) pararAutoSorteio(); 
+        if (typeof autoSorteioAtivo !== 'undefined' && autoSorteioAtivo) pararAutoSorteio(); 
     } else { 
         if (cd) cd.classList.remove('hidden'); 
         if (cm) cm.classList.add('hidden'); 
         if (bc) bc.classList.add('hidden');
-        
-        // Esconde a extratora em qualquer outro modo
-        if (avisoExtratora) avisoExtratora.classList.add('hidden');
-        if (comandosExtratora) comandosExtratora.classList.add('hidden');
     }
     
-    // Passamos o 'modo' diretamente para não depender do clique do radio no HTML
+    // Repassa o modo para as funções secundárias
     toggleOpcaoAutomatizado(modo); 
     toggleOpcaoSerial(modo);       
-    forcarBotaoExtratora(modo);
+    
+    // 🚀 DELEGA 100% O VISUAL DO HARDWARE PARA A FUNÇÃO MESTRE
+    atualizarVisibilidadeExtratora();
 }
 
 // ==========================================
@@ -1605,15 +1642,10 @@ function toggleOpcaoSerial(modo) {
 }
 
 function forcarBotaoExtratora(modo) {
+    // ⚠️ Função depreciada! Evita conflitos de CSS com o Tailwind.
+    // A lógica foi absorvida de forma inteligente pela atualizarVisibilidadeExtratora()
     const btn = document.getElementById('btn-ligar-extratora');
-    if (!btn) return;
-
-    if (modo === 'manual') {
-        // Isso aqui vence qualquer 'hidden' que exista no sistema
-        btn.style.setProperty('display', 'flex', 'important'); 
-    } else {
-        btn.style.setProperty('display', 'none', 'important');
-    }
+    if (btn) btn.style.display = ''; // Apenas remove lixos antigos do style inline
 }
 
 async function salvarConfiguracoes() {
