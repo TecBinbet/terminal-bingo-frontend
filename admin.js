@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "2.5";
+const VERSAO_ATUAL = "1.3";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -4080,6 +4080,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (radio) radio.checked = true;
         modoSorteio = savedMode;
         aplicarVisualModoSorteio(savedMode);
+    }
+
+    const elVersao = document.getElementById('versao-painel');
+    if (elVersao) {
+        elVersao.textContent = `v${VERSAO_ATUAL} Admin Painel`;
     }
 
     // 2. Listeners de Botões
