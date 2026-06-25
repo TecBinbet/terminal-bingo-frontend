@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "2.1";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.5";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -8336,25 +8336,27 @@ function iniciarMotorSincronia() {
         let tempoAtualVideo = 0;
         
         // ========================================================
-        // 🛑 A MÁGICA DA CORREÇÃO AQUI: Verifica se estamos no intervalo
+        // 🛑 A MÁGICA DA CORREÇÃO AQUI: Verifica se o sorteio ESTÁ ROLANDO
         // ========================================================
-        const isIntervalo = (typeof lastRodadaState !== 'undefined' && lastRodadaState === 'intervalo');
+        // Se o estado for 'aberta' (vendas) ou 'intervalo', nós LIBERAMOS a fila
+        // para que o painel de prêmios e as cartelas carreguem imediatamente!
+        const isSorteioRolando = (typeof lastRodadaState !== 'undefined' && 
+                                 (lastRodadaState === 'andamento' || lastRodadaState === 'sorteio'));
 
-        if (isIntervalo) {
-            // Se for intervalo, ignora o player e destrava o sincronismo!
+        if (!isSorteioRolando) {
+            // Não tem sorteio rolando? Destrava tudo ignorando o player!
             tempoAtualVideo = 999999; 
         } 
         else if (typeof playerYouTube !== 'undefined' && playerYouTube && typeof playerYouTube.getCurrentTime === 'function') {
             tempoAtualVideo = playerYouTube.getCurrentTime();
         } else {
-            // Fallback: Se não há player (ex: só áudio ou falha no YouTube), mostra tudo sem delay
+            // Fallback
             tempoAtualVideo = 999999; 
         }
 
         // Verifica a primeira mensagem da fila
         const proximaMensagem = filaDeMensagens[0];
 
-        // Se a mensagem for "imediata" (sem tempo_video) OU o vídeo já a alcançou
         while (filaDeMensagens.length > 0) {
             const proximaMensagem = filaDeMensagens[0];
 
@@ -8363,11 +8365,10 @@ function iniciarMotorSincronia() {
                 // Retira a mensagem da fila
                 filaDeMensagens.shift();
                 
-                // Processa a mensagem normalmente no ecrã
+                // Processa a mensagem normalmente no ecrã (O painel de prêmios vai atualizar aqui!)
                 executarRenderizacao(proximaMensagem.payload);
             } else {
-                // Se a primeira mensagem da fila AINDA NÃO chegou no tempo,
-                // paramos o loop (break) e o vigilante volta a checar daqui a 200ms.
+                // Fica aguardando o vídeo
                 break; 
             }
         }
