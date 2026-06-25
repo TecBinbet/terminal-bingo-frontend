@@ -2017,6 +2017,21 @@ def proximos_eventos():
                 val = to_float(evt.get('premio_faltaum'))
                 if val > 0: lista_premios_dinamica.append(f"Falta 1: {fmt_money(val)}")
 
+                # ==========================================
+                # 🔍 VERIFICAÇÃO DE VENDAS
+                # ==========================================
+                id_evt_bruto = evt.get('id_evento')
+                try:
+                    id_evt_int = int(id_evt_bruto)
+                except:
+                    id_evt_int = id_evt_bruto
+
+                # Busca se existe pelo menos UM registro de venda para este evento
+                # O $in garante que ele ache mesmo se estiver salvo como int ou string
+                venda_existe = sales_db.controle_venda.find_one({'id_evento': {'$in': [id_evt_int, str(id_evt_int)]}})
+                tem_vendas = True if venda_existe else False
+                # ==========================================
+
                 lista.append({
                     'id_evento': str(evt.get('id_evento')),
                     'descricao': evt.get('descricao', 'Sem Descrição'),
@@ -2025,11 +2040,9 @@ def proximos_eventos():
                     'hora': evt.get('hora_evento'),
                     'valor_cartela': valor_safe,
                     'unidade_venda': evt.get('unidade_de_venda', 1),
-                    
-                    # 👉 ADICIONADO: Mandamos o tipo_de_evento para o Front-End
                     'tipo_de_evento': str(evt.get('tipo_de_evento', '')).strip().lower(),
-                    
-                    'premios_desc': lista_premios_dinamica 
+                    'premios_desc': lista_premios_dinamica,
+                    'tem_vendas': tem_vendas
                 })
             except Exception as e: 
                 print(f"Erro ao processar evento na lista: {e}")

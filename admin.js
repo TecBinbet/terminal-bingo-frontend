@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "1.3";
+const VERSAO_ATUAL = "1.4";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -1423,6 +1423,20 @@ function renderizarListaEventos(eventos) {
 
     eventos.forEach(evt => {
         const isFinalizado = evt.status === 'finalizado';
+        const temVendas = evt.tem_vendas === true; // Lê a nova flag do Python
+
+        // Lógica de exibição do Botão de Iniciar
+        let btnIniciarHTML = '';
+        if (isFinalizado) {
+            btnIniciarHTML = `<button disabled class="px-1 py-3 rounded text-xs font-bold bg-gray-600 text-gray-400 cursor-not-allowed">ENCERRADO</button>`;
+        } else if (!temVendas) {
+            // Evento aberto, mas sem vendas: Botão desativado
+            btnIniciarHTML = `<button disabled class="px-1 py-3 rounded text-xs font-bold bg-red-900/40 text-red-400 border border-red-900 cursor-not-allowed" title="Aguardando vendas...">SEM VENDAS</button>`;
+        } else {
+            // Evento com vendas: Botão verde liberado
+            btnIniciarHTML = `<button onclick="carregarEvento('${evt.id_evento}')" class="px-1 py-3 rounded text-xs font-bold bg-green-700 text-white hover:bg-green-600 shadow">INICIAR SORTEIO</button>`;
+        }
+
         const card = document.createElement('div');
         card.className = `p-3 rounded border border-gray-700 flex justify-between items-center transition-all ${isFinalizado ? 'bg-gray-800 opacity-60' : 'bg-gray-700 hover:bg-gray-600 hover:border-green-500 cursor-pointer'}`;
         card.innerHTML = `
@@ -1435,9 +1449,8 @@ function renderizarListaEventos(eventos) {
                 </div>
             </div>     
             <div class="flex gap-2 items-center">
-                <button onclick="carregarEvento('${evt.id_evento}')" class="px-1 py-3 rounded text-xs font-bold ${isFinalizado ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-green-700 text-white hover:bg-green-600 shadow'}">
-                    ${isFinalizado ? 'ENCERRADO' : 'INICIAR SORTEIO'}
-                </button>   
+                
+                ${btnIniciarHTML}   
                 
                 ${!isFinalizado ? `
                 <button onclick="ativarNovoEvento('${evt.id_evento}')" 
