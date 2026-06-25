@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.5";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.6";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -2704,7 +2704,9 @@ function clearPanels() {
     const cartelaInicial = mobileCartelaInicialInput;
     const cartelaFinal = mobileCartelaFinalInput;
     const resultadoSoma = mobileResultadoSomaSpan;
-    const headerElement = mobileLoadedCardsHeader; 
+    const headerElement = mobileLoadedCardsHeader;
+    const btnCompraMobile = document.getElementById('btn-comprar-cartelas-mobile');
+ 
     cartelasEmJogo = 0;
     loadedCardsListCurrent.innerHTML = `<p class="text-white text-center">Nenhuma cartela carregada.</p>`;
     prizeValues.innerHTML = '';
