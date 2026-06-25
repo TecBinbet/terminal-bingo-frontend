@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "2.2";
+const VERSAO_ATUAL = "2.3";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -920,22 +920,33 @@ async function carregarDadosIniciaisSilencioso() {
         if (data.parametrosInfo) {
             aguardandoVideo = parseInt(data.parametrosInfo.aguardandoVideo) || 0;
             const elDelay = document.getElementById('config-atraso-video');
-            if(elDelay) elDelay.value = aguardandoVideo; // Adicionei verificação de null aqui
+            if(elDelay) elDelay.value = aguardandoVideo;
+            
             vozAtiva = data.parametrosInfo.voz_ativa !== undefined ? data.parametrosInfo.voz_ativa : true;
             enviarPortaSerial = data.parametrosInfo.enviar_porta_serial !== undefined ? data.parametrosInfo.enviar_porta_serial : false;
             avancarCarrocel = enviarPortaSerial;
             buscarSorteExtra =  data.parametrosInfo.buscar_sorte_extra !== undefined ? data.parametrosInfo.buscar_sorte_extra : true;
+            
             const chkExtra = document.getElementById('chk-buscar-sorte-extra');
-            if (chkExtra) {
-                chkExtra.checked = buscarSorteExtra;
-            }
+            if (chkExtra) chkExtra.checked = buscarSorteExtra;
 
             sorteioAutomatizadoConfig = data.parametrosInfo.sorteio_automatizado !== undefined ? data.parametrosInfo.sorteio_automatizado : false;
+            
             const chkSorteioAutomatizado = document.getElementById('config-sorteio-automatizado');
-            if (chkSorteioAutomatizado) {
-                chkSorteioAutomatizado.checked = sorteioAutomatizadoConfig;
-            }
+            if (chkSorteioAutomatizado) chkSorteioAutomatizado.checked = sorteioAutomatizadoConfig;
 
+            // =========================================================
+            // 👉 A PEÇA QUE FALTAVA: Lê o modo de sorteio no carregamento
+            // =========================================================
+            if (data.parametrosInfo.modo_sorteio) {
+                modoSorteio = data.parametrosInfo.modo_sorteio;
+                
+                // Avisa a tela para se arrumar imediatamente!
+                if (typeof aplicarVisualModoSorteio === 'function') {
+                    aplicarVisualModoSorteio(modoSorteio);
+                }
+            }
+            // =========================================================
         }
 
         if (!dadosEventoAtual && data.rodadaData && data.rodadaData.length > 0) {
