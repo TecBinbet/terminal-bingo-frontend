@@ -4421,13 +4421,15 @@ async function renderMainContent(data) {
                 }
 
                 // Se o link mudou, atualiza o player
-                if (currentVideoUrl !== rawVideoID) { 
-                    currentVideoUrl = rawVideoID; 
-                    if (videoID) carregarVideoSincronizado(videoID); 
-                    
-                    const videoContainer = document.getElementById('video-container'); 
-                    if (videoContainer && videoContainer.classList.contains('hidden')) {
-                         abrirYoutubeBtn.click();
+                if (currentVideoUrl !== rawVideoID) {
+                    currentVideoUrl = rawVideoID;
+                    if (videoID) carregarVideoSincronizado(videoID);
+
+                        // 🛡️ CORREÇÃO: Procura por todos os IDs possíveis do container de vídeo
+                        const videoContainer = document.getElementById('video-container') || document.getElementById('youtube-panel') || document.getElementById('youtube-placeholder');
+            
+                        if (videoContainer && videoContainer.classList.contains('hidden')) {
+                            abrirYoutubeBtn.click();
                     }
                 }
             } 
