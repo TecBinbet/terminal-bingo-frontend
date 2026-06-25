@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "2.4";
+const VERSAO_ATUAL = "2.5";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -4756,85 +4756,7 @@ window.addEventListener("beforeunload", async (event) => {
     }
 });
 
-// =========================================================
-// === CONTROLE DE VISIBILIDADE DA EXTRATORA (SERIAL) ===
-// =========================================================
 
-function atualizarVisibilidadeExtratora() {
-    console.log("🔍 --- INICIANDO: atualizarVisibilidadeExtratora ---");
-
-    const radioManual = document.querySelector('input[name="modo_sorteio"][value="manual"]');
-    const btnExtratora = document.getElementById('btn-ligar-extratora');
-    const painelDebug = document.getElementById('painel-debug-serial');
-    const painelF = document.getElementById('painel-comandos-extratora');
-    const checkSerial = document.getElementById('config-enviar-serial');
-
-    // 1. Verifica se os elementos realmente existem no HTML
-    console.log("📦 Status dos Elementos no DOM:", {
-        radioManualEncontrado: !!radioManual,
-        btnExtratoraEncontrado: !!btnExtratora,
-        painelFEncontrado: !!painelF,
-        checkSerialEncontrado: !!checkSerial
-    });
-
-    // 2. Lê os valores
-    if (radioManual) console.log("🔘 radioManual marcado?", radioManual.checked);
-    if (checkSerial) console.log("🔌 checkSerial (Ativar Comando Extratora) marcado?", checkSerial.checked);
-
-    if (radioManual && radioManual.checked) {
-        console.log("🎯 Rota: MODO MANUAL ativo.");
-        
-        // MODO MANUAL: Mostra o botão principal da Extratora
-        if (btnExtratora) {
-            btnExtratora.classList.remove('hidden');
-            console.log("✅ Botão principal da extratora exibido.");
-        }
-        
-        // MODO MANUAL + SERIAL ATIVA: Mostra o painel de atalhos (F2, F3, F4)
-        if (painelF) {
-            if (checkSerial && checkSerial.checked) {
-                console.log("🟢 Condição satisfeita: Serial Ativa! Mostrando botões F2/F3/F4.");
-                painelF.classList.remove('hidden');
-                painelF.classList.add('flex');
-            } else {
-                console.log("🔴 Condição falhou: Serial Inativa (Checkbox desmarcado). Escondendo botões F2/F3/F4.");
-                painelF.classList.add('hidden');
-                painelF.classList.remove('flex');
-            }
-        } else {
-            console.warn("⚠️ ALERTA: 'painel-comandos-extratora' não encontrado no HTML!");
-        }
-    } else {
-        console.log("📱 Rota: MODO DIGITAL (ou manual não selecionado). Escondendo tudo.");
-        
-        // MODO DIGITAL: Esconde tudo
-        if (btnExtratora) btnExtratora.classList.add('hidden');
-        
-        // Esconde o painel de debug se estiver aberto
-        if (painelDebug && !painelDebug.classList.contains('hidden')) {
-            painelDebug.classList.add('hidden');
-        }
-        
-        // Esconde o painel de atalhos (F2, F3, F4)
-        if (painelF) {
-            painelF.classList.add('hidden');
-            painelF.classList.remove('flex');
-        }
-    }
-    
-    console.log("🏁 --- FIM: atualizarVisibilidadeExtratora ---");
-}
-
-// Adiciona os eventos aos Radio Buttons assim que a página carregar
-window.addEventListener('DOMContentLoaded', () => {
-    const radios = document.querySelectorAll('input[name="modo_sorteio"]');
-    radios.forEach(radio => {
-        radio.addEventListener('change', atualizarVisibilidadeExtratora);
-    });
-
-    // Chama uma vez para definir o estado inicial
-    atualizarVisibilidadeExtratora();
-});
 
 // ==============================================================================
 // 🤖 MOTOR DE TRANSIÇÃO AUTÓNOMA (MODO ROBÔ)
