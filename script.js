@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.7";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.8";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -8437,7 +8437,7 @@ function carregarVideoSincronizado(videoId, isLoop = false) {
     // 🛑 SEGURANÇA 2: Trava de Loop
     if (window.tentandoCarregarPlayer) return;
 
-    const videoId = extrairIdDoVideo(linkDoYoutube);
+    // const videoId = extrairIdDoVideo(linkDoYoutube);
     if (!videoId) {
         console.error("❌ Erro: Não foi possível extrair um ID válido da URL:", linkDoYoutube);
         return;
