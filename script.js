@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.6";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.7";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -2721,8 +2721,10 @@ function clearPanels() {
     ball2.textContent = '';
     ball3.textContent = '';
 
-    btnCompraMobile.style.opacity = "1";
-    btnCompraMobile.textContent = "🛒 Comprar"; 
+    if (btnCompraMobile) {
+        btnCompraMobile.style.opacity = "1";
+        btnCompraMobile.textContent = "🛒 Comprar"; 
+    } 
 
     bolasProcessadasLocal.clear();
     ultimaBolaExibida = null;
@@ -4394,16 +4396,16 @@ async function renderMainContent(data) {
         tipoDoSorteio = tipoSorteio;
     
         let videoID = '';
-        const rawVideoID =parametrosInfo.url_live || parametrosInfo.url_padrao || '';
-        video_local =  parametrosInfo.video_local;
+        const rawVideoID = parametrosInfo.url_live || parametrosInfo.url_padrao || '';
+        video_local = parametrosInfo.video_local;
         
-        if (tipoSorteio === "manual") {             // --- INÍCIO SE MANUAL ---          
-            // 👉 NOVO: Lê a plataforma escolhida no painel admin (Padrão é youtube)
+        // 1. Identificar se é o vídeo promocional (URL Padrão)
+        const isPromocional = (rawVideoID === parametrosInfo.url_padrao);
+
+        if (tipoSorteio === "manual") {           // --- INÍCIO SE MANUAL ---          
             const plataformaStreaming = parametrosInfo.plataforma_streaming || 'youtube';
+            
             if (plataformaStreaming === 'youtube') {
-                // ==========================================
-                // LÓGICA ATUAL DO YOUTUBE
-                // ==========================================
                 const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
                 const match = rawVideoID.match(regExp);
 
@@ -4415,34 +4417,29 @@ async function renderMainContent(data) {
 
                 if (!videoID) videoID = ''; 
 
-                let paramOrigin = '';
-                if (window.location.protocol === 'file:') {
-                     paramOrigin = '&origin=https://www.youtube.com';
-                } else if (window.location.protocol.startsWith('http')) {
-                     paramOrigin = `&origin=${window.location.origin}`;
-                }
-
-                // Se o link mudou, atualiza o player
                 if (currentVideoUrl !== rawVideoID) {
                     currentVideoUrl = rawVideoID;
-                    if (videoID) carregarVideoSincronizado(videoID);
+                    
+                    // 🔄 LÓGICA DE REPETIÇÃO: Se for promocional, enviamos com playlist
+                    if (videoID) {
+                        if (isPromocional) {
+                            // Carrega com loop ativado
+                            carregarVideoSincronizado(videoID, true); 
+                        } else {
+                            carregarVideoSincronizado(videoID, false);
+                        }
+                    }
 
-                        // 🛡️ CORREÇÃO: Procura por todos os IDs possíveis do container de vídeo
-                        const videoContainer = document.getElementById('video-container') || document.getElementById('youtube-panel') || document.getElementById('youtube-placeholder');
+                    const videoContainer = document.getElementById('video-container') || document.getElementById('youtube-panel') || document.getElementById('youtube-placeholder');
             
-                        if (videoContainer && videoContainer.classList.contains('hidden')) {
-                            abrirYoutubeBtn.click();
+                    if (videoContainer && videoContainer.classList.contains('hidden')) {
+                        abrirYoutubeBtn.click();
                     }
                 }
             } 
             else if (plataformaStreaming === 'ant_media' || plataformaStreaming === 'antmedia') {
-                // ==========================================
-                // NOVA LÓGICA PREPARADA PARA O ANT MEDIA
-                // ==========================================
                 if (currentVideoUrl !== rawVideoID) {
                     currentVideoUrl = rawVideoID;
-                    // Chama a futura função do Ant Media passando o link do seu servidor
-                    console.log("🚀 Iniciando player do Ant Media Server...");
                     if (typeof carregarVideoAntMedia === 'function') {
                         carregarVideoAntMedia(rawVideoID);
                     }
@@ -4453,30 +4450,18 @@ async function renderMainContent(data) {
                     }
                 }
             }
-        }         // --- FIM se Manual-
-        else {
+        } else {
             // --- NOVO ELSE: MODO DIGITAL (AUTOMÁTICO) ---
-   
-            // 1. Identificamos o container principal do vídeo (ajuste o ID se for video-container)
             const videoContainer = document.getElementById('video-container') || youtubePlaceholder;
 
             if (videoContainer && !videoContainer.classList.contains('hidden')) {
-                console.log("🖥️ Modo Digital detectado: Ocultando e parando vídeo.");
-
-                // 2. Esconde o container principal
+                console.log("🖥️ Modo Digital: Ocultando vídeo.");
                 videoContainer.classList.add('hidden');
 
-                // 3. Para o vídeo (limpa o iframe) para não continuar ouvindo o áudio
-                // Procuramos o iframe dentro do container que escondemos
                 const iframe = videoContainer.querySelector('iframe');
-                if (iframe) {
-                    iframe.src = ""; // Remove o vídeo
-                    console.log("🎥 Iframe do YouTube resetado.");
-                }
+                if (iframe) iframe.src = ""; 
                 
-                // 4. Se você tiver um botão de "Fechar Vídeo", podemos simular o clique nele
-                // Isso garante que qualquer outra lógica de fechamento seja executada
-                const btnFechar = document.getElementById('btn-fechar-video'); // Ajuste o ID
+                const btnFechar = document.getElementById('btn-fechar-video'); 
                 if (btnFechar) btnFechar.click();
             }
         }
@@ -8421,7 +8406,7 @@ function executarRenderizacao(payload) {
 
 
 // Função que você vai chamar quando receber o link do vídeo do seu servidor
-function carregarVideoSincronizado(linkDoYoutube) {
+function carregarVideoSincronizado(videoId, isLoop = false) {
     // 📝 LOG DE ENTRADA: Mostra o que veio do servidor
     //console.group("🔍 Diagnóstico de Vídeo");
     //console.log("🔗 URL Recebida:", linkDoYoutube);
@@ -8491,16 +8476,26 @@ function carregarVideoSincronizado(linkDoYoutube) {
         }
     } else {
         // Se é a primeira vez, cria o player do zero
+
+        // Ajuste nos playerVars
+        let playerVars = {
+            'autoplay': 1,
+            'controls': 1,
+            'rel': 0,
+            'playsinline': 1,
+            'origin': globalOriginURL
+        };
+
+        if (isLoop) {
+            playerVars['loop'] = 1;
+            playerVars['playlist'] = videoId; // Obrigatório para o loop funcionar
+        }
+
         playerYouTube = new YT.Player('player-transmissao', {
             height: '100%',
             width: '100%',
             videoId: videoId,
-            playerVars: {
-                'autoplay': 1,
-                'controls': 1,
-                'rel': 0, // Não mostra vídeos recomendados no final
-                'playsinline': 1, // Permite tocar direto na tela sem abrir tela cheia no iOS
-                'origin': globalOriginURL
+            playerVars: playerVars
             },
             events: {
                 'onReady': () => console.log("🎬 [VÍDEO] Player renderizado e pronto para sincronia!")
