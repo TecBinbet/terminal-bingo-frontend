@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.8";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.9";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -8495,12 +8495,11 @@ function carregarVideoSincronizado(videoId, isLoop = false) {
             height: '100%',
             width: '100%',
             videoId: videoId,
-            playerVars: playerVars
-            },
+            playerVars: playerVars, // Aqui é uma vírgula, não fecha o objeto!
             events: {
                 'onReady': () => console.log("🎬 [VÍDEO] Player renderizado e pronto para sincronia!")
             }
-        });
+        }); // <--- Aqui fecha o objeto do player e a função YT.Player
     }
 }
 
