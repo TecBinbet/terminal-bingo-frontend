@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "2.0";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "2.1";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -467,8 +467,8 @@ async function openEventsPanel() {
     showFullLoading("Carregando agenda...");
 
     try {   
-        // 3. Busca os dados no servidor
-        const response = await fetch(`${API_BASE_URL}/api/proximos_eventos`);
+        // 👉 AJUSTE: Adicionado ?idsala=${currentSalaId} na requisição
+        const response = await fetch(`${API_BASE_URL}/api/proximos_eventos?idsala=${currentSalaId}`);
         
         if (!response.ok) {
              throw new Error('Falha na comunicação com o servidor');
