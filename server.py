@@ -212,7 +212,7 @@ def atualizar_status_treinamento():
             print(f"⚙️ [CONFIG] Modo Treinamento definido como: {MODO_TREINAMENTO_ATIVO}")
     except Exception as e:
         print(f"⚠️ Erro ao carregar status de treinamento: {e}")
-        MODO_TREINAMENTO_ATIVO = Fals
+        MODO_TREINAMENTO_ATIVO = False
 
 
 def hora_brasil():
@@ -2018,7 +2018,7 @@ def proximos_eventos():
                 if val > 0: lista_premios_dinamica.append(f"Falta 1: {fmt_money(val)}")
 
                 # ==========================================
-                # 🔍 VERIFICAÇÃO DE VENDAS
+                # 🔍 VERIFICAÇÃO DE VENDAS GERAIS E DO CLIENTE
                 # ==========================================
                 id_evt_bruto = evt.get('id_evento')
                 try:
@@ -2026,10 +2026,23 @@ def proximos_eventos():
                 except:
                     id_evt_int = id_evt_bruto
 
-                # Busca se existe pelo menos UM registro de venda para este evento
-                # O $in garante que ele ache mesmo se estiver salvo como int ou string
+                # 1. Busca se existe pelo menos UM registro de venda (para controle do Locutor)
                 venda_existe = sales_db.controle_venda.find_one({'id_evento': {'$in': [id_evt_int, str(id_evt_int)]}})
                 tem_vendas = True if venda_existe else False
+                
+                # 2. Busca se o CLIENTE LOGADO comprou cartelas neste evento
+                idsala_cliente = request.args.get('idsala') # Pega o ID que o JS vai enviar
+                cliente_comprou = False
+                
+                if idsala_cliente:
+                    # NOTA: Ajuste 'idsala' abaixo para o nome exato da coluna no seu DB 
+                    # onde fica guardado o ID do terminal/cliente (pode ser 'id_cliente', 'idsala', etc)
+                    venda_pessoal = sales_db.controle_venda.find_one({
+                        'id_evento': {'$in': [id_evt_int, str(id_evt_int)]},
+                        'idsala': idsala_cliente 
+                    })
+                    if venda_pessoal:
+                        cliente_comprou = True
                 # ==========================================
 
                 lista.append({
@@ -2042,7 +2055,8 @@ def proximos_eventos():
                     'unidade_venda': evt.get('unidade_de_venda', 1),
                     'tipo_de_evento': str(evt.get('tipo_de_evento', '')).strip().lower(),
                     'premios_desc': lista_premios_dinamica,
-                    'tem_vendas': tem_vendas
+                    'tem_vendas': tem_vendas,
+                    'cliente_comprou': cliente_comprou # 👉 NOVA FLAG PARA O FRONTEND
                 })
             except Exception as e: 
                 print(f"Erro ao processar evento na lista: {e}")
@@ -2065,7 +2079,7 @@ def proximos_eventos():
             lista.insert(2, evento_super)
 
         # 3. Agora sim, cortamos a lista para exibir apenas os 5 no telemóvel!
-        lista = lista[:8]
+        lista = lista[:5]
         # ==================================================================
 
         return jsonify(lista)

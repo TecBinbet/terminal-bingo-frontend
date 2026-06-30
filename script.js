@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.9";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "2.0";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -722,7 +722,7 @@ function renderEventsList(eventos) {
         } 
         else if (isFutureOrActive) {
             
-            if (isEspecial) {
+if (isEspecial) {
                 // 🌟 TEMA ESPECIAL (Amarelo Claro / Premium)
                 cardClass += ' bg-gradient-to-br from-yellow-100 to-yellow-50 border-2 border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.4)] transform hover:scale-[1.02]';
                 
@@ -756,12 +756,22 @@ function renderEventsList(eventos) {
                 }
             }
 
+            // --- LÓGICA DE COR DO BOTÃO "VER APOSTAS" --- //
+            let btnApostasClass = "bg-blue-900 hover:bg-blue-800 text-white border border-transparent"; 
+            let textoApostas = "<span>📋</span> VER APOSTAS";
+            
+            // 👉 Se o cliente já comprou, damos destaque total ao botão!
+            if (evt.cliente_comprou) {
+                btnApostasClass = "bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-yellow-900 shadow-[0_0_12px_rgba(234,179,8,0.5)] border border-yellow-400";
+                textoApostas = "<span>⭐</span> MINHAS CARTELAS";
+            }
+
             // --- BLOCO DE BOTÕES --- // 
             botoesAcaoHtml = `
                 <div class="-mt-0.5 grid grid-cols-2 gap-2 border-t border-gray-700/30 pt-0.5 -mb-1">  
                     <button onclick="openMyCardsPanel('${evt.id_evento}', '${evt.descricao.replace(/'/g, "\\'")}')"
-                            class="bg-blue-900 hover:bg-blue-800 text-white text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
-                        <span>📋</span> VER APOSTAS
+                            class="${btnApostasClass} text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
+                        ${textoApostas}
                     </button>
                     <button onclick="abrirModalCompra('${evt.id_evento}')" 
                             class="bg-green-600 hover:bg-green-500 text-white text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
@@ -4891,12 +4901,49 @@ function connectWebSocket() {
                 return;
             }
 
+            // =========================================================
+            // 🛡️ CAMADA 1: BLOQUEIO DE EVENTO FANTASMA (FASE DE VENDAS)
+            // =========================================================
+            // Se a mensagem trouxer a identificação do evento, verificamos imediatamente.
+            if (payload.id_evento_ativo && window.currentEventoId) {
+                if (String(payload.id_evento_ativo) !== String(window.currentEventoId)) {
+                    console.error("⚠️ [SEGURANÇA] ID de evento divergente! Cache fantasma detectada.");
+                    sessionStorage.clear(); // Mata a cache corrompida
+                    window.location.reload(true); // Força refresh limpando tudo
+                    return; // Aborta!
+                }
+            }
+
+            // =========================================================
+            // 🛡️ CAMADA 2: GATILHO DA GUILHOTINA (INÍCIO DO SORTEIO)
+            // =========================================================
+            // O Python envia os dados da rodada dentro de um array 'rodadaData'
+            const rodada = payload.rodadaData && payload.rodadaData.length > 0 ? payload.rodadaData[0] : null;
+            const statusRodada = rodada ? rodada.estado : null;
+
+            if (statusRodada === 'sorteio' || statusRodada === 'em andamento') {
+                
+                // O Python envia os ranges do banco na chave 'cardRanges'
+                if (payload.cardRanges && window.cartelasAtivas && window.cartelasAtivas.length > 0) {
+                    
+                    // Traduz de {inicial, final} (Python) para {min, max} (JS)
+                    const periodosFormatados = payload.cardRanges.map(r => ({
+                        min: r.inicial,
+                        max: r.final
+                    }));
+
+                    const auditoriaAprovada = auditarCartelasContraPeriodosOficiais(window.cartelasAtivas, periodosFormatados);
+                    
+                    if (!auditoriaAprovada) {
+                        return; // Aborta para proteger a tela
+                    }
+                }
+            }
+
             // ==========================================
             // 🎥 NOVO: INTERCEPTADOR DE CONVITE DE VÍDEO
             // ==========================================
             if (payload.type === 'convite_video') {
-                //console.log("💌 Convite de vídeo recebido para a cartela:", payload.cartela);
-    
                 // Converte a cartela que veio do painel admin para número inteiro
                 const cartelaPremiada = parseInt(payload.cartela);
     
@@ -4904,7 +4951,6 @@ function connectWebSocket() {
                 const souDonoDaCartela = globalMinhasCartelas.cartelas.includes(cartelaPremiada);
     
                 if (souDonoDaCartela) {
-                    //console.log("🎉 Esta cartela é minha! Exibindo botão da Live.");
                     mostrarBotaoLive(payload.sala_vdo);
                 } else {
                     console.log("🔒 Convite ignorado. A cartela " + cartelaPremiada + " não pertence a este jogador.");
@@ -4940,7 +4986,6 @@ function connectWebSocket() {
         
         // ==========================================
         // 🛑 PARA O BATE-CORAÇÃO
-        // (Não precisa ficar batendo se a linha já caiu)
         // ==========================================
         if (window.pingInterval) {
             clearInterval(window.pingInterval);
@@ -4948,111 +4993,6 @@ function connectWebSocket() {
         }
         
         // 🚑 LIGA A AMBULÂNCIA
-        if (!reconnectInterval) {
-            reconnectInterval = setInterval(() => {
-                console.log("🔄 Tentativa de reconexão automática...");
-                connectWebSocket();
-            }, 3000);
-        }
-    };
-
-    ws.onerror = (error) => {
-        console.error('❌ [FRONT] Erro técnico detectado no WebSocket.');
-        if (ws) ws.close();
-    };
-}
-
-function connectWebSocketB() {
-    // 1. LIMPEZA E RESET (Garante que não existam conexões fantasmas)
-    if (ws) {
-        console.log("♻️ Fechando conexão anterior para garantir um início limpo...");
-        try {
-            ws.onopen = null;
-            ws.onmessage = null;
-            ws.onclose = null;
-            ws.onerror = null;
-            ws.close();
-        } catch (e) {
-            console.error("Erro ao limpar WS antigo:", e);
-        }
-    }
-
-    // 2. MONTAGEM DA URL
-    // const wsUrlWithRoom = `${WS_URL}${WS_URL.includes('?') ? '&' : '?'}idsala=${currentSalaId}`;
-    const wsUrlWithRoom = `${WS_URL}?idsala=${currentSalaId}`;
-    console.log("🔌 [FRONT] Conectando ao Servidor Independente:", wsUrlWithRoom);
-
-    // 3. INICIALIZAÇÃO
-    ws = new WebSocket(wsUrlWithRoom);
-
-    ws.onopen = async () => {
-        console.log("✅ [FRONT] WebSocket Conectado com Sucesso!");
-        // Inicia o motor assim que conecta
-        iniciarMotorSincronia();
-
-        if (reconnectInterval) {
-            clearInterval(reconnectInterval);
-            reconnectInterval = null;
-        }
-        
-        // try { requestWakeLock(); } catch(e) { console.warn("WakeLock não suportado."); }
-        try { if(navigator.wakeLock) navigator.wakeLock.request('screen'); } catch(e){}
-
-        // --- SINCRONIZAÇÃO DUPLA (BINGO + ARQUIVO DO CUPOM) ---
-
-        // A. Solicita estado do Bingo (via WebSocket)
-        ws.send(JSON.stringify({ action: "GET_INITIAL_STATE" }));
-        console.log("📤 Solicitando estado inicial do Bingo.");
-
-    };
-
-    ws.onmessage = (event) => {
-        try {
-            const payload = JSON.parse(event.data);
-  
-            // --- ADICIONE ESTE BLOCO DE LOGICA AQUI ---
-            //if (payload.type === 'FORCE_RELOAD') {
-            //    const vServidor = payload.versao_obrigatoria;
-            //    if (vServidor && vServidor !== VERSAO_ATUAL) {
-            //        console.warn(`[UPDATE] Versão antiga (${VERSAO_ATUAL}). Atualizando para ${vServidor}...`);
-            //        window.location.reload(true); 
-            //        return; 
-            //    }
-            //    return; // Se for a mesma versão, ignora
-            //}
-          
-            // Ignora mensagens de erro
-            if (payload.type === 'ERROR') {
-                console.error("Erro do Servidor:", payload);
-                return;
-            }
-
-            // === A MÁGICA DA SINCRONIA AQUI ===
-            // Verifica o tempo que a bola deve esperar (enviado pelo admin)
-            const tempoDeEspera = payload.tempo_video || 0; 
-            
-            if (tempoDeEspera === 0) {
-                executarRenderizacao(payload);
-                return; 
-            }
-
-            // Coloca na fila e não faz mais nada!
-            filaDeMensagens.push({
-                tempo_video: tempoDeEspera,
-                payload: payload
-            });
-
-            // console.log(`📥 [SYNC] Dado retido na fila. Aguardará até o vídeo chegar em: ${tempoDeEspera}s`);
-
-        } catch (e) {
-            console.error('❌ [FRONT] Erro crítico no processamento da mensagem:', e);
-        }
-    };
-
-    ws.onclose = (event) => {
-        console.warn(`⚠️ [FRONT] Conexão Perdida (Código: ${event.code}). Tentando Reconectar...`);
-        try { releaseWakeLock(); } catch(e){}
-        
         if (!reconnectInterval) {
             reconnectInterval = setInterval(() => {
                 console.log("🔄 Tentativa de reconexão automática...");
@@ -5370,6 +5310,47 @@ document.addEventListener('DOMContentLoaded', () => {
  * Função principal que processa os parâmetros da URL.
  * É chamada pelo ws.onopen
  */
+
+
+// Audita as cartelas ativas no terminal contra os períodos oficiais do locutor
+function auditarCartelasContraPeriodosOficiais(cartelasLocais, periodosValidos) {
+    // Se não há cartelas no cliente, não há o que auditar
+    if (!cartelasLocais || cartelasLocais.length === 0) return true;
+    
+    // Se o servidor não mandou períodos, não podemos auditar (falha de comunicação)
+    if (!periodosValidos || periodosValidos.length === 0) return true; 
+
+    // Procura cartelas que NÃO estão dentro de NENHUM dos períodos fornecidos
+    const cartelasInvalidas = cartelasLocais.filter(c => {
+        const numCartela = parseInt(c.numero);
+        
+        // Verifica se a cartela se encaixa em pelo menos um dos períodos
+        const isValid = periodosValidos.some(periodo => {
+            return numCartela >= periodo.min && numCartela <= periodo.max;
+        });
+        
+        return !isValid; // Se não for válida, ela é capturada pelo filter
+    });
+
+    if (cartelasInvalidas.length > 0) {
+        console.error("🚫 [AUDITORIA] Cartelas fora do período do locutor detectadas:", cartelasInvalidas);
+        
+        // Aciona o Freio de Emergência
+        window.cartelasAtivas = []; // Esvazia a memória de cartelas do cliente
+        if (typeof limparInterfaceDeCartelas === 'function') limparInterfaceDeCartelas(); // Limpa o HTML
+        
+        // Alerta o cliente
+        alert("Sincronia perdida! Suas cartelas não correspondem ao período oficial deste sorteio. O sistema será atualizado.");
+        window.location.reload(true);
+        
+        return false;
+    }
+    
+    console.log("✅ [AUDITORIA] Todas as cartelas do cliente estão nos períodos oficiais.");
+    return true;
+}
+
+
 async function processarParametrosURL() {
     console.log("Processando parâmetros da URL...");
     
