@@ -765,7 +765,7 @@ if (isEspecial) {
                 let btnApostasClass = "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white shadow-[0_0_12px_rgba(59,130,246,0.5)] border border-blue-500";
                 
                 // O fundo da quantidade (bg-white/25) cria um pequeno "vidro" sobre o azul
-                let textoApostas = `<span>⭐</span> MINHAS <b class="text-[15px] font-black mx-1 px-1.5 bg-white/25 rounded shadow-sm drop-shadow-md tracking-tighter">${evt.qtd_cartelas_compradas}</b> CARTELAS`;
+                let textoApostas = `<span>⭐</span> MINHAS <b class="text-[17px] font-semibold mx-1 px-1.5 bg-white/25 rounded shadow-sm drop-shadow-md tracking-tighter">${evt.qtd_cartelas_compradas}</b> CARTELAS`;
 
                 botoesAcaoHtml = `
                     <div class="-mt-0.5 grid grid-cols-2 gap-2 border-t border-gray-700/30 pt-0.5 -mb-1">  
