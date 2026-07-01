@@ -760,17 +760,19 @@ if (isEspecial) {
             let btnApostasClass = "bg-blue-900 hover:bg-blue-800 text-white border border-transparent"; 
             let textoApostas = "<span>📋</span> VER APOSTAS";
             
-            // 👉 Se o cliente já comprou, damos destaque total ao botão!
-            if (evt.cliente_comprou) {
+            // 👉 Se o cliente já comprou, damos destaque total ao botão e mostramos a quantidade!
+            if (evt.cliente_comprou && evt.qtd_cartelas_compradas > 0) {
                 btnApostasClass = "bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-yellow-900 shadow-[0_0_12px_rgba(234,179,8,0.5)] border border-yellow-400";
-                textoApostas = "<span>⭐</span> MINHAS CARTELAS";
+                
+                // Destaca apenas o número com fonte maior, super negrito e um leve fundo translúcido
+                textoApostas = `<span>⭐</span> MINHAS <b class="text-[15px] font-black mx-1 px-1.5 bg-yellow-100/40 rounded shadow-sm drop-shadow-md tracking-tighter">${evt.qtd_cartelas_compradas}</b> CARTELAS`;
             }
 
             // --- BLOCO DE BOTÕES --- // 
             botoesAcaoHtml = `
                 <div class="-mt-0.5 grid grid-cols-2 gap-2 border-t border-gray-700/30 pt-0.5 -mb-1">  
                     <button onclick="openMyCardsPanel('${evt.id_evento}', '${evt.descricao.replace(/'/g, "\\'")}')"
-                            class="${btnApostasClass} text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
+                            class="${btnApostasClass} text-[11px] font-bold py-2 px-1 rounded-lg shadow-md flex items-center justify-center gap-0.5 transition-all active:scale-95">
                         ${textoApostas}
                     </button>
                     <button onclick="abrirModalCompra('${evt.id_evento}')" 

@@ -2030,19 +2030,55 @@ def proximos_eventos():
                 venda_existe = sales_db.controle_venda.find_one({'id_evento': {'$in': [id_evt_int, str(id_evt_int)]}})
                 tem_vendas = True if venda_existe else False
                 
-                # 2. Busca se o CLIENTE LOGADO comprou cartelas neste evento
-                idsala_cliente = request.args.get('idsala') # Pega o ID que o JS vai enviar
-                cliente_comprou = False
+                # ==========================================
+                # 🔍 VERIFICAÇÃO DE VENDAS GERAIS E DO CLIENTE
+                # ==========================================
+                id_evt_bruto = evt.get('id_evento')
+                try:
+                    id_evt_int = int(id_evt_bruto)
+                except:
+                    id_evt_int = id_evt_bruto
+
+                # 1. VERIFICA VENDAS GERAIS
+                venda_existe = sales_db.controle_venda.find_one({'id_evento': {'$in': [id_evt_int, str(id_evt_int)]}})
+                tem_vendas = True if venda_existe else False
+
+                # 2. VERIFICA O CLIENTE LOGADO E SOMA AS CARTELAS
+                id_cliente_ativo = session.get('id_cliente') 
+                if not id_cliente_ativo:
+                    id_cliente_ativo = request.args.get('id_cliente')
                 
-                if idsala_cliente:
-                    # NOTA: Ajuste 'idsala' abaixo para o nome exato da coluna no seu DB 
-                    # onde fica guardado o ID do terminal/cliente (pode ser 'id_cliente', 'idsala', etc)
-                    venda_pessoal = sales_db.controle_venda.find_one({
-                        'id_evento': {'$in': [id_evt_int, str(id_evt_int)]},
-                        'idsala': idsala_cliente 
-                    })
-                    if venda_pessoal:
-                        cliente_comprou = True
+                cliente_comprou = False
+                qtd_cartelas_compradas = 0  # 👉 NOVA VARIÁVEL
+                
+                if id_cliente_ativo:
+                    try:
+                        id_cli_int = int(id_cliente_ativo)
+                    except ValueError:
+                        id_cli_int = id_cliente_ativo
+
+                    col_vendas_nome = f"vendas{id_evt_int}"
+
+                    if col_vendas_nome in sales_db.list_collection_names():
+                        query_pessoal = {'id_cliente': {'$in': [id_cliente_ativo, id_cli_int]}}
+                        
+                        # 🔄 Usamos .find() para pegar TODAS as compras deste cliente neste evento
+                        vendas_do_cliente = sales_db[col_vendas_nome].find(query_pessoal)
+                        
+                        for vp in vendas_do_cliente:
+                            # Tenta pegar a quantidade se o campo já existir
+                            qtd = vp.get('quantidade_cartelas', 0)
+                            
+                            # Fallback de segurança: Se não tiver o campo, calcula pela diferença
+                            if qtd == 0 and vp.get('numero_final') and vp.get('numero_inicial'):
+                                qtd = (int(vp.get('numero_final')) - int(vp.get('numero_inicial'))) + 1
+                                if vp.get('numero_final2') and vp.get('numero_inicial2'):
+                                    qtd += (int(vp.get('numero_final2')) - int(vp.get('numero_inicial2'))) + 1
+
+                            qtd_cartelas_compradas += int(qtd)
+                        
+                        if qtd_cartelas_compradas > 0:
+                            cliente_comprou = True
                 # ==========================================
 
                 lista.append({
@@ -2056,7 +2092,8 @@ def proximos_eventos():
                     'tipo_de_evento': str(evt.get('tipo_de_evento', '')).strip().lower(),
                     'premios_desc': lista_premios_dinamica,
                     'tem_vendas': tem_vendas,
-                    'cliente_comprou': cliente_comprou # 👉 NOVA FLAG PARA O FRONTEND
+                    'cliente_comprou': cliente_comprou,
+                    'qtd_cartelas_compradas': qtd_cartelas_compradas
                 })
             except Exception as e: 
                 print(f"Erro ao processar evento na lista: {e}")
