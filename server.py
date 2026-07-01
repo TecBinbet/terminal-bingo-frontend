@@ -1979,6 +1979,8 @@ def proximos_eventos():
             'status': {'$in': ['ativo', 'paralizado', 'ATIVO', 'PARALIZADO']}
         }).sort([('data_evento', 1), ('hora_evento', 1)])
 
+        colecoes_existentes = sales_db.list_collection_names()
+
         # --- FUNÇÕES AUXILIARES SEGURAS ---
         def to_float(val):
             if val is None: return 0.0
@@ -2026,18 +2028,8 @@ def proximos_eventos():
                 except:
                     id_evt_int = id_evt_bruto
 
-                # 1. Busca se existe pelo menos UM registro de venda (para controle do Locutor)
-                venda_existe = sales_db.controle_venda.find_one({'id_evento': {'$in': [id_evt_int, str(id_evt_int)]}})
-                tem_vendas = True if venda_existe else False
-                
-                # ==========================================
-                # 🔍 VERIFICAÇÃO DE VENDAS GERAIS E DO CLIENTE
-                # ==========================================
-                id_evt_bruto = evt.get('id_evento')
-                try:
-                    id_evt_int = int(id_evt_bruto)
-                except:
-                    id_evt_int = id_evt_bruto
+                print(f"🐞 [DEBUG] =========================================")
+                print(f"🐞 [DEBUG] Iniciando processamento do Evento: {id_evt_int}")
 
                 # 1. VERIFICA VENDAS GERAIS
                 venda_existe = sales_db.controle_venda.find_one({'id_evento': {'$in': [id_evt_int, str(id_evt_int)]}})
@@ -2049,7 +2041,7 @@ def proximos_eventos():
                     id_cliente_ativo = request.args.get('id_cliente')
                 
                 cliente_comprou = False
-                qtd_cartelas_compradas = 0  # 👉 NOVA VARIÁVEL
+                qtd_cartelas_compradas = 0  
                 
                 if id_cliente_ativo:
                     try:
@@ -2058,18 +2050,21 @@ def proximos_eventos():
                         id_cli_int = id_cliente_ativo
 
                     col_vendas_nome = f"vendas{id_evt_int}"
+                    print(f"🐞 [DEBUG] Buscando coleção: {col_vendas_nome}")
 
-                    if col_vendas_nome in sales_db.list_collection_names():
+                    # 👉 Usa a variável que criámos fora do loop (ultra rápido)
+                    if col_vendas_nome in colecoes_existentes:
                         query_pessoal = {'id_cliente': {'$in': [id_cliente_ativo, id_cli_int]}}
                         
-                        # 🔄 Usamos .find() para pegar TODAS as compras deste cliente neste evento
+                        print(f"🐞 [DEBUG] Coleção encontrada. Executando query para o cliente {id_cliente_ativo}...")
                         vendas_do_cliente = sales_db[col_vendas_nome].find(query_pessoal)
                         
-                        for vp in vendas_do_cliente:
-                            # Tenta pegar a quantidade se o campo já existir
+                        lista_vendas = list(vendas_do_cliente)
+                        print(f"🐞 [DEBUG] Foram encontrados {len(lista_vendas)} registos de compra neste evento.")
+                        
+                        for vp in lista_vendas:
                             qtd = vp.get('quantidade_cartelas', 0)
                             
-                            # Fallback de segurança: Se não tiver o campo, calcula pela diferença
                             if qtd == 0 and vp.get('numero_final') and vp.get('numero_inicial'):
                                 qtd = (int(vp.get('numero_final')) - int(vp.get('numero_inicial'))) + 1
                                 if vp.get('numero_final2') and vp.get('numero_inicial2'):
@@ -2077,8 +2072,16 @@ def proximos_eventos():
 
                             qtd_cartelas_compradas += int(qtd)
                         
+                        print(f"🐞 [DEBUG] Fim da contagem. Total de cartelas somadas: {qtd_cartelas_compradas}")
+
                         if qtd_cartelas_compradas > 0:
                             cliente_comprou = True
+                    else:
+                        print(f"🐞 [DEBUG] Coleção {col_vendas_nome} não existe. Saltando verificação.")
+                else:
+                    print(f"🐞 [DEBUG] Nenhum cliente logado identificado.")
+                
+                print(f"🐞 [DEBUG] Fim do Evento {id_evt_int}")
                 # ==========================================
 
                 lista.append({
