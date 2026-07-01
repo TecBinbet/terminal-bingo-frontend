@@ -1961,44 +1961,102 @@ def verificar_status_evento():
 
 
 # --- ROTA: LISTAR PRÓXIMOS EVENTOS (FILTRADOS) ---
+# --- ROTA: LISTAR PRÓXIMOS EVENTOS (ULTRA-RÁPIDO) ---
 @app.route('/api/proximos_eventos', methods=['GET'])
 def proximos_eventos():
     
-    print("🔍 Buscando agenda de eventos...")
+    print("⚡ Buscando agenda de eventos (Modo Otimizado)...")
     try:
         sales_db = get_sales_db_connection()
         if sales_db is None: 
             return jsonify({'error': 'Sem conexão com DB Vendas'}), 500
         
-        if 'eventos' not in sales_db.list_collection_names():
-            return jsonify([]), 200
-
-        lista = []
-        # ⚠️ RETIRAMOS O .limit(5) DAQUI para podermos varrer toda a agenda!
+        # 1. Busca todos os eventos ativos do banco (apenas os documentos base)
         cursor = sales_db.eventos.find({
             'status': {'$in': ['ativo', 'paralizado', 'ATIVO', 'PARALIZADO']}
         }).sort([('data_evento', 1), ('hora_evento', 1)])
 
-        colecoes_existentes = sales_db.list_collection_names()
+        todos_eventos = list(cursor) # Transforma numa lista Python
+        if not todos_eventos:
+            return jsonify([]), 200
+
+        # ==================================================================
+        # 🌟 PASSO 1: REGRA DE NEGÓCIO DO EVENTO ESPECIAL (Antes do loop pesado)
+        # ==================================================================
+        indice_especial = -1
+        for i, evt in enumerate(todos_eventos):
+            if str(evt.get('tipo_de_evento', '')).strip().lower() == 'especial':
+                indice_especial = i
+                break
+
+        if indice_especial > 2:
+            evento_super = todos_eventos.pop(indice_especial)
+            todos_eventos.insert(2, evento_super)
+
+        # ==================================================================
+        # ✂️ PASSO 2: O SEGREDO DA PERFORMANCE - CORTA PARA OS TOP 5 AGORA
+        # ==================================================================
+        eventos_top5 = todos_eventos[:5]
 
         # --- FUNÇÕES AUXILIARES SEGURAS ---
         def to_float(val):
             if val is None: return 0.0
-            try:
-                return float(str(val))
-            except:
-                return 0.0
+            try: return float(str(val))
+            except: return 0.0
 
         def fmt_money(val_float):
             return f"R$ {val_float:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        # ----------------------------------
         
-        for evt in cursor:
-            try:
+        # Variáveis de sessão do cliente
+        id_cliente_ativo = session.get('id_cliente') 
+        if not id_cliente_ativo:
+            id_cliente_ativo = request.args.get('id_cliente')
+            
+        try:
+            id_cli_int = int(id_cliente_ativo) if id_cliente_ativo else None
+        except:
+            id_cli_int = id_cliente_ativo
 
+        lista_final = []
+
+        # ==================================================================
+        # 🚀 PASSO 3: FAZ AS BUSCAS NO BANCO APENAS PARA OS 5 QUE VAMOS MOSTRAR
+        # ==================================================================
+        for evt in eventos_top5:
+            try:
+                id_evt_bruto = evt.get('id_evento')
+                try: id_evt_int = int(id_evt_bruto)
+                except: id_evt_int = id_evt_bruto
+
+                # A. VERIFICA VENDAS GERAIS (Apenas uma consulta minúscula)
+                venda_existe = sales_db.controle_venda.find_one({'id_evento': {'$in': [id_evt_int, str(id_evt_int)]}}, {'_id': 1})
+                tem_vendas = True if venda_existe else False
+
+                # B. VERIFICA VENDAS DO CLIENTE
+                cliente_comprou = False
+                qtd_cartelas_compradas = 0  
+
+                if id_cliente_ativo:
+                    col_vendas_nome = f"vendas{id_evt_int}"
+                    query_pessoal = {'id_cliente': {'$in': [id_cliente_ativo, id_cli_int]}}
+                    campos_necessarios = {'quantidade_cartelas': 1, 'numero_inicial': 1, 'numero_final': 1, 'numero_inicial2': 1, 'numero_final2': 1, '_id': 0}
+                    
+                    vendas_do_cliente = sales_db[col_vendas_nome].find(query_pessoal, campos_necessarios)
+                    
+                    for vp in vendas_do_cliente:
+                        qtd = vp.get('quantidade_cartelas', 0)
+                        if qtd == 0 and vp.get('numero_final') and vp.get('numero_inicial'):
+                            qtd = (int(vp.get('numero_final')) - int(vp.get('numero_inicial'))) + 1
+                            if vp.get('numero_final2') and vp.get('numero_inicial2'):
+                                qtd += (int(vp.get('numero_final2')) - int(vp.get('numero_inicial2'))) + 1
+
+                        qtd_cartelas_compradas += int(qtd)
+                    
+                    if qtd_cartelas_compradas > 0:
+                        cliente_comprou = True
+
+                # C. FORMATAÇÃO VISUAL (Dinheiro e Prêmios)
                 valor_safe = converter_decimal(evt.get('valor_de_venda'))
-                
-                # CONSTRUÇÃO DA LISTA DE PRÊMIOS
                 lista_premios_dinamica = []
 
                 val = to_float(evt.get('premio_quadra'))
@@ -2019,57 +2077,8 @@ def proximos_eventos():
                 val = to_float(evt.get('premio_faltaum'))
                 if val > 0: lista_premios_dinamica.append(f"Falta 1: {fmt_money(val)}")
 
-                # ==========================================
-                # ⚡ VERIFICAÇÃO DE VENDAS (ULTRA-RÁPIDA)
-                # ==========================================
-                id_evt_bruto = evt.get('id_evento')
-                try:
-                    id_evt_int = int(id_evt_bruto)
-                except:
-                    id_evt_int = id_evt_bruto
-
-                # 1. VERIFICA VENDAS GERAIS
-                venda_existe = sales_db.controle_venda.find_one({'id_evento': {'$in': [id_evt_int, str(id_evt_int)]}}, {'_id': 1})
-                tem_vendas = True if venda_existe else False
-
-                # 2. VERIFICA O CLIENTE LOGADO E SOMA AS CARTELAS
-                id_cliente_ativo = session.get('id_cliente') 
-                if not id_cliente_ativo:
-                    id_cliente_ativo = request.args.get('id_cliente')
-                
-                cliente_comprou = False
-                qtd_cartelas_compradas = 0  
-                
-                if id_cliente_ativo:
-                    try:
-                        id_cli_int = int(id_cliente_ativo)
-                    except ValueError:
-                        id_cli_int = id_cliente_ativo
-
-                    col_vendas_nome = f"vendas{id_evt_int}"
-
-                    # Consulta direta e otimizada (Projeção)
-                    query_pessoal = {'id_cliente': {'$in': [id_cliente_ativo, id_cli_int]}}
-                    campos_necessarios = {'quantidade_cartelas': 1, 'numero_inicial': 1, 'numero_final': 1, 'numero_inicial2': 1, 'numero_final2': 1, '_id': 0}
-                    
-                    # O MongoDB é inteligente: se a coleção não existir, ele ignora e retorna vazio instantaneamente
-                    vendas_do_cliente = sales_db[col_vendas_nome].find(query_pessoal, campos_necessarios)
-                    
-                    for vp in vendas_do_cliente:
-                        qtd = vp.get('quantidade_cartelas', 0)
-                        
-                        if qtd == 0 and vp.get('numero_final') and vp.get('numero_inicial'):
-                            qtd = (int(vp.get('numero_final')) - int(vp.get('numero_inicial'))) + 1
-                            if vp.get('numero_final2') and vp.get('numero_inicial2'):
-                                qtd += (int(vp.get('numero_final2')) - int(vp.get('numero_inicial2'))) + 1
-
-                        qtd_cartelas_compradas += int(qtd)
-                    
-                    if qtd_cartelas_compradas > 0:
-                        cliente_comprou = True
-                # ==========================================
-
-                lista.append({
+                # D. MONTA O DICIONÁRIO FINAL
+                lista_final.append({
                     'id_evento': str(evt.get('id_evento')),
                     'descricao': evt.get('descricao', 'Sem Descrição'),
                     'status': evt.get('status', 'ativo'),
@@ -2087,27 +2096,7 @@ def proximos_eventos():
                 print(f"Erro ao processar evento na lista: {e}")
                 continue
 
-        # ==================================================================
-        # 🌟 REGRA DE NEGÓCIO: DESTAQUE DO EVENTO ESPECIAL
-        # ==================================================================
-        indice_especial = -1    #
-        
-        # 1. Procura o primeiro evento Especial na fila completa
-        for i, evento_dict in enumerate(lista):
-            if evento_dict.get('tipo_de_evento') == 'especial':
-                indice_especial = i
-                break
-
-        # 2. Se encontrou e ele está abaixo da posição 2, nós o movemos!
-        if indice_especial > 2:
-            evento_super = lista.pop(indice_especial)
-            lista.insert(2, evento_super)
-
-        # 3. Agora sim, cortamos a lista para exibir apenas os 5 no telemóvel!
-        lista = lista[:5]
-        # ==================================================================
-
-        return jsonify(lista)
+        return jsonify(lista_final)
 
     except Exception as e:
         print(f"❌ Erro ao listar eventos: {e}")
