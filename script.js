@@ -759,10 +759,13 @@ if (isEspecial) {
             // --- BLOCO DE BOTÕES DINÂMICOS (UX Otimizada) --- // 
             let hasCards = evt.cliente_comprou && evt.qtd_cartelas_compradas > 0;
 
-            if (hasCards) {
+           if (hasCards) {
                 // 👉 CENÁRIO 1: CLIENTE JÁ COMPROU (Mostra 2 botões: Minhas Cartelas + Comprar Mais)
-                let btnApostasClass = "bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-yellow-900 shadow-[0_0_12px_rgba(234,179,8,0.5)] border border-yellow-400";
-                let textoApostas = `<span>⭐</span> MINHAS <b class="text-[15px] font-black mx-1 px-1.5 bg-yellow-100/40 rounded shadow-sm drop-shadow-md tracking-tighter">${evt.qtd_cartelas_compradas}</b> CARTELAS`;
+                // Alterado para tons de azul brilhante para contrastar bem com o card Especial (amarelo)
+                let btnApostasClass = "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white shadow-[0_0_12px_rgba(59,130,246,0.5)] border border-blue-500";
+                
+                // O fundo da quantidade (bg-white/25) cria um pequeno "vidro" sobre o azul
+                let textoApostas = `<span>⭐</span> MINHAS <b class="text-[15px] font-black mx-1 px-1.5 bg-white/25 rounded shadow-sm drop-shadow-md tracking-tighter">${evt.qtd_cartelas_compradas}</b> CARTELAS`;
 
                 botoesAcaoHtml = `
                     <div class="-mt-0.5 grid grid-cols-2 gap-2 border-t border-gray-700/30 pt-0.5 -mb-1">  
