@@ -4390,19 +4390,21 @@ def registrar_transacao_cliente(db_vendas, id_cliente, valor, tipo, descricao, i
     print(f"💰 [AUDITORIA PAGAMENTO] ID: {id_cliente} | Valor: {valor} | Tipo: {tipo} | Evento: {id_evento}")
 
     # 1. Dicionário Rigoroso do Livro-Razão (Bloqueia Categorias Fantasmas)
-    # 👉 AJUSTE: 'premio_acumulado' adicionado à lista de entradas!
+    # 👉 AJUSTE: 'premio_acumulado' mantido na lista de entradas!
     tipos_entrada = ['compra_credito_pix', 'credito_manual_admin', 'premio_bingo', 'premio_acumulado', 'premio_sorte_extra', 'estorno_saque', 'estorno_geral']
     tipos_saida = ['compra_cartela', 'compra_sorte_extra', 'saque_solicitado', 'debito_manual_admin']
     
     if tipo not in tipos_entrada and tipo not in tipos_saida:
         print(f"🚨 [ALERTA DE SEGURANÇA] Terminal do Cliente enviou tipo inválido: '{tipo}'.")
-        return False # 👉 AJUSTE: Retorna apenas o booleano para não quebrar os "if sucesso:"
+        # 👉 RESTAURADO: Retorna a tupla (Booleano, Mensagem)
+        return False, "Operação financeira não autorizada." 
 
     try:
         valor_float = float(valor)
         if valor_float == 0:
             print("⚠️ [FINANCEIRO] Transação de valor zero ignorada.")
-            return True 
+            # 👉 RESTAURADO
+            return True, "Transação de valor zero ignorada."
 
         # 2. Trava de Segurança Matemática (O Fim das Fraudes de Sinal)
         if tipo in tipos_saida and valor_float > 0:
@@ -4441,7 +4443,8 @@ def registrar_transacao_cliente(db_vendas, id_cliente, valor, tipo, descricao, i
             
         if not cliente_atualizado:
             print(f"⚠️ [FINANCEIRO TERMINAL] Cliente {id_cliente} não encontrado.")
-            return False 
+            # 👉 RESTAURADO
+            return False, "Cliente não encontrado." 
 
         # 4. Matemática Reversa (Descobrir o saldo anterior para auditoria)
         saldo_posterior_float = float(cliente_atualizado.get('saldo_atual', Decimal128("0.00")).to_decimal())
@@ -4466,13 +4469,15 @@ def registrar_transacao_cliente(db_vendas, id_cliente, valor, tipo, descricao, i
         }
         
         db_vendas.transacoes_clientes.insert_one(doc_transacao)
-        return True # 👉 AJUSTE: Retorna True limpo
+        # 👉 RESTAURADO
+        return True, "Sucesso" 
 
     except Exception as e:
         print(f"❌ [ERRO CRÍTICO NO TERMINAL] Falha atômica com o cliente {id_cliente}: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        # 👉 RESTAURADO
+        return False, str(e)
 
 
 def registrar_comissao_vendedor(db, id_colaborador, valor, tipo, id_evento, id_venda, taxa_aplicada, descricao=""):
