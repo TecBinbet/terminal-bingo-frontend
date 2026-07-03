@@ -4390,17 +4390,19 @@ def registrar_transacao_cliente(db_vendas, id_cliente, valor, tipo, descricao, i
     print(f"💰 [AUDITORIA PAGAMENTO] ID: {id_cliente} | Valor: {valor} | Tipo: {tipo} | Evento: {id_evento}")
 
     # 1. Dicionário Rigoroso do Livro-Razão (Bloqueia Categorias Fantasmas)
-    tipos_entrada = ['compra_credito_pix', 'credito_manual_admin', 'premio_bingo', 'premio_sorte_extra', 'estorno_saque', 'estorno_geral']
+    # 👉 AJUSTE: 'premio_acumulado' adicionado à lista de entradas!
+    tipos_entrada = ['compra_credito_pix', 'credito_manual_admin', 'premio_bingo', 'premio_acumulado', 'premio_sorte_extra', 'estorno_saque', 'estorno_geral']
     tipos_saida = ['compra_cartela', 'compra_sorte_extra', 'saque_solicitado', 'debito_manual_admin']
     
     if tipo not in tipos_entrada and tipo not in tipos_saida:
         print(f"🚨 [ALERTA DE SEGURANÇA] Terminal do Cliente enviou tipo inválido: '{tipo}'.")
-        return False, "Operação financeira não autorizada."
+        return False # 👉 AJUSTE: Retorna apenas o booleano para não quebrar os "if sucesso:"
 
     try:
         valor_float = float(valor)
         if valor_float == 0:
-            return True, "Transação de valor zero ignorada."
+            print("⚠️ [FINANCEIRO] Transação de valor zero ignorada.")
+            return True 
 
         # 2. Trava de Segurança Matemática (O Fim das Fraudes de Sinal)
         if tipo in tipos_saida and valor_float > 0:
@@ -4414,7 +4416,7 @@ def registrar_transacao_cliente(db_vendas, id_cliente, valor, tipo, descricao, i
 
         valor_decimal = Decimal128(str(valor_float))
 
-        # 3. OPERAÇÃO ATÔMICA (Com a sua lógica inteligente de fallback)
+        # 3. OPERAÇÃO ATÔMICA
         id_busca = int(id_cliente) if str(id_cliente).isdigit() else id_cliente
         
         cliente_atualizado = db_vendas.clientes.find_one_and_update(
@@ -4439,7 +4441,7 @@ def registrar_transacao_cliente(db_vendas, id_cliente, valor, tipo, descricao, i
             
         if not cliente_atualizado:
             print(f"⚠️ [FINANCEIRO TERMINAL] Cliente {id_cliente} não encontrado.")
-            return False, "Cliente não encontrado."
+            return False 
 
         # 4. Matemática Reversa (Descobrir o saldo anterior para auditoria)
         saldo_posterior_float = float(cliente_atualizado.get('saldo_atual', Decimal128("0.00")).to_decimal())
@@ -4458,18 +4460,19 @@ def registrar_transacao_cliente(db_vendas, id_cliente, valor, tipo, descricao, i
             'descricao': descricao,
             'id_evento': id_evento,
             'id_venda': id_venda,
-            'id_colaborador': id_colaborador, # Vital para que a comissão Indireta A funcione se ele comprar sozinho
+            'id_colaborador': id_colaborador, 
             'origem': origem,
             'registrado_por': registrado_por
         }
         
         db_vendas.transacoes_clientes.insert_one(doc_transacao)
-        return True, "Sucesso"
+        return True # 👉 AJUSTE: Retorna True limpo
 
     except Exception as e:
         print(f"❌ [ERRO CRÍTICO NO TERMINAL] Falha atômica com o cliente {id_cliente}: {e}")
+        import traceback
         traceback.print_exc()
-        return False, str(e)
+        return False
 
 
 def registrar_comissao_vendedor(db, id_colaborador, valor, tipo, id_evento, id_venda, taxa_aplicada, descricao=""):
@@ -6120,37 +6123,6 @@ def get_cupom_atual():
             dados = json.load(f)
         return jsonify(dados)
     return jsonify(None)
-
-
-
-# --- ROTA ATUALIZADA: PERMITE LIMPAR A TELA (ENVIA NULL) ---
-@app.route('/api/admin/publicar_cupom_terminal_aaa', methods=['POST'])
-def publicar_cupom_terminal_aaa():
-    try:
-        data = request.json
-        # Pega o cupom (pode ser um Objeto cheio ou None/Null para limpar)
-        cupom_payload = data.get('cupom')
-
-        # REMOVIDO: if not cupom_payload... (Isso bloqueava o limpar)
-
-        # Monta a mensagem para o WebSocket
-        msg_ws = {
-            'type': 'EXIBIR_CUPOM',
-            'cupom': cupom_payload # Se for None, o JS entende que é pra limpar
-        }
-
-        # Envia para todos
-        broadcast_para_clientes(msg_ws)
-        
-        acao = "Cupom enviado" if cupom_payload else "Tela Limpa"
-        #print(f"📡 Broadcast TV: {acao}")
-        
-        return jsonify({'status': 'ok', 'msg': acao})
-
-    except Exception as e:
-        print(f"Erro broadcast cupom: {e}")
-        return jsonify({'error': str(e)}), 500
-
 
 # --- FUNÇÃO ATUALIZADA: GRAVAR DATA/HORA NA CONFIG ---
 def atualizar_ponteiro_sorte_extra(id_evento_finalizado):
