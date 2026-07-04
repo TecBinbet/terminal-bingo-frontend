@@ -3776,19 +3776,44 @@ def admin_resetar():
         print("⏳ Aguardando limpeza nos terminais (2s)...") 
         time.sleep(2.0)
 
-        # --- PRÓXIMO EVENTO ---
+        # ====================================================================
+        # 🤖 PRÓXIMO EVENTO AUTOMÁTICO INTELIGENTE (PULA EVENTOS VAZIOS)
+        # ====================================================================
         proximo_id_str = "0"
-        if finalizar_com_sucesso:
+        # O ROBÔ SÓ ATUA SE: finalizou com sucesso E for o modo automático
+        if finalizar_com_sucesso and sales_db is not None:
+            print("🤖 [DEBUG] Modo robô detectado. Iniciando verificação inteligente de agenda...")
             prox_evento = buscar_proximo_evento_automatico(id_evento)
+            
+            while prox_evento:
+                id_prox_bruto = prox_evento.get('id_evento')
+                try: id_prox_int = int(id_prox_bruto)
+                except: id_prox_int = id_prox_bruto
+
+                # Verifica se há vendas
+                venda_existe = sales_db.controle_venda.find_one({'id_evento': {'$in': [id_prox_int, str(id_prox_int)]}})
+
+                if venda_existe:
+                    print(f"🎯 [DEBUG] Próximo evento validado (tem vendas): {id_prox_int}")
+                    break
+                else:
+                    print(f"⏭️ [DEBUG] Evento {id_prox_int} vazio. Pulando...")
+                    sales_db.eventos.update_one(
+                        {'id_evento': {'$in': [id_prox_int, str(id_prox_int)]}},
+                        {'$set': {'status': 'finalizado'}}
+                    )
+                    prox_evento = buscar_proximo_evento_automatico(id_prox_int)
+
             if prox_evento:
                 proximo_id_str = str(prox_evento.get('id_evento'))
-                desc_prox = prox_evento.get('descricao', 'Próximo Evento')
-                db.parametros.update_one({}, {'$set': {'nome_sala': desc_prox}}, upsert=True)
-                print(f"⏩ [DEBUG] Próximo evento definido: {proximo_id_str}")
+                db.parametros.update_one({}, {'$set': {'nome_sala': prox_evento.get('descricao', 'Próximo Evento')}}, upsert=True)
             else:
-                proximo_id_str = str(id_evento) 
+                proximo_id_str = str(id_evento)
         else:
-            proximo_id_str = str(id_evento)
+            # MODO MANUAL: Segue a lógica padrão sem pular eventos
+            print("👤 [DEBUG] Modo Manual. Mantendo sequência padrão.")
+            prox_evento = buscar_proximo_evento_automatico(id_evento)
+            proximo_id_str = str(prox_evento.get('id_evento')) if prox_evento else str(id_evento)
 
         db.rodada.update_one({}, {
             '$set': {
