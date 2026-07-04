@@ -768,14 +768,14 @@ if (isEspecial) {
                 let textoApostas = `<span>⭐</span> MINHAS <b class="text-[17px] font-semibold mx-1 px-1.5 bg-white/25 rounded shadow-sm drop-shadow-md tracking-tighter">${evt.qtd_cartelas_compradas}</b> CARTELAS`;
 
                 botoesAcaoHtml = `
-                    <div class="-mt-0.5 grid grid-cols-2 gap-2 border-t border-gray-700/30 pt-0.5 -mb-1">  
+                    <div class="-mt-0.5 grid grid-cols-3 gap-2 border-t border-gray-700/30 pt-0.5 -mb-1">  
                         <button onclick="openMyCardsPanel('${evt.id_evento}', '${evt.descricao.replace(/'/g, "\\'")}')"
-                                class="${btnApostasClass} text-[11px] font-bold py-2 px-1 rounded-lg shadow-md flex items-center justify-center gap-0.5 transition-all active:scale-95">
+                                class="${btnApostasClass} col-span-2 text-[11px] font-bold py-2 px-1 rounded-lg shadow-md flex items-center justify-center gap-0.5 transition-all active:scale-95">
                             ${textoApostas}
                         </button>
                         <button onclick="abrirModalCompra('${evt.id_evento}')" 
-                                class="bg-green-600 hover:bg-green-500 text-white text-[11px] font-bold py-2 px-2 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
-                            <span>🛒</span> COMPRAR MAIS
+                                class="bg-green-600 hover:bg-green-500 text-white col-span-1 text-[11px] font-bold py-2 px-1 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
+                            <span>🛒</span> MAIS
                         </button>
                     </div>
                 `;
