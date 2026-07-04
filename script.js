@@ -769,13 +769,13 @@ if (isEspecial) {
 
                 botoesAcaoHtml = `
                     <div class="-mt-0.5 grid grid-cols-3 gap-2 border-t border-gray-700/30 pt-0.5 -mb-1">  
-                        <button onclick="openMyCardsPanel('${evt.id_evento}', '${evt.descricao.replace(/'/g, "\\'")}')"
-                                class="${btnApostasClass} col-span-2 text-[11px] font-bold py-2 px-1 rounded-lg shadow-md flex items-center justify-center gap-0.5 transition-all active:scale-95">
-                            ${textoApostas}
-                        </button>
                         <button onclick="abrirModalCompra('${evt.id_evento}')" 
                                 class="bg-green-600 hover:bg-green-500 text-white col-span-1 text-[11px] font-bold py-2 px-1 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
                             <span>🛒</span> MAIS
+                        </button>
+                        <button onclick="openMyCardsPanel('${evt.id_evento}', '${evt.descricao.replace(/'/g, "\\'")}')"
+                                class="${btnApostasClass} col-span-2 text-[11px] font-bold py-2 px-1 rounded-lg shadow-md flex items-center justify-center gap-0.5 transition-all active:scale-95">
+                            ${textoApostas}
                         </button>
                     </div>
                 `;
