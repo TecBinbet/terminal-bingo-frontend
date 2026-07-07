@@ -185,10 +185,10 @@
         </div>
 
         <!-- Cabeçalho da Tabela -->
-        <div id="header-grid" class="grid grid-cols-13 px-1 py-1 text-sm font-bold text-cyan-400 border-b border-gray-800 bg-gray-900/50">            
+        <div id="header-grid" class="grid grid-cols-12 px-2 py-1 text-sm font-bold text-cyan-400 border-b border-gray-800 bg-gray-900/50">            
             <div class="col-span-2 text-center">Cartela</div>
             <div id="header-pos" class="col-span-1 text-center">Pos.</div>
-            <div id="header-faltam" class="col-span-7 text-center">Faltam</div>            
+            <div id="header-faltam" class="col-span-6 text-center">Faltam</div>            
             <div class="col-span-3 text-right">Jogador</div>        
         </div>
 
@@ -226,14 +226,14 @@
         <div class="w-full neon-box-magenta rounded-xl flex flex-col justify-center p-4 shrink-0">
             
             <!-- Linha da Ordem -->
-            <div class="flex justify-between items-center mb-4 border-b border-fuchsia-800/50 pb-2">
+            <div class="flex justify-between items-center mb-2 border-b border-fuchsia-800/50 pb-2">
                 <span class="text-lg font-bold text-gray-300 uppercase tracking-widest">Ordem:</span>
                 <span id="ordem-sorteio-tv" class="text-4xl font-black neon-text-yellow fonte-digital">0</span>
             </div>
             
             <!-- Bloco das Últimas Empilhadas e Ampliadas -->
             <div class="flex flex-col items-center">
-                <span class="text-sm font-bold text-fuchsia-400 uppercase tracking-widest mb-3">3 Últimas Sorteadas</span>
+                <span class="text-xl font-semibold text-fuchsia-400 uppercase tracking-widest mb-3">3 Últimas Sorteadas</span>
                 
                 <div class="flex items-center justify-center gap-3 w-full">
                     <!-- A Última (Gigante e com muito Neon) -->
@@ -363,14 +363,20 @@
         }
 
        // --- 4. RENDERIZADOR DE ESTATÍSTICAS (AJUSTE DINÂMICO) ---
+        // --- 4. RENDERIZADOR DE ESTATÍSTICAS (AJUSTE DINÂMICO E GRID CORRIGIDO) ---
         function renderizarEstatisticas(melhoresData) {
             const container = document.getElementById('estatisticas-list-tv');
             const headerPos = document.getElementById('header-pos');
             const headerFaltam = document.getElementById('header-faltam');
 
+            // 1. FILTRO AJUSTADO: Checa se a ORDEM é maior que 0
             if (!melhoresData || melhoresData.length === 0 || (melhoresData[0] && melhoresData[0].cartela === "null")) {
-                const bolaAtual = document.getElementById('bola-atual-gigante').innerText;
-                if (bolaAtual !== '--') return;
+                const ordemElement = document.getElementById('ordem-sorteio-tv');
+                const ordemDaBola = parseInt(ordemElement ? ordemElement.innerText : '0') || 0;
+                
+                // Se a ordem for maior que 0 (sorteio já começou), NÃO mostra a mensagem, apenas ignora
+                if (ordemDaBola > 0) return; 
+                
                 container.innerHTML = '<p class="text-center text-gray-500 py-8 italic">Aguardando sorteio...</p>';
                 return;
             }
@@ -381,7 +387,7 @@
             // Verifica se alguém tem posição
             const algumTemPosicao = topLista.some(i => i.posicao && i.posicao !== "");
             
-            // Ajusta o cabeçalho dinamicamente
+            // Ajusta o cabeçalho dinamicamente (6 se tiver posição, 7 se não tiver)
             if (headerPos) headerPos.classList.toggle('hidden', !algumTemPosicao);
             if (headerFaltam) headerFaltam.className = algumTemPosicao ? "col-span-6 text-center" : "col-span-7 text-center";
 
@@ -406,7 +412,9 @@
                 
                 const temPosicao = item.posicao && item.posicao !== "";
                 const classePos = temPosicao ? "col-span-1" : "hidden";
-                const classeFaltam = temPosicao ? "col-span-7" : "col-span-8"; // Ajustado para col-span-8 se não tiver posição
+                
+                // 2. CORREÇÃO DA LARGURA: Faltam recebe 6 ou 7 (porque a cartela agora consome 2)
+                const classeFaltam = temPosicao ? "col-span-6" : "col-span-7"; 
 
                 let displayFaltam = '';
                 if (haGanhador) {
@@ -415,11 +423,12 @@
                     displayFaltam = `<span class="text-2xl fonte-digital text-green-400">${dezenasTexto}</span>`;
                 }
 
+                // 3. CARTELA MUDOU PARA col-span-2
                 const rowHtml = `
-                    <div class="grid grid-cols-13 items-center px-1 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-white font-bold transition-all">
-                        <div class="col-span-2 text-left px-2 fonte-digital text-orange-500 text-lg">${item.cartela}</div>
+                    <div class="grid grid-cols-12 items-center px-2 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-white font-bold transition-all">
+                        <div class="col-span-2 text-center px-2 fonte-digital text-orange-500 text-lg">${item.cartela}</div>
                         <div class="${classePos} text-center ${index === 0 ? 'text-yellow-400' : 'text-gray-300'}">${item.posicao || ""}</div>
-                        <div class="${classeFaltam} text-left">${displayFaltam}</div>
+                        <div class="${classeFaltam} text-left pl-2">${displayFaltam}</div>
                         <div class="col-span-3 text-right truncate uppercase text-sm ${haGanhador ? 'text-yellow-300' : ''}">${nomeFormatado}</div>
                     </div>
                 `;
