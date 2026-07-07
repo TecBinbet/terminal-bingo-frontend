@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel TV - Sorteio Ao Vivo</title>
+    <link href="https://fonts.cdnfonts.com/css/digital-7-mono" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    
+    <style>
+        /* =========================================
+           CONFIGURAÇÕES GERAIS E FUNDO ESCURO
+           ========================================= */
+        body {
+            background-color: #050505; /* Quase preto absoluto */
+            color: #ffffff;
+            font-family: 'Roboto', sans-serif;
+            overflow: hidden; /* Evita rolagem na TV */
+            margin: 0;
+            padding: 0;
+        }
+
+        .fonte-digital {
+            font-family: 'Digital-7 Mono', sans-serif;
+            letter-spacing: 3px; /* Dá o espaçamento real de painel de LED */
+        }
+
+        /* =========================================
+           EFEITOS NEON (TEXTOS E BORDAS)
+           ========================================= */
+        .neon-box-cyan {
+            border: 2px solid #00f3ff;
+            box-shadow: 0 0 10px #00f3ff, inset 0 0 10px #00f3ff;
+            background-color: rgba(0, 243, 255, 0.05);
+        }
+
+        .neon-box-magenta {
+            border: 2px solid #ff00ff;
+            box-shadow: 0 0 10px #ff00ff, inset 0 0 10px #ff00ff;
+            background-color: rgba(255, 0, 255, 0.05);
+        }
+
+        .neon-text-green {
+            color: #39ff14;
+            text-shadow: 0 0 5px #39ff14, 0 0 10px #39ff14;
+        }
+
+        .neon-text-yellow {
+            color: #ffde00;
+            text-shadow: 0 0 5px #ffde00, 0 0 10px #ffde00;
+        }
+
+        .neon-text-cyan {
+            color: #00f3ff;
+            text-shadow: 0 0 5px #00f3ff, 0 0 10px #00f3ff;
+        }
+
+        /* =========================================
+           ANIMAÇÕES DE CLÍMAX (FALTA 1)
+           ========================================= */
+        @keyframes pulso-alerta {
+            0%, 100% { 
+                background-color: rgba(255, 0, 0, 0.2); 
+                box-shadow: inset 0 0 15px red, 0 0 10px red;
+                border-color: red;
+            }
+            50% { 
+                background-color: rgba(255, 222, 0, 0.2); 
+                box-shadow: inset 0 0 15px yellow, 0 0 10px yellow;
+                border-color: yellow;
+            }
+        }
+        .animar-falta-um {
+            animation: pulso-alerta 1s infinite;
+            border: 1px solid red;
+        }
+
+        /* =========================================
+           BOLAS SORTEADAS E GRID
+           ========================================= */
+        .bola-gigante-glow {
+            box-shadow: 0 0 30px #39ff14, inset 0 0 20px #39ff14;
+            border-color: #39ff14;
+            text-shadow: 0 0 10px #fff;
+        }
+
+        .bola-grid {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-weight: 900;
+            transition: all 0.3s ease;
+            background-color: #1a1a1a;
+            border: 1px solid #333;
+            color: #555;
+        }
+
+        .bola-grid.sorteada {
+            background-color: #39ff14;
+            color: #000;
+            border: none;
+            box-shadow: 0 0 10px #39ff14;
+        }
+
+        /* Área de Chroma Key para o OBS */
+        .chroma-key-bg {
+            background-color: #00FF00 !important;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen p-4 box-border flex gap-4">
+
+    <!-- =========================================
+         COLUNA ESQUERDA (30%) - DESTAQUE E PRÊMIOS
+         ========================================= -->
+    <div class="w-[30%] h-full flex flex-col gap-4">
+        
+        <!-- ÁREA DINÂMICA (Vídeo ou Bola Gigante) -->
+        <div id="area-destaque" class="h-[55%] w-full neon-box-cyan rounded-xl flex items-center justify-center relative overflow-hidden">
+            
+            <!-- CHAVE 1: MODO DIGITAL (Bola Gigante) -->
+            <div id="modo-digital" class="w-full h-full flex flex-col items-center justify-center">
+                <span class="text-cyan-400 text-2xl font-semibold mb-6 tracking-widest uppercase">Bola Sorteada</span>
+                <div id="bola-atual-gigante" class="w-64 h-64 rounded-full bg-gray-900 border-4 flex items-center justify-center text-[140px] font-black text-white bola-gigante-glow">
+                    --
+                </div>
+            </div>
+
+            <!-- CHAVE 2: MODO MANUAL (Vídeo / Chroma Key) -->
+            <div id="modo-manual" class="hidden w-full h-full chroma-key-bg flex items-center justify-center relative">
+                <!-- Se for usar YouTube, injete o iframe aqui. Se for OBS com câmera, o fundo verde já recorta automático! -->
+                <p class="text-black font-bold text-center absolute opacity-50 z-0">ÁREA DO VÍDEO<br>(Chroma Key OBS)</p>
+            </div>
+            
+        </div>
+
+        <!-- PAINEL INFORMATIVO -->
+        <div class="h-[45%] w-full neon-box-magenta rounded-xl p-4 flex flex-col justify-between">
+            <h2 class="text-center text-xl font-black text-white uppercase tracking-widest border-b border-fuchsia-800 pb-2 mb-2">Prêmio da Rodada</h2>
+            
+            <!-- CHAVEADOR: IMAGEM VS TEXTO/VALOR -->
+            <div class="flex-1 flex flex-col items-center justify-center relative w-full overflow-hidden">
+                
+                <!-- MODO 1: IMAGEM (Ex: Carro, Moto) -->
+                <div id="modo-premio-imagem" class="flex flex-col items-center justify-center w-full">
+                    <img id="img-premio-tv" src="/img/premios/premio_padrao.webp" alt="Prêmio" class="h-28 object-contain rounded-lg shadow-lg mb-2 border border-gray-700">
+                    <p id="desc-premio-tv" class="text-xl font-black text-white text-center drop-shadow-md truncate w-full">VALENDO CARRO 0KM</p>
+                </div>
+
+                <!-- MODO 2: APENAS TEXTO/VALOR (Ex: LINHA R$ 300) -->
+                <div id="modo-premio-texto" class="hidden flex flex-col items-center justify-center w-full h-full">
+                    <p id="titulo-premio-texto" class="text-3xl font-black text-fuchsia-400 tracking-widest uppercase mb-1">BINGO</p>
+                    <p id="valor-premio-texto" class="text-5xl lg:text-6xl font-black neon-text-green fonte-digital drop-shadow-lg">R$ 300,00</p>
+                </div>
+
+            </div>
+
+            <!-- BASE: Preço Cartela e Acumulado -->
+            <div class="grid grid-cols-2 gap-2 border-t border-fuchsia-800 pt-2 mt-2 shrink-0">
+                <div class="text-center bg-gray-900/80 rounded py-2">
+                    <p class="text-xs text-gray-400 uppercase">Preço Cartela</p>
+                    <p id="preco-cartela-tv" class="text-xl font-bold neon-text-green">R$ 10,00</p>
+                </div>
+                <div class="text-center bg-gray-900/80 rounded py-2">
+                    <p class="text-xs text-gray-400 uppercase">Acumulado</p>
+                    <p id="acumulado-tv" class="text-xl font-bold neon-text-yellow">R$ 5.000,00</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================
+         COLUNA CENTRAL (45%) - ARENA DE ESTATÍSTICAS
+         ========================================= -->
+    <div class="w-[45%] h-full neon-box-cyan rounded-xl flex flex-col overflow-hidden">
+        
+        <div class="bg-cyan-950/50 py-1 border-b border-cyan-800 flex justify-between items-center px-6">
+            <h1 class="text-xl font-semibold text-gray-300 tracking-widest uppercase">🏆 Estatísticas do Jogo</h1>
+            <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
+                <span class="text-xs font-bold text-gray-300">AO VIVO</span>
+            </div>
+        </div>
+
+        <!-- Cabeçalho da Tabela -->
+        <div id="header-grid" class="grid grid-cols-12 px-6 py-1 text-sm font-bold text-cyan-400 border-b border-gray-800 bg-gray-900/50">            
+            <div class="col-span-1 text-center">Cartela</div>
+            <div id="header-pos" class="col-span-1 text-center">Pos.</div>
+            <div id="header-faltam" class="col-span-7 text-center">Faltam</div>            
+            <div class="col-span-3 text-right">Jogador</div>        
+        </div>
+
+        <!-- Lista Dinâmica -->
+        <div id="estatisticas-list-tv" class="flex-1 overflow-hidden p-2 space-y-2">
+            <!-- As linhas serão injetadas via JS -->
+        </div>
+
+    </div>
+
+    <!-- =========================================
+         COLUNA DIREITA (25%) - BOLAS, RELÓGIO E GRID
+         ========================================= -->
+    <div class="w-[25%] h-full flex flex-col gap-4">
+        
+        <!-- PAINEL NUMÉRICO DINÂMICO -->
+        <div class="flex-1 w-full neon-box-cyan rounded-xl p-3 flex flex-col overflow-hidden">
+            <h3 class="text-center text-xs font-bold text-cyan-500 mb-2 uppercase tracking-widest">Painel Numérico</h3>
+            
+            <!-- O JS injetará as bolinhas aqui -->
+            <div id="grid-numerico-tv" class="w-full h-full grid gap-1 font-mono text-sm lg:text-base pb-1">
+                <!-- Gerado por JS -->
+            </div>
+        </div>
+
+        <!-- RELÓGIO DIGITAL (ENTRE AS ÚLTIMAS E O PAINEL) -->
+        <div class="w-full bg-gray-900 border border-gray-800 rounded-xl py-1 flex justify-center items-center gap-2 shrink-0 shadow-inner">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span id="relogio-digital-tv" class="text-4xl font-black text-green-400 fonte-digital tracking-widest">00:00</span>
+        </div>
+
+         <!-- INFO DAS ÚLTIMAS BOLAS E ORDEM -->
+        <div class="w-full neon-box-magenta rounded-xl flex flex-col justify-center p-4 shrink-0">
+            
+            <!-- Linha da Ordem -->
+            <div class="flex justify-between items-center mb-4 border-b border-fuchsia-800/50 pb-2">
+                <span class="text-lg font-bold text-gray-300 uppercase tracking-widest">Ordem:</span>
+                <span id="ordem-sorteio-tv" class="text-4xl font-black neon-text-yellow fonte-digital">0</span>
+            </div>
+            
+            <!-- Bloco das Últimas Empilhadas e Ampliadas -->
+            <div class="flex flex-col items-center">
+                <span class="text-sm font-bold text-fuchsia-400 uppercase tracking-widest mb-3">3 Últimas Sorteadas</span>
+                
+                <div class="flex items-center justify-center gap-3 w-full">
+                    <!-- A Última (Gigante e com muito Neon) -->
+                    <div id="ult-bola-1" class="w-20 h-20 md:w-24 md:h-24 rounded-full bg-fuchsia-900 border-4 border-fuchsia-500 flex items-center justify-center font-black text-white text-4xl shadow-[0_0_20px_#ff00ff]">--</div>
+                    
+                    <!-- Penúltima (Maior) -->
+                    <div id="ult-bola-2" class="w-16 h-16 md:w-20 md:h-20 rounded-full bg-gray-900 border-2 border-gray-600 flex items-center justify-center font-bold text-gray-300 text-3xl shadow-inner">--</div>
+                                    
+                    <!-- Antepenúltima (Maior) -->
+                    <div id="ult-bola-3" class="w-16 h-16 md:w-20 md:h-20 rounded-full bg-gray-900 border-2 border-gray-600 flex items-center justify-center font-bold text-gray-300 text-3xl shadow-inner">--</div>
+               </div>
+            </div>
+            
+        </div>
+ 
+        <!-- LOGO DA EMPRESA / PATROCINADOR -->
+        <div class="w-full flex justify-center items-center shrink-0">
+            <img id="logo-painel-tv" src="/img/logo.png" alt="Logo Live the Bet" class="w-full max-h-24 object-contain opacity-90 hover:opacity-100 transition-opacity drop-shadow-[0_0_15px_rgba(0,243,255,0.2)]">
+        </div>
+
+    </div>
+
+    <!-- =========================================
+         SCRIPTS - MOTOR DO PAINEL TV (CONECTADO À API)
+         ========================================= -->
+    <script>
+        // =========================================
+        // CONFIGURAÇÕES DE REDE E SALA
+        // =========================================
+        const protocolWS = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        const host = window.location.host;
+        const API_BASE_URL = ""; 
+        const urlParamsGlobal = new URLSearchParams(window.location.search);
+        const currentSalaId = urlParamsGlobal.get('sala') || "001"; 
+        const WS_URL = `${protocolWS}${host}/stream?idsala=${currentSalaId}`;
+        
+        let ws = null;
+        let reconnectInterval = null;
+        let TOTAL_BOLAS_JOGO = 90; // Default, atualizado pela API
+
+        // --- 1. CHAVEADORES VISUAIS ---
+        function setModoSorteio(modo) {
+            const divDigital = document.getElementById('modo-digital');
+            const divManual = document.getElementById('modo-manual');
+            if (modo === 'digital') {
+                divDigital.classList.remove('hidden');
+                divManual.classList.add('hidden');
+            } else if (modo === 'manual') {
+                divDigital.classList.add('hidden');
+                divManual.classList.remove('hidden');
+            }
+        }
+
+        function setModoPremio(tipo, titulo, valorOuImagem) {
+            const divImagem = document.getElementById('modo-premio-imagem');
+            const divTexto = document.getElementById('modo-premio-texto');
+            
+            if (tipo === 'imagem') {
+                divImagem.classList.remove('hidden');
+                divTexto.classList.add('hidden');
+                if (valorOuImagem) document.getElementById('img-premio-tv').src = `/img/premios/${valorOuImagem}`;
+                document.getElementById('desc-premio-tv').innerText = titulo || "PRÊMIO ESPECIAL";
+            } else if (tipo === 'texto') {
+                divImagem.classList.add('hidden');
+                divTexto.classList.remove('hidden');
+                document.getElementById('titulo-premio-texto').innerText = titulo || "PRÊMIO";
+                
+                const valorStr = valorOuImagem.toString().replace('R$', '').trim();
+                document.getElementById('valor-premio-texto').innerText = !isNaN(parseFloat(valorStr)) 
+                    ? `R$ ${parseFloat(valorStr).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`
+                    : valorOuImagem;
+            }
+        }
+
+        // --- 2. CONSTRUTOR DO GRID DINÂMICO ---
+        function construirPainelNumerico(totalBolas) {
+            TOTAL_BOLAS_JOGO = totalBolas;
+            const gridContainer = document.getElementById('grid-numerico-tv');
+            gridContainer.innerHTML = ''; 
+
+            if (totalBolas === 75) {
+                gridContainer.style.gridTemplateColumns = 'repeat(5, 1fr)'; 
+                gridContainer.style.gridTemplateRows = 'repeat(15, 1fr)';
+            } else {
+                gridContainer.style.gridTemplateColumns = 'repeat(10, 1fr)'; 
+                gridContainer.style.gridTemplateRows = 'repeat(9, 1fr)';
+            }
+
+            for (let i = 1; i <= totalBolas; i++) {
+                const bolaDiv = document.createElement('div');
+                bolaDiv.id = `bola-tv-${i}`;
+                bolaDiv.className = 'bola-grid';
+                bolaDiv.innerText = i;
+                gridContainer.appendChild(bolaDiv);
+            }
+        }
+
+        // --- 3. ATUALIZADOR DO PAINEL DE BOLAS ---
+        function atualizarPainel(dados) {
+            document.getElementById('bola-atual-gigante').innerText = dados.bolaAtual ? dados.bolaAtual : '--';
+            document.getElementById('ordem-sorteio-tv').innerText = dados.ordem || 0;
+
+            if (dados.sorteadas && Array.isArray(dados.sorteadas)) {
+                const ultimas3 = dados.sorteadas.slice(-3).reverse();
+                
+                document.getElementById('ult-bola-1').innerText = ultimas3[0] || '--';
+                document.getElementById('ult-bola-2').innerText = ultimas3[1] || '--';
+                document.getElementById('ult-bola-3').innerText = ultimas3[2] || '--';
+
+                document.querySelectorAll('.bola-grid').forEach(el => {
+                    el.classList.remove('bg-green-600', 'bg-red-600', 'text-white', 'border-transparent', 'sorteada');
+                });
+                
+                dados.sorteadas.forEach(num => {
+                    const bolaEl = document.getElementById(`bola-tv-${num}`);
+                    if (bolaEl) bolaEl.classList.add('bg-green-600', 'text-white', 'border-transparent', 'sorteada');
+                });
+
+                if (ultimas3[0]) {
+                    const ultimaBolaEl = document.getElementById(`bola-tv-${ultimas3[0]}`);
+                    if (ultimaBolaEl) {
+                        ultimaBolaEl.classList.remove('bg-green-600');
+                        ultimaBolaEl.classList.add('bg-red-600', 'animate-pulse');
+                    }
+                }
+            }
+        }
+
+       // --- 4. RENDERIZADOR DE ESTATÍSTICAS (AJUSTE DINÂMICO) ---
+        function renderizarEstatisticas(melhoresData) {
+            const container = document.getElementById('estatisticas-list-tv');
+            const headerPos = document.getElementById('header-pos');
+            const headerFaltam = document.getElementById('header-faltam');
+
+            if (!melhoresData || melhoresData.length === 0 || (melhoresData[0] && melhoresData[0].cartela === "null")) {
+                const bolaAtual = document.getElementById('bola-atual-gigante').innerText;
+                if (bolaAtual !== '--') return;
+                container.innerHTML = '<p class="text-center text-gray-500 py-8 italic">Aguardando sorteio...</p>';
+                return;
+            }
+
+            container.innerHTML = '';
+            const topLista = melhoresData.slice(0, 10);
+            
+            // Verifica se alguém tem posição
+            const algumTemPosicao = topLista.some(i => i.posicao && i.posicao !== "");
+            
+            // Ajusta o cabeçalho dinamicamente
+            if (headerPos) headerPos.classList.toggle('hidden', !algumTemPosicao);
+            if (headerFaltam) headerFaltam.className = algumTemPosicao ? "col-span-6 text-center" : "col-span-7 text-center";
+
+            topLista.forEach((item, index) => {
+                const rawNums = item.numeros_faltantes || item.numeros || ""; 
+                let listaLimpa = [];
+                if (Array.isArray(rawNums)) listaLimpa = rawNums;
+                else if (typeof rawNums === 'string') listaLimpa = rawNums.split(',').map(n => n.trim()).filter(n => n !== "");
+
+                // Formata dezenas: "01 . 09 . 12"
+                const listaFormatada = listaLimpa.map(n => n.toString().padStart(2, '0'));
+                const dezenasTexto = listaFormatada.slice(0, 15).join('  '); 
+
+                let winnerPremio = ''; 
+                let haGanhador = false;
+                if (item.premio && item.premio !== null && item.premio !== "null") {
+                   winnerPremio = item.premio;
+                   haGanhador = true; 
+                }
+
+                const nomeFormatado = (item.nome || "").toLowerCase().split(' ').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+                
+                const temPosicao = item.posicao && item.posicao !== "";
+                const classePos = temPosicao ? "col-span-1" : "hidden";
+                const classeFaltam = temPosicao ? "col-span-7" : "col-span-8"; // Ajustado para col-span-8 se não tiver posição
+
+                let displayFaltam = '';
+                if (haGanhador) {
+                    displayFaltam = `<span class="text-xl bg-red-600 text-white px-2 py-1 rounded border border-red-400 animate-pulse uppercase tracking-widest">${winnerPremio}</span>`;
+                } else {
+                    displayFaltam = `<span class="text-2xl fonte-digital text-green-400">${dezenasTexto}</span>`;
+                }
+
+                const rowHtml = `
+                    <div class="grid grid-cols-12 items-center px-4 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-white font-bold transition-all">
+                        <div class="col-span-1 text-center px-2 fonte-digital text-orange-500 text-lg">${item.cartela}</div>
+                        <div class="${classePos} text-center ${index === 0 ? 'text-yellow-400' : 'text-gray-300'}">${item.posicao || ""}</div>
+                        <div class="${classeFaltam} text-left">${displayFaltam}</div>
+                        <div class="col-span-3 text-right truncate uppercase text-sm ${haGanhador ? 'text-yellow-300' : ''}">${nomeFormatado}</div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', rowHtml);
+            });
+        }
+
+        // --- 5. RELÓGIO DIGITAL ---
+        function iniciarRelogio() {
+            const relogioEl = document.getElementById('relogio-digital-tv');
+            if (!relogioEl) return;
+            function atualizarTempo() {
+                const agora = new Date();
+                relogioEl.innerText = `${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`;
+            }
+            atualizarTempo();
+            setInterval(atualizarTempo, 1000);
+        }
+
+        // =========================================
+        // PROCESSADOR DO PAYLOAD DO SERVIDOR
+        // =========================================
+        function processarPayload(payload) {
+            // 1. DADOS DE CONFIGURAÇÃO BASE
+            if (payload.parametrosInfo) {
+                const param = payload.parametrosInfo;
+                const tipoSorteio = param.modo_sorteio || 'automatico';
+                setModoSorteio(tipoSorteio);
+                
+                const bolasDoJogo = parseInt(param.tipo_sorteio || 15) === 25 ? 75 : 90;
+                if (TOTAL_BOLAS_JOGO !== bolasDoJogo) construirPainelNumerico(bolasDoJogo);
+            }
+
+            // 2. BOLAS E ORDEM
+            let bolasCantadas = [];
+            let bolaAtual = '--';
+            let ordem = 0;
+            
+            if (payload.bolasData && payload.bolasData.length > 0) {
+                bolasCantadas = payload.bolasData[0].bolas_cantadas || [];
+                bolaAtual = payload.bolasData[0].proxima_bola || (bolasCantadas.length > 0 ? bolasCantadas[bolasCantadas.length - 1] : '--');
+                ordem = payload.bolasData[0].ordem || bolasCantadas.length;
+            }
+            
+            atualizarPainel({ bolaAtual, ordem, sorteadas: bolasCantadas });
+
+            // 3. ESTATÍSTICAS E LÍDERES
+            if (payload.melhoresData && payload.melhoresData.length > 0) {
+                renderizarEstatisticas(payload.melhoresData || []);
+            } else {
+                document.getElementById('estatisticas-list-tv').innerHTML = '<p class="text-center text-gray-500 py-8 italic">Aguardando sorteio...</p>';
+            }
+
+            // 5. INFORMAÇÕES DE PRÊMIOS E VALORES
+            if (payload.premioInfo) {
+                const pInfo = payload.premioInfo;
+                const preco = (pInfo.preco / (pInfo.multiplo || 1)) || 0;
+                
+                // --- AJUSTE CIRÚRGICO AQUI ---
+                document.getElementById('preco-cartela-tv').innerText = `R$ ${preco.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                
+                const acumulado = pInfo.premio_acumulado || 0;
+                // Aplica a mesma formatação ao acumulado para consistência
+                document.getElementById('acumulado-tv').innerText = typeof acumulado === 'number' 
+                    ? `R$ ${acumulado.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}` 
+                    : acumulado;
+            }
+
+            // 5. CHAVEADOR DO PRÊMIO EM JOGO (Buscando)
+            if (payload.buscandoData && payload.buscandoData.length > 0) {
+                const buscando = payload.buscandoData[0].buscando_o_premio;
+                
+                // Encontra o valor monetário na tabela de prêmios
+                let valorEncontrado = null;
+                if (payload.premioData && payload.premioData.length > 0) {
+                    const objPremio = payload.premioData.find(p => p.tipo_premio.toUpperCase().replace(/\s/g, '') === (buscando || '').toUpperCase().replace(/\s/g, ''));
+                    if (objPremio) valorEncontrado = objPremio.valor;
+                }
+
+                if (valorEncontrado && valorEncontrado !== "0,00" && valorEncontrado !== "0") {
+                    setModoPremio('texto', buscando, valorEncontrado);
+                } else {
+                    setModoPremio('imagem', buscando || "PRÊMIO DA RODADA", payload.imagem_premio || 'premio_padrao.webp');
+                }
+            }
+        }
+
+        // =========================================
+        // MOTOR WEBSOCKET
+        // =========================================
+        function iniciarConexaoTV() {
+            if (ws) { ws.close(); }
+
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = () => {
+                console.log("📺 [TV] Conectado ao Servidor WebSocket!");
+                
+                // Dá um respiro de meio segundo para o Python registrar a conexão antes de pedir os dados
+                setTimeout(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ action: "GET_INITIAL_STATE" }));
+                    }
+                }, 500);
+
+                // Bate coração para manter conexão viva
+                if (window.pingInterval) clearInterval(window.pingInterval);
+                window.pingInterval = setInterval(() => {
+                    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: "PING" }));
+                }, 30000);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const payload = JSON.parse(event.data);
+                    if (payload.type === 'UPDATE') {
+                        processarPayload(payload);
+                    }
+                } catch (e) {
+                    console.error("📺 Erro no payload da TV:", e);
+                }
+            };
+
+            ws.onclose = () => {
+                console.warn("⚠️ [TV] Conexão Perdida. Reconectando...");
+                setTimeout(iniciarConexaoTV, 3000);
+            };
+        }
+
+        // =========================================
+        // START!
+        // =========================================
+        window.onload = () => {
+            iniciarRelogio();
+            construirPainelNumerico(90); // Grid base, ajustará no primeiro payload
+            setModoPremio('imagem', 'AGUARDANDO SORTEIO...', 'premio_padrao.webp');
+            iniciarConexaoTV();
+        };
+    </script>
+</body>
+</html>
