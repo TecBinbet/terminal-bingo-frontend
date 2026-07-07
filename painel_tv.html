@@ -138,7 +138,7 @@
 
         <!-- PAINEL INFORMATIVO -->
         <div class="h-[45%] w-full neon-box-magenta rounded-xl p-4 flex flex-col justify-between">
-            <h2 class="text-center text-xl font-black text-white uppercase tracking-widest border-b border-fuchsia-800 pb-2 mb-2">Prêmio da Rodada</h2>
+            <h2 class="text-center text-xl font-black text-gray-300 uppercase tracking-widest border-b border-fuchsia-800 pb-2 mb-2">Prêmio da Rodada</h2>
             
             <!-- CHAVEADOR: IMAGEM VS TEXTO/VALOR -->
             <div class="flex-1 flex flex-col items-center justify-center relative w-full overflow-hidden">
@@ -417,7 +417,7 @@
 
                 const rowHtml = `
                     <div class="grid grid-cols-13 items-center px-4 py-2 rounded-lg bg-gray-800/80 border border-gray-700 text-white font-bold transition-all">
-                        <div class="col-span-2 text-center px-2 fonte-digital text-orange-500 text-lg">${item.cartela}</div>
+                        <div class="col-span-2 text-left px-2 fonte-digital text-orange-500 text-lg">${item.cartela}</div>
                         <div class="${classePos} text-center ${index === 0 ? 'text-yellow-400' : 'text-gray-300'}">${item.posicao || ""}</div>
                         <div class="${classeFaltam} text-left">${displayFaltam}</div>
                         <div class="col-span-3 text-right truncate uppercase text-sm ${haGanhador ? 'text-yellow-300' : ''}">${nomeFormatado}</div>
