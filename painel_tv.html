@@ -339,15 +339,18 @@
                 document.getElementById('ult-bola-2').innerText = ultimas3[1] || '--';
                 document.getElementById('ult-bola-3').innerText = ultimas3[2] || '--';
 
+                // CORREÇÃO: Limpa todas as classes de status, INCLUSIVE o animate-pulse
                 document.querySelectorAll('.bola-grid').forEach(el => {
-                    el.classList.remove('bg-green-600', 'bg-red-600', 'text-white', 'border-transparent', 'sorteada');
+                    el.classList.remove('bg-green-600', 'bg-red-600', 'text-white', 'border-transparent', 'sorteada', 'animate-pulse');
                 });
                 
+                // Pinta as sorteadas (fixas)
                 dados.sorteadas.forEach(num => {
                     const bolaEl = document.getElementById(`bola-tv-${num}`);
                     if (bolaEl) bolaEl.classList.add('bg-green-600', 'text-white', 'border-transparent', 'sorteada');
                 });
 
+                // Destaca a última bola
                 if (ultimas3[0]) {
                     const ultimaBolaEl = document.getElementById(`bola-tv-${ultimas3[0]}`);
                     if (ultimaBolaEl) {
