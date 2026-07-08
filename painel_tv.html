@@ -6,6 +6,7 @@
     <title>Painel TV - Sorteio Ao Vivo</title>
     <link href="https://fonts.cdnfonts.com/css/digital-7-mono" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
     
     <style>
@@ -158,9 +159,10 @@
     </div>
 
     <!-- =========================================
-         COLUNA CENTRAL (45%) - ARENA DE ESTATÍSTICAS
-         ========================================= -->
-    <div class="w-[45%] h-full neon-box-cyan rounded-xl flex flex-col overflow-hidden">
+     COLUNA CENTRAL (45%) - ARENA DE ESTATÍSTICAS
+    ========================================= --> 
+
+    <div class="w-[45%] h-full neon-box-cyan rounded-xl flex flex-col overflow-hidden relative">
         
         <div class="bg-cyan-950/50 py-1 border-b border-cyan-800 flex justify-between items-center px-6">
             <h1 class="text-xl font-semibold text-gray-300 tracking-widest uppercase">🏆 Estatísticas do Jogo</h1>
@@ -170,7 +172,6 @@
             </div>
         </div>
 
-        <!-- Cabeçalho da Tabela -->
         <div id="header-grid" class="grid grid-cols-12 px-2 py-1 text-sm font-bold text-cyan-400 border-b border-gray-800 bg-gray-900/50">            
             <div class="col-span-2 text-center">Cartela</div>
             <div id="header-pos" class="col-span-1 text-center">Pos.</div>
@@ -178,9 +179,20 @@
             <div class="col-span-3 text-right">Jogador</div>        
         </div>
 
-        <!-- Lista Dinâmica -->
         <div id="estatisticas-list-tv" class="flex-1 overflow-hidden p-2 space-y-2">
-            <!-- As linhas serão injetadas via JS -->
+            </div>
+
+        <div id="winners-panel-container" class="hidden absolute inset-0 z-40 bg-gray-900 flex-col items-center justify-start p-4 backdrop-blur-md">
+            
+            <div class="absolute top-0 left-0 h-1.5 bg-green-400 w-full z-50" id="winners-progress-bar"></div>
+
+            <h2 class="text-center text-3xl text-green-400 font-black uppercase tracking-widest border-b-2 border-green-500 pb-3 mb-4 w-full drop-shadow-lg mt-2">
+                🏆 GANHADORES 🏆
+            </h2>
+
+            <div id="winners-list-content" class="w-full flex-1 overflow-y-auto pr-2 space-y-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                </div>
+            
         </div>
 
     </div>
@@ -240,6 +252,25 @@
             <img id="logo-painel-tv" src="/img/logo.png" alt="Logo Live the Bet" class="w-full max-h-24 object-contain opacity-90 hover:opacity-100 transition-opacity drop-shadow-[0_0_15px_rgba(0,243,255,0.2)]">
         </div>
 
+    </div>
+
+
+    <div id="conference-panel-container" class="hidden fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-8 backdrop-blur-sm">
+        <div class="bg-gray-900 border-4 border-yellow-500 rounded-3xl p-8 max-w-5xl w-full shadow-[0_0_50px_rgba(234,179,8,0.4)] flex flex-col items-center animate-bounce-short">
+            
+            <h2 id="conference-title" class="text-center text-4xl text-yellow-400 font-black uppercase tracking-widest border-b-4 border-yellow-500 pb-4 mb-6 w-full drop-shadow-lg">
+                🎉 CONFERÊNCIA 🎉
+            </h2>
+            
+            <div class="flex justify-between w-full px-4 mb-8 text-2xl font-bold text-gray-300">
+                <p>CARTELA: <span id="conference-card-number" class="text-yellow-400 text-3xl ml-2">---</span></p>
+                <p class="uppercase">GANHADOR: <span id="conference-winner-name" class="text-green-400 text-3xl ml-2 truncate max-w-[400px] inline-block align-bottom">---</span></p>
+            </div>
+            
+            <div id="conference-card-grid" class="w-full flex justify-center">
+                </div>
+            
+        </div>
     </div>
 
     <!-- =========================================
@@ -327,6 +358,32 @@
             }
         }
 
+        // =========================================
+        // EFEITOS ESPECIAIS (FOGOS/CONFETES)
+        // =========================================
+        let premiosCelebradosTV = new Set(); // Usamos Set para gravar múltiplos ganhadores sem piscar
+
+        function celebrarPremioTV(identificadorDoPremio) {
+            // 1. TRAVA ANTI-REPLICAÇÃO
+            if (premiosCelebradosTV.has(identificadorDoPremio)) return; 
+            
+            premiosCelebradosTV.add(identificadorDoPremio);
+            console.log(`🎉 [FESTA TV] Celebrando: ${identificadorDoPremio}`);
+
+            // 2. ÁUDIO (Descomente se tiver a função de áudio no painel da TV)
+            // if (typeof tocarCampainhaAlegre === 'function') tocarCampainhaAlegre();
+
+            // 3. EFEITO VISUAL PARA TV (Disparo duplo lateral para telas largas)
+            if (typeof confetti === 'function') {
+                const cores = ['#FFD700', '#FF8C00', '#00FF00', '#FF00FF', '#00FFFF'];
+                
+                // Tiro da Esquerda
+                confetti({ particleCount: 150, spread: 80, origin: { y: 0.6, x: 0.1 }, colors: cores, zIndex: 9999, disableForReducedMotion: true });
+                // Tiro da Direita
+                confetti({ particleCount: 150, spread: 80, origin: { y: 0.6, x: 0.9 }, colors: cores, zIndex: 9999, disableForReducedMotion: true });
+            }
+        }
+       
         // --- 4. RENDERIZADOR DE ESTATÍSTICAS (AJUSTE DINÂMICO E GRID CORRIGIDO) ---
         function renderizarEstatisticas(melhoresData) {
             const container = document.getElementById('estatisticas-list-tv');
@@ -383,6 +440,7 @@
                 let displayFaltam = '';
                 if (haGanhador) {
                     displayFaltam = `<span class="text-xl bg-red-600 text-white px-2 py-1 rounded border border-red-400 animate-pulse uppercase tracking-widest">${winnerPremio}</span>`;
+                    celebrarPremioTV(`${item.cartela}-${winnerPremio}`);
                 } else {
                     displayFaltam = `<span class="text-2xl fonte-digital text-green-400">${dezenasTexto}</span>`;
                 }
@@ -575,6 +633,16 @@
 
             // 5. LISTA DE PRÊMIOS E "VALENDO AGORA"
             renderizarPremiosDaRodada(payload.premioData, payload.buscandoData);
+
+            // 6. TELA DE CONFERÊNCIA
+            if (payload.confereData && (Array.isArray(payload.confereData) ? payload.confereData.length > 0 : true)) {
+                // Se vieram dados de conferência, chama o painel
+                displayConferencePanel(payload.confereData, bolasCantadas);
+            } else {
+                // Se não vier dados de conferência, esconde
+                ocultarConferencia();
+            }
+
         }
 
         // =========================================
@@ -627,6 +695,244 @@
             construirPainelNumerico(90); // Grid base, ajustará no primeiro payload
             iniciarConexaoTV();
         };
+
+        // =========================================
+        // TELA DE CONFERÊNCIA E FOGOS (ROJÃO)
+        // =========================================
+        
+        function displayConferencePanel(confereData, bolasCantadas) {
+            const container = document.getElementById('conference-panel-container');
+            const titleEl = document.getElementById('conference-title'); 
+            const cardNumberElement = document.getElementById('conference-card-number');
+            const winnerNameElement = document.getElementById('conference-winner-name');
+            
+            const data = (Array.isArray(confereData) && confereData.length > 0) ? confereData[0] : confereData;
+            
+            if (data && data.cartao > 0) {
+                const numeroDoCartao = data.cartao;
+                const nomeDoGanhador = data.ganhador || 'Conferindo...';
+                const tipoConferencia = data.tipo_conferencia; 
+                
+                // Exibe o Overlay da TV
+                container.classList.remove('hidden');
+                
+                // Dispara os fogos
+                dispararRojao();
+
+                if (tipoConferencia === "SORTE_EXTRA") {
+                    if (titleEl) {
+                        titleEl.textContent = data.mensagem || "🍀 SORTE EXTRA 🍀";
+                        titleEl.className = "text-center text-4xl text-yellow-400 font-black uppercase tracking-widest border-b-4 border-yellow-500 pb-4 mb-6 w-full animate-pulse";
+                    }
+                    cardNumberElement.textContent = numeroDoCartao;
+                    winnerNameElement.textContent = nomeDoGanhador;
+                    renderizarDezenasCupom(data.numeros, bolasCantadas);
+                } else {
+                    if (titleEl) {
+                        titleEl.textContent = "🎉 CONFERÊNCIA 🎉";
+                        titleEl.className = "text-center text-4xl text-white uppercase tracking-widest border-b-4 border-yellow-500 pb-4 mb-6 w-full";
+                    }
+                    cardNumberElement.textContent = numeroDoCartao;
+                    winnerNameElement.textContent = nomeDoGanhador;
+                    
+                    displayCardGrid(data.numeros, bolasCantadas);
+                }
+            } else {
+                ocultarConferencia();
+            }
+        }
+
+        function ocultarConferencia() {
+            document.getElementById('conference-panel-container').classList.add('hidden');
+        }
+
+        function displayCardGrid(numerosStringOrArray, bolasCantadas) {
+            if (TOTAL_BOLAS_JOGO === 75) {
+                displayCardGrid75(numerosStringOrArray, bolasCantadas);
+            } else {
+                displayCardGrid90(numerosStringOrArray, bolasCantadas);
+            }
+        }
+
+        // --- CONFERÊNCIA 90 (Tamanho TV Gigante) ---
+        function displayCardGrid90(numeros, bolasCantadas) {
+            const cardGridElement = document.getElementById('conference-card-grid');
+            cardGridElement.innerHTML = '';
+            cardGridElement.className = 'grid grid-cols-5 gap-4 w-full p-6 bg-gray-800 rounded-xl'; 
+
+            let listaNumeros = Array.isArray(numeros) ? numeros : (typeof numeros === 'string' ? numeros.match(/\d+/g)?.map(Number) || [] : []);
+            if (listaNumeros.length === 0) for(let i=0; i<15; i++) listaNumeros.push(0);
+
+            listaNumeros.forEach(num => {
+                const div = document.createElement('div');
+                div.className = 'h-16 md:h-20 w-full flex items-center justify-center rounded text-3xl md:text-4xl font-black shadow-inner';
+                
+                if (num === 0) {
+                    div.textContent = '';
+                    div.classList.add('invisible'); 
+                } else {
+                    div.textContent = num;
+                    if (bolasCantadas.includes(num)) {
+                        if (num === bolasCantadas[bolasCantadas.length-1]) {
+                            div.className += ' bg-red-600 text-white animate-pulse border-2 border-red-400 drop-shadow-[0_0_10px_rgba(255,0,0,0.8)]';
+                        } else {
+                            div.className += ' bg-green-600 text-white border-2 border-green-400';
+                        }
+                    } else {
+                        div.className += ' bg-gray-300 text-gray-900';
+                    }
+                }
+                cardGridElement.appendChild(div);
+            });
+        }
+
+        // --- CONFERÊNCIA 75 (Tamanho TV Gigante) ---
+        function displayCardGrid75(numeros, bolasCantadas) {
+            const cardGridElement = document.getElementById('conference-card-grid');
+            cardGridElement.innerHTML = '';
+            cardGridElement.className = 'grid grid-cols-5 gap-2 w-[80%] mx-auto p-4 bg-black rounded-xl border-4 border-gray-700';
+
+            let listaNumeros = Array.isArray(numeros) ? numeros : (typeof numeros === 'string' ? numeros.replace(/[^\d,]/g, ' ').trim().split(/\s+/).map(Number) : []);
+            while(listaNumeros.length < 25) listaNumeros.push(0);
+
+            const ordemVisual = [0,1,2,3,4, 5,6,7,8,9, 10,11,12,13,14, 15,16,17,18,19, 20,21,22,23,24];
+
+            ordemVisual.forEach(realIndex => {
+                const num = listaNumeros[realIndex];
+                const div = document.createElement('div');
+                div.className = 'h-16 md:h-20 w-full flex items-center justify-center rounded font-black text-3xl md:text-4xl border border-gray-600';
+                
+                const isFree = (realIndex === 12); 
+                
+                if (isFree) {
+                    div.textContent = '★';
+                    div.className += ' bg-green-600 text-white border-green-400 text-5xl';
+                } else {
+                    div.textContent = num;
+                    if (bolasCantadas.includes(num)) {
+                        if (num === bolasCantadas[bolasCantadas.length-1]) {
+                            div.className += ' bg-red-600 text-white border-red-400 animate-pulse'; 
+                        } else {
+                            div.className += ' bg-yellow-500 text-black border-yellow-300'; 
+                        }
+                    } else {
+                        div.className += ' bg-gray-800 text-gray-300'; 
+                    }
+                }
+                cardGridElement.appendChild(div);
+            });
+        }
+
+        // Função Genérica Sorte Extra (Para evitar erros de JS)
+        function renderizarDezenasCupom(numeros, bolasCantadas) {
+             displayCardGrid90(numeros, bolasCantadas); // Reaproveita o grid de 90 provisoriamente
+        }
+
+        // --- FOGOS DE ARTIFÍCIO DA CONFERÊNCIA ---
+        function dispararRojao() {
+            if (typeof confetti !== 'function') return;
+            const duration = 5 * 1000; // 5 segundos de fogos
+            const animationEnd = Date.now() + duration;
+            const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 99999 }; // Z-Index altíssimo para cobrir tudo
+
+            const randomInRange = (min, max) => Math.random() * (max - min) + min;
+
+            const interval = setInterval(function() {
+                const timeLeft = animationEnd - Date.now();
+                if (timeLeft <= 0) return clearInterval(interval);
+
+                const particleCount = 50 * (timeLeft / duration);
+                confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
+                confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
+            }, 250);
+        }     
+
+        // =========================================
+        // TELA DE GANHADORES DA RODADA
+        // =========================================
+        let lastGanhadoresHash = null;
+        let winnersTimer = null;
+        const TEMPO_EXIBICAO_GANHADORES = 15; // Tempo fixo na TV (em segundos)
+
+        function displayWinnersPanel(ganhadoresData) {
+            const container = document.getElementById('winners-panel-container');
+            const listContent = document.getElementById('winners-list-content');
+            const progressBar = document.getElementById('winners-progress-bar');
+
+            // 1. Validação se há dados (Se vier vazio ou nulo, esconde a tela)
+            if (!ganhadoresData || ganhadoresData.length === 0) {
+                closeWinnersPanel();
+                return;
+            }
+
+            // 2. Trava Anti-Piscar (Hash)
+            const currentHash = JSON.stringify(ganhadoresData);
+            if (currentHash === lastGanhadoresHash) return;
+            lastGanhadoresHash = currentHash;
+
+            // 3. Renderização
+            listContent.innerHTML = '';
+            if (winnersTimer) clearTimeout(winnersTimer);
+
+            ganhadoresData.forEach(grupo => {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'bg-gray-800 rounded-xl p-3 border border-gray-700 mb-4 shadow-lg';
+
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'flex justify-between items-center border-b border-gray-600 pb-2 mb-3';
+                headerDiv.innerHTML = `
+                    <span class="text-green-400 font-black text-xl uppercase tracking-wider">${grupo.premio}</span>
+                    <span class="text-white font-black bg-green-700 px-3 py-1 rounded text-lg shadow-md">${grupo.valor_total_premio}</span>
+                `;
+                groupDiv.appendChild(headerDiv);
+
+                if (grupo.ganhadores && Array.isArray(grupo.ganhadores)) {
+                    grupo.ganhadores.forEach(ganhador => {
+                        const row = document.createElement('div');
+                        row.className = 'flex justify-between items-center py-2 hover:bg-gray-700 rounded-lg px-3 transition-colors mb-1 bg-gray-900/50';
+                        row.innerHTML = `
+                            <div class="flex items-center gap-3">
+                                <span class="bg-black text-yellow-500 font-black text-lg px-3 py-1 rounded border border-yellow-600 shadow-inner">${ganhador.cartela}</span>
+                                <span class="text-gray-100 uppercase font-bold text-lg tracking-wide truncate max-w-[200px]">${ganhador.nome}</span>
+                            </div>
+                            <span class="text-green-300 font-black text-lg">${ganhador.valor_rateio}</span>
+                        `;
+                        groupDiv.appendChild(row);
+                    });
+                }
+                listContent.appendChild(groupDiv);
+            });
+
+            // 4. Exibição e Barra de Progresso
+            if (container.classList.contains('hidden')) {
+                container.classList.remove('hidden');
+                container.classList.add('flex');
+            }
+
+            if (progressBar) {
+                progressBar.style.transition = 'none';
+                progressBar.style.width = '100%';
+                void progressBar.offsetWidth; // Reflow forçado para a animação reiniciar limpa
+                
+                const tempoMs = TEMPO_EXIBICAO_GANHADORES * 1000;
+                progressBar.style.transition = `width ${tempoMs}ms linear`;
+                progressBar.style.width = '0%';
+            }
+
+            // 5. Timer de Fechamento Automático
+            winnersTimer = setTimeout(closeWinnersPanel, TEMPO_EXIBICAO_GANHADORES * 1000);
+        }
+
+        function closeWinnersPanel() {
+            const container = document.getElementById('winners-panel-container');
+            if (container) {
+                container.classList.remove('flex');
+                container.classList.add('hidden');
+            }
+            if (winnersTimer) clearTimeout(winnersTimer);
+            lastGanhadoresHash = null; // Reseta o hash para permitir que a tela abra novamente depois
+        }
+
     </script>
 </body>
 </html>
