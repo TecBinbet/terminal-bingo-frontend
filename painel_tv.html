@@ -587,6 +587,19 @@
         // PROCESSADOR DO PAYLOAD DO SERVIDOR
         // =========================================
         function processarPayload(payload) {
+            // --- GATILHO DE LIMPEZA (MUDANÇA DE RODADA) ---
+            // Adapte 'payload.status' para a variável exata que seu servidor envia para indicar intervalo
+            const estadoAtualDaRodada = payload.status || (payload.parametrosInfo ? payload.parametrosInfo.status_rodada : null);
+        
+            if (estadoAtualDaRodada === 'intervalo' && lastRodadaStateTV !== 'intervalo') {
+                limparPainelTV();
+                lastRodadaStateTV = estadoAtualDaRodada;
+                return; // Interrompe o processamento do resto do payload vazio
+            } else if (estadoAtualDaRodada !== null) {
+                lastRodadaStateTV = estadoAtualDaRodada;
+            }  
+
+
             // 1. DADOS DE CONFIGURAÇÃO BASE
             if (payload.parametrosInfo) {
                 const param = payload.parametrosInfo;
@@ -650,8 +663,46 @@
             if (payload.ganhadoresData) {
                 displayWinnersPanel(payload.ganhadoresData);
             }
-
         }
+
+        // =========================================
+        // LIMPEZA GERAL DO PAINEL DA TV (FIM DE RODADA)
+        // =========================================
+        let lastRodadaStateTV = null;
+
+        function limparPainelTV() {
+            console.log("🧹 [SISTEMA TV] Limpando painel para nova rodada...");
+
+            // 1. Limpa o Painel Numérico, Bola Atual e Bolas Anteriores
+            atualizarPainel({ bolaAtual: '--', ordem: 0, sorteadas: [] });
+
+            // 2. Limpa as Estatísticas
+            const estatisticasContainer = document.getElementById('estatisticas-list-tv');
+            if (estatisticasContainer) estatisticasContainer.innerHTML = '<p class="text-center text-gray-500 py-8 italic">Aguardando sorteio...</p>';
+
+            // 3. Limpa os Prêmios e o "Valendo Agora"
+            const listaPremios = document.getElementById('lista-premios-tv');
+            if (listaPremios) listaPremios.innerHTML = '<p class="text-center text-gray-500 text-sm italic mt-4">Carregando prêmios...</p>';
+            
+            const buscandoTV = document.getElementById('buscando-premio-tv');
+            if (buscandoTV) buscandoTV.innerHTML = 'AGUARDANDO...';
+
+            // 4. Limpa Preços (Evita resquícios visuais)
+            const precoCartela = document.getElementById('preco-cartela-tv');
+            if (precoCartela) precoCartela.innerText = 'R$ 0,00';
+            const acumulado = document.getElementById('acumulado-tv');
+            if (acumulado) acumulado.innerText = 'R$ 0,00';
+
+            // 5. Força a ocultação dos Modais de Bingo
+            if (typeof ocultarConferencia === 'function') ocultarConferencia();
+            if (typeof closeWinnersPanel === 'function') closeWinnersPanel();
+
+            // 6. Reseta Variáveis de Memória e Travas
+            lastBuscandoTvJson = null;
+            lastGanhadoresHash = null;
+            if (typeof premiosCelebradosTV !== 'undefined') premiosCelebradosTV.clear();
+        }
+
 
         // =========================================
         // MOTOR WEBSOCKET
@@ -860,7 +911,7 @@
         // =========================================
         let lastGanhadoresHash = null;
         let winnersTimer = null;
-        const TEMPO_EXIBICAO_GANHADORES = 10; // Tempo fixo na TV (em segundos)
+        const TEMPO_EXIBICAO_GANHADORES = 20; // Tempo fixo na TV (em segundos)
 
         function displayWinnersPanel(ganhadoresData) {
             const container = document.getElementById('winners-panel-container');
@@ -884,12 +935,12 @@
 
             ganhadoresData.forEach(grupo => {
                 const groupDiv = document.createElement('div');
-                groupDiv.className = 'bg-gray-800 rounded-xl p-3 border border-gray-700 mb-4 shadow-lg';
+                groupDiv.className = 'bg-gray-800 rounded-xl p-2 border border-gray-700 mb-2 shadow-lg';
 
                 const headerDiv = document.createElement('div');
-                headerDiv.className = 'flex justify-between items-center border-b border-gray-600 pb-2 mb-3';
+                headerDiv.className = 'flex justify-between items-center border-b border-gray-600 pb-1 mb-2';
                 headerDiv.innerHTML = `
-                    <span class="text-green-400 font-black text-xl uppercase tracking-wider">${grupo.premio}</span>
+                    <span class="text-green-400 font-black text-lg uppercase tracking-wider">${grupo.premio}</span>
                     <span class="text-white font-black bg-green-700 px-3 py-1 rounded text-lg shadow-md">${grupo.valor_total_premio}</span>
                 `;
                 groupDiv.appendChild(headerDiv);
@@ -897,7 +948,7 @@
                 if (grupo.ganhadores && Array.isArray(grupo.ganhadores)) {
                     grupo.ganhadores.forEach(ganhador => {
                         const row = document.createElement('div');
-                        row.className = 'flex justify-between items-center py-2 hover:bg-gray-700 rounded-lg px-3 transition-colors mb-1 bg-gray-900/50';
+                        row.className = 'flex justify-between items-center py-2 hover:bg-gray-700 rounded-lg px-2 transition-colors mb-1 bg-gray-900/50';
                         row.innerHTML = `
                             <div class="flex items-center gap-3">
                                 <span class="bg-black text-yellow-500 font-black text-lg px-3 py-1 rounded border border-yellow-600 shadow-inner">${ganhador.cartela}</span>
