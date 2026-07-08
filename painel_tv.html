@@ -646,6 +646,11 @@
                 ocultarConferencia();
             }
 
+            // 7. TELA DE GANHADORES
+            if (payload.ganhadoresData) {
+                displayWinnersPanel(payload.ganhadoresData);
+            }
+
         }
 
         // =========================================
@@ -855,7 +860,7 @@
         // =========================================
         let lastGanhadoresHash = null;
         let winnersTimer = null;
-        const TEMPO_EXIBICAO_GANHADORES = 15; // Tempo fixo na TV (em segundos)
+        const TEMPO_EXIBICAO_GANHADORES = 10; // Tempo fixo na TV (em segundos)
 
         function displayWinnersPanel(ganhadoresData) {
             const container = document.getElementById('winners-panel-container');
