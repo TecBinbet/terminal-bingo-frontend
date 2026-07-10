@@ -3499,13 +3499,12 @@ function ocultarConferencia() {
 function displayWinnersPanel(ganhadoresData) {
     // 1. Validação se há dados
     if (Carregando || !ganhadoresData || ganhadoresData.length === 0 || ultimaBolaCantada !== null) return;
+    
     // 2. Gera o Hash (Assinatura) dos dados atuais
     const currentHash = JSON.stringify(ganhadoresData);
 
     // 3. VERIFICAÇÃO CRÍTICA:
     // Se o Hash for igual ao último processado, PARA AQUI.
-    // Isso impede que a tela pisque ou recarregue se os dados não mudaram.
-
     if (currentHash === lastGanhadoresHash) {
         return;
     }
@@ -3513,7 +3512,37 @@ function displayWinnersPanel(ganhadoresData) {
     // 4. Se passou, atualiza o hash global para a próxima vez
     lastGanhadoresHash = currentHash;
 
-    // --- DAQUI PARA BAIXO, SEGUE A RENDERIZAÇÃO ---
+    // ==========================================================
+    // 🗣️ 5. LÓGICA DE VOZ PARA GANHADORES GLOBAIS (LOCUTOR)
+    // ==========================================================
+    let euGanheiAlgum = false;
+    let nomesDosPremios = [];
+
+    // Vasculha a lista para ver quem ganhou
+    ganhadoresData.forEach(grupo => {
+        if (grupo.premio) nomesDosPremios.push(grupo.premio);
+        
+        if (grupo.ganhadores && Array.isArray(grupo.ganhadores)) {
+            grupo.ganhadores.forEach(ganhador => {
+                const numCartela = parseInt(ganhador.cartela);
+                // Se a cartela vencedora for uma das minhas cartelas...
+                if (globalMinhasCartelas && globalMinhasCartelas.cartelas && globalMinhasCartelas.cartelas.includes(numCartela)) {
+                    euGanheiAlgum = true;
+                }
+            });
+        }
+    });
+
+    // Se eu NÃO GANHEI nas minhas cartelas, o sistema avisa que houve ganhador(es) na sala.
+    // (Se eu ganhei, o 'celebrarPremioIntermediario' dos fogos já terá falado a frase com os Parabéns!)
+    if (!euGanheiAlgum && nomesDosPremios.length > 0) {
+        // Tira os nomes duplicados (Ex: "Linha Superior e Linha Inferior" -> "Linha Superior, Linha Inferior")
+        const premiosStr = [...new Set(nomesDosPremios)].join(' e ');
+        falarTexto(`Houve ganhador para ${premiosStr}.`);
+    }
+    // ==========================================================
+
+    // --- DAQUI PARA BAIXO, SEGUE A RENDERIZAÇÃO HTML (MANTENHA IGUAL AO SEU) ---
     winnersListContent.innerHTML = '';
     
     // Cancela timer anterior para reiniciar a contagem
@@ -4837,6 +4866,7 @@ function falarTexto(texto) {
         utter.text = texto;
         utter.lang = 'pt-BR'; // Define português
         utter.volume = 1;     // 0 a 1
+        utter.volume = 0.85;
         utter.rate = 1.1;     // Velocidade (1.1 fica mais dinâmico)
         utter.pitch = 1;      // Tom de voz
 
@@ -9225,10 +9255,29 @@ function celebrarPremioIntermediario(identificadorDoPremio) {
 
     ultimoPremioCelebrado = identificadorDoPremio;
 
-    // 2. DISPARO DO ÁUDIO SINTETIZADO (Nativo e super leve)
+    // ==========================================================
+    // 🗣️ 2. FALA DE COMEMORAÇÃO (JOGADOR GANHOU)
+    // ==========================================================
+    let textoVoz = "";
+    const premioUpper = (identificadorDoPremio || "").toUpperCase();
+    
+    // Identifica o género da palavra para soar gramaticalmente correto
+    if (premioUpper.includes('FALTA')) {
+        textoVoz = "Parabéns! ${FALTA UM} contemplado";
+    } else if (premioUpper.includes('LINHA') || premioUpper.includes('QUADRA')) {
+        textoVoz = `Parabéns! ${identificadorDoPremio} contemplada!`;
+    } else {
+        textoVoz = `Parabéns! ${identificadorDoPremio} contemplado!`;
+    }
+    
+    // Dispara a voz
+    falarTexto(textoVoz);
+    // ==========================================================
+
+    // 3. DISPARO DO ÁUDIO SINTETIZADO (Nativo e super leve)
     tocarCampainhaAlegre();
 
-    // 3. EFEITO VISUAL RÁPIDO (Pop de Confetes no centro da tela)
+    // 4. EFEITO VISUAL RÁPIDO (Pop de Confetes no centro da tela)
     if (typeof confetti === 'function') {
         confetti({
             particleCount: 100,

@@ -113,6 +113,10 @@
 </head>
 <body class="h-screen w-screen p-4 box-border flex gap-4">
 
+    <button id="btn-unlock-audio" onclick="desbloquearAudioTV()" class="fixed top-4 right-4 z-50 bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-full shadow-lg border border-green-400 transition-all">
+        🔊 Ativar Áudio da TV
+    </button>
+
     <!-- =========================================
          COLUNA ESQUERDA (30%) - DESTAQUE E PRÊMIOS
          ========================================= -->
@@ -362,19 +366,68 @@
         }
 
         // =========================================
+        // SÍNTESE DE VOZ E ÁUDIO
+        // =========================================
+        let vozAtivaTV = false;
+
+        function desbloquearAudioTV() {
+            vozAtivaTV = true;
+            if ('speechSynthesis' in window) {
+                // Fala um texto vazio apenas para o navegador liberar a permissão de áudio
+                const msg = new SpeechSynthesisUtterance("");
+                window.speechSynthesis.speak(msg);
+            }
+            // Esconde o botão após o clique
+            const btn = document.getElementById('btn-unlock-audio');
+            if (btn) btn.classList.add('hidden');
+            
+            console.log("🔊 [SISTEMA] Áudio da TV ativado com sucesso.");
+        }
+
+        function falarTextoTV(texto) {
+            if (!vozAtivaTV) return;
+
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel(); // Cancela falas anteriores para não encavalar
+
+                const utter = new SpeechSynthesisUtterance();
+                utter.text = texto;
+                utter.lang = 'pt-BR';
+                utter.volume = 1.0; 
+                utter.rate = 1.05; // Levemente mais rápido para dar dinamismo
+                utter.pitch = 1;
+
+                // Força vozes mais naturais (Google ou Microsoft)
+                const vozes = window.speechSynthesis.getVoices();
+                const vozMelhor = vozes.find(v => v.lang === 'pt-BR' && (v.name.includes('Google') || v.name.includes('Microsoft')));
+                if (vozMelhor) utter.voice = vozMelhor;
+
+                window.speechSynthesis.speak(utter);
+            }
+        }
+
+        // Garante que as vozes sejam carregadas pelo navegador
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+        }
+
+        // =========================================
         // EFEITOS ESPECIAIS (FOGOS/CONFETES)
         // =========================================
         let premiosCelebradosTV = new Set(); // Usamos Set para gravar múltiplos ganhadores sem piscar
 
-        function celebrarPremioTV(identificadorDoPremio) {
+        function celebrarPremioTV(identificadorDoPremio, cartela, nome, premio) {
             // 1. TRAVA ANTI-REPLICAÇÃO
             if (premiosCelebradosTV.has(identificadorDoPremio)) return; 
             
             premiosCelebradosTV.add(identificadorDoPremio);
             console.log(`🎉 [FESTA TV] Celebrando: ${identificadorDoPremio}`);
 
-            // 2. ÁUDIO (Descomente se tiver a função de áudio no painel da TV)
-            // if (typeof tocarCampainhaAlegre === 'function') tocarCampainhaAlegre();
+            // 2. ÁUDIO SÍNTESE DE VOZ (Agora disparado no exato momento da batida)
+            // Usa o nome do prêmio de forma fluida. Ex: "Atenção! Temos ganhador para LINHA..."
+            if (typeof falarTextoTV === 'function') {
+                falarTextoTV(`Temos ganhador para ${premio}!`);
+            }
 
             // 3. EFEITO VISUAL PARA TV (Disparo duplo lateral para telas largas)
             if (typeof confetti === 'function') {
@@ -443,7 +496,7 @@
                 let displayFaltam = '';
                 if (haGanhador) {
                     displayFaltam = `<span class="text-xl bg-red-600 text-white px-2 py-1 rounded border border-red-400 animate-pulse uppercase tracking-widest">${winnerPremio}</span>`;
-                    celebrarPremioTV(`${item.cartela}-${winnerPremio}`);
+                    celebrarPremioTV(`${item.cartela}-${winnerPremio}`, item.cartela, nomeFormatado, winnerPremio);
                 } else {
                     displayFaltam = `<span class="text-2xl fonte-digital text-green-400">${dezenasTexto}</span>`;
                 }
