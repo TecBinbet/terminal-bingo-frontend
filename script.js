@@ -1955,30 +1955,34 @@ function checkTotalCards(total) {
     const validationMessageCurrent = isMobile ? mobileValidationMessage : validationMessage;
 
     // Reseta a mensagem de validação
-    validationMessageCurrent.textContent = '';
-    validationMessageCurrent.classList.add('hidden');
-
-    // 1. Verifica se o valor é um número válido e maior que zero
-    if (isNaN(total) || total <= 0) {
-//        validationMessageCurrent.textContent = "A quantidade de cartelas deve ser um número válido e maior que 0.";
-//        validationMessageCurrent.classList.remove('hidden');
-        return; // Para a execução da função aki
+    if (validationMessageCurrent) {
+        validationMessageCurrent.textContent = '';
+        validationMessageCurrent.classList.add('hidden');
+        validationMessageCurrent.classList.remove('bg-red-900/50', 'text-red-200', 'p-2', 'rounded', 'border', 'border-red-500');
     }
+
+    // 👉 CORREÇÃO: Atualiza a variável global PRIMEIRO, assim reflete sempre a realidade
+    cartelasEmJogo = total; 
+
+    if (isNaN(total) || total <= 0) return;
 
     // 2. Verifica se o total está abaixo do mínimo exigido
-    if (total < minCartelas) {
-        validationMessageCurrent.textContent = `Atenção: A quantidade de cartelas (${total}) está abaixo do mínimo exigido (${minCartelas}).`;
-        validationMessageCurrent.classList.remove('hidden');
-        return; // Para a execução da função aki
+    if (minCartelas > 0 && total < minCartelas) {
+        if (validationMessageCurrent) {
+            validationMessageCurrent.textContent = `Atenção: A quantidade de cartelas (${total}) está abaixo do mínimo exigido (${minCartelas}). Suas cartelas não participarão do sorteio até atingir o mínimo.`;
+            validationMessageCurrent.classList.remove('hidden');
+            validationMessageCurrent.classList.add('text-yellow-400');
+        }
     }
 
-    // 3. Verifica se o total está acima do máximo exigido
-    if (total > maxCartelas) {
-        validationMessageCurrent.textContent = `Atenção: A quantidade de cartelas (${total}) excede o máximo permitido (${maxCartelas}).`;
-        validationMessageCurrent.classList.remove('hidden');
-        return; // Para a execução da função aki
+    // 3. Verifica se o total está acima do máximo exigido (Apenas um aviso visual na tela)
+    if (maxCartelas > 0 && total > maxCartelas) {
+        if (validationMessageCurrent) {
+            validationMessageCurrent.textContent = `Atenção: A quantidade de cartelas (${total}) excede o máximo permitido (${maxCartelas}).`;
+            validationMessageCurrent.classList.remove('hidden');
+            validationMessageCurrent.classList.add('text-red-400');
+        }
     }
-    cartelasEmJogo = total;
 }
 
 
@@ -1990,6 +1994,31 @@ async function fetchAndProcessCards() {
     }
 
     if (isFetchingCards) return;
+
+    // ====================================================================
+    // 👉 NOVA TRAVA DE SEGURANÇA: LIMITE MÍNIMO PARA JOGAR
+    // ====================================================================
+    // Se ele tiver alguma cartela (maior que 0) mas não atingiu o mínimo:
+    if (minCartelas > 0 && cartelasEmJogo > 0 && cartelasEmJogo < minCartelas) {
+        console.warn(`🛑 Processamento bloqueado: Quantidade mínima não alcançada (${cartelasEmJogo} / ${minCartelas}).`);
+        
+        // Força a exibição da mensagem de validação na tela
+        const isMobile = isMobileDevice();
+        const validationMsg = isMobile ? document.getElementById('mobile-validation-message') : document.getElementById('validation-message');
+        if (validationMsg) {
+            validationMsg.innerHTML = `⚠️ Você tem <b>${cartelasEmJogo}</b> cartela(s). O mínimo exigido é <b>${minCartelas}</b>.<br>Adquira mais cartelas para o seu jogo ser ativado.`;
+            validationMsg.classList.remove('hidden');
+            // Formatação extra para chamar mais atenção
+            validationMsg.classList.add('bg-red-900/50', 'text-red-200', 'p-2', 'rounded', 'border', 'border-red-500');
+        }
+        
+        // Limpa a tela de cartelas e esconde o loader (Não deixa desenhar nada!)
+        displayLoadedCards([]);
+        if (loader) loader.style.display = 'none';
+        return; // 🛑 ABORTA AQUI! O backend sequer é chamado para processar.
+    }
+    // ==================================================================== 
+
     isFetchingCards = true;
 
     // FORÇAR RESET DE TRAVA (Garante que se der erro, o loader não mate a tela)
@@ -4153,7 +4182,7 @@ function temaTope10() {
 
 // --- VARIÁVEIS GLOBAIS NECESSÁRIAS (Coloque no topo do arquivo se não tiver) ---
 // let bolasProcessadasLocal = new Set(); 
-// let ultimaBolaExibida = null;
+// let ultimaBolaExibida = null;  
 async function renderMainContent(data) {
     if (!data) return;
 
@@ -4516,17 +4545,26 @@ async function renderMainContent(data) {
     displayLastThree(bolasData && bolasData.length > 0 ? bolasData[0] : {});
     displayConferencePanel(confereData, bolasCantadas);
 
-    if (premioInfo && typeof premioInfo.preco === 'number') {
-        const preco = premioInfo.preco  / premioInfo.multiplo;
-        ValorSerie = preco;
-        const formattedPreco = new Intl.NumberFormat('pt-BR', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(preco);
-        if(mobilePrecoSerieElement) mobilePrecoSerieElement.textContent = formattedPreco;
-        const limiteBola = (topeData && topeData.length > 0) ? topeData[0].bola_tope_ac : 0;
-        atualizarVisualizacaoAcumulado(
-                premioInfo.premio_acumulado, // Valor do prêmio (ex: 10000 ou "R$ 10.000,00")
-                limiteBola,                                    // Limite de bolas (ex: 40)
-                globalBolasCantadas                  // Array das bolas que já saíram
-        );
+    // =================================================================
+    // 👉 INJEÇÃO DINÂMICA DOS LIMITES (ATUALIZADO VIA WEBSOCKET/INIT)
+    // =================================================================
+    if (premioInfo) {
+        minCartelas = premioInfo.minimo_de_cartelas || 0;
+        maxCartelas = premioInfo.maximo_de_cartelas || 0;
+        console.log(`🔎 Limites Atualizados - Mín: ${minCartelas} | Máx: ${maxCartelas}`);
+        
+        if (typeof premioInfo.preco === 'number') {
+            const preco = premioInfo.preco  / premioInfo.multiplo;
+            ValorSerie = preco;
+            const formattedPreco = new Intl.NumberFormat('pt-BR', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(preco);
+            if(mobilePrecoSerieElement) mobilePrecoSerieElement.textContent = formattedPreco;
+            const limiteBola = (topeData && topeData.length > 0) ? topeData[0].bola_tope_ac : 0;
+            atualizarVisualizacaoAcumulado(
+                    premioInfo.premio_acumulado, 
+                    limiteBola,                                    
+                    globalBolasCantadas                  
+            );
+        }
     }
 
     if (cartelaRanges && cartelaRanges.length > 0) {
@@ -4589,16 +4627,7 @@ async function init() {
         //backendVersionElement.textContent = versionData.version;
 
         premioInfo = initialData.premioInfo;
-      
-        const oTipo = parseInt(tipoEntradaCartelas);
-        if (oTipo === 1) {  
-            minCartelas = premioInfo?.minimo_de_cartelas || 0;
-            maxCartelas = premioInfo?.maximo_de_cartelas || 0;
-        } else {
-            minCartelas = 1;
-            maxCartelas =  premioInfo?.serie_em_jogo || 0;
-        }
-       
+             
         // NOVO CÓDIGO BLINDADO: Busca o valor de preco_da_serie e o exibe
         if (premioInfo && typeof premioInfo.preco === 'number') {             
             const preco = premioInfo.preco  / premioInfo.multiplo;
@@ -6239,7 +6268,7 @@ function calcularTotalCompra() {
 //  const idEventoNaTela = (typeof currentEventID !== 'undefined') ? currentEventID : null;
 
 async function confirmarCompra() {
-    // 1. Captura a quantidade e limpa o valor
+    // 1. Captura a quantidade
     const elInput = document.getElementById('qtd-manual');
     const qtd = elInput ? parseInt(elInput.value) || 0 : 0;
 
@@ -6254,7 +6283,71 @@ async function confirmarCompra() {
         return; 
     }
 
-    // --- INÍCIO DO EFEITO DE LOADING NO BOTÃO (POSICIONADO NO TOPO) ---
+    // 2. Descobre o ID do evento alvo da compra (MOVIDO PARA O TOPO)
+    let idEventoFinal = 0;
+    if (typeof obterIdEventoAlvo === 'function') {
+        idEventoFinal = obterIdEventoAlvo();
+    } else {
+        const elLastRound = document.getElementById('mobile-last-round');
+        idEventoFinal = parseInt(elLastRound?.textContent) || 0;
+    }
+
+    // ====================================================================
+    // 👉 NOVA TRAVA DE SEGURANÇA: LIMITE MÁXIMO NO MOMENTO DA COMPRA
+    // ====================================================================
+    // Descobre quantas cartelas o cliente JÁ TEM para ESTE EVENTO ESPECÍFICO
+    let qtdJaComprada = 0;
+    
+    // Consulta o servidor em tempo real (Ultra-Preciso e dinâmico)
+    if (clienteLogadoId && idEventoFinal > 0) {
+        try {
+            const resCartelas = await fetch(`${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idEventoFinal}&id_cliente=${clienteLogadoId}`);
+            if (resCartelas.ok) {
+                const dataCartelas = await resCartelas.json();
+                if (dataCartelas && dataCartelas.cartelas) {
+                    qtdJaComprada = dataCartelas.cartelas.length;
+                }
+            }
+        } catch (e) {
+            console.warn("Falha de rede ao consultar cartelas. Usando fallback de cache local.");
+            // Fallback: Se a net falhar no milissegundo, e ele estiver comprando para o evento atual, usa a memória
+            if (eventoCarregadoAtual == idEventoFinal && globalMinhasCartelas && globalMinhasCartelas.cartelas) {
+                qtdJaComprada = globalMinhasCartelas.cartelas.length;
+            }
+        }
+    } else {
+        // Fallback local se for terminal físico (sem cliente logado)
+        if (eventoCarregadoAtual == idEventoFinal) {
+            qtdJaComprada = cartelasEmJogo || 0;
+        }
+    }
+
+    // Se o evento tiver um máximo definido e a SOMA ultrapassar esse limite:
+    if (maxCartelas > 0 && (qtd + qtdJaComprada) > maxCartelas) {
+        //console.warn(`🚫 Compra abortada: Limite máximo excedido. (Possui: ${qtdJaComprada}, Tentou: ${qtd}, Max: ${maxCartelas} no Evento: ${idEventoFinal})`);
+        
+        if (typeof limparQuantidade === 'function') limparQuantidade();
+        
+        const restantePermitido = maxCartelas - qtdJaComprada;
+        const msgRestante = restantePermitido > 0 
+            ? `<br>Só é possível adquirir mais <b>${restantePermitido}</b>.` 
+            : `<br>Você não pode mais adquirir cartelas para este evento.`;
+
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert(
+                `O limite máximo para este evento é de <b>${maxCartelas} cartelas</b>.<br><br>Você já possui <b>${qtdJaComprada}</b> cartelas.${msgRestante}`, 
+                "Limite Excedido", 
+                "🚫",
+                true
+            );
+        } else {
+            alert(`O limite máximo é de ${maxCartelas} cartelas. Você já possui ${qtdJaComprada}.`);
+        }
+        return; // 🛑 ABORTA A COMPRA AQUI
+    }
+    // ====================================================================
+
+    // --- INÍCIO DO EFEITO DE LOADING NO BOTÃO ---
     const btnConfirmar = document.getElementById('btn-confirmar-compra');
     const txtConfirmar = document.getElementById('texto-botao-confirmar');
     const originalHTML = txtConfirmar ? txtConfirmar.innerHTML : "Finalizar Compra";
@@ -6272,22 +6365,6 @@ async function confirmarCompra() {
     }
 
     try {
-        // 2. Descobre o ID do evento alvo da compra
-        let idEventoFinal = 0;
-        if (typeof obterIdEventoAlvo === 'function') {
-            idEventoFinal = obterIdEventoAlvo();
-        } else {
-            const elLastRound = document.getElementById('mobile-last-round');
-            idEventoFinal = parseInt(elLastRound?.textContent) || 0;
-        }
-
-        // 🔥 FORÇAR ATUALIZAÇÃO DA GLOBAL AQUI (O Auto-Reparo)
-        //if (idEventoFinal && idEventoFinal !== 0) {
-        //    window.eventoAtivoID = String(idEventoFinal).trim();
-        //    if (typeof idEventoNaTela !== 'undefined') idEventoNaTela = String(idEventoFinal).trim();
-        //    console.log(`[AJUSTE] Global forçada para ${idEventoFinal} antes da validação.`);
-        //}
-
         // Função auxiliar para converter "R$ 1.200,50" em 1200.50
         function lerDinheiro(idElemento) {
             const el = document.getElementById(idElemento);
@@ -7114,6 +7191,32 @@ async function atualizarPrecoDoEvento(idForcado = 0) {
             if (data.preco_cartela !== undefined) {
                 globalPrecoCartela = parseFloat(data.preco_cartela);
             }
+
+            // ====================================================================
+            // 👉 INJEÇÃO DINÂMICA INTELIGENTE: GLOBAL vs ESPECÍFICO
+            // ====================================================================
+            // 1º Passo: Reseta para as regras globais da sala (Fallback seguro)
+            if (typeof premioInfo !== 'undefined' && premioInfo) {
+                minCartelas = parseInt(premioInfo.minimo_de_cartelas) || 0;
+                maxCartelas = parseInt(premioInfo.maximo_de_cartelas) || 0;
+            } else {
+                minCartelas = 0;
+                maxCartelas = 0;
+            }
+
+            // 2º Passo: Se o Evento tiver uma regra própria (> 0), ele substitui a global
+            const minEspec = parseInt(data.minimo_de_cartelas);
+            if (!isNaN(minEspec) && minEspec > 0) {
+                minCartelas = minEspec;
+            }
+
+            const maxEspec = parseInt(data.maximo_de_cartelas);
+            if (!isNaN(maxEspec) && maxEspec > 0) {
+                maxCartelas = maxEspec;
+            }
+            
+            console.log(`🔎 Limites Atualizados p/ Evento ${idAlvo} - Mín: ${minCartelas} | Máx: ${maxCartelas}`);
+            // ====================================================================
             
             // Atualiza o Título do Modal
             const tituloModal = document.querySelector('#modal-comprar-cartelas h3');
@@ -7201,6 +7304,7 @@ async function abrirModalCompra(idEventoEspecifico = 0) {
             }
             return; 
         }
+
 
         // 6. ATUALIZAÇÃO DE PREÇOS
         const precoEncontrado = dadosEvento.valor_de_venda ?? dadosEvento.preco_cartela;

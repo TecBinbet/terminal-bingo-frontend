@@ -1947,6 +1947,8 @@ def verificar_status_evento():
             'premio_atual': evento.get('premio_atual', 'BINGO'),
             'descricao': evento.get('descricao', f'Evento {id_evento}'),
             'valor_de_venda': valor_venda_final,
+            'minimo_de_cartelas': int(evento.get('minimo_terminal') or 0),
+            'maximo_de_cartelas': int(evento.get('maximo_terminal') or 0),  
             'unidade_de_venda': unidade_venda_final,
             'preco_cartela': valor_venda_final  # Enviado duplicado para evitar erro no Front
         })
@@ -1959,8 +1961,6 @@ def verificar_status_evento():
         return jsonify({'status': 'erro', 'detalhe': str(e)}), 500
 
 
-
-# --- ROTA: LISTAR PRÓXIMOS EVENTOS (FILTRADOS) ---
 # --- ROTA: LISTAR PRÓXIMOS EVENTOS (ULTRA-RÁPIDO) ---
 @app.route('/api/proximos_eventos', methods=['GET'])
 def proximos_eventos():
@@ -3905,8 +3905,8 @@ def admin_ativar_evento():
             'serie_em_jogo': evento.get('numero_maximo', 0), 
             
             'rodada': str(id_evento_int),
-            'minimo_de_cartelas': 1,
-            'maximo_de_cartelas': 6000,
+            'minimo_de_cartelas': evento.get('minimo_terminal',6),
+            'maximo_de_cartelas': evento.get('maximo_terminal',300),
             'inicial1': 0,
             'final1': 0,
             'inicial2': 0,
@@ -4131,7 +4131,9 @@ def get_event_details():
 
              # aa db.premio.delete_many({})
              
-             serie_max = evento.get('numero_maximo', 72000) 
+             serie_max = evento.get('numero_maximo', 72000)
+             minimo_cartelas = evento.get('minimo_terminal', 12)
+             maximo_cartelas = evento.get('maximo_terminal', 600)  
 
              # === AJUSTE DE LÓGICA DE PERÍODOS (INICIAL vs FINAL) ===
              inicial_evento = evento.get('numero_inicial', 1)
@@ -4166,8 +4168,8 @@ def get_event_details():
                  'multiplo': response_data['unidade_venda'],
                  'rodada': id_evt,
                  'serie_em_jogo': serie_max,
-                 'minimo_de_cartelas': 1,
-                 'maximo_de_cartelas': 6000,
+                 'minimo_de_cartelas': minimo_cartelas,
+                 'maximo_de_cartelas': maximo_cartelas,
                  'total_cartelas_em_jogo': qtde_vendida,
                  'total_cupons_em_jogo': qtde_cupons_vendidos
              }
