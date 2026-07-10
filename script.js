@@ -991,7 +991,7 @@ async function carregarCartelasAutomaticas(idEvento) {
 async function verificarNovasCompras() {
     // 🚦 Se estivermos processando uma compra manual, pula esta verificação
     if (isProcessandoCompra) {
-        console.log("⏳ verificarNovasCompras suspensa: Aguardando conclusão da compra manual...");
+        //console.log("⏳ verificarNovasCompras suspensa: Aguardando conclusão da compra manual...");
         return; 
     }
 
@@ -3538,7 +3538,7 @@ function displayWinnersPanel(ganhadoresData) {
     if (!euGanheiAlgum && nomesDosPremios.length > 0) {
         // Tira os nomes duplicados (Ex: "Linha Superior e Linha Inferior" -> "Linha Superior, Linha Inferior")
         const premiosStr = [...new Set(nomesDosPremios)].join(' e ');
-        falarTexto(`Houve ganhador para ${premiosStr}.`);
+        falarTexto(`Houve ganhador para ${premiosStr}.`, true);
     }
     // ==========================================================
 
@@ -4580,7 +4580,7 @@ async function renderMainContent(data) {
     if (premioInfo) {
         minCartelas = premioInfo.minimo_de_cartelas || 0;
         maxCartelas = premioInfo.maximo_de_cartelas || 0;
-        console.log(`🔎 Limites Atualizados - Mín: ${minCartelas} | Máx: ${maxCartelas}`);
+        //console.log(`🔎 Limites Atualizados - Mín: ${minCartelas} | Máx: ${maxCartelas}`);
         
         if (typeof premioInfo.preco === 'number') {
             const preco = premioInfo.preco  / premioInfo.multiplo;
@@ -4854,8 +4854,10 @@ if (toggleCartelasButton && mobileCartelasContent) {
 
 // Variável para controlar se a voz está ativa (pode virar um botão de "mudo" depois)
 
-function falarTexto(texto) {
-    if (!vozAtiva) return;
+// Adicionamos o parâmetro forcarVoz (padrão é falso)
+function falarTexto(texto, forcarVoz = false) {
+    // Se a voz não estiver ativa E não for um anúncio forçado (premiação), o sistema fica mudo.
+    if (!vozAtiva && !forcarVoz) return;
 
     // Verifica se o navegador suporta a API
     if ('speechSynthesis' in window) {
@@ -4864,9 +4866,8 @@ function falarTexto(texto) {
 
         const utter = new SpeechSynthesisUtterance();
         utter.text = texto;
-        utter.lang = 'pt-BR'; // Define português
-        utter.volume = 1;     // 0 a 1
-        utter.volume = 0.85;
+        utter.lang = 'pt-BR'; // Define português        
+        utter.volume = 1;          
         utter.rate = 1.1;     // Velocidade (1.1 fica mais dinâmico)
         utter.pitch = 1;      // Tom de voz
 
@@ -6210,23 +6211,42 @@ window.somarQtd = function(valor) {
     const inputQtd = document.getElementById('qtd-manual');
     if (!inputQtd) return;
 
-    // Pega o valor atual (se estiver vazio, assume 0)
     let atual = parseInt(inputQtd.value) || 0;
+    let novoValor = atual + valor;
     
-    // Soma o novo valor
-    inputQtd.value = atual + valor;
+    // 👉 BARREIRA DE ENTRADA: Descobre o que já tem e impede a soma de passar do teto
+    let qtdJaComprada = 0;
+    if (globalMinhasCartelas && globalMinhasCartelas.cartelas) {
+        qtdJaComprada = globalMinhasCartelas.cartelas.length;
+    } else {
+        qtdJaComprada = cartelasEmJogo || 0;
+    }
+
+    // Se a soma for passar do máximo, trava o número no exato limite permitido!
+    if (maxCartelas > 0 && (novoValor + qtdJaComprada) > maxCartelas) {
+        novoValor = maxCartelas - qtdJaComprada;
+        if (novoValor < 0) novoValor = 0; // Proteção extra (se ele já tinha 1310 e o limite era 1200, corta para 0)
+        
+        // Efeito visual (pisca vermelho) para avisar que bateu no teto
+        inputQtd.classList.add('border-red-500', 'text-red-500', 'bg-red-900/30', 'scale-105');
+        setTimeout(() => {
+            inputQtd.classList.remove('border-red-500', 'text-red-500', 'bg-red-900/30', 'scale-105');
+        }, 300);
+    } else {
+        // Efeito normal verdinho se a soma for permitida
+        inputQtd.classList.add('border-green-500', 'scale-105');
+        setTimeout(() => {
+            inputQtd.classList.remove('scale-105');
+        }, 150);
+    }
+
+    // Insere o número validado na caixa
+    inputQtd.value = novoValor > 0 ? novoValor : '';
 
     // Dispara o cálculo do preço total automaticamente
     if (typeof calcularTotalCompra === 'function') {
         calcularTotalCompra();
     }
-    
-    // Feedback visual rápido no input (efeito de "piscar" verde)
-    inputQtd.classList.add('border-green-500', 'scale-105');
-    setTimeout(() => {
-        inputQtd.classList.remove('scale-105');
-        // Mantém a borda verde se houver valor
-    }, 150);
 };
 
 // Função para zerar tudo
@@ -6249,12 +6269,32 @@ window.limparQuantidade = function() {
 function calcularTotalCompra() {
     const inputQtd = document.getElementById('qtd-manual');
     const displayTotal = document.getElementById('total-compra-display');
-    const btnFinalizar = document.getElementById('btn-confirmar-compra'); // Ajuste o ID se for outro
+    const btnFinalizar = document.getElementById('btn-confirmar-compra'); 
     
     if (!inputQtd || !displayTotal) return;
 
+    let qtd = parseInt(inputQtd.value) || 0;
+
+    // 👉 BARREIRA DE TECLADO: Impede que ele digite um número absurdo na caixa
+    let qtdJaComprada = 0;
+    if (globalMinhasCartelas && globalMinhasCartelas.cartelas) {
+        qtdJaComprada = globalMinhasCartelas.cartelas.length;
+    } else {
+        qtdJaComprada = cartelasEmJogo || 0;
+    }
+
+    if (maxCartelas > 0 && (qtd + qtdJaComprada) > maxCartelas) {
+        qtd = maxCartelas - qtdJaComprada;
+        if (qtd < 0) qtd = 0;
+        
+        // Força a caixa a voltar para o máximo permitido
+        inputQtd.value = qtd > 0 ? qtd : ''; 
+        
+        inputQtd.classList.add('border-red-500', 'text-red-500', 'bg-red-900/30');
+        setTimeout(() => inputQtd.classList.remove('border-red-500', 'text-red-500', 'bg-red-900/30'), 300);
+    }
+
     // 1. Cálculo da quantidade e total
-    const qtd = parseInt(inputQtd.value) || 0;
     const total = qtd * globalPrecoCartela;
 
     // 2. Atualiza o display visual
@@ -6264,8 +6304,8 @@ function calcularTotalCompra() {
     const temSaldo = total <= globalUserSaldo;
     const temQuantidade = qtd > 0;
 
-    if (!temSaldo) {
-        // Saldo Insuficiente
+    // Só mostra erro de saldo se ele tentou comprar alguma coisa e for validado
+    if (!temSaldo && temQuantidade) { 
         displayTotal.classList.add('text-red-500', 'animate-pulse');
         if (btnFinalizar) {
             btnFinalizar.disabled = true;
@@ -6273,25 +6313,19 @@ function calcularTotalCompra() {
             btnFinalizar.innerText = "Saldo Insuficiente";
         }
     } else {
-        // Saldo OK
         displayTotal.classList.remove('text-red-500', 'animate-pulse');
         if (btnFinalizar) {
-            // Só habilita se tiver pelo menos 1 cartela selecionada
             btnFinalizar.disabled = !temQuantidade;
             if (temQuantidade) {
                 btnFinalizar.classList.remove('opacity-50', 'cursor-not-allowed', 'grayscale');
                 btnFinalizar.innerText = "Finalizar Compra";
             } else {
-                // Se a quantidade for 0, garantimos que o botão não esteja "colorido" nem "grayscaled" de erro
                 btnFinalizar.classList.add('opacity-50', 'cursor-not-allowed');
-                btnFinalizar.classList.remove('grayscale'); // Adicione esta linha
+                btnFinalizar.classList.remove('grayscale'); 
                 btnFinalizar.innerText = "Selecione a Qtd";
             }
         }
     }
-
-    // Log para debug (ajuda muito no iPhone)
-    // console.log(`🧮 Cálculo: ${qtd} x ${globalPrecoCartela} = ${total} (Saldo: ${globalUserSaldo})`);
 }
 
 // CONFIRMAR COMPRA (COM RECARREGAMENTO FORÇADO E SPINNER NO BOTÃO)   
@@ -6352,9 +6386,9 @@ async function confirmarCompra() {
         }
     }
 
-    // Se o evento tiver um máximo definido e a SOMA ultrapassar esse limite:
+    // Se o evento tiver um máximo definido e a SOMA ultrapassar esse limite: xxxx
     if (maxCartelas > 0 && (qtd + qtdJaComprada) > maxCartelas) {
-        //console.warn(`🚫 Compra abortada: Limite máximo excedido. (Possui: ${qtdJaComprada}, Tentou: ${qtd}, Max: ${maxCartelas} no Evento: ${idEventoFinal})`);
+        console.warn(`🚫 Compra abortada: Limite máximo excedido. (Possui: ${qtdJaComprada}, Tentou: ${qtd}, Max: ${maxCartelas} no Evento: ${idEventoFinal})`);
         
         if (typeof limparQuantidade === 'function') limparQuantidade();
         
@@ -6477,7 +6511,7 @@ async function confirmarCompra() {
                     "✅"
                 );
 
-                console.log("🔓 Usuário clicou em OK. Liberando sistema...");
+                //console.log("🔓 Usuário clicou em OK. Liberando sistema...");
                 isProcessandoCompra = false;
             }
 
@@ -7245,7 +7279,7 @@ async function atualizarPrecoDoEvento(idForcado = 0) {
                 maxCartelas = maxEspec;
             }
             
-            console.log(`🔎 Limites Atualizados p/ Evento ${idAlvo} - Mín: ${minCartelas} | Máx: ${maxCartelas}`);
+            //console.log(`🔎 Limites Atualizados p/ Evento ${idAlvo} - Mín: ${minCartelas} | Máx: ${maxCartelas}`);
             // ====================================================================
             
             // Atualiza o Título do Modal
@@ -9271,7 +9305,7 @@ function celebrarPremioIntermediario(identificadorDoPremio) {
     }
     
     // Dispara a voz
-    falarTexto(textoVoz);
+    falarTexto(textoVoz, true);
     // ==========================================================
 
     // 3. DISPARO DO ÁUDIO SINTETIZADO (Nativo e super leve)
