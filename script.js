@@ -3488,8 +3488,7 @@ function ocultarConferencia() {
         janelaVideoLive.close(); // Manda o comando de fechar para o navegador
         janelaVideoLive = null;  // Limpa a variável para a próxima rodada
         // console.log("🔌 Aba de vídeo fechada remotamente pelo locutor.");
-    }
-    
+    }    
     // Garante que a lógica interna também limpe
     displayCardGrid(null, []);
 }
@@ -3512,35 +3511,6 @@ function displayWinnersPanel(ganhadoresData) {
     // 4. Se passou, atualiza o hash global para a próxima vez
     lastGanhadoresHash = currentHash;
 
-    // ==========================================================
-    // 🗣️ 5. LÓGICA DE VOZ PARA GANHADORES GLOBAIS (LOCUTOR)
-    // ==========================================================
-    let euGanheiAlgum = false;
-    let nomesDosPremios = [];
-
-    // Vasculha a lista para ver quem ganhou
-    ganhadoresData.forEach(grupo => {
-        if (grupo.premio) nomesDosPremios.push(grupo.premio);
-        
-        if (grupo.ganhadores && Array.isArray(grupo.ganhadores)) {
-            grupo.ganhadores.forEach(ganhador => {
-                const numCartela = parseInt(ganhador.cartela);
-                // Se a cartela vencedora for uma das minhas cartelas...
-                if (globalMinhasCartelas && globalMinhasCartelas.cartelas && globalMinhasCartelas.cartelas.includes(numCartela)) {
-                    euGanheiAlgum = true;
-                }
-            });
-        }
-    });
-
-    // Se eu NÃO GANHEI nas minhas cartelas, o sistema avisa que houve ganhador(es) na sala.
-    // (Se eu ganhei, o 'celebrarPremioIntermediario' dos fogos já terá falado a frase com os Parabéns!)
-    if (!euGanheiAlgum && nomesDosPremios.length > 0) {
-        // Tira os nomes duplicados (Ex: "Linha Superior e Linha Inferior" -> "Linha Superior, Linha Inferior")
-        const premiosStr = [...new Set(nomesDosPremios)].join(' e ');
-        falarTexto(`Houve ganhador para ${premiosStr}.`, true);
-    }
-    // ==========================================================
 
     // --- DAQUI PARA BAIXO, SEGUE A RENDERIZAÇÃO HTML (MANTENHA IGUAL AO SEU) ---
     winnersListContent.innerHTML = '';
@@ -3684,6 +3654,7 @@ function renderMelhores(melhoresData) {
         }
         // Se o jogo realmente não começou ou foi resetado:
         estatisticasBody.innerHTML = '<p class="text-center text-gray-500 mt-6 text-xs">Nenhuma cartela no topo.</p>';
+        window.ultimoAnuncioRanking = ""; // Reseta a memória da voz
         return;
     }
 
@@ -3692,6 +3663,7 @@ function renderMelhores(melhoresData) {
         if (jogoEmAndamento) return; // Mesmo princípio de blindagem
         
         estatisticasBody.innerHTML = '<p class="text-center text-gray-500 mt-6 text-xs">Nenhuma cartela no topo.</p>';
+        window.ultimoAnuncioRanking = ""; // Reseta a memória da voz
         return;
     }
 
@@ -3700,8 +3672,11 @@ function renderMelhores(melhoresData) {
     // =========================================================
     estatisticasBody.innerHTML = ''; 
 
+    // Variáveis para a lógica de Voz
+    let premiosDestaAtualizacao = [];
+    let euGanheiNoRanking = false;
+
     melhoresData.forEach(item => {
-        // ✅ TRECHO CORRIGIDO (Nomes de classe completos para o Tailwind)
         let gridClasses = "grid-cols-[30px_15px_1fr_100px]";
         let isPosicaoOculta = false;
         
@@ -3712,10 +3687,8 @@ function renderMelhores(melhoresData) {
         
         const row = document.createElement('div');
         row.className = `grid ${gridClasses} text-[8px] leading-none text-white rounded hover:bg-gray-800 items-center gap-1`; 
-        // Nota: adicionei 'items-center' e 'gap-1' para o alinhamento ficar perfeito
 
-      
-        // 1. Cartela  dfsadsafasfs
+        // 1. Cartela
         const cartela = document.createElement('span');
         cartela.className = 'text-[9px] text-center font-bold text-yellow-600';
         cartela.textContent = item.cartela;
@@ -3725,31 +3698,40 @@ function renderMelhores(melhoresData) {
         posicao.className = 'text-center';
         posicao.textContent = item.posicao;
         if (isPosicaoOculta) { 
-            posicao.classList.add('invisible'); // Mantém a gaveta de 4px existindo
+            posicao.classList.add('invisible'); 
         }
         
-        // 3. Números Faltantes
+        // 3. Números Faltantes e Checagem de Ganhador
         let winnerPremio = ''; 
         let haGanhador = false;
         if (item.premio && item.premio !== null  && item.premio !== "null") {
            winnerPremio = item.premio;
            haGanhador = true; 
         }
+ 
+        if (haGanhador) {
+            // Guarda o nome do prêmio para falarmos depois
+            premiosDestaAtualizacao.push(winnerPremio);
+            
+            // Verifica se esta cartela vencedora é minha
+            const numCartelaRanking = parseInt(item.cartela);
+            if (globalMinhasCartelas && globalMinhasCartelas.cartelas && globalMinhasCartelas.cartelas.includes(numCartelaRanking)) {
+                euGanheiNoRanking = true;
+            }
+        } 
 
-       const numerosFaltantes = document.createElement('span');   
-       const rawNums = item.numeros_faltantes || item.numeros || ""; 
-       
-       let listaLimpa = [];
-       if (Array.isArray(rawNums)) {
-           listaLimpa = rawNums;
-       } else if (typeof rawNums === 'string') {
-           listaLimpa = rawNums.split(',').map(n => n.trim()).filter(n => n !== "");
-       }
+        const numerosFaltantes = document.createElement('span');   
+        const rawNums = item.numeros_faltantes || item.numeros || ""; 
+        
+        let listaLimpa = [];
+        if (Array.isArray(rawNums)) {
+            listaLimpa = rawNums;
+        } else if (typeof rawNums === 'string') {
+            listaLimpa = rawNums.split(',').map(n => n.trim()).filter(n => n !== "");
+        }
 
         // CORTE RIGOROSO: Pega apenas os primeiros 24 números
         const primeiros24 = listaLimpa.slice(0, 24);
-
-        // Formata e exibe
         const numerosFormatados = primeiros24.map(n => n.toString().padStart(2, '0')).join(' . ');
         
         numerosFaltantes.textContent = `${numerosFormatados} ${winnerPremio || ''}`;
@@ -3760,7 +3742,7 @@ function renderMelhores(melhoresData) {
         if  (haGanhador) {
            nome.className = 'truncate text-[9px] text-yellow-300 font-bold';     
         } else {   
-           nome.className = 'truncate  text-[10px]  text-yellow-500 font-semibold';
+           nome.className = 'truncate text-[10px] text-yellow-500 font-semibold';
         }
         const nomeLimpo = item.nome || "";
         const nomeFormatado = nomeLimpo.toLowerCase().split(' ').map(palavra => {
@@ -3776,7 +3758,29 @@ function renderMelhores(melhoresData) {
         
         estatisticasBody.appendChild(row);
     });
+
+    // ==========================================================
+    // 🗣️ LÓGICA DE VOZ PARA GANHADORES GLOBAIS (FORA DO LOOP)
+    // ==========================================================
+    if (premiosDestaAtualizacao.length > 0) {
+        // Tira prêmios duplicados (ex: 2 pessoas ganharam "LINHA")
+        const premiosUnicos = [...new Set(premiosDestaAtualizacao)].join(' e ');
+        
+        // Se a frase atual for diferente da última que o sistema falou, ele avisa!
+        if (window.ultimoAnuncioRanking !== premiosUnicos) {
+            window.ultimoAnuncioRanking = premiosUnicos; // Salva na memória
+
+            // Se o usuário atual não ganhou junto, anuncia para a sala
+            if (!euGanheiNoRanking) {
+                falarTexto(`Houve ganhador para ${premiosUnicos}.`, true);
+            }
+        }
+    } else {
+        // Se não houver ganhadores nesta lista, limpa a memória para o próximo prêmio
+        window.ultimoAnuncioRanking = "";
+    }
 }
+
 
 // Função para mapear o número da bola à cor (padrão de bingo)
 function getBallColorClass(numero) {
