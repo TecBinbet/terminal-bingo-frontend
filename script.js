@@ -140,6 +140,7 @@ let globalUserSaldo = 0.0;
 var sorteExtraAtivaNoBanco = false;
 
 var globalPrecoCartela = 0;
+var globalUnidadeVenda = 1;
 
 let ultima_bola_render = -1;
 
@@ -6210,48 +6211,42 @@ async function confirmarSaque() {
 }
 
 
-// Função para somar valores ao total atual
 window.somarQtd = function(valor) {
     const inputQtd = document.getElementById('qtd-manual');
     if (!inputQtd) return;
 
+    let unidadeVenda = parseInt(globalUnidadeVenda) || 1;
     let atual = parseInt(inputQtd.value) || 0;
-    let novoValor = atual + valor;
+    let novoValorKits = atual + valor;
     
-    // 👉 BARREIRA DE ENTRADA: Descobre o que já tem e impede a soma de passar do teto
+    // Converte o que o usuário quer comprar para CARTELAS REAIS
+    let novaQtdCartelas = novoValorKits * unidadeVenda;
+
+    // Busca o que já foi comprado (em cartelas)
     let qtdJaComprada = 0;
-    if (globalMinhasCartelas && globalMinhasCartelas.cartelas) {
+    if (globalMinhasCartelas && Array.isArray(globalMinhasCartelas.cartelas)) {
         qtdJaComprada = globalMinhasCartelas.cartelas.length;
     } else {
-        qtdJaComprada = cartelasEmJogo || 0;
+        qtdJaComprada = parseInt(cartelasEmJogo) || 0;
     }
 
-    // Se a soma for passar do máximo, trava o número no exato limite permitido!
-    if (maxCartelas > 0 && (novoValor + qtdJaComprada) > maxCartelas) {
-        novoValor = maxCartelas - qtdJaComprada;
-        if (novoValor < 0) novoValor = 0; // Proteção extra (se ele já tinha 1310 e o limite era 1200, corta para 0)
+    // TRAVA DE MÁXIMO (Cartelas vs Cartelas)
+    if (maxCartelas > 0 && (novaQtdCartelas + qtdJaComprada) > maxCartelas) {
+        let cartelasPermitidas = Math.max(0, maxCartelas - qtdJaComprada);
+        // Calcula quantos kits cabem no que sobra
+        novoValorKits = Math.floor(cartelasPermitidas / unidadeVenda);
         
-        // Efeito visual (pisca vermelho) para avisar que bateu no teto
         inputQtd.classList.add('border-red-500', 'text-red-500', 'bg-red-900/30', 'scale-105');
-        setTimeout(() => {
-            inputQtd.classList.remove('border-red-500', 'text-red-500', 'bg-red-900/30', 'scale-105');
-        }, 300);
+        setTimeout(() => inputQtd.classList.remove('border-red-500', 'text-red-500', 'bg-red-900/30', 'scale-105'), 300);
     } else {
-        // Efeito normal verdinho se a soma for permitida
         inputQtd.classList.add('border-green-500', 'scale-105');
-        setTimeout(() => {
-            inputQtd.classList.remove('scale-105');
-        }, 150);
+        setTimeout(() => inputQtd.classList.remove('scale-105'), 150);
     }
 
-    // Insere o número validado na caixa
-    inputQtd.value = novoValor > 0 ? novoValor : '';
-
-    // Dispara o cálculo do preço total automaticamente
-    if (typeof calcularTotalCompra === 'function') {
-        calcularTotalCompra();
-    }
+    inputQtd.value = novoValorKits > 0 ? novoValorKits : '';
+    if (typeof calcularTotalCompra === 'function') calcularTotalCompra();
 };
+
 
 // Função para zerar tudo
 window.limparQuantidade = function() {
@@ -6277,143 +6272,99 @@ function calcularTotalCompra() {
     
     if (!inputQtd || !displayTotal) return;
 
-    let qtd = parseInt(inputQtd.value) || 0;
-
-    // 👉 BARREIRA DE TECLADO: Impede que ele digite um número absurdo na caixa
-    let qtdJaComprada = 0;
-    if (globalMinhasCartelas && globalMinhasCartelas.cartelas) {
+    let unidadeVenda = parseInt(globalUnidadeVenda) || 1;
+    let kitsDesejados = parseInt(inputQtd.value) || 0;
+    let totalCartelasDesejadas = kitsDesejados * unidadeVenda;
+    
+    // Busca o que já foi comprado
+    let qtdJaComprada = (typeof cartelasEmJogo !== 'undefined') ? parseInt(cartelasEmJogo) : 0;
+    if (globalMinhasCartelas && Array.isArray(globalMinhasCartelas.cartelas)) {
         qtdJaComprada = globalMinhasCartelas.cartelas.length;
-    } else {
-        qtdJaComprada = cartelasEmJogo || 0;
     }
 
-    if (maxCartelas > 0 && (qtd + qtdJaComprada) > maxCartelas) {
-        qtd = maxCartelas - qtdJaComprada;
-        if (qtd < 0) qtd = 0;
+    // TRAVA DE MÁXIMO (Se o usuário digitar 500 num teclado e for 3000 cartelas)
+    if (maxCartelas > 0 && (totalCartelasDesejadas + qtdJaComprada) > maxCartelas) {
+        let cartelasPermitidas = Math.max(0, maxCartelas - qtdJaComprada);
+        kitsDesejados = Math.floor(cartelasPermitidas / unidadeVenda);
         
-        // Força a caixa a voltar para o máximo permitido
-        inputQtd.value = qtd > 0 ? qtd : ''; 
+        inputQtd.value = kitsDesejados > 0 ? kitsDesejados : ''; 
+        totalCartelasDesejadas = kitsDesejados * unidadeVenda;
         
         inputQtd.classList.add('border-red-500', 'text-red-500', 'bg-red-900/30');
         setTimeout(() => inputQtd.classList.remove('border-red-500', 'text-red-500', 'bg-red-900/30'), 300);
     }
 
-    // 1. Cálculo da quantidade e total
-    const total = qtd * globalPrecoCartela;
-
-    // 2. Atualiza o display visual
+    const total = kitsDesejados * globalPrecoCartela; // Se globalPrecoCartela for preço por KIT
     displayTotal.textContent = `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
 
-    // 3. Validação de Saldo e Botão
+    // Validação do botão
     const temSaldo = total <= globalUserSaldo;
-    const temQuantidade = qtd > 0;
+    const temQuantidade = kitsDesejados > 0;
 
-    // Só mostra erro de saldo se ele tentou comprar alguma coisa e for validado
-    if (!temSaldo && temQuantidade) { 
-        displayTotal.classList.add('text-red-500', 'animate-pulse');
-        if (btnFinalizar) {
-            btnFinalizar.disabled = true;
-            btnFinalizar.classList.add('opacity-50', 'cursor-not-allowed', 'grayscale');
-            btnFinalizar.innerText = "Saldo Insuficiente";
-        }
-    } else {
-        displayTotal.classList.remove('text-red-500', 'animate-pulse');
-        if (btnFinalizar) {
-            btnFinalizar.disabled = !temQuantidade;
-            if (temQuantidade) {
-                btnFinalizar.classList.remove('opacity-50', 'cursor-not-allowed', 'grayscale');
-                btnFinalizar.innerText = "Finalizar Compra";
-            } else {
-                btnFinalizar.classList.add('opacity-50', 'cursor-not-allowed');
-                btnFinalizar.classList.remove('grayscale'); 
-                btnFinalizar.innerText = "Selecione a Qtd";
-            }
-        }
+    if (btnFinalizar) {
+        btnFinalizar.disabled = !temQuantidade || !temSaldo;
+        btnFinalizar.classList.toggle('opacity-50', !temSaldo || !temQuantidade);
+        btnFinalizar.innerText = !temSaldo ? "Saldo Insuficiente" : (temQuantidade ? "Finalizar Compra" : "Selecione a Qtd");
     }
 }
 
 // CONFIRMAR COMPRA (COM RECARREGAMENTO FORÇADO E SPINNER NO BOTÃO)   
-//  const idEventoNaTela = (typeof currentEventID !== 'undefined') ? currentEventID : null;
 
 async function confirmarCompra() {
-    // 1. Captura a quantidade
     const elInput = document.getElementById('qtd-manual');
     const qtd = elInput ? parseInt(elInput.value) || 0 : 0;
 
-    // --- SUPER TRAVA: IMPEDE O ERRO 500 ---
-    if (qtd <= 0) {
-        console.warn("🚫 Compra abortada: Quantidade zerada.");
-        if (typeof showCustomAlert === 'function') {
-            showCustomAlert("Selecione a quantidade de cartelas antes de finalizar.", "Atenção", "⚠️");
-        } else {
-            alert("Selecione a quantidade.");
+    if (qtd <= 0) { /* ... seu código de erro de qtd zerada ... */ return; }
+
+    let idEventoFinal = obterIdEventoAlvo();
+
+    // 👉 DEBUG: Vamos verificar o que temos na mão
+    console.log("DEBUG: ID Evento:", idEventoFinal);
+    console.log("DEBUG: Limite Maximo (maxCartelas):", maxCartelas);
+    console.log("DEBUG: Qtd Tentada:", qtd);
+
+    // 1. FORÇAR RECARREGAMENTO DO LIMITE (Se maxCartelas estiver 0, tentamos buscar de novo)
+    if (!maxCartelas || maxCartelas === 0) {
+        console.warn("⚠️ Limite maxCartelas está zero! Forçando recarregamento...");
+        const dadosEvento = await atualizarPrecoDoEvento(idEventoFinal);
+        if (dadosEvento && dadosEvento.maximo_de_cartelas) {
+            maxCartelas = parseInt(dadosEvento.maximo_de_cartelas);
+            console.log("✅ Limite atualizado após recarga:", maxCartelas);
         }
-        return; 
     }
 
-    // 2. Descobre o ID do evento alvo da compra (MOVIDO PARA O TOPO)
-    let idEventoFinal = 0;
-    if (typeof obterIdEventoAlvo === 'function') {
-        idEventoFinal = obterIdEventoAlvo();
-    } else {
-        const elLastRound = document.getElementById('mobile-last-round');
-        idEventoFinal = parseInt(elLastRound?.textContent) || 0;
-    }
-
-    // ====================================================================
-    // 👉 NOVA TRAVA DE SEGURANÇA: LIMITE MÁXIMO NO MOMENTO DA COMPRA
-    // ====================================================================
-    // Descobre quantas cartelas o cliente JÁ TEM para ESTE EVENTO ESPECÍFICO
+    // 2. CONSULTA DE QTD JÁ COMPRADA
     let qtdJaComprada = 0;
-    
-    // Consulta o servidor em tempo real (Ultra-Preciso e dinâmico)
-    if (clienteLogadoId && idEventoFinal > 0) {
-        try {
-            const resCartelas = await fetch(`${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idEventoFinal}&id_cliente=${clienteLogadoId}`);
-            if (resCartelas.ok) {
-                const dataCartelas = await resCartelas.json();
-                if (dataCartelas && dataCartelas.cartelas) {
-                    qtdJaComprada = dataCartelas.cartelas.length;
-                }
-            }
-        } catch (e) {
-            console.warn("Falha de rede ao consultar cartelas. Usando fallback de cache local.");
-            // Fallback: Se a net falhar no milissegundo, e ele estiver comprando para o evento atual, usa a memória
-            if (eventoCarregadoAtual == idEventoFinal && globalMinhasCartelas && globalMinhasCartelas.cartelas) {
-                qtdJaComprada = globalMinhasCartelas.cartelas.length;
-            }
-        }
-    } else {
-        // Fallback local se for terminal físico (sem cliente logado)
-        if (eventoCarregadoAtual == idEventoFinal) {
-            qtdJaComprada = cartelasEmJogo || 0;
-        }
+    try {
+        const resCartelas = await fetch(`${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idEventoFinal}&id_cliente=${clienteLogadoId}`);
+        const data = await resCartelas.json();
+        qtdJaComprada = data.cartelas ? data.cartelas.length : 0;
+        console.log("DEBUG: Quantidade já comprada pelo cliente:", qtdJaComprada);
+    } catch (e) {
+        console.error("Erro na conferência:", e);
+        return;
     }
 
-    // Se o evento tiver um máximo definido e a SOMA ultrapassar esse limite: xxxx
-    if (maxCartelas > 0 && (qtd + qtdJaComprada) > maxCartelas) {
-        console.warn(`🚫 Compra abortada: Limite máximo excedido. (Possui: ${qtdJaComprada}, Tentou: ${qtd}, Max: ${maxCartelas} no Evento: ${idEventoFinal})`);
+    // 3. TRAVA DE SEGURANÇA (A lógica real)
+    const somaTotal = parseInt(qtd) + parseInt(qtdJaComprada);
+    
+    // Forçamos a comparação matemática rigorosa
+    const limite = parseInt(maxCartelas);
+
+    if (limite > 0 && somaTotal > limite) {
+        console.error(`🛑 BLOQUEIO CRÍTICO: Tentativa de ${qtd} + ${qtdJaComprada} = ${somaTotal} > Limite de ${limite}`);
         
+        // Bloqueio visual imediato
         if (typeof limparQuantidade === 'function') limparQuantidade();
         
-        const restantePermitido = maxCartelas - qtdJaComprada;
-        const msgRestante = restantePermitido > 0 
-            ? `<br>Só é possível adquirir mais <b>${restantePermitido}</b>.` 
-            : `<br>Você não pode mais adquirir cartelas para este evento.`;
-
-        if (typeof showCustomAlert === 'function') {
-            showCustomAlert(
-                `O limite máximo para este evento é de <b>${maxCartelas} cartelas</b>.<br><br>Você já possui <b>${qtdJaComprada}</b> cartelas.${msgRestante}`, 
-                "Limite Excedido", 
-                "🚫",
-                true
-            );
-        } else {
-            alert(`O limite máximo é de ${maxCartelas} cartelas. Você já possui ${qtdJaComprada}.`);
-        }
-        return; // 🛑 ABORTA A COMPRA AQUI
+        showCustomAlert(
+            `Você não pode comprar esta quantidade.<br><br>Limite máximo: <b>${limite}</b> cartelas.<br>Você já possui: <b>${qtdJaComprada}</b>.<br>Disponível para compra: <b>${Math.max(0, limite - qtdJaComprada)}</b>.`, 
+            "Limite Excedido", "🚫", true
+        );
+        
+        // --- CÓDIGO DE SEGURANÇA: GARANTE QUE NÃO AVANÇA ---
+        return; 
     }
-    // ====================================================================
 
     // --- INÍCIO DO EFEITO DE LOADING NO BOTÃO ---
     const btnConfirmar = document.getElementById('btn-confirmar-compra');
@@ -7283,7 +7234,7 @@ async function atualizarPrecoDoEvento(idForcado = 0) {
                 maxCartelas = maxEspec;
             }
             
-            //console.log(`🔎 Limites Atualizados p/ Evento ${idAlvo} - Mín: ${minCartelas} | Máx: ${maxCartelas}`);
+            console.log(`🔎 Limites Atualizados p/ Evento ${idAlvo} - Mín: ${minCartelas} | Máx: ${maxCartelas}`);
             // ====================================================================
             
             // Atualiza o Título do Modal

@@ -2206,7 +2206,6 @@ def rota_avisar_transicao_robo():
         print(f"Erro ao avisar transição: {e}")
         return jsonify({'error': str(e)}), 500
 
-
 # Rota Consultar Cartelas e Cupons (Unificada e Blindada para Docker)
 @app.route('/api/consultar_cartelas_evento')
 def api_consultar_cartelas():
@@ -4054,8 +4053,9 @@ def get_event_details():
         # ==============================================================================
         qtde_cupons_vendidos = 0
         try:
-            # Substitua 'vendas_cupons' pelo nome real da sua coleção de cupons se for diferente
-            qtde_cupons_vendidos = sales_db.vendas_cupons.count_documents({
+            # Substitua 'vendas_cupons' pelo nome real da sua coleção de cupons se for diferente      
+            arq_cupons = f"vendas_sorte_extra{id_evt}"   
+            qtde_cupons_vendidos = sales_db[arq_cupons].count_documents({
                 'id_evento': {'$in': [int(id_evt), str(id_evt)]}
             })
             print(f"🎟️ Sorte Extra: {qtde_cupons_vendidos} cupons encontrados para o evento {id_evt}")
@@ -5025,6 +5025,21 @@ def api_comprar_cartelas():
         unidade_venda = int(evento.get('unidade_de_venda', evento.get('unidade_venda', 1)))
         total_cartelas_compradas = qtd_desejada * unidade_venda
         
+        # --- BLOQUEIO DE FERRO (SERVIDOR) ---
+        # 1. Conta quantas cartelas o cliente JÁ TEM
+        col_vendas_nome = f"vendas{id_evento_oficial}"
+        vendas_anteriores = list(sales_db[col_vendas_nome].find({'id_cliente': id_cli}))
+        qtd_ja_comprada = sum(v.get('quantidade_cartelas', 0) for v in vendas_anteriores)
+        
+        # 2. Valida se a nova compra estoura o teto
+        if limite_maximo_cartelas > 0 and (total_cartelas_compradas + qtd_ja_comprada) > limite_maximo_cartelas:
+            print(f"🚫 BLOQUEIO SERVER: Evento {id_evento_oficial} | Cliente {id_cli} tentou {total_cartelas_compradas} + {qtd_ja_comprada} > {limite_maximo_cartelas}")
+            return jsonify({
+                'erro': f'Limite excedido! Você só pode comprar até {limite_maximo_cartelas} cartelas. Você já possui {qtd_ja_comprada}.'
+            }), 400
+        # --------------------------------------
+
+
         cliente = sales_db.clientes.find_one({'id_cliente': id_cli})
         if not cliente: return jsonify({'erro': 'Cliente não encontrado.'}), 400
 
