@@ -916,7 +916,75 @@ function iniciarCompraCartelas(idEvento) {
 
 
 // Funções de busca de cartelas compradas - p1
-async function carregarCartelasAutomaticas(idEvento) {
+// 👉 Adicionado o parâmetro 'forcarSincronia'
+async function carregarCartelasAutomaticas(idEvento, forcarSincronia = false) {
+    if (!idEvento) return;
+
+    if (typeof currentEventID !== 'undefined' && currentEventID && idEvento !== currentEventID) {
+        console.log(`🛡️ Bloqueado: Tentativa de carregar cartelas do evento ${idEvento} na mesa do evento ${currentEventID}.`);
+        return; 
+    }
+
+    // 👉 A TRAVA DE CACHE (Agora obedece à ordem de forçar sincronia)
+    if (!forcarSincronia && eventoCarregadoAtual === idEvento && typeof cartelaRanges !== 'undefined' && cartelaRanges.length > 0) {
+        console.log("Cartelas já carregadas na memória.");
+        return; 
+    }
+
+    // 🧹 LIMPEZA CRÍTICA: Esvazia a memória antiga antes de injetar as novas cartelas
+    cachedRawCards = [];
+    loadedCards = [];
+
+    if (!loader || loader.style.display === 'none') {
+        showFullLoading("Buscando suas cartelas...");
+    }
+
+    console.log(`🔄 Buscando cartelas do evento ${idEvento}...`);
+    let url = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idEvento}`;
+    
+    if (clienteLogadoId) {
+        url += `&id_cliente=${clienteLogadoId}`;
+    }
+
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+        const data = await response.json();
+
+        if (data.error) {
+            console.warn("⚠️ Aviso:", data.error);
+            const container = document.getElementById('my-cards-list');
+            if(container) container.innerHTML = `<p class="text-center text-gray-500 py-4">${data.error}</p>`;
+            return;
+        }
+
+        if (data.cartelas && data.cartelas.length > 0) {
+            eventoCarregadoAtual = idEvento;
+            
+            cartelasDoJogador = data.cartelas;
+            cartelaRanges = converterListaParaRanges(data.cartelas); 
+            cartelasEmJogo = data.cartelas.length; 
+            renderizarListaMinhasCartelas(data);
+            
+            ultima_bola_render = -1;
+            await fetchAndProcessCards(); 
+
+        } else {
+            const container = document.getElementById('my-cards-list');
+            if(container) container.innerHTML = '<p class="text-center text-gray-500 py-4">Você ainda não tem cartelas nesta rodada.</p>';
+            cartelasEmJogo = 0;
+            cartelaRanges = []; // Limpa os períodos também
+            loadedCards = [];
+            displayLoadedCards([]);
+        }
+
+    } catch (error) {
+        console.error("Erro ao buscar cartelas:", error);
+    } finally {
+        hideFullLoading();
+    }
+}
+
+async function carregarCartelasAutomaticas_old(idEvento) {
     if (!idEvento) return;
 
     // --- NOVA PROTEÇÃO (ADICIONE ISTO) ---
@@ -992,6 +1060,49 @@ async function carregarCartelasAutomaticas(idEvento) {
 
 // --- FUNÇÃO: Sincronia de Compras Externas (COM REGRA DE BLOQUEIO) ---
 async function verificarNovasCompras() {
+    if (typeof isProcessandoCompra !== 'undefined' && isProcessandoCompra) {
+        return; 
+    }
+
+    if (!clienteLogado || !clienteLogadoId || !idRodada) return;
+    if (isFetchingCards) return;
+
+    if (typeof lastRodadaState !== 'undefined' && lastRodadaState !== 'aberta' && lastRodadaState !== 'intervalo') {
+        return; 
+    }
+    
+    try {
+        const url = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idRodada}&id_cliente=${clienteLogadoId}`;
+        const response = await fetch(url, { credentials: 'include' });
+        
+        if (!response.ok) return;
+
+        const data = await response.json();
+        
+        if (data.cartelas) {
+            const qtdNoServidor = data.cartelas.length;
+            const qtdLocal = (typeof globalMinhasCartelas !== 'undefined' && globalMinhasCartelas && Array.isArray(globalMinhasCartelas.cartelas)) 
+                             ? globalMinhasCartelas.cartelas.length 
+                             : 0;
+
+            // 4. Comparação
+            if (qtdNoServidor !== qtdLocal) {
+                console.log(`♻️ Sincronia: Mudança de ${qtdLocal} para ${qtdNoServidor} cartelas.`);
+                
+                if (qtdNoServidor > qtdLocal) {
+                    if (typeof showCustomAlert === 'function') showCustomAlert(`Você recebeu novas cartelas!`, "Nova Compra", "🎟️");
+                }
+
+                // 5. ATUALIZAÇÃO FORÇADA (O 'true' destrói o cache fantasma e renderiza as cartelas novas)
+                await carregarCartelasAutomaticas(idRodada, true);
+            }
+        }
+    } catch (e) {
+        console.warn("Erro na verificação silenciosa:", e);
+    }
+}
+
+async function verificarNovasCompras_old() {
     // 🚦 Se estivermos processando uma compra manual, pula esta verificação
     if (isProcessandoCompra) {
         //console.log("⏳ verificarNovasCompras suspensa: Aguardando conclusão da compra manual...");
@@ -4868,7 +4979,7 @@ if (toggleCartelasButton && mobileCartelasContent) {
 
 // Variável para controlar se a voz está ativa (pode virar um botão de "mudo" depois)
 
-// Adicionamos o parâmetro forcarVoz (padrão é falso)
+// Adicionamos o parâmetro forcarVoz (padrão é falso) xxx
 function falarTexto(texto, forcarVoz = false) {
     // Se a voz não estiver ativa E não for um anúncio forçado (premiação), o sistema fica mudo.
     if (!vozAtiva && !forcarVoz) return;
@@ -4882,8 +4993,8 @@ function falarTexto(texto, forcarVoz = false) {
         utter.text = texto;
         utter.lang = 'pt-BR'; // Define português        
         utter.volume = 1;          
-        utter.rate = 1.1;     // Velocidade (1.1 fica mais dinâmico)
-        utter.pitch = 1;      // Tom de voz
+        utter.rate = 1.25;     // Velocidade (1.1 fica mais dinâmico)
+        utter.pitch = 1.3;      // Tom de voz
 
         // Tenta pegar uma voz específica (opcional, melhora a qualidade se disponível)
         const vozes = window.speechSynthesis.getVoices();
