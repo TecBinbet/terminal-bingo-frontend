@@ -965,6 +965,7 @@ async function carregarCartelasAutomaticas(idEvento) {
             cartelasDoJogador = data.cartelas;
             cartelaRanges = converterListaParaRanges(data.cartelas); 
             cartelasEmJogo = data.cartelas.length; 
+            console.warn("⚠️ EmJogo 01:", cartelasEmJogo);  
             renderizarListaMinhasCartelas(data.cartelas);
             
             // Baixa a matriz de números  tst1
@@ -975,6 +976,7 @@ async function carregarCartelasAutomaticas(idEvento) {
             const container = document.getElementById('my-cards-list');
             if(container) container.innerHTML = '<p class="text-center text-gray-500 py-4">Você ainda não tem cartelas nesta rodada.</p>';
             cartelasEmJogo = 0;
+            console.warn("⚠️ EmJogo 02:", cartelasEmJogo);
             loadedCards = [];
             displayLoadedCards([]);
         }
@@ -1027,8 +1029,11 @@ async function verificarNovasCompras() {
         
         if (data.cartelas) {
             const qtdNoServidor = data.cartelas.length;
-            // Garante que a variável local existe, senão assume 0
-            const qtdLocal = (typeof globalMinhasCartelas !== 'undefined') ? globalMinhasCartelas.length : 0;
+            
+            // 👉 CORREÇÃO: Acessar a array 'cartelas' dentro do objeto global
+            const qtdLocal = (globalMinhasCartelas && Array.isArray(globalMinhasCartelas.cartelas)) 
+                             ? globalMinhasCartelas.cartelas.length 
+                             : 0;
 
             // 4. Comparação
             if (qtdNoServidor !== qtdLocal) {
@@ -1920,9 +1925,11 @@ function displayCartelaRanges() {
 
     totalSpan.textContent = total;
     cartelasEmJogo = total
+    console.warn("⚠️ EmJogo 03:", cartelasEmJogo);
     checkTotalCards();
     if (total > 0 ) { 
        cartelasEmJogo = total;
+       console.warn("⚠️ EmJogo 04:", cartelasEmJogo);
        seePromocoes = false; 
        hidePromocionalPanel();
     }
@@ -1941,6 +1948,7 @@ function displayCartelaRanges() {
            }
             if (novoTotal === 0) {
                 cartelasEmJogo = 0;
+                console.warn("⚠️ EmJogo 05:", cartelasEmJogo);
                 seePromocoes = true; 
                 startPromocionalTimer();                               
             }
@@ -1964,6 +1972,7 @@ function checkTotalCards(total) {
 
     // 👉 CORREÇÃO: Atualiza a variável global PRIMEIRO, assim reflete sempre a realidade
     cartelasEmJogo = total; 
+    console.warn("⚠️ EmJogo 06:", cartelasEmJogo);
 
     if (isNaN(total) || total <= 0) return;
 
@@ -2611,7 +2620,7 @@ function displayLoadedCards(bolasCantadas) {
             <div class="flex flex-col items-center justify-center py-8 opacity-90 animate-fade-in">
                 <span class="text-5xl mb-3 animate-pulse">🎱</span>
                 <p class="text-gray-200 font-bold text-lg">Aguardando o Sorteio...</p>
-                <p class="text-yellow-500 text-sm mt-1">Suas <b>${formattedCount}</b> cartelas estão na mesa e armadas!</p>
+                <p class="text-yellow-500 text-sm mt-1">Suas <b>${formattedCount}</b> cartelas estão em Jogo, BOA SORTE!</p>
             </div>
         `;
         // Chama os "Oscartões" para desenhar apenas o TOP 10 (que é leve) vazio e sai.
