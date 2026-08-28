@@ -5960,8 +5960,8 @@ function toggleVisualizarSenha(inputId, btnElement) {
     }
 }
 
-// --- FUNÇÃO DE TRANSIÇÃO: Adaptar Modal para Edição ---
-async function abrirEdicaoCadastro() {
+// --- FUNÇÃO DE TRANSIÇÃO: Adaptar Modal para Edição com os IDs Corretos ---
+function abrirEdicaoCadastro() {
     // Fecha outros modais para evitar sobreposição
     if (typeof fecharModal === 'function') {
         fecharModal('modal-carteira');
@@ -5970,8 +5970,8 @@ async function abrirEdicaoCadastro() {
     
     const modal = document.getElementById('modal-cadastro');
     const boxInd = document.getElementById('box-indicacao');
-    const tituloModal = document.getElementById('titulo-modal-cadastro'); // Ex: <h2 id="titulo-modal-cadastro">Cadastro</h2>
-    const btnAcao = document.getElementById('btn-cadastrar-salvar'); // O botão principal do form
+    const tituloModal = document.getElementById('titulo-modal-cadastro'); 
+    const btnAcao = document.getElementById('btn-cadastrar-salvar'); 
 
     // Oculta a caixa de indicação, pois o cliente já existe
     if (boxInd) boxInd.classList.add('hidden');
@@ -5983,15 +5983,20 @@ async function abrirEdicaoCadastro() {
         btnAcao.setAttribute('onclick', 'salvarEdicaoCadastro()'); 
     }
 
-    // Preenche os campos do formulário com os dados do cliente (Ajuste os IDs conforme seu HTML)
+    // Preenche os campos do formulário mapeando rigorosamente com o JSON da sua rota /api/dados_cliente
     if (typeof clienteLogado !== 'undefined' && clienteLogado) {
-        const cadNome = document.getElementById('cad-nome');
-        const cadPix = document.getElementById('cad-pix');
-        const cadTel = document.getElementById('cad-telefone');
+        const inputNome = document.getElementById('cad-nome');
+        const inputUsuario = document.getElementById('cad-usuario');
+        const inputCelular = document.getElementById('cad-celular');
+        const inputCidade = document.getElementById('cad-cidade');
+        const inputPix = document.getElementById('cad-pix') || document.getElementById('chave-pix');
 
-        if (cadNome) cadNome.value = clienteLogado.nome || clienteLogado.nick || '';
-        if (cadPix) cadPix.value = clienteLogado.chave_pix || clienteLogado.pix || '';
-        if (cadTel) cadTel.value = clienteLogado.telefone || '';
+        // Mapeamento exato baseado na sua nova rota Flask
+        if (inputNome) inputNome.value = clienteLogado.nome_cliente || clienteLogado.nome || '';
+        if (inputUsuario) inputUsuario.value = clienteLogado.nick || '';
+        if (inputCelular) inputCelular.value = clienteLogado.telefone || '';
+        if (inputCidade) inputCidade.value = clienteLogado.cidade || '';
+        if (inputPix) inputPix.value = clienteLogado.chave_pix || '';
     }
 
     // Exibe o modal

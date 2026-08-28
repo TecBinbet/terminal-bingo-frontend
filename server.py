@@ -4825,8 +4825,9 @@ def api_dados_cliente():
             'saldo': saldo,
             'extrato': extrato,
             'nick': cli.get('nick'),
-            'nome': cli.get('nome'),               # <--- Adicionado
-            'telefone': cli.get('telefone'),       # <--- Adicionado
+            'cidade': cli.get('cidade',''),
+            'nome_cliente': cli.get('nome_cliente'),               
+            'telefone': cli.get('telefone',''),      
             'chave_pix': cli.get('chave_pix', '')  # <--- CRUCIAL PARA A TRAVA DE SAQUE
         })
 
