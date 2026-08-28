@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.4";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.5";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -8173,7 +8173,7 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
         const statusFinalDoEvento = dados.status_evento || dados.status || statusDetectado;
 
         // REGRA BLINDADA: Venda antecipada se o banco estiver à frente da tela ou se o Bingo já acabou
-        const isEventoFuturo = (statusFinalDoEvento === 'finalizado')  || (idConfiguradoNoBanco !== idEventoNaTela) ;
+        const isEventoFuturo = (statusFinalDoEvento !== 'intervalo')  || (idConfiguradoNoBanco !== idEventoNaTela) ;
         // Salva Configuração Global
 
         configSorteExtra = {
