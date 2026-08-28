@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.6";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.7";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -5789,7 +5789,6 @@ function toggleVisualizarSenha(inputId, btnElement) {
 
 // --- FUNÇÃO DE TRANSIÇÃO: Adaptar Modal para Edição com os IDs Corretos ---
 function abrirEdicaoCadastro() {
-    // Fecha outros modais para evitar sobreposição
     if (typeof fecharModal === 'function') {
         fecharModal('modal-carteira');
         fecharModal('modal-perfil');
@@ -5798,27 +5797,20 @@ function abrirEdicaoCadastro() {
     const modal = document.getElementById('modal-cadastro');
     const boxInd = document.getElementById('box-indicacao');
     const tituloModal = document.getElementById('titulo-modal-cadastro'); 
-    const btnAcao = document.getElementById('btn-cadastrar-salvar'); 
+    const btnAcao = document.getElementById('btn-concluir-cadastro'); // ID do seu botão
 
-    // Oculta a caixa de indicação, pois o cliente já existe
     if (boxInd) boxInd.classList.add('hidden');
     
-    // Altera os textos e a função do botão para refletir a edição
     if (tituloModal) tituloModal.textContent = "Atualizar Meus Dados";
-    if (btnAcao) {
-        btnAcao.textContent = "Salvar Alterações";
-        btnAcao.setAttribute('onclick', 'salvarEdicaoCadastro()'); 
-    }
 
-    // Preenche os campos do formulário mapeando rigorosamente com o JSON da sua rota /api/dados_cliente
+    // Preenche os dados atuais do cliente
     if (typeof clienteLogado !== 'undefined' && clienteLogado) {
         const inputNome = document.getElementById('cad-nome');
         const inputUsuario = document.getElementById('cad-usuario');
         const inputCelular = document.getElementById('cad-celular');
         const inputCidade = document.getElementById('cad-cidade');
-        const inputPix = document.getElementById('cad-pix') || document.getElementById('chave-pix');
+        const inputPix = document.getElementById('cad-pix');
 
-        // Mapeamento exato baseado na sua nova rota Flask
         if (inputNome) inputNome.value = clienteLogado.nome_cliente || clienteLogado.nome || '';
         if (inputUsuario) inputUsuario.value = clienteLogado.nick || '';
         if (inputCelular) inputCelular.value = clienteLogado.telefone || '';
@@ -5826,7 +5818,26 @@ function abrirEdicaoCadastro() {
         if (inputPix) inputPix.value = clienteLogado.chave_pix || '';
     }
 
-    // Exibe o modal
+    // 👉 LIBERAÇÃO DOS TERMOS E DO BOTÃO PARA EDIÇÃO
+    const checkTermos = document.getElementById('termos-maioridade');
+    if (checkTermos) {
+        checkTermos.checked = true; // Marca a caixinha automaticamente
+        
+        // Se a função que valida o botão existir no seu script, chamamos ela 
+        // para habilitar o botão de forma nativa baseada na sua regra original:
+        if (typeof validarBotaoCadastro === 'function') {
+            validarBotaoCadastro();
+        } else {
+            // Fallback direto caso não chame a função
+            const btnAcao = document.getElementById('btn-concluir-cadastro');
+            if (btnAcao) {
+                btnAcao.removeAttribute('disabled');
+                btnAcao.classList.remove('cursor-not-allowed', 'bg-gray-800', 'text-gray-500');
+                btnAcao.classList.add('bg-green-600', 'text-white', 'hover:bg-green-700');
+            }
+        }
+    }
+
     if (modal) {
         modal.classList.remove('hidden');
         modal.classList.add('flex');
@@ -5997,104 +6008,152 @@ function validarBotaoCadastro() {
     }
 }
 
-// --- FUNÇÃO: Salvar Novo Usuário (Atualizada) ---
+// --- FUNÇÃO: Salvar Cadastro ou Edição (Unificada) ---
 async function salvarNovoUsuario() {
-    // 1. Coleta os dados
-    const nome = document.getElementById('cad-nome').value.trim();
-    // Sobrenome removido
-    const celular = document.getElementById('cad-celular').value.trim();
-    const cidade = document.getElementById('cad-cidade').value.trim();
-    const pix = document.getElementById('cad-pix').value.trim();
-    const pixConfirma = document.getElementById('cad-pix-confirma').value.trim();
-    const usuario = document.getElementById('cad-usuario').value.trim().toLowerCase();
-    const senha = document.getElementById('cad-senha').value;
-    const confirma = document.getElementById('cad-confirma').value;
+    // Identifica se estamos editando (se o título ou o botão mudaram para edição)
+    const tituloModal = document.getElementById('titulo-modal-cadastro');
+    const isEdicao = tituloModal && tituloModal.textContent.includes("Atualizar");
 
-    // 2. Validações
-    if (!nome || !celular || !usuario || !senha || !pix  || !cidade) {
-        showCustomAlert("Por favor, preencha todos os campos, incluindo a Chave Pix.", "Dados Incompletos", "⚠️");
+    // 1. Coleta os dados comuns
+    const nome = document.getElementById('cad-nome') ? document.getElementById('cad-nome').value.trim() : '';
+    const celular = document.getElementById('cad-celular') ? document.getElementById('cad-celular').value.trim() : '';
+    const cidade = document.getElementById('cad-cidade') ? document.getElementById('cad-cidade').value.trim() : '';
+    const pix = document.getElementById('cad-pix') ? document.getElementById('cad-pix').value.trim() : '';
+    const usuario = document.getElementById('cad-usuario') ? document.getElementById('cad-usuario').value.trim().toLowerCase() : '';
+    
+    // Se for edição, senha e confirmação de pix podem ser opcionais (se o usuário não quiser trocar a senha)
+    const pixConfirma = document.getElementById('cad-pix-confirma') ? document.getElementById('cad-pix-confirma').value.trim() : pix;
+    const senha = document.getElementById('cad-senha') ? document.getElementById('cad-senha').value : '';
+    const confirma = document.getElementById('cad-confirma') ? document.getElementById('cad-confirma').value : '';
+
+    // 2. Validações básicas
+    if (!nome || !celular || !usuario || !pix || !cidade) {
+        showCustomAlert("Por favor, preencha todos os campos obrigatórios, incluindo a Chave Pix.", "Dados Incompletos", "⚠️");
         return;
     }
 
-    // Validação do Nick (Feita no onblur, mas reforçada aqui)
-    if (nickDisponivel === false && usuario.length > 0) {
-        // Tenta verificar uma última vez caso o usuário tenha digitado rápido e clicado no botão
-        await verificarUsuarioExistente(usuario);
-        if (nickDisponivel === false) {
-           // Em vez de uma frase fixa, pegamos o texto que o Python mandou e que já está na tela
-            const elErro = document.getElementById('msg-nick-erro');
-            
-            // Pega o texto do erro (ex: "❌ Escolha um apelido respeitoso.")
-            // O .replace remove o "❌ " inicial para não ficar estranho no alerta
-            let textoErroReal = elErro ? elErro.textContent.replace('❌ ', '') : "O usuário escolhido não é válido.";
-            
-            // Mostra o alerta com o motivo real (Ofensa, Reservado ou Duplicado)
-            showCustomAlert(textoErroReal, "Atenção", "⛔");
-            
-            document.getElementById('cad-usuario').focus();
-            return;  
-      }
+    // Validação específica para NOVO CADASTRO (Senha obrigatória)
+    if (!isEdicao) {
+        if (!senha) {
+            showCustomAlert("Por favor, crie uma senha para sua conta.", "Senha Obrigatória", "⚠️");
+            return;
+        }
+        if (senha.length < 4) {
+            showCustomAlert("A senha deve ter pelo menos 4 caracteres.", "Senha Fraca", "⚠️");
+            return;
+        }
+        if (senha.toLowerCase() === "senha") {
+            showCustomAlert("⚠️ Você não pode usar a senha padrão 'Senha'. Por favor, crie uma senha pessoal e segura.", "Senha Inválida", "🚫");
+            return;
+        }
+        if (senha !== confirma) {
+            showCustomAlert("As senhas não coincidem.", "Erro de Senha", "❌");
+            return;
+        }
+    } else {
+        // Se for edição e o usuário digitou senha nova, valida se coincidem
+        if (senha && senha !== confirma) {
+            showCustomAlert("As senhas não coincidem.", "Erro de Senha", "❌");
+            return;
+        }
     }
 
-    // Validação Pix
-    if (pix !== pixConfirma) {
+    // Validação Pix Confirma (se o campo existir na tela)
+    const inputPixConfirmaEl = document.getElementById('cad-pix-confirma');
+    if (inputPixConfirmaEl && pix !== pixConfirma) {
         showCustomAlert("A confirmação da Chave Pix não confere.", "Erro no Pix", "❌");
         return;
     }
 
-    // Validação Senha
-    if (senha !== confirma) {
-        showCustomAlert("As senhas não coincidem.", "Erro de Senha", "❌");
-        return;
-    }
+    // 3. Direciona para a rota correta (Edição vs Cadastro)
+    if (isEdicao) {
+        // --- FLUXO DE EDIÇÃO DE DADOS (Veio do Saque) ---
+        showFullLoading("Salvando alterações...");
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/atualizar_cadastro`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    nome_cliente: nome,
+                    nick: usuario,
+                    telefone: celular,
+                    cidade: cidade,
+                    chave_pix: pix,
+                    ...(senha ? { senha: senha } : {}) // Só envia senha se ele preencheu para trocar
+                })
+            });
 
-    if (senha.length < 4) {
-        showCustomAlert("A senha deve ter pelo menos 4 caracteres.", "Senha Fraca", "⚠️");
-        return;
-    }
+            const data = await response.json();
 
-    if (senha.toLowerCase() === "senha") {
-        showCustomAlert("⚠️ Você não pode usar a senha padrão 'Senha'. Por favor, crie uma senha pessoal e segura.", "Senha Inválida", "🚫");
-        return;
-    }
-
-    // 3. Envio
-    showFullLoading("Criando sua conta...");
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/cadastrar_cliente`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                nome: nome,
-                celular: celular,
-                pix: pix,        // Enviando Pix
-                cidade: cidade,
-                usuario: usuario,
-                senha: senha
-            })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.status === 'ok') {
-            fecharModal('modal-cadastro');
-            showCustomAlert("Cadastro realizado! Use seu usuário e senha para entrar.", "Bem-vindo!", "🎉");
-            
-            const campoUser = document.getElementById('login-user');
-            if(campoUser) campoUser.value = usuario;
-            
-            setTimeout(() => abrirModalLogin(), 1500);
-            
-        } else {
-            showCustomAlert(data.erro || "Erro ao criar cadastro.", "Erro", "❌");
+            if (response.ok && data.status === 'sucesso') {
+                showCustomAlert("Seus dados foram atualizados com sucesso!", "Atualizado", "✅");
+                
+                if (typeof clienteLogado !== 'undefined' && clienteLogado) {
+                    clienteLogado.chave_pix = pix;
+                    clienteLogado.nome_cliente = nome;
+                    clienteLogado.telefone = celular;
+                    clienteLogado.cidade = cidade;
+                }
+                
+                fecharModal('modal-cadastro');
+            } else {
+                showCustomAlert(data.erro || "Falha ao atualizar dados.", "Erro", "❌");
+            }
+        } catch (error) {
+            console.error(error);
+            showCustomAlert("Erro de conexão com o servidor.", "Falha", "❌");
+        } finally {
+            hideFullLoading();
         }
 
-    } catch (error) {
-        console.error(error);
-        showCustomAlert("Erro de conexão com o servidor.", "Falha", "❌");
-    } finally {
-        hideFullLoading();
+    } else {
+        // --- FLUXO DE NOVO CADASTRO (Original) ---
+        if (nickDisponivel === false && usuario.length > 0) {
+            await verificarUsuarioExistente(usuario);
+            if (nickDisponivel === false) {
+                const elErro = document.getElementById('msg-nick-erro');
+                let textoErroReal = elErro ? elErro.textContent.replace('❌ ', '') : "O usuário escolhido não é válido.";
+                showCustomAlert(textoErroReal, "Atenção", "⛔");
+                document.getElementById('cad-usuario').focus();
+                return;  
+            }
+        }
+
+        showFullLoading("Criando sua conta...");
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/cadastrar_cliente`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    nome: nome,
+                    celular: celular,
+                    pix: pix,
+                    cidade: cidade,
+                    usuario: usuario,
+                    senha: senha
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.status === 'ok') {
+                fecharModal('modal-cadastro');
+                showCustomAlert("Cadastro realizado! Use seu usuário e senha para entrar.", "Bem-vindo!", "🎉");
+                
+                const campoUser = document.getElementById('login-user');
+                if(campoUser) campoUser.value = usuario;
+                
+                setTimeout(() => abrirModalLogin(), 1500);
+            } else {
+                showCustomAlert(data.erro || "Erro ao criar cadastro.", "Erro", "❌");
+            }
+        } catch (error) {
+            console.error(error);
+            showCustomAlert("Erro de conexão com o servidor.", "Falha", "❌");
+        } finally {
+            hideFullLoading();
+        }
     }
 }
 
