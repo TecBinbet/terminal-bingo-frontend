@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.2";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.0";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -5960,6 +5960,95 @@ function toggleVisualizarSenha(inputId, btnElement) {
     }
 }
 
+// --- FUNÇÃO DE TRANSIÇÃO: Adaptar Modal para Edição ---
+async function abrirEdicaoCadastro() {
+    // Fecha outros modais para evitar sobreposição
+    if (typeof fecharModal === 'function') {
+        fecharModal('modal-carteira');
+        fecharModal('modal-perfil');
+    }
+    
+    const modal = document.getElementById('modal-cadastro');
+    const boxInd = document.getElementById('box-indicacao');
+    const tituloModal = document.getElementById('titulo-modal-cadastro'); // Ex: <h2 id="titulo-modal-cadastro">Cadastro</h2>
+    const btnAcao = document.getElementById('btn-cadastrar-salvar'); // O botão principal do form
+
+    // Oculta a caixa de indicação, pois o cliente já existe
+    if (boxInd) boxInd.classList.add('hidden');
+    
+    // Altera os textos e a função do botão para refletir a edição
+    if (tituloModal) tituloModal.textContent = "Atualizar Meus Dados";
+    if (btnAcao) {
+        btnAcao.textContent = "Salvar Alterações";
+        btnAcao.setAttribute('onclick', 'salvarEdicaoCadastro()'); 
+    }
+
+    // Preenche os campos do formulário com os dados do cliente (Ajuste os IDs conforme seu HTML)
+    if (typeof clienteLogado !== 'undefined' && clienteLogado) {
+        const cadNome = document.getElementById('cad-nome');
+        const cadPix = document.getElementById('cad-pix');
+        const cadTel = document.getElementById('cad-telefone');
+
+        if (cadNome) cadNome.value = clienteLogado.nome || clienteLogado.nick || '';
+        if (cadPix) cadPix.value = clienteLogado.chave_pix || clienteLogado.pix || '';
+        if (cadTel) cadTel.value = clienteLogado.telefone || '';
+    }
+
+    // Exibe o modal
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+}
+
+// --- FUNÇÃO FINAL: Gravar Atualização no Servidor ---
+async function salvarEdicaoCadastro() {
+    // Busca os valores atualizados (Ajuste os IDs conforme seu formulário)
+    const nomeAtualizado = document.getElementById('cad-nome') ? document.getElementById('cad-nome').value.trim() : '';
+    const pixAtualizado = document.getElementById('cad-pix') ? document.getElementById('cad-pix').value.trim() : '';
+    
+    if (!pixAtualizado) {
+        if (typeof showCustomAlert === 'function') showCustomAlert("A Chave PIX é obrigatória para realizar saques.", "Campo Obrigatório", "⚠️");
+        return;
+    }
+
+    if (typeof showFullLoading === 'function') showFullLoading("Salvando alterações...");
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/atualizar_cadastro`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include', 
+            body: JSON.stringify({
+                nome: nomeAtualizado,
+                chave_pix: pixAtualizado
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.status === 'sucesso') {
+            if (typeof showCustomAlert === 'function') showCustomAlert("Seus dados foram atualizados com sucesso!", "Atualizado", "✅");
+            
+            // Atualiza a memória local para liberar o saque imediatamente
+            if (typeof clienteLogado !== 'undefined') clienteLogado.chave_pix = pixAtualizado;
+            
+            if (typeof fecharModal === 'function') fecharModal('modal-cadastro');
+            
+            // Opcional: Reabrir a carteira para o cliente terminar o saque
+            // setTimeout(() => abrirModalCarteira(), 500); 
+
+        } else {
+            if (typeof showCustomAlert === 'function') showCustomAlert(data.erro || "Falha ao atualizar dados.", "Erro", "❌");
+        }
+    } catch (error) {
+        console.error("Erro ao atualizar cadastro:", error);
+        if (typeof showCustomAlert === 'function') showCustomAlert("Erro de conexão ao salvar os dados.", "Falha", "🌐");
+    } finally {
+        if (typeof hideFullLoading === 'function') hideFullLoading();
+    }
+}
+
 async function autocadastro() {
     // 1. Fecha o modal de login se estiver aberto
     fecharModal('modal-login');
@@ -6324,66 +6413,74 @@ function usarSaldoTotal() {
     input.value = valorLimpo;
 }
 
-
-// --- FUNÇÃO 4: Enviar Pedido ao Servidor (Corrigida) ---
+// --- FUNÇÃO 4: Enviar Pedido ao Servidor (Com Trava de PIX) ---
 async function confirmarSaque() {
-    // Verifica IDs (confira se no seu HTML é 'valor-saque' ou 'saque-valor')
     const inputValor = document.getElementById('valor-saque') || document.getElementById('saque-valor');
-    const inputPix = document.getElementById('chave-pix'); // Se tiver campo de PIX
+    const inputPix = document.getElementById('chave-pix'); 
     
+    // 1. VERIFICAÇÃO DO PIX: Confere o campo ou os dados do cliente logado
+    const chavePixCadastrada = (inputPix && inputPix.value.trim() !== '') || (typeof clienteLogado !== 'undefined' && clienteLogado.chave_pix);
+
+    if (!chavePixCadastrada) {
+        if (typeof fecharModal === 'function') fecharModal('modal-carteira');
+        
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Você precisa cadastrar uma Chave PIX antes de solicitar um saque.", "Chave PIX Ausente", "⚠️");
+        } else {
+            alert("Você precisa cadastrar uma Chave PIX antes de solicitar um saque.");
+        }
+        
+        // Abre a tela de edição de cadastro logo após o aviso
+        setTimeout(() => abrirEdicaoCadastro(), 1500); 
+        return;
+    }
+
     if (!inputValor) {
         console.error("Campo de valor do saque não encontrado!");
         return;
     }
 
-    // Converte vírgula para ponto (ex: 50,00 -> 50.00)
     let valorStr = inputValor.value.replace(',', '.');
     const valor = parseFloat(valorStr);
 
     if (isNaN(valor) || valor <= 0) {
-        showCustomAlert("Digite um valor válido para saque.", "Atenção", "⚠️");
+        if (typeof showCustomAlert === 'function') showCustomAlert("Digite um valor válido para saque.", "Atenção", "⚠️");
         return;
     }
 
-    showFullLoading("Processando solicitação...");
+    if (typeof showFullLoading === 'function') showFullLoading("Processando solicitação...");
 
     try {
         const response = await fetch(`${API_BASE_URL}/api/solicitar_saque`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include', // <--- ESSENCIAL: Envia o login junto
+            credentials: 'include', 
             body: JSON.stringify({ 
                 valor: valor,
-                chave_pix: inputPix ? inputPix.value : '' // Envia PIX se existir campo
+                chave_pix: inputPix ? inputPix.value : (clienteLogado ? clienteLogado.chave_pix : '')
             })
         });
 
         const data = await response.json();
 
         if (response.ok && data.status === 'ok') {
-            // Sucesso
-            showCustomAlert("Sua solicitação foi enviada para análise!", "Sucesso", "✅");
-            inputValor.value = ""; // Limpa campo
+            if (typeof showCustomAlert === 'function') showCustomAlert("Sua solicitação foi enviada para análise!", "Sucesso", "✅");
+            inputValor.value = ""; 
             
-            // Fecha modal (use o ID correto da sua carteira)
             if (typeof fecharModal === 'function') fecharModal('modal-carteira');
-
-            // Atualiza extrato se possível
             if (typeof atualizarDadosCliente === 'function') atualizarDadosCliente();
             
         } else {
-            // Erro do backend
-            showCustomAlert(data.erro || "Erro ao solicitar saque.", "Erro", "❌");
+            if (typeof showCustomAlert === 'function') showCustomAlert(data.erro || "Erro ao solicitar saque.", "Erro", "❌");
         }
 
     } catch (e) {
         console.error(e);
-        showCustomAlert("Erro de conexão com o servidor.", "Falha", "❌");
+        if (typeof showCustomAlert === 'function') showCustomAlert("Erro de conexão com o servidor.", "Falha", "❌");
     } finally {
-        hideFullLoading();
+        if (typeof hideFullLoading === 'function') hideFullLoading();
     }
 }
-
 
 window.somarQtd = function(valor) {
     const inputQtd = document.getElementById('qtd-manual');
