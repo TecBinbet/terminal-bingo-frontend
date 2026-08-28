@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.0";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.1";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -8026,20 +8026,70 @@ function gerarBadgeStatusEvento(config) {
 }
 //
 
+// --- FUNÇÃO AUXILIAR: Busca o próximo evento cronológico ---
+async function obterProximoIdPorData() {
+    try {
+        // 👉 Substitua '/api/listar_eventos' pela rota real que retorna sua agenda de eventos
+        const res = await fetch(`${API_BASE_URL || ''}/api/listar_eventos`); 
+        if (!res.ok) return null;
+        
+        const data = await res.json();
+        const eventos = data.eventos || data; // Ajuste conforme a estrutura do seu JSON
+        
+        if (!Array.isArray(eventos)) return null;
 
-// 1. INICIALIZAR E BUSCAR REGRAS (VERSÃO UNIFICADA E BLINDADA)
+        // Filtra apenas os eventos que ainda não começaram (estão no 'intervalo')
+        const eventosDisponiveis = eventos.filter(e => 
+            e.status && e.status.toLowerCase() === 'intervalo'
+        );
+
+        if (eventosDisponiveis.length === 0) return null;
+
+        // 👉 Ordena estritamente por Data e Hora
+        // Se o campo no seu banco chamar diferente, altere 'data_hora_evento' para o nome correto
+        eventosDisponiveis.sort((a, b) => {
+            const dataA = new Date(a.data_hora_evento || a.data_evento || a.data);
+            const dataB = new Date(b.data_hora_evento || b.data_evento || b.data);
+            return dataA - dataB; // Do mais próximo para o mais distante
+        });
+
+        // Retorna o ID do evento que vai acontecer primeiro na linha do tempo
+        return eventosDisponiveis[0].id || eventosDisponiveis[0].id_evento;
+
+    } catch (erro) {
+        console.error("Erro ao buscar cronologia dos eventos:", erro);
+        return null;
+    }
+}
+
+// 1. INICIALIZAR E BUSCAR REGRAS (VERSÃO CRONOLÓGICA BLINDADA)
 async function carregarSorteExtra(abrirTela = true, idOverride = null) {
     let rawId = idOverride; 
-
     let statusDetectado = 'ativo';
 
     // 2ª Prioridade: Variável global (Detetive de ID)
     if (!rawId) {
         if (typeof eventoCarregadoAtual !== 'undefined' && eventoCarregadoAtual) {
-            // Aceita tanto se for objeto {id_evento: X} quanto se for o ID direto
-            rawId = eventoCarregadoAtual.id_evento || eventoCarregadoAtual;
+            let baseId = eventoCarregadoAtual.id_evento || eventoCarregadoAtual.id || eventoCarregadoAtual;
+            
             if (eventoCarregadoAtual.status) {
                 statusDetectado = eventoCarregadoAtual.status.toLowerCase();
+            }
+
+            // 👉 CORREÇÃO: Busca o próximo cronológico verificando Data/Hora
+            if (statusDetectado !== 'intervalo') {
+                const proximoId = await obterProximoIdPorData();
+                
+                if (proximoId) {
+                    rawId = proximoId;
+                    console.log(`⏩ [Cronologia] O evento atual já iniciou/acabou. Sorte Extra apontado para o evento futuro ID: ${rawId}`);
+                } else {
+                    console.warn("⚠️ Nenhum evento futuro no intervalo encontrado. Sorte Extra ficará inativo.");
+                    if(typeof ocultarBotoesSorteExtra === 'function') ocultarBotoesSorteExtra();
+                    return; // Aborta a execução pois não há evento para vender
+                }
+            } else {
+                rawId = baseId;
             }
         }
     }
@@ -8054,9 +8104,13 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
     if (!rawId || rawId === 'padrao') {
         if (typeof premioInfo !== 'undefined' && premioInfo && premioInfo.id_evento) {
             rawId = premioInfo.id_evento;
-            // 🕵️ Captura o status do fallback também
             if (premioInfo.status) {
                 statusDetectado = premioInfo.status.toLowerCase();
+                // Antecipação no Fallback também obedece à cronologia
+                if (statusDetectado !== 'intervalo') {
+                    const proxFallback = await obterProximoIdPorData();
+                    if (proxFallback) rawId = proxFallback;
+                }
             }
         } else if (typeof currentSalaId !== 'undefined' && currentSalaId !== 'padrao') {
             rawId = currentSalaId;
@@ -8068,15 +8122,16 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
     // --- VALIDAÇÃO DE ENTRADA ---
     if (!idEventoNaTela || isNaN(idEventoNaTela) || idEventoNaTela <= 0) {
         console.warn(`⚠️ Sorte Extra ignorado: ID inválido.`);
-        ocultarBotoesSorteExtra();
+        if (typeof ocultarBotoesSorteExtra === 'function') ocultarBotoesSorteExtra();
         return;
     }
 
+    // ... Restante da sua função fetch original a partir daqui ...
     if (typeof closeSideMenu === 'function') closeSideMenu();
 
     try {
         console.log(`🔄 Buscando Sorte Extra para o Evento ID: ${idEventoNaTela}`);
-        const res = await fetch(`${API_BASE_URL || ''}/api/cliente/config_sorte_extra/${idEventoNaTela}`);
+        const res = await fetch(`${API_BASE_URL || ''}/api/cliente/config_sorte_extra/${idEventoNaTela}`)
        
         if (!res.ok) throw new Error("Configuração não encontrada no servidor");
         
@@ -8189,19 +8244,34 @@ function ocultarBotoesSorteExtra() {
 }
 
 function mostrarBotoesSorteExtra() {
-    // 1. Verificamos se existem bolas sorteadas (se for 0, estamos no intervalo/pré-jogo)
-    const noIntervalo = (globalBolasCantadas.length === 0);
+    // Busca o status REAL do banco
+    let statusReal = 'ativo';
+    if (typeof eventoCarregadoAtual !== 'undefined' && eventoCarregadoAtual && eventoCarregadoAtual.status) {
+        statusReal = eventoCarregadoAtual.status.toLowerCase();
+    }
 
-    // 2. Só procedemos se ambas as condições forem verdadeiras
-    if (noIntervalo && sorteExtraAtivaNoBanco) {
-        ['btn-open-extra', 'btn-floating-extra'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.classList.remove('hidden');
-        });
-        // console.log("✨ Sorte Extra disponível: Exibindo botões flutuantes.");
+    // A regra: Só é considerado intervalo se o banco disser que é "intervalo" (pré-jogo)
+    const noIntervalo = (statusReal === 'intervalo');
+
+    const btnMenu = document.getElementById('btn-open-extra');
+    const btnFlutuante = document.getElementById('btn-floating-extra');
+
+    // Se não está ativo no banco, tudo some
+    if (typeof sorteExtraAtivaNoBanco === 'undefined' || !sorteExtraAtivaNoBanco) {
+        if (typeof ocultarBotoesSorteExtra === 'function') ocultarBotoesSorteExtra();
+        return;
+    }
+
+    // Botão do Menu aparece sempre que a promô estiver ativa
+    if (btnMenu) btnMenu.classList.remove('hidden');
+
+    // Botão Flutuante só aparece no intervalo oficial do banco
+    if (noIntervalo) {
+        if (btnFlutuante) btnFlutuante.classList.remove('hidden');
+        console.log("✨ Sorte Extra: Modo Intervalo. Exibindo botão Flutuante.");
     } else {
-        // Se o sorteio começou ou não tem promoção, garantimos que fiquem ocultos
-        ocultarBotoesSorteExtra();
+        if (btnFlutuante) btnFlutuante.classList.add('hidden');
+        console.log("✨ Sorte Extra: Modo Jogo/Fim. Escondendo Flutuante.");
     }
 }
 
