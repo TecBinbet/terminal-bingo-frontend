@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.1";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.2";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -1033,7 +1033,7 @@ async function carregarCartelasAutomaticas_old(idEvento) {
             cartelasDoJogador = data.cartelas;
             cartelaRanges = converterListaParaRanges(data.cartelas); 
             cartelasEmJogo = data.cartelas.length; 
-            console.warn("⚠️ EmJogo 01:", cartelasEmJogo);  
+            //console.warn("⚠️ EmJogo 01:", cartelasEmJogo);  
             renderizarListaMinhasCartelas(data.cartelas);
             
             // Baixa a matriz de números  tst1
@@ -1044,7 +1044,7 @@ async function carregarCartelasAutomaticas_old(idEvento) {
             const container = document.getElementById('my-cards-list');
             if(container) container.innerHTML = '<p class="text-center text-gray-500 py-4">Você ainda não tem cartelas nesta rodada.</p>';
             cartelasEmJogo = 0;
-            console.warn("⚠️ EmJogo 02:", cartelasEmJogo);
+            //console.warn("⚠️ EmJogo 02:", cartelasEmJogo);
             loadedCards = [];
             displayLoadedCards([]);
         }
@@ -2036,11 +2036,11 @@ function displayCartelaRanges() {
 
     totalSpan.textContent = total;
     cartelasEmJogo = total
-    console.warn("⚠️ EmJogo 03:", cartelasEmJogo);
+    //console.warn("⚠️ EmJogo 03:", cartelasEmJogo);
     checkTotalCards();
     if (total > 0 ) { 
        cartelasEmJogo = total;
-       console.warn("⚠️ EmJogo 04:", cartelasEmJogo);
+       //console.warn("⚠️ EmJogo 04:", cartelasEmJogo);
        seePromocoes = false; 
        hidePromocionalPanel();
     }
@@ -2059,7 +2059,7 @@ function displayCartelaRanges() {
            }
             if (novoTotal === 0) {
                 cartelasEmJogo = 0;
-                console.warn("⚠️ EmJogo 05:", cartelasEmJogo);
+                //console.warn("⚠️ EmJogo 05:", cartelasEmJogo);
                 seePromocoes = true; 
                 startPromocionalTimer();                               
             }
@@ -2091,18 +2091,18 @@ function checkTotalCards(total) {
     if (quantidadeReal === 0 || quantidadeReal === undefined || quantidadeReal === null || isNaN(quantidadeReal)) {
         if (typeof globalMinhasCartelas !== 'undefined' && globalMinhasCartelas && globalMinhasCartelas.cartelas && globalMinhasCartelas.cartelas.length > 0) {
             quantidadeReal = globalMinhasCartelas.cartelas.length;
-            console.log("🛡️ Recuperado de globalMinhasCartelas:", quantidadeReal);
+            //console.log("🛡️ Recuperado de globalMinhasCartelas:", quantidadeReal);
         } 
         else if (typeof cartelasDoJogador !== 'undefined' && cartelasDoJogador && cartelasDoJogador.length > 0) {
             quantidadeReal = cartelasDoJogador.length;
-            console.log("🛡️ Recuperado de cartelasDoJogador:", quantidadeReal);
+            //console.log("🛡️ Recuperado de cartelasDoJogador:", quantidadeReal);
         }
     }
 
     // 👉 CORREÇÃO: Atualiza a variável global com a quantidade REAL verificada
     cartelasEmJogo = quantidadeReal || 0; 
     
-    console.warn(`⚠️ EmJogo 06: ${cartelasEmJogo} (Tentou passar: ${total})`);
+    //console.warn(`⚠️ EmJogo 06: ${cartelasEmJogo} (Tentou passar: ${total})`);
 
     // Se mesmo após a verificação a quantidade for 0, aí sim abortamos
     if (cartelasEmJogo <= 0) return;
@@ -2139,7 +2139,7 @@ function checkTotalCards_old(total) {
 
     // 👉 CORREÇÃO: Atualiza a variável global PRIMEIRO, assim reflete sempre a realidade
     cartelasEmJogo = total; 
-    console.warn("⚠️ EmJogo 06:", cartelasEmJogo);
+    //console.warn("⚠️ EmJogo 06:", cartelasEmJogo);
 
     if (isNaN(total) || total <= 0) return;
 
@@ -3205,7 +3205,6 @@ function displayPrizeInfo(buscandoData, premioData = null) {
     prizeInfoContainerCurrent.appendChild(prizeItem);
 }
 
-
 function sincronizarDisjuntoresComServidor(dadosBuscando) {
     // Só cria o objeto global se ele não existir
     if (typeof window.linhasAtivasNoJogo === 'undefined') {
@@ -3220,7 +3219,7 @@ function sincronizarDisjuntoresComServidor(dadosBuscando) {
     window.linhasAtivasNoJogo['CEN'] = linhasRestantes.includes('CEN');
     window.linhasAtivasNoJogo['INF'] = linhasRestantes.includes('INF');
 
-    console.log("[SISTEMA] Disjuntores sincronizados:", window.linhasAtivasNoJogo);
+    //console.log("[SISTEMA] Disjuntores sincronizados:", window.linhasAtivasNoJogo);
 }
 
 function displayPrizeValues(premioData, topeData = null, rawData = null) {
