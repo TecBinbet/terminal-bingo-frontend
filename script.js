@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "2.1";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.1";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -2070,7 +2070,63 @@ function displayCartelaRanges() {
     });
 }
 
+
 function checkTotalCards(total) {
+    const isMobile = isMobileDevice();
+    const validationMessageCurrent = isMobile ? mobileValidationMessage : validationMessage;
+
+    // Reseta a mensagem de validação
+    if (validationMessageCurrent) {
+        validationMessageCurrent.textContent = '';
+        validationMessageCurrent.classList.add('hidden');
+        validationMessageCurrent.classList.remove('bg-red-900/50', 'text-red-200', 'p-2', 'rounded', 'border', 'border-red-500');
+    }
+
+    // =================================================================
+    // 🔥 TRAVA ANTI-ZEROS FALSOS (Proteção contra reloads do WebSocket)
+    // =================================================================
+    let quantidadeReal = total;
+
+    // Se o sistema tentar dizer que temos 0 cartelas (ou algo inválido), nós desconfiamos e olhamos a memória:
+    if (quantidadeReal === 0 || quantidadeReal === undefined || quantidadeReal === null || isNaN(quantidadeReal)) {
+        if (typeof globalMinhasCartelas !== 'undefined' && globalMinhasCartelas && globalMinhasCartelas.cartelas && globalMinhasCartelas.cartelas.length > 0) {
+            quantidadeReal = globalMinhasCartelas.cartelas.length;
+            console.log("🛡️ Recuperado de globalMinhasCartelas:", quantidadeReal);
+        } 
+        else if (typeof cartelasDoJogador !== 'undefined' && cartelasDoJogador && cartelasDoJogador.length > 0) {
+            quantidadeReal = cartelasDoJogador.length;
+            console.log("🛡️ Recuperado de cartelasDoJogador:", quantidadeReal);
+        }
+    }
+
+    // 👉 CORREÇÃO: Atualiza a variável global com a quantidade REAL verificada
+    cartelasEmJogo = quantidadeReal || 0; 
+    
+    console.warn(`⚠️ EmJogo 06: ${cartelasEmJogo} (Tentou passar: ${total})`);
+
+    // Se mesmo após a verificação a quantidade for 0, aí sim abortamos
+    if (cartelasEmJogo <= 0) return;
+
+    // 2. Verifica se o total está abaixo do mínimo exigido
+    if (typeof minCartelas !== 'undefined' && minCartelas > 0 && cartelasEmJogo < minCartelas) {
+        if (validationMessageCurrent) {
+            validationMessageCurrent.textContent = `Atenção: A quantidade de cartelas (${cartelasEmJogo}) está abaixo do mínimo exigido (${minCartelas}). Suas cartelas não participarão do sorteio até atingir o mínimo.`;
+            validationMessageCurrent.classList.remove('hidden');
+            validationMessageCurrent.classList.add('text-yellow-400');
+        }
+    }
+
+    // 3. Verifica se o total está acima do máximo exigido (Apenas um aviso visual na tela)
+    if (typeof maxCartelas !== 'undefined' && maxCartelas > 0 && cartelasEmJogo > maxCartelas) {
+        if (validationMessageCurrent) {
+            validationMessageCurrent.textContent = `Atenção: A quantidade de cartelas (${cartelasEmJogo}) excede o máximo permitido (${maxCartelas}).`;
+            validationMessageCurrent.classList.remove('hidden');
+            validationMessageCurrent.classList.add('text-red-400');
+        }
+    }
+}
+
+function checkTotalCards_old(total) {
     const isMobile = isMobileDevice();
     const validationMessageCurrent = isMobile ? mobileValidationMessage : validationMessage;
 
@@ -4746,7 +4802,6 @@ async function renderMainContent(data) {
         Carregando = false;
     }
 }
-
 
 //==============
 async function init() {
