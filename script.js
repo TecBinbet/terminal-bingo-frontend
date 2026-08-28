@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.5";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.6";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -984,80 +984,6 @@ async function carregarCartelasAutomaticas(idEvento, forcarSincronia = false) {
     }
 }
 
-async function carregarCartelasAutomaticas_old(idEvento) {
-    if (!idEvento) return;
-
-    // --- NOVA PROTEÇÃO (ADICIONE ISTO) ---
-    // Verifica se existe um ID de evento principal definido globalmente (currentEventID)
-    // Se o idEvento que estamos tentando carregar NÃO for o atual, paramos aqui.
-    if (typeof currentEventID !== 'undefined' && currentEventID && idEvento !== currentEventID) {
-        console.log(`🛡️ Bloqueado: Tentativa de carregar cartelas do evento ${idEvento} na mesa do evento ${currentEventID}.`);
-        return; 
-    }
-
-    // Se já estiver carregado, não mostra loading nem faz nada
-    if (eventoCarregadoAtual === idEvento && typeof cartelaRanges !== 'undefined' && cartelaRanges.length > 0) {
-        console.log("Cartelas já carregadas na memória.");
-        return; 
-    }
-
-    // 1. ATIVA O LOADING (Se já não estiver ativo por outra função)
-    // Verifica se o loader está visível, se não, mostra.
-    if (!loader || loader.style.display === 'none') {
-        showFullLoading("Buscando suas cartelas...");
-    }
-
-    console.log(`🔄 Buscando cartelas do evento ${idEvento}...`);
-    //let url = `/api/consultar_cartelas_evento?id_evento=${idEvento}`;
-    let url = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idEvento}`;
-    
-    if (clienteLogadoId) {
-        url += `&id_cliente=${clienteLogadoId}`;
-    }
-
-    try {
-        const response = await fetch(url, { credentials: 'include' });
-        const data = await response.json();
-
-        if (data.error) {
-            console.warn("⚠️ Aviso:", data.error);
-            const container = document.getElementById('my-cards-list');
-            if(container) container.innerHTML = `<p class="text-center text-gray-500 py-4">${data.error}</p>`;
-            return;
-        }
-
-        if (data.cartelas && data.cartelas.length > 0) {
-            eventoCarregadoAtual = idEvento;
-            
-            // Processa cartelas
-            cartelasDoJogador = data.cartelas;
-            cartelaRanges = converterListaParaRanges(data.cartelas); 
-            cartelasEmJogo = data.cartelas.length; 
-            //console.warn("⚠️ EmJogo 01:", cartelasEmJogo);  
-            renderizarListaMinhasCartelas(data.cartelas);
-            
-            // Baixa a matriz de números  tst1
-            ultima_bola_render = -1;
-            await fetchAndProcessCards(); 
-
-        } else {
-            const container = document.getElementById('my-cards-list');
-            if(container) container.innerHTML = '<p class="text-center text-gray-500 py-4">Você ainda não tem cartelas nesta rodada.</p>';
-            cartelasEmJogo = 0;
-            //console.warn("⚠️ EmJogo 02:", cartelasEmJogo);
-            loadedCards = [];
-            displayLoadedCards([]);
-        }
-
-    } catch (error) {
-        console.error("Erro ao buscar cartelas:", error);
-    } finally {
-        // 2. DESATIVA O LOADING
-        hideFullLoading();
-    }
-}
-
-
 // --- FUNÇÃO: Sincronia de Compras Externas (COM REGRA DE BLOQUEIO) ---
 async function verificarNovasCompras() {
     if (typeof isProcessandoCompra !== 'undefined' && isProcessandoCompra) {
@@ -1095,69 +1021,6 @@ async function verificarNovasCompras() {
 
                 // 5. ATUALIZAÇÃO FORÇADA (O 'true' destrói o cache fantasma e renderiza as cartelas novas)
                 await carregarCartelasAutomaticas(idRodada, true);
-            }
-        }
-    } catch (e) {
-        console.warn("Erro na verificação silenciosa:", e);
-    }
-}
-
-async function verificarNovasCompras_old() {
-    // 🚦 Se estivermos processando uma compra manual, pula esta verificação
-    if (isProcessandoCompra) {
-        //console.log("⏳ verificarNovasCompras suspensa: Aguardando conclusão da compra manual...");
-        return; 
-    }
-
-    // 1. Verificações básicas de login e IDs
-    if (!clienteLogado || !clienteLogadoId || !idRodada) return;
-
-    // 2. Evita sobreposição de chamadas
-    if (isFetchingCards) return;
-
-    // --- NOVA REGRA: BLOQUEIO DURANTE SORTEIO ---
-    // Se o estado atual não for de vendas (ex: está em 'andamento' ou 'finalizada'),
-    // nós abortamos a verificação imediatamente.
-    // (Ajuste 'aberta' e 'intervalo' conforme os nomes exatos que você usa no banco)
-    if (lastRodadaState !== 'aberta' && lastRodadaState !== 'intervalo') {
-        // console.log("Sorteio em andamento. Verificação de vendas pausada.");
-        return; 
-    }
-    
-    // Se for localhost, ignoramos qualquer prefixo de sala (/sala1) e vamos na raiz
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-         urlBaseSegura = ""; 
-    }
-                              /// new forma
-    try {
-        // 3. Consulta Silenciosa
-        const url = `${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${idRodada}&id_cliente=${clienteLogadoId}`;
-        const response = await fetch(url, { credentials: 'include' });
-        
-        if (!response.ok) return;
-
-        const data = await response.json();
-        
-        if (data.cartelas) {
-            const qtdNoServidor = data.cartelas.length;
-            
-            // 👉 CORREÇÃO: Acessar a array 'cartelas' dentro do objeto global
-            const qtdLocal = (globalMinhasCartelas && Array.isArray(globalMinhasCartelas.cartelas)) 
-                             ? globalMinhasCartelas.cartelas.length 
-                             : 0;
-
-            // 4. Comparação
-            if (qtdNoServidor !== qtdLocal) {
-                console.log(`♻️ Sincronia: Mudança de ${qtdLocal} para ${qtdNoServidor} cartelas.`);
-                
-                // Se aumentou, mostra aviso (Opcional)
-                if (qtdNoServidor > qtdLocal) {
-                    showCustomAlert(`Você recebeu novas cartelas!`, "Nova Compra", "🎟️");
-                }
-
-                // 5. Atualização
-                // Passa 'true' se quiser indicar reload forçado, ou chama normal
-                await carregarCartelasAutomaticas(idRodada);
             }
         }
     } catch (e) {
@@ -2120,42 +1983,6 @@ function checkTotalCards(total) {
     if (typeof maxCartelas !== 'undefined' && maxCartelas > 0 && cartelasEmJogo > maxCartelas) {
         if (validationMessageCurrent) {
             validationMessageCurrent.textContent = `Atenção: A quantidade de cartelas (${cartelasEmJogo}) excede o máximo permitido (${maxCartelas}).`;
-            validationMessageCurrent.classList.remove('hidden');
-            validationMessageCurrent.classList.add('text-red-400');
-        }
-    }
-}
-
-function checkTotalCards_old(total) {
-    const isMobile = isMobileDevice();
-    const validationMessageCurrent = isMobile ? mobileValidationMessage : validationMessage;
-
-    // Reseta a mensagem de validação
-    if (validationMessageCurrent) {
-        validationMessageCurrent.textContent = '';
-        validationMessageCurrent.classList.add('hidden');
-        validationMessageCurrent.classList.remove('bg-red-900/50', 'text-red-200', 'p-2', 'rounded', 'border', 'border-red-500');
-    }
-
-    // 👉 CORREÇÃO: Atualiza a variável global PRIMEIRO, assim reflete sempre a realidade
-    cartelasEmJogo = total; 
-    //console.warn("⚠️ EmJogo 06:", cartelasEmJogo);
-
-    if (isNaN(total) || total <= 0) return;
-
-    // 2. Verifica se o total está abaixo do mínimo exigido
-    if (minCartelas > 0 && total < minCartelas) {
-        if (validationMessageCurrent) {
-            validationMessageCurrent.textContent = `Atenção: A quantidade de cartelas (${total}) está abaixo do mínimo exigido (${minCartelas}). Suas cartelas não participarão do sorteio até atingir o mínimo.`;
-            validationMessageCurrent.classList.remove('hidden');
-            validationMessageCurrent.classList.add('text-yellow-400');
-        }
-    }
-
-    // 3. Verifica se o total está acima do máximo exigido (Apenas um aviso visual na tela)
-    if (maxCartelas > 0 && total > maxCartelas) {
-        if (validationMessageCurrent) {
-            validationMessageCurrent.textContent = `Atenção: A quantidade de cartelas (${total}) excede o máximo permitido (${maxCartelas}).`;
             validationMessageCurrent.classList.remove('hidden');
             validationMessageCurrent.classList.add('text-red-400');
         }

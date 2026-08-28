@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "1.3";
+const VERSAO_ATUAL = "1.6";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -2139,8 +2139,89 @@ function devolverFocoAoJogo() {
     }, 100);
 }
 
-
 async function carregarEvento(idEvento) {
+    const confirmou = await customConfirm(`Deseja INICIAR este evento?\n\nIsso irá preparar a base de cartelas e iniciar o timer.`);
+    if(!confirmou) return;
+    
+    // =================================================================
+    // 🔥 TRAVA INTELIGENTE: Verificar e limpar eventos anteriores pendentes
+    // =================================================================
+    try {
+        console.log(`[DEBUG] Verificando se existem eventos anteriores pendentes ao ID ${idEvento}...`);
+        
+        const respCheck = await fetch(`${API_BASE_URL}/api/admin/verificar_eventos_pendentes?id_alvo=${idEvento}`, {
+            method: 'GET',
+            headers: {'Content-Type': 'application/json'}
+        });
+        
+        const dataCheck = await respCheck.json();
+        
+        if (dataCheck.existem_pendentes) {
+            const limparPassados = await customConfirm(
+                `⚠️ Atenção: Foram encontrados ${dataCheck.quantidade} evento(s) anterior(es) ainda com status ativo/pendente na cronologia.\n\nDeseja finalizá-los automaticamente para que o Robô inicie de forma limpa?`
+            );
+            
+            if (limparPassados) {
+                showLoading("🧹 Limpando eventos anteriores...");
+                
+                const respLimpeza = await fetch(`${API_BASE_URL}/api/admin/limpar_eventos_passados`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ id_referencia: idEvento })
+                });
+                
+                const dadosLimpeza = await respLimpeza.json();
+                console.log(`[DEBUG] Resultado da limpeza:`, dadosLimpeza);
+            }
+        }
+    } catch (err) {
+        console.warn("[DEBUG] Aviso: Não foi possível checar eventos pendentes (prosseguindo normalmente):", err);
+    }
+    // =================================================================
+
+    fecharModal('modal-eventos');
+    showLoading("🔄 Carregando base de cartelas...");
+
+    console.log(`[DEBUG] Carregando evento ${idEvento}...`);
+
+    try {
+        const respPrep = await fetch(`${API_BASE_URL}/api/admin/preparar_evento`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ id_evento: idEvento })
+        });
+        
+        const dadosPrep = await respPrep.json();
+        if (dadosPrep.error) throw new Error(dadosPrep.error);
+        
+        showLoading("🔒 Encerrando vendas...");
+
+        await fetch(`${API_BASE_URL}/api/admin/fechar_vendas_evento`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ id_evento: idEvento })
+        });
+
+        let premioInicial = "4 Cantos e Linha"; 
+        
+        console.log(`[DEBUG] Inicializando prêmio para: ${premioInicial}`);
+        
+        if (typeof mudarPremio === 'function') {
+            await mudarPremio(premioInicial);
+        }
+
+    } catch(e) {
+        console.error("[DEBUG] Erro carregarEvento:", e);
+        customAlert("⛔ Erro crítico ao carregar cartelas: " + e.message);
+        hideLoading();
+        return; 
+    } 
+
+    hideLoading();
+    iniciarTimerEspera(idEvento);
+}
+
+async function carregarEvento_old(idEvento) {
     const confirmou = await customConfirm(`Deseja INICIAR este evento?\n\nIsso irá preparar a base de cartelas e iniciar o timer.`);
     if(!confirmou) return;
     

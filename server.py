@@ -4403,6 +4403,134 @@ def admin_preparar_evento():
         print(f"❌ Erro ao preparar evento: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/admin/verificar_eventos_pendentes', methods=['GET'])
+def api_verificar_eventos_pendentes():
+    """
+    Verifica se existem eventos anteriores (pela data_hora_evento ou ID) 
+    que ainda estão com status 'ativo' e ficaram para trás.
+    """
+    id_evt = request.args.get('id_alvo')
+    if not id_evt: 
+        return jsonify({'existem_pendentes': False, 'quantidade': 0})
+
+    sales_db = get_sales_db_connection()
+    if sales_db is None: 
+        return jsonify({'error': 'Sem conexão com DB Vendas'}), 500
+
+    try:
+        # 1. Busca o evento alvo selecionado pelo operador
+        evento_alvo = sales_db.eventos.find_one({'id_evento': int(id_evt)})
+        if not evento_alvo: 
+            evento_alvo = sales_db.eventos.find_one({'id_evento': str(id_evt)})
+            
+        if not evento_alvo: 
+            return jsonify({'existem_pendentes': False, 'quantidade': 0})
+
+        # Pega a ISODate exata do evento alvo
+        data_hora_alvo = evento_alvo.get('data_hora_evento')
+        
+        try:
+            id_num_alvo = int(id_evt)
+        except:
+            id_num_alvo = None
+
+        # 2. Monta o critério de busca para os "vencidos"
+        condicoes_passadas = []
+        
+        # Se o evento alvo tem ISODate, buscamos tudo que tem data_hora_evento MENOR que ele
+        if data_hora_alvo:
+            condicoes_passadas.append({'data_hora_evento': {'$lt': data_hora_alvo}})
+        
+        # Critério de segurança complementar por ID (caso as datas estejam nulas ou iguais)
+        if id_num_alvo is not None:
+            condicoes_passadas.append({'id_evento': {'$lt': id_num_alvo}})
+            condicoes_passadas.append({'id_evento': {'$lt': str(id_num_alvo)}})
+
+        if not condicoes_passadas:
+            return jsonify({'existem_pendentes': False, 'quantidade': 0})
+
+        query_pendentes = {
+            'status': {'$regex': '^ativo$', '$options': 'i'}, # Apenas os que continuam ativos
+            'id_evento': {'$ne': int(id_evt), '$ne': str(id_evt)}, # Exclui o evento atual da contagem
+            '$or': condicoes_passadas
+        }
+
+        # Conta quantos eventos passados ficaram travados
+        quantidade = sales_db.eventos.count_documents(query_pendentes)
+
+        return jsonify({
+            'existem_pendentes': quantidade > 0,
+            'quantidade': quantidade
+        })
+
+    except Exception as e:
+        print(f"❌ Erro ao verificar eventos pendentes: {e}")
+        return jsonify({'existem_pendentes': False, 'quantidade': 0, 'erro': str(e)}), 500
+
+@app.route('/api/admin/limpar_eventos_passados', methods=['POST'])
+def api_limpar_eventos_passados():
+    """
+    Finaliza automaticamente todos os eventos anteriores vencidos que continuavam ativos.
+    """
+    data = request.json or {}
+    id_referencia = data.get('id_referencia')
+    
+    if not id_referencia: 
+        return jsonify({'error': 'ID de referência necessário'}), 400
+
+    sales_db = get_sales_db_connection()
+    if sales_db is None: 
+        return jsonify({'error': 'Sem conexão com DB Vendas'}), 500
+
+    try:
+        evento_ref = sales_db.eventos.find_one({'id_evento': int(id_referencia)})
+        if not evento_ref: 
+            evento_ref = sales_db.eventos.find_one({'id_evento': str(id_referencia)})
+            
+        if not evento_ref:
+            return jsonify({'error': 'Evento de referência não encontrado'}), 404
+
+        data_hora_ref = evento_ref.get('data_hora_evento')
+        
+        try:
+            id_num_ref = int(id_referencia)
+        except:
+            id_num_ref = None
+
+        condicoes_passadas = []
+        if data_hora_ref:
+            condicoes_passadas.append({'data_hora_evento': {'$lt': data_hora_ref}})
+            
+        if id_num_ref is not None:
+            condicoes_passadas.append({'id_evento': {'$lt': id_num_ref}})
+            condicoes_passadas.append({'id_evento': {'$lt': str(id_num_ref)}})
+
+        if not condicoes_passadas:
+            return jsonify({'status': 'ok', 'modificados': 0})
+
+        # Executa o update mudando o status para 'finalizado'
+        resultado = sales_db.eventos.update_many(
+            {
+                'status': {'$regex': '^ativo$', '$options': 'i'},
+                'id_evento': {'$ne': int(id_referencia), '$ne': str(id_referencia)},
+                '$or': condicoes_passadas
+            },
+            {
+                '$set': {'status': 'finalizado'}
+            }
+        )
+
+        print(f"🧹 Limpeza automática: {resultado.modified_count} evento(s) anterior(es) com data anterior foram finalizados.")
+        return jsonify({
+            'status': 'sucesso',
+            'modificados': resultado.modified_count,
+            'mensagem': f'{resultado.modified_count} evento(s) anterior(es) finalizado(s) com sucesso.'
+        })
+
+    except Exception as e:
+        print(f"❌ Erro ao limpar eventos passados: {e}")
+        return jsonify({'error': str(e)}), 500
+
 
 # ==============================================================================
 # 🛡️ MOTOR FINANCEIRO CENTRALIZADO E ATÓMICO (SERVER.PY) xxx
