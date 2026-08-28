@@ -4824,7 +4824,10 @@ def api_dados_cliente():
         return jsonify({
             'saldo': saldo,
             'extrato': extrato,
-            'nick': cli.get('nick')
+            'nick': cli.get('nick'),
+            'nome': cli.get('nome'),               # <--- Adicionado
+            'telefone': cli.get('telefone'),       # <--- Adicionado
+            'chave_pix': cli.get('chave_pix', '')  # <--- CRUCIAL PARA A TRAVA DE SAQUE
         })
 
     except Exception as e:

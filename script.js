@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.3";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.4";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -6413,36 +6413,33 @@ function usarSaldoTotal() {
     input.value = valorLimpo;
 }
 
-// --- FUNÇÃO 4: Enviar Pedido ao Servidor (Com Checagem Ativa de PIX) ---
+// --- FUNÇÃO 4: Enviar Pedido ao Servidor (Com a nova rota limpa) ---
 async function confirmarSaque() {
     const inputValor = document.getElementById('valor-saque') || document.getElementById('saque-valor');
     const inputPix = document.getElementById('chave-pix'); 
     
-    // 1. ANTES DE TUDO: Garante que temos os dados mais recentes do cliente logado
     let dadosCliente = typeof clienteLogado !== 'undefined' ? clienteLogado : null;
 
-    // Se o clienteLogado na memória não tiver o PIX, faz uma consulta rápida na API para tirar a prova real
+    // Se o clienteLogado não tiver o PIX na memória, busca na nossa rota nova dedicada
     if (!dadosCliente || !dadosCliente.chave_pix) {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/cliente/dados`, { credentials: 'include' });
+            const res = await fetch(`${API_BASE_URL}/api/dados_cliente`, { credentials: 'include' });
             if (res.ok) {
                 const resData = await res.json();
-                if (resData.status === 'sucesso' || resData.cliente) {
-                    dadosCliente = resData.cliente || resData;
-                    // Atualiza a global para as próximas vezes
-                    if (typeof clienteLogado !== 'undefined') {
-                        clienteLogado = dadosCliente;
-                    }
+                // A nossa rota retorna os dados do cliente diretamente no objeto principal
+                dadosCliente = resData; 
+                if (typeof clienteLogado !== 'undefined') {
+                    clienteLogado = dadosCliente; // Atualiza a global
                 }
             }
         } catch (err) {
-            console.warn("Erro ao checar dados do cliente no servidor:", err);
+            console.warn("Erro ao buscar dados do cliente via API:", err);
         }
     }
 
-    // 2. VERIFICAÇÃO FINAL DO PIX (Input da tela OU dados atualizados do servidor)
+    // 2. VERIFICAÇÃO FINAL DO PIX
     const pixNoInput = inputPix ? inputPix.value.trim() : '';
-    const pixNoCadastro = dadosCliente ? (dadosCliente.chave_pix || dadosCliente.pix || dadosCliente.ChavePix || '') : '';
+    const pixNoCadastro = dadosCliente ? (dadosCliente.chave_pix || dadosCliente.pix || '') : '';
     const chavePixValida = (pixNoInput !== '') || (pixNoCadastro !== '');
 
     // Se REALMENTE não tiver chave PIX em lugar nenhum, bloqueia e abre o cadastro preenchido
@@ -6455,7 +6452,6 @@ async function confirmarSaque() {
             alert("Você precisa cadastrar uma Chave PIX antes de solicitar um saque.");
         }
         
-        // Abre a tela de edição (agora ela já vai receber os dados que buscamos acima)
         setTimeout(() => abrirEdicaoCadastro(), 1500); 
         return;
     }
@@ -6482,7 +6478,7 @@ async function confirmarSaque() {
             credentials: 'include', 
             body: JSON.stringify({ 
                 valor: valor,
-                chave_pix: pixNoInput !== '' ? pixNoInput : pixNoCadastro // Envia a chave válida encontrada
+                chave_pix: pixNoInput !== '' ? pixNoInput : pixNoCadastro 
             })
         });
 
