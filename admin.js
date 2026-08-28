@@ -4317,6 +4317,10 @@ async function dispararVerificacaoRobo() {
 
     console.log(`🤖 [ROBO] Iniciando conferência do Sorte Extra para evento: ${idParaEnvio}`);
 
+    // 👉 CORREÇÃO 1: Declarar o tempo de espera no escopo principal da função
+    // Se a variável global não existir, usa 5 segundos como segurança
+    let tempoEspera = (typeof tempoEsperaConferenciaRobo !== 'undefined') ? tempoEsperaConferenciaRobo : 5;
+
     try {
         // 2. Consulta a API CORRETA (Mesma usada pelo modo manual)
         const resp = await fetch(`${API_BASE_URL}/api/admin/validar_sorte_extra`, { 
@@ -4334,7 +4338,7 @@ async function dispararVerificacaoRobo() {
             return;
         }
 
-        // 3. Montagem do Cache de Pagamentos (Garante que TODOS, até os de 2 acertos, recebam o prêmio)
+        // 3. Montagem do Cache de Pagamentos
         cacheGanhadoresExtraFinal = [];
         
         const processarFaixa = (listaGanhadores, nomeFaixa, valorBase, ehValorFixo) => {
@@ -4371,7 +4375,7 @@ async function dispararVerificacaoRobo() {
             }
         };
 
-        // Adiciona de cima para baixo (para dar mais emoção se tiver um ganhador de 5)
+        // Adiciona de cima para baixo
         adicionarAFila(data.ganhadores.acertos_5, '5_acertos');
         adicionarAFila(data.ganhadores.acertos_4, '4_acertos');
         adicionarAFila(data.ganhadores.acertos_3, '3_acertos');
@@ -4379,7 +4383,6 @@ async function dispararVerificacaoRobo() {
         // 5. Apresentação Sequencial na Tela (O Loop do Robô)
         if (filaExibicao.length > 0) {
             console.log(`🤖 [ROBO] 🎉 Apresentando ${filaExibicao.length} ganhadores do Sorte Extra (3+ acertos) na TV!`);
-            let tempoEspera = tempoEsperaConferenciaRobo;     // parseInt(document.getElementById('config-winner-time').value) || 5;
 
             for (const item of filaExibicao) {
                 // Envia para a TV
@@ -4407,9 +4410,11 @@ async function dispararVerificacaoRobo() {
     } finally {
         // 7. Retoma o Bingo Normal
         console.log("🤖 [ROBO] Verificação do Sorte Extra concluída. Retomando sorteio principal...");
+        
+        // 👉 CORREÇÃO 2: Usa um delay fixo e seguro (3 segundos) para voltar a atirar pedras
         setTimeout(() => {
             if (modoRoboAtivo) toggleAutoSorteio(true);
-        }, tempoEspera * 1000); // 3 Segundos de fôlego antes de voltar a atirar bolas
+        }, 3000); 
     }
 }
 
