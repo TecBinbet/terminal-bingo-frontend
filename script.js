@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.7";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.8";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -6008,11 +6008,13 @@ function validarBotaoCadastro() {
     }
 }
 
-// --- FUNÇÃO: Salvar Cadastro ou Edição (Unificada) ---
 async function salvarNovoUsuario() {
+    console.log("🚀 [DEBUG] A função salvarNovoUsuario foi acionada com sucesso!");
+
     // Identifica se estamos editando (se o título ou o botão mudaram para edição)
     const tituloModal = document.getElementById('titulo-modal-cadastro');
     const isEdicao = tituloModal && tituloModal.textContent.includes("Atualizar");
+    console.log(`[DEBUG] Modo detectado -> isEdicao: ${isEdicao}`);
 
     // 1. Coleta os dados comuns
     const nome = document.getElementById('cad-nome') ? document.getElementById('cad-nome').value.trim() : '';
@@ -6026,8 +6028,11 @@ async function salvarNovoUsuario() {
     const senha = document.getElementById('cad-senha') ? document.getElementById('cad-senha').value : '';
     const confirma = document.getElementById('cad-confirma') ? document.getElementById('cad-confirma').value : '';
 
+    console.log("[DEBUG] Dados coletados:", { nome, celular, cidade, pix: pix ? "***PREENCHIDO***" : "VAZIO", usuario });
+
     // 2. Validações básicas
     if (!nome || !celular || !usuario || !pix || !cidade) {
+        console.warn("⚠️ Validação falhou: Há campos obrigatórios vazios.");
         showCustomAlert("Por favor, preencha todos os campos obrigatórios, incluindo a Chave Pix.", "Dados Incompletos", "⚠️");
         return;
     }
@@ -6068,6 +6073,7 @@ async function salvarNovoUsuario() {
     // 3. Direciona para a rota correta (Edição vs Cadastro)
     if (isEdicao) {
         // --- FLUXO DE EDIÇÃO DE DADOS (Veio do Saque) ---
+        console.log("🔄 [DEBUG] Iniciando requisição POST para /api/atualizar_cadastro");
         showFullLoading("Salvando alterações...");
         try {
             const response = await fetch(`${API_BASE_URL}/api/atualizar_cadastro`, {
@@ -6085,6 +6091,7 @@ async function salvarNovoUsuario() {
             });
 
             const data = await response.json();
+            console.log("[DEBUG] Resposta recebida de /api/atualizar_cadastro:", data);
 
             if (response.ok && data.status === 'sucesso') {
                 showCustomAlert("Seus dados foram atualizados com sucesso!", "Atualizado", "✅");
@@ -6101,7 +6108,7 @@ async function salvarNovoUsuario() {
                 showCustomAlert(data.erro || "Falha ao atualizar dados.", "Erro", "❌");
             }
         } catch (error) {
-            console.error(error);
+            console.error("❌ [DEBUG] Erro de rede em /api/atualizar_cadastro:", error);
             showCustomAlert("Erro de conexão com o servidor.", "Falha", "❌");
         } finally {
             hideFullLoading();
@@ -6120,6 +6127,7 @@ async function salvarNovoUsuario() {
             }
         }
 
+        console.log("🔄 [DEBUG] Iniciando requisição POST para /api/cadastrar_cliente");
         showFullLoading("Criando sua conta...");
         try {
             const response = await fetch(`${API_BASE_URL}/api/cadastrar_cliente`, {
@@ -6136,6 +6144,7 @@ async function salvarNovoUsuario() {
             });
 
             const data = await response.json();
+            console.log("[DEBUG] Resposta recebida de /api/cadastrar_cliente:", data);
 
             if (response.ok && data.status === 'ok') {
                 fecharModal('modal-cadastro');
@@ -6149,14 +6158,13 @@ async function salvarNovoUsuario() {
                 showCustomAlert(data.erro || "Erro ao criar cadastro.", "Erro", "❌");
             }
         } catch (error) {
-            console.error(error);
+            console.error("❌ [DEBUG] Erro de rede em /api/cadastrar_cliente:", error);
             showCustomAlert("Erro de conexão com o servidor.", "Falha", "❌");
         } finally {
             hideFullLoading();
         }
     }
 }
-
 
 // Função auxiliar para verificar se o usuário está logado
 function isUsuarioLogado() {
