@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.1";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.2";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -2756,7 +2756,7 @@ function displayLoadedCards(bolasCantadas) {
             console.log("🎯 Primeira bola detectada! Mudando painel para NUMÉRICO.");
             alternarPainelMobile('numerico');
         }
-        ocultarBotoesSorteExtra()
+        ocultarBotoesSorteExtra('float');
         window.primeiraBolaDetectada = true;
     }
 
@@ -4586,7 +4586,7 @@ async function renderMainContent(data) {
             console.log("🎯 Primeira bola detectada! Mudando painel para NUMÉRICO.");
             alternarPainelMobile('numerico');
         }
-        ocultarBotoesSorteExtra();
+        ocultarBotoesSorteExtra('float');
         //window.primeiraBolaDetectada = true;
     }
 
@@ -8235,16 +8235,25 @@ async function carregarSorteExtra(abrirTela = true, idOverride = null) {
     }
 }
 
-// Auxiliares para evitar erros de repetição
-function ocultarBotoesSorteExtra() {
-    ['btn-open-extra', 'btn-floating-extra'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
+// --- FUNÇÃO AUXILIAR: Ocultar botões com alvo específico ---
+function ocultarBotoesSorteExtra(alvo = 'ambos') {
+    const btnMenu = document.getElementById('btn-open-extra');
+    const btnFlutuante = document.getElementById('btn-floating-extra');
+    
+    if (alvo === 'float') {
+        // Oculta APENAS o botão flutuante (Ex: quando a 1ª bola cai)
+        if (btnFlutuante) btnFlutuante.classList.add('hidden');
+        // Mantém o btnMenu intacto!
+    } else {
+        // Comportamento Padrão: Oculta OS DOIS botões (Ex: promoção inativa/erro)
+        if (btnMenu) btnMenu.classList.add('hidden');
+        if (btnFlutuante) btnFlutuante.classList.add('hidden');
+    }
 }
 
+// --- FUNÇÃO PRINCIPAL: Controlar a visibilidade com regras independentes ---
 function mostrarBotoesSorteExtra() {
-    // Busca o status REAL do banco
+    // 1. Busca o status REAL do banco
     let statusReal = 'ativo';
     if (typeof eventoCarregadoAtual !== 'undefined' && eventoCarregadoAtual && eventoCarregadoAtual.status) {
         statusReal = eventoCarregadoAtual.status.toLowerCase();
@@ -8256,22 +8265,30 @@ function mostrarBotoesSorteExtra() {
     const btnMenu = document.getElementById('btn-open-extra');
     const btnFlutuante = document.getElementById('btn-floating-extra');
 
-    // Se não está ativo no banco, tudo some
+    // 2. Trava de Segurança: Se não está ativa no banco, esconde tudo e aborta
     if (typeof sorteExtraAtivaNoBanco === 'undefined' || !sorteExtraAtivaNoBanco) {
-        if (typeof ocultarBotoesSorteExtra === 'function') ocultarBotoesSorteExtra();
+        ocultarBotoesSorteExtra();
         return;
     }
 
-    // Botão do Menu aparece sempre que a promô estiver ativa
-    if (btnMenu) btnMenu.classList.remove('hidden');
+    // =================================================================
+    // PROMOÇÃO ATIVA (Daqui para baixo, sorteExtraAtivaNoBanco é TRUE)
+    // =================================================================
 
-    // Botão Flutuante só aparece no intervalo oficial do banco
-    if (noIntervalo) {
-        if (btnFlutuante) btnFlutuante.classList.remove('hidden');
-        console.log("✨ Sorte Extra: Modo Intervalo. Exibindo botão Flutuante.");
-    } else {
-        if (btnFlutuante) btnFlutuante.classList.add('hidden');
-        console.log("✨ Sorte Extra: Modo Jogo/Fim. Escondendo Flutuante.");
+    // 3. REGRA DO BOTÃO DO MENU: Aparece sempre (não depende do intervalo)
+    if (btnMenu) {
+        btnMenu.classList.remove('hidden');
+    }
+
+    // 4. REGRA DO BOTÃO FLUTUANTE: Aparece APENAS no intervalo
+    if (btnFlutuante) {
+        if (noIntervalo) {
+            btnFlutuante.classList.remove('hidden');
+            console.log("✨ Sorte Extra: Modo Intervalo. Exibindo botão Flutuante.");
+        } else {
+            btnFlutuante.classList.add('hidden');
+            console.log("✨ Sorte Extra: Modo Jogo/Fim. Escondendo botão Flutuante.");
+        }
     }
 }
 
