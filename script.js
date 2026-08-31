@@ -700,13 +700,19 @@ function renderEventsList(eventos) {
         // 👉 IDENTIFICADORES DO EVENTO
         const isEspecial = evt.tipo_de_evento === 'especial';
 
-        // 📡 VERIFICAÇÃO DO TIPO DE TRANSMISSÃO
-        const tipoRaw = evt.tipo_transmissao ? evt.tipo_transmissao.trim().toLowerCase() : '';
-        const isAoVivo = (tipoRaw === 'ao vivo');
+        // 📡 VERIFICAÇÃO DO TIPO DE TRANSMISSÃO (Blindada contra variações de espaço/maiúsculas)
+        const tipoRaw = evt.tipo_transmissao ? String(evt.tipo_transmissao).trim().toLowerCase().replace(/\s+/g, ' ') : '';
+        const isAoVivo = tipoRaw.includes('ao vivo') || tipoRaw.includes('aovivo');
+        
         // Formatação Dinâmica da Transmissão
         const textoTransmissao = isAoVivo ? '🔴 AO VIVO' : '🤖 DIGITAL';
         const animacaoTransmissao = isAoVivo ? 'animate-pulse' : '';
         const corTagExtra = isAoVivo ? 'text-red-500' : 'text-blue-400';
+
+        // 🎨 Definição visual do Badge de Status conforme o tipo de transmissão
+        const estiloBadgeStatus = isAoVivo 
+            ? `bg-green-600 text-white ${animacaoTransmissao}` 
+            : 'bg-yellow-600 text-black font-black'; // Laranja com texto em preto para Digital
 
         // --- 3. Definição de Estilos e Badges Dinâmicos ---
         let cardClass = 'rounded-xl p-3 border shadow-lg flex flex-col gap-1 relative overflow-hidden transition-all duration-300';
@@ -749,9 +755,9 @@ function renderEventsList(eventos) {
                 corLabelPreco = 'text-gray-600';
                 corPreco = 'text-green-700';
 
-                // Status Badge move-se para a Esquerda e adota a Transmissão
+                // Status Badge move-se para a Esquerda
                 if (isActive) {
-                    statusBadge = `<span class="absolute top-0 left-0 text-[10px] font-black bg-green-600 text-white px-3 py-1 rounded-br-lg ${animacaoTransmissao} z-10 shadow-sm">${textoTransmissao}</span>`;
+                    statusBadge = `<span class="absolute top-0 left-0 text-[10px] font-black ${estiloBadgeStatus} px-3 py-1 rounded-br-lg z-10 shadow-sm">${textoTransmissao}</span>`;
                 } else {
                     statusBadge = '<span class="absolute top-0 left-0 text-[10px] font-black bg-blue-600 text-white px-3 py-1 rounded-br-lg z-10 shadow-sm">EM BREVE</span>';
                 }
@@ -759,9 +765,9 @@ function renderEventsList(eventos) {
                 // 🌑 TEMA NORMAL (Dark Mode)
                 cardClass += ' bg-gradient-to-br from-gray-900 to-gray-800 border-blue-500 hover:border-blue-400 transform hover:scale-[1.02]';
                 
-                // Status Badge Adota a Transmissão
+                // Status Badge à Direita
                 if (isActive) {
-                    statusBadge = `<span class="absolute top-0 right-0 text-[10px] font-black bg-green-600 text-white px-3 py-1 rounded-bl-lg ${animacaoTransmissao} z-10">${textoTransmissao}</span>`;
+                    statusBadge = `<span class="absolute top-0 right-0 text-[10px] font-black ${estiloBadgeStatus} px-3 py-1 rounded-bl-lg z-10">${textoTransmissao}</span>`;
                 } else {
                     statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-blue-600 text-white px-3 py-1 rounded-bl-lg z-10">EM BREVE</span>';
                 }

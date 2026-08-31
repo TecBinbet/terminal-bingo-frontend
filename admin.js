@@ -1426,45 +1426,51 @@ function renderizarListaEventos(eventos) {
 
     eventos.forEach(evt => {
         const isFinalizado = evt.status === 'finalizado';
-        const temVendas = evt.tem_vendas === true; // Lê a nova flag do Python
+        const temVendas = evt.tem_vendas === true;
 
-        // 📡 VERIFICAÇÃO DO TIPO DE TRANSMISSÃO (Padronizada)
+        // 📡 VERIFICAÇÃO DO TIPO DE TRANSMISSÃO
         const tipoRaw = evt.tipo_transmissao ? String(evt.tipo_transmissao).trim().toLowerCase().replace(/\s+/g, ' ') : '';
         const isAoVivo = tipoRaw.includes('ao vivo') || tipoRaw.includes('aovivo');
         
-        // Estilos e textos baseados no tipo
+        // 🎨 Definição visual conforme o seu pedido:
+        // - Ao Vivo: Verde com animação
+        // - Digital: Laranja marcante com texto preto
         const textoTransmissao = isAoVivo ? '🔴 AO VIVO' : '🤖 DIGITAL';
-        const estiloTransmissao = isAoVivo ? 'text-red-400 font-extrabold animate-pulse' : 'text-blue-400 font-semibold';
+        const estiloBadgeTransmissao = isAoVivo 
+            ? 'bg-green-600 text-white animate-pulse' 
+            : 'bg-yellow-600 text-black font-black'; // Laranja/Amarelo escuro com texto preto
 
         // Lógica de exibição do Botão de Iniciar
         let btnIniciarHTML = '';
         if (isFinalizado) {
             btnIniciarHTML = `<button disabled class="px-1 py-3 rounded text-xs font-bold bg-gray-600 text-gray-400 cursor-not-allowed">ENCERRADO</button>`;
         } else if (!temVendas) {
-            // Evento aberto, mas sem vendas: Botão desativado
             btnIniciarHTML = `<button disabled class="px-1 py-3 rounded text-xs font-bold bg-red-900/40 text-red-400 border border-red-900 cursor-not-allowed" title="Aguardando vendas...">SEM VENDAS</button>`;
         } else {
-            // Evento com vendas: Botão verde liberado
             btnIniciarHTML = `<button onclick="carregarEvento('${evt.id_evento}')" class="px-1 py-3 rounded text-xs font-bold bg-green-700 text-white hover:bg-green-600 shadow">INICIAR SORTEIO</button>`;
+        }
+
+        let statusBadge = '';
+        if (isFinalizado) {
+            statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-gray-600 text-gray-300 px-3 py-1 rounded-bl-lg">ENCERRADO</span>';
+        } else {
+            // O badge superior assume o estilo dinâmico escolhido
+            statusBadge = `<span class="absolute top-0 right-0 text-[10px] font-black px-3 py-1 rounded-bl-lg shadow-sm ${estiloBadgeTransmissao}">${textoTransmissao}</span>`;
         }
 
         const card = document.createElement('div');
         card.className = `p-3 rounded border border-gray-700 flex justify-between items-center transition-all ${isFinalizado ? 'bg-gray-800 opacity-60' : 'bg-gray-700 hover:bg-gray-600 hover:border-green-500 cursor-pointer'}`;
         card.innerHTML = `
             <div>
-                <h4 class="font-bold text-yellow-500 text-sm">${evt.descricao}</h4>
+                ${statusBadge}
+                <h4 class="font-bold text-yellow-500 text-sm mt-1">${evt.descricao}</h4>
                 <div class="text-xs text-gray-300 flex items-center gap-2 mt-1">
                     <span>📅 ${evt.data || 'Data N/D'}</span>
                     <span>⏰ ${evt.hora || '--:--'}</span>
-                    <span class="uppercase font-bold text-blue-300">[${evt.status}]</span>
-                    <span class="mx-1 opacity-40">|</span>
-                    <span class="text-[10px] uppercase tracking-wider ${estiloTransmissao}">${textoTransmissao}</span>
                 </div>
             </div>     
             <div class="flex gap-2 items-center">
-                
                 ${btnIniciarHTML}   
-                
                 ${!isFinalizado ? `
                 <button onclick="ativarNovoEvento('${evt.id_evento}')" 
                         class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-1 rounded text-xs shadow">

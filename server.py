@@ -4144,6 +4144,7 @@ def get_event_details():
             'hora_evento': evento.get('hora_evento'),
             'unidade_venda': evento.get('unidade_de_venda'),
             'valor_venda': converter_decimal(evento.get('valor_de_venda')),
+            'tipo_transmissao': evento.get('tipo_transmissao', 'Digital'),
             'tipo_cartela': evento.get('tipo_de_cartela'),
             'numero_inicial': evento.get('numero_inicial', 0),
             'qtde_vendida': qtde_vendida,
