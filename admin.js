@@ -2221,62 +2221,6 @@ async function carregarEvento(idEvento) {
     iniciarTimerEspera(idEvento);
 }
 
-async function carregarEvento_old(idEvento) {
-    const confirmou = await customConfirm(`Deseja INICIAR este evento?\n\nIsso irá preparar a base de cartelas e iniciar o timer.`);
-    if(!confirmou) return;
-    
-    fecharModal('modal-eventos');
-    showLoading("🔄 Carregando base de cartelas...");
-
-    console.log(`[DEBUG] Carregando evento ${idEvento}...`);
-
-    try {
-        const respPrep = await fetch(`${API_BASE_URL}/api/admin/preparar_evento`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ id_evento: idEvento })
-        });
-        
-        const dadosPrep = await respPrep.json();
-        if (dadosPrep.error) throw new Error(dadosPrep.error);
-        
-        showLoading("🔒 Encerrando vendas...");
-
-        await fetch(`${API_BASE_URL}/api/admin/fechar_vendas_evento`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ id_evento: idEvento })
-        });
-
-        // ============================================================
-        // 👉 AJUSTE CRUCIAL: INICIALIZAÇÃO DA DESCRIÇÃO DO PRÊMIO
-        // ============================================================
-        // verificamos se é um evento de 25 números (geralmente identificado 
-        // pela configuração do evento vinda do banco ou pelo id)
-        
-        let premioInicial = "4 Cantos e Linha"; // Valor padrão para sua configuração de 25 números
-        
-        // Se o seu dadosPrep ou uma busca ao banco trouxer os prêmios ativos, 
-        // você pode montar a string dinamicamente aqui.
-        
-        console.log(`[DEBUG] Inicializando prêmio para: ${premioInicial}`);
-        
-        // Chamamos a função mudarPremio que acabamos de ajustar (aquela que limpa o texto)
-        // Isso já envia para o servidor e sincroniza todos os terminais dos clientes.
-        if (typeof mudarPremio === 'function') {
-            await mudarPremio(premioInicial);
-        }
-
-    } catch(e) {
-        console.error("[DEBUG] Erro carregarEvento:", e);
-        customAlert("⛔ Erro crítico ao carregar cartelas: " + e.message);
-        hideLoading();
-        return; 
-    } 
-
-    hideLoading();
-    iniciarTimerEspera(idEvento);
-}
 
 function iniciarTimerEspera(idEvento) {
     const modal = document.getElementById('modal-timer-vendas');
@@ -2349,6 +2293,176 @@ async function pularEsperaVendas() {
 
 
 async function executarCarregamentoReal(idEvento) {
+    const menu = document.getElementById('admin-side-menu');
+    const menuOverlay = document.getElementById('admin-menu-overlay');
+
+    if (menu) menu.classList.add('-translate-x-full'); 
+    if (menuOverlay) menuOverlay.classList.add('hidden'); 
+
+    showLoading("Sincronizando últimas vendas e carregando jogo...");
+    if (aguardandoVideo > 0 && !modoRoboAtivo) {
+        await new Promise(r => setTimeout(r, aguardandoVideo));
+    }
+
+    try {
+        console.log("[DEBUG] Resetando jogo para novo evento...");
+        await fetch(`${API_BASE_URL}/api/admin/resetar`, { method: 'POST' });
+        bolasSorteadasCache = [];
+        ultimoTotalBolasProcessadas = -1;
+        jaAlertouNestaBola = false;
+        jaValidouSorteExtraNestaRodada = false;
+        if (bolaDestaque) bolaDestaque.textContent = "--";
+        updateGrid([]); // Limpa o painel visual
+
+        // 1. Busca os detalhes do evento atual
+        const response = await fetch(`${API_BASE_URL}/api/admin/detalhes_evento?id_evento=${idEvento}`);
+        const dados = await response.json();
+
+        if (!response.ok || dados.error) { 
+            const msgErro = dados.error || "Erro desconhecido ao carregar evento.";
+            customAlert("⛔ " + msgErro); 
+            const modalEventos = document.getElementById('modal-eventos');
+            if(modalEventos) modalEventos.classList.remove('hidden');
+            return; 
+        }
+
+        // =========================================================================
+        // 🎯 NOVA REGRA: DETECÇÃO AUTOMÁTICA DE TIPO DE TRANSMISSÃO ("Digital" / "ao Vivo")
+        // =========================================================================
+        const tipoTransmissaoEvento = dados.tipo_transmissao ? String(dados.tipo_transmissao).trim().toLowerCase() : "";
+        
+        if (tipoTransmissaoEvento === "digital" || tipoTransmissaoEvento === "ao vivo") {
+            // Mapeia o valor para o formato esperado pelo sistema ('auto' ou 'manual')
+            // "Digital" vira modo automático ('auto'), "ao Vivo" vira modo manual/extratora ('manual')
+            const novoModoSorteio = (tipoTransmissaoEvento === "digital") ? "auto" : "manual";
+
+            // Verifica se houve alteração em relação ao modo atual configurado
+            if (typeof modoSorteio !== 'undefined' && modoSorteio !== novoModoSorteio) {
+                console.log(`🔀 [TRANSMISSÃO] Alterando forma de sorteio de '${modoSorteio}' para '${novoModoSorteio}' devido ao evento.`);
+                
+                // 1. Aciona o spinner com a mensagem solicitada
+                if (typeof mostrarSpinner === 'function') {
+                    mostrarSpinner("Atualizando forma de sorteio ...");
+                } else {
+                    showLoading("Atualizando forma de sorteio ...");
+                }
+
+                // 2. Grava os novos valores no arquivo/banco de parâmetros
+                try {
+                    await fetch(`${API_BASE_URL}/api/admin/salvar_config`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            modo_sorteio: novoModoSorteio,
+                            // Mantém as outras configurações essenciais ativas ao salvar
+                            tempo_ganhador: configuracaoServer.tempo_ganhador || 5,
+                            voz_ativa: typeof vozAtiva !== 'undefined' ? vozAtiva : true,
+                            camera_ativa: typeof cameraAtiva !== 'undefined' ? cameraAtiva : false,
+                            nome_sala: configuracaoServer.nome_sala || 'LIVE THE BET',
+                            tipo_sorteio: parseInt(dados.tipo_cartela || 25),
+                            sorteio_automatizado: (novoModoSorteio === 'auto')
+                        })
+                    });
+
+                    // 3. Atualiza as variáveis globais relacionadas
+                    modoSorteio = novoModoSorteio;
+                    if (typeof aplicarVisualModoSorteio === 'function') {
+                        aplicarVisualModoSorteio(modoSorteio);
+                    }
+                } catch (errConfig) {
+                    console.error("❌ Erro ao salvar alteração automática de modo de sorteio:", errConfig);
+                }
+
+                // 4. Cria um delay estrito de 3 segundos
+                await new Promise(resolve => setTimeout(resolve, 3000));
+
+                // 5. Só depois limpa o spinner
+                if (typeof esconderSpinner === 'function') {
+                    esconderSpinner();
+                } else {
+                    hideLoading();
+                }
+            }
+        }
+        // =========================================================================
+
+        dadosEventoAtual = dados; 
+        qtdeCartelasVendidosEvento = dados.qtde_vendida || 0;
+        qtdeCuponsVendidosEvento = dados.qtde_cupons || 0; 
+        console.log(`%c🎟️ SORTE EXTRA: ${qtdeCuponsVendidosEvento} cupons em jogo.`, "color: #fbbf24; font-weight: bold;");
+
+        document.getElementById('painel-evento-ativo').classList.remove('hidden');
+
+        id_evento_ativo = parseInt(idEvento);
+        id_rodada_ativa = parseInt(idEvento);
+
+        const tipoCartela = parseInt(dados.tipo_cartela || 25);
+        if (tipoCartela === 25) {
+            MAX_BOLAS = 75;
+            console.log("🎱 Evento Configurado: BINGO 75");
+        } else {
+            MAX_BOLAS = 90;
+            console.log("🎱 Evento Configurado: BINGO 90");
+        }
+
+        const labelQuadra = (MAX_BOLAS === 75) ? '4 Cantos' : 'Quadra';
+
+        initGrid(); 
+
+        document.getElementById('info-descricao').textContent = dados.descricao;
+        document.getElementById('info-data-hora').textContent = `${dados.data_evento} ${dados.hora_evento}`;
+        document.getElementById('info-inicial').textContent = dados.numero_inicial;
+        document.getElementById('info-qtde').textContent = dados.qtde_vendida;
+        document.getElementById('info-ultimo').textContent = dados.ultimo_cartao;
+        document.getElementById('info-preco-un').textContent = parseFloat(dados.valor_venda||0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+        document.getElementById('info-vendas').textContent = parseFloat(dados.total_vendas_reais||0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+
+        const containerPremios = document.getElementById('container-premios-lista');
+        containerPremios.innerHTML = '';
+        const premios = dados.premios;
+        const listaPremios = [
+            { key: 'quadra', label: labelQuadra },
+            { key: 'linha', label: 'Linha', extra: premios.qtde_linhas > 1 ? `(${premios.qtde_linhas}x)` : '' },
+            { key: 'falta_um', label: 'Falta 1' },
+            { key: 'bingo', label: 'Bingo' },
+            { key: 'segundo_bingo', label: '2º Bingo' },
+            { key: 'acumulado', label: 'Acumulado', extra: premios.bola_tope > 0 ? `(Bola ${premios.bola_tope})` : '' }
+        ];
+
+        listaPremios.forEach(p => {
+            const valor = parseFloat(premios[p.key] || 0);
+            if (valor > 0) {
+                const card = document.createElement('div');
+                card.className = 'bg-gray-900 rounded p-1 border border-gray-700 text-center';
+                card.innerHTML = `<span class="block text-[9px] text-gray-500 uppercase">${p.label} ${p.extra || ''}</span><span class="block text-sm font-bold text-yellow-400">${valor.toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</span>`;
+                containerPremios.appendChild(card);
+            }
+        });
+        document.getElementById('info-total-premios').textContent = `Total: ${parseFloat(premios.total||0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}`;
+
+        definirProximoPremioAutomatico();
+        bolaDestaque.textContent = "--";
+
+        if (modoSorteio === 'manual') {
+            iniciarTransmissao(); 
+            console.log("⏱️ [SYNC] Transmissão iniciada. Marco zero gravado (Modo Manual)!");
+        } else {
+            console.log("🤖 [SYNC] Sorteio Automático. Sincronia de vídeo ignorada (Via Verde ativa).");
+        }
+        
+        if (sorteioAutomatizadoConfig && modoSorteio === 'auto') {
+           iniciarModoRobo(); 
+        }
+
+    } catch (e) { 
+        console.error("[DEBUG] Erro executarCarregamentoReal:", e); 
+        customAlert("Erro ao carregar detalhes."); 
+    } finally {
+        hideLoading();
+    }
+}
+
+async function executarCarregamentoReal_old(idEvento) {
     const menu = document.getElementById('admin-side-menu');
     const menuOverlay = document.getElementById('admin-menu-overlay');
 

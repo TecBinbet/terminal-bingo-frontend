@@ -214,6 +214,51 @@ def atualizar_status_treinamento():
         print(f"⚠️ Erro ao carregar status de treinamento: {e}")
         MODO_TREINAMENTO_ATIVO = False
 
+def formatar_telefone_padrao(sales_db, telefone_raw):
+    """
+    Formata o telefone para o padrão: (11) 66889-9885.
+    Se o DDD estiver ausente (8 ou 9 dígitos), busca o 'dd_local' 
+    diretamente no banco de dados de vendas (sales_db) ou assume '11'.
+    """
+    if not telefone_raw:
+        return ""
+
+    digitos = clean_numeric_string(str(telefone_raw))
+    
+    if not digitos:
+        return ""
+
+    # Se veio sem DDD (apenas o número local com 8 ou 9 dígitos)
+    if len(digitos) in [8, 9]:
+        dd_padrao = '11' # Fallback de segurança
+        try:
+            if sales_db is not None:
+                # Busca os parâmetros específicos no banco de vendas
+                parametros = sales_db.parametros.find_one({}) or {}
+                dd_config = str(parametros.get('dd_local', '')).strip()
+                if dd_config:
+                    dd_padrao = dd_config
+        except Exception as e:
+            print(f"⚠️ Erro ao buscar DDD padrão no banco de vendas: {e}")
+            
+        digitos = dd_padrao + digitos
+
+    # Formatação padrão para 11 dígitos (Celular moderno com 9º dígito: (XX) XXXXX-XXXX)
+    if len(digitos) == 11:
+        return f"({digitos[0:2]}) {digitos[2:7]}-{digitos[7:11]}"
+    
+    # Formatação padrão para 10 dígitos (Fixo ou formato antigo: (XX) XXXX-XXXX)
+    elif len(digitos) == 10:
+        return f"({digitos[0:2]}) {digitos[2:6]}-{digitos[6:10]}"
+    
+    # Retorna os dígitos limpos caso venha com tamanho atípico (ex: DDI +55 ou números internacionais)
+    elif len(digitos) > 11 and digitos.startswith('55'):
+        # Remove o 55 do Brasil se vier acoplado e tenta formatar novamente os últimos 11 dígitos
+            digitos_br = digitos[2:]
+            if len(digitos_br) == 11:
+                return f"({digitos_br[0:2]}) {digitos_br[2:7]}-{digitos_br[7:11]}"
+
+    return telefone_raw
 
 def hora_brasil():
 # 1. Pega a hora exata no fuso de SP
@@ -4955,7 +5000,7 @@ def api_dados_cliente():
             'nick': cli.get('nick'),
             'cidade': cli.get('cidade',''),
             'nome_cliente': cli.get('nome_cliente'),               
-            'telefone': cli.get('telefone',''),      
+            'telefone': formatar_telefone_padrao(sales_db, cli.get('telefone', '')),  # <--- Formatado na leitura      
             'chave_pix': cli.get('chave_pix', '')  # <--- CRUCIAL PARA A TRAVA DE SAQUE
         })
 
@@ -5556,12 +5601,12 @@ def cadastrar_cliente():
                     pass
         # ==============================================================================
 
-
         # 5. Montagem do Documento
+        celular_formatado = formatar_telefone_padrao(sales_db, celular)
         novo_cliente = {
             'id_cliente': novo_id_cliente, 
             'nome_cliente': nome,
-            'telefone': celular,
+            'telefone': celular_formatado,
             'chave_pix': pix,
             'nick': nick,
             'senha': senha_hash,

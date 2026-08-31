@@ -691,6 +691,201 @@ function renderEventsList(eventos) {
             eventDate = new Date();
         }
 
+        // --- 2. Lógica de Status e Eventos ---
+        const isFinalizado = evt.status === 'finalizado';
+        const isFuture = eventDate >= now;
+        const isActive = evt.status === 'ativo';
+        const isFutureOrActive = (isFuture || isActive) && !isFinalizado;
+        
+        // 👉 IDENTIFICADORES DO EVENTO
+        const isEspecial = evt.tipo_de_evento === 'especial';
+
+        // 📡 VERIFICAÇÃO DO TIPO DE TRANSMISSÃO
+        const tipoRaw = evt.tipo_transmissao ? evt.tipo_transmissao.trim().toLowerCase() : '';
+        const isAoVivo = (tipoRaw === 'ao vivo');
+        
+        // Formatação Dinâmica da Transmissão
+        const textoTransmissao = isAoVivo ? '🔴 AO VIVO' : '🤖 DIGITAL';
+        const animacaoTransmissao = isAoVivo ? 'animate-pulse' : '';
+        const corTagExtra = isAoVivo ? 'text-red-500' : 'text-blue-400';
+
+        // --- 3. Definição de Estilos e Badges Dinâmicos ---
+        let cardClass = 'rounded-xl p-3 border shadow-lg flex flex-col gap-1 relative overflow-hidden transition-all duration-300';
+        let statusBadge = '';
+        let superPremioBadge = '';
+        let botoesAcaoHtml = '';
+
+        // Variáveis de Cor (Padrão: Dark Mode)
+        let corTitulo = 'text-yellow-500';
+        let corData = 'text-blue-300';
+        let bgPremios = 'bg-black/40 border-gray-700/50';
+        let corTituloPremio = 'text-green-400';
+        let corListaPremio = 'text-yellow-300 font-medium';
+        let corEstrela = 'text-yellow-500';
+        let corID = 'text-gray-400';
+        let corLabelPreco = 'text-gray-500';
+        let corPreco = 'text-green-400';
+
+        if (isFinalizado) {
+            cardClass += ' bg-gray-800 border-gray-600 opacity-60 grayscale';
+            statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-gray-600 text-gray-300 px-3 py-1 rounded-bl-lg">ENCERRADO</span>';
+        } 
+        else if (isFutureOrActive) {
+            
+            if (isEspecial) {
+                // 🌟 TEMA ESPECIAL (Amarelo Claro / Premium)
+                cardClass += ' bg-gradient-to-br from-yellow-100 to-yellow-50 border-2 border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.4)] transform hover:scale-[1.02]';
+                
+                // Badge Super Prémio na Direita
+                superPremioBadge = '<div class="absolute top-0 right-0 bg-gradient-to-r from-yellow-500 to-yellow-600 text-white text-[10px] font-black px-3 py-1 rounded-bl-xl shadow-md flex items-center gap-1 z-10 uppercase tracking-widest border-b border-l border-yellow-400"><span class="animate-pulse">⭐</span> SUPER PRÊMIO</div>';
+                
+                // Ajuste de cores para leitura no fundo claro
+                corTitulo = 'text-yellow-900 font-black';
+                corData = 'text-yellow-800 font-bold';
+                bgPremios = 'bg-yellow-200/50 border-yellow-400/50';
+                corTituloPremio = 'text-green-800 font-black';
+                corListaPremio = 'text-yellow-900 font-bold';
+                corEstrela = 'text-yellow-600';
+                corID = 'text-gray-700';
+                corLabelPreco = 'text-gray-600';
+                corPreco = 'text-green-700';
+
+                // Status Badge move-se para a Esquerda e adota a Transmissão
+                if (isActive) {
+                    statusBadge = `<span class="absolute top-0 left-0 text-[10px] font-black bg-green-600 text-white px-3 py-1 rounded-br-lg ${animacaoTransmissao} z-10 shadow-sm">${textoTransmissao}</span>`;
+                } else {
+                    statusBadge = '<span class="absolute top-0 left-0 text-[10px] font-black bg-blue-600 text-white px-3 py-1 rounded-br-lg z-10 shadow-sm">EM BREVE</span>';
+                }
+            } else {
+                // 🌑 TEMA NORMAL (Dark Mode)
+                cardClass += ' bg-gradient-to-br from-gray-900 to-gray-800 border-blue-500 hover:border-blue-400 transform hover:scale-[1.02]';
+                
+                // Status Badge Adota a Transmissão
+                if (isActive) {
+                    statusBadge = `<span class="absolute top-0 right-0 text-[10px] font-black bg-green-600 text-white px-3 py-1 rounded-bl-lg ${animacaoTransmissao} z-10">${textoTransmissao}</span>`;
+                } else {
+                    statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-blue-600 text-white px-3 py-1 rounded-bl-lg z-10">EM BREVE</span>';
+                }
+            }
+
+            // --- BLOCO DE BOTÕES DINÂMICOS --- 
+            let hasCards = evt.cliente_comprou && evt.qtd_cartelas_compradas > 0;
+
+            if (hasCards) {
+                let btnApostasClass = "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white shadow-[0_0_12px_rgba(59,130,246,0.5)] border border-blue-500";
+                let textoApostas = `<span>⭐</span> MINHAS <b class="text-[17px] font-semibold mx-1 px-1.5 bg-white/25 rounded shadow-sm drop-shadow-md tracking-tighter">${evt.qtd_cartelas_compradas}</b> CARTELAS`;
+
+                botoesAcaoHtml = `
+                    <div class="-mt-0.5 grid grid-cols-3 gap-2 border-t border-gray-700/30 pt-0.5 -mb-1">  
+                        <button onclick="abrirModalCompra('${evt.id_evento}')" 
+                                class="bg-green-600 hover:bg-green-500 text-white col-span-1 text-[11px] font-bold py-2 px-1 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
+                            <span>🛒</span> MAIS
+                        </button>
+                        <button onclick="openMyCardsPanel('${evt.id_evento}', '${evt.descricao.replace(/'/g, "\\'")}')"
+                                class="${btnApostasClass} col-span-2 text-[11px] font-bold py-2 px-1 rounded-lg shadow-md flex items-center justify-center gap-0.5 transition-all active:scale-95">
+                            ${textoApostas}
+                        </button>
+                    </div>
+                `;
+            } else {
+                botoesAcaoHtml = `
+                    <div class="-mt-0.5 grid grid-cols-1 border-t border-gray-700/30 pt-0.5 -mb-1">  
+                        <button onclick="abrirModalCompra('${evt.id_evento}')" 
+                                class="bg-green-600 hover:bg-green-500 text-white text-[12px] uppercase font-black py-2.5 px-4 rounded-lg shadow-md flex items-center justify-center gap-2 transition-all active:scale-95 animate-pulse-slow">
+                            <span>🛒</span> ADQUIRIR CARTELAS PARA ESTE EVENTO
+                        </button>
+                    </div>
+                `;
+            }
+        } 
+        else {
+            cardClass += ' bg-gray-800 border-red-900 opacity-80';
+            statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-red-900 text-red-200 px-3 py-1 rounded-bl-lg">DATA PASSADA</span>';
+        }
+
+        // --- 4. Formatação de Dados ---
+        const preco = parseFloat(evt.valor_cartela).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        
+        let rawPremios = evt.premios_desc || evt.premios || [];
+        let listaPremios = Array.isArray(rawPremios) ? rawPremios : (typeof rawPremios === 'string' ? rawPremios.split(',').map(p => p.trim()) : []);
+        const premiosHtml = listaPremios.filter(p => p).map(p => `<li class="flex items-start gap-0"><span class="${corEstrela}">★</span> ${p}</li>`).join('');
+
+        // --- 5. Montagem do Card HTML Dinâmico ---
+        const card = document.createElement('div');
+        card.className = cardClass;
+        card.innerHTML = `
+            ${statusBadge}
+            ${superPremioBadge}
+            
+            <div class="pr-2 mt-3">
+                <h3 class="text-[15px] ${corTitulo} leading-tight drop-shadow-sm -mb-0.5">${evt.descricao}</h3>
+                <p class="text-[13px] ${corData} font-mono -mb-0.5 flex items-center gap-1">
+                    ${evt.data} <span class="mx-1 opacity-50">|</span> <span>⏰</span> ${evt.hora} 
+                    <span class="mx-1 opacity-50">|</span> 
+                    <span class="text-[10px] font-bold uppercase tracking-wider ${corTagExtra} ${animacaoTransmissao}">${textoTransmissao}</span>
+                </p>
+            </div>
+
+            <div class="${bgPremios} rounded-lg p-1 border mt-1">
+                <p class="text-[10px] text-center ${corTituloPremio} uppercase -mb-1 -mt-1 tracking-wider">Premiação Prevista:</p>
+                <ul class="grid grid-cols-2 gap-x-2 text-[11px] ${corListaPremio} leading-tight mt-0.5">
+                    ${premiosHtml}
+                </ul>
+            </div>
+
+            <div class="flex justify-between items-end -mt-1.5 -mb-2"> 
+                <div class="${corID}">
+                    <span class="block text-[9px] font-bold uppercase">ID: ${evt.id_evento}</span>
+                    <span class="text-[11px]">Kit c/ <strong>${evt.unidade_venda}</strong> cartelas</span>
+                </div>
+                <div class="text-right">
+                    <span class="block text-[9px] font-bold uppercase ${corLabelPreco}">Valor do Kit</span>
+                    <span class="text-lg font-bold ${corPreco} tracking-tighter">${preco}</span>
+                </div>
+            </div>
+
+            ${botoesAcaoHtml}
+        `;
+
+        eventsListContent.appendChild(card);
+    });
+}
+
+function renderEventsList_old(eventos) {
+    if (!eventsListContent) return;
+    eventsListContent.innerHTML = '';
+
+    if (!eventos || eventos.length === 0) {
+        eventsListContent.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-40 text-gray-500">
+                <span class="text-4xl mb-2">📭</span>
+                <p>Nenhum evento programado no momento.</p>
+            </div>
+        `;
+        return;
+    }
+
+    const now = new Date();
+
+    eventos.forEach(evt => {
+        // --- 1. Tratamento de Data ---
+        let eventDate;
+        if (evt.data && evt.data.includes('/')) {
+            const dateParts = evt.data.split('/');
+            const timeParts = evt.hora ? evt.hora.split(':') : ['00', '00'];
+            eventDate = new Date(
+                parseInt(dateParts[2]),
+                parseInt(dateParts[1]) - 1,
+                parseInt(dateParts[0]),
+                parseInt(timeParts[0] || 0),
+                parseInt(timeParts[1] || 0)
+            );
+        } else if (evt.data_iso) {
+            eventDate = new Date(evt.data_iso);
+        } else {
+            eventDate = new Date();
+        }
+
         // --- 2. Lógica de Status ---
         const isFinalizado = evt.status === 'finalizado';
         const isFuture = eventDate >= now;
