@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "1.9";
+const VERSAO_ATUAL = "1.1";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -1428,17 +1428,19 @@ function renderizarListaEventos(eventos) {
         const isFinalizado = evt.status === 'finalizado';
         const temVendas = evt.tem_vendas === true;
 
-        // 📡 VERIFICAÇÃO DO TIPO DE TRANSMISSÃO
-        const tipoRaw = evt.tipo_transmissao ? String(evt.tipo_transmissao).trim().toLowerCase().replace(/\s+/g, ' ') : '';
+        // 📡 DEBUG & VERIFICAÇÃO DO TIPO DE TRANSMISSÃO
+        console.log(`🔍 [Locutor] Evento ${evt.id_evento} - tipo_transmissao cru:`, evt.tipo_transmissao);
+
+        const tipoRaw = evt.tipo_transmissao ? String(evt.tipo_transmissao).trim().toLowerCase().replace(/\s+/g, ' ') : 'digital';
         const isAoVivo = tipoRaw.includes('ao vivo') || tipoRaw.includes('aovivo');
         
-        // 🎨 Definição visual conforme o seu pedido:
+        // 🎨 Definição visual:
         // - Ao Vivo: Verde com animação
         // - Digital: Laranja marcante com texto preto
         const textoTransmissao = isAoVivo ? '🔴 AO VIVO' : '🤖 DIGITAL';
         const estiloBadgeTransmissao = isAoVivo 
             ? 'bg-green-600 text-white animate-pulse' 
-            : 'bg-yellow-600 text-black font-black'; // Laranja/Amarelo escuro com texto preto
+            : 'bg-yellow-600 text-black font-black';
 
         // Lógica de exibição do Botão de Iniciar
         let btnIniciarHTML = '';
@@ -1467,6 +1469,7 @@ function renderizarListaEventos(eventos) {
                 <div class="text-xs text-gray-300 flex items-center gap-2 mt-1">
                     <span>📅 ${evt.data || 'Data N/D'}</span>
                     <span>⏰ ${evt.hora || '--:--'}</span>
+                    <span class="uppercase font-bold text-blue-300">[${evt.status}]</span>
                 </div>
             </div>     
             <div class="flex gap-2 items-center">
