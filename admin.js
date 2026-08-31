@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "1.0";
+const VERSAO_ATUAL = "1.1";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -1437,8 +1437,8 @@ function renderizarListaEventos(eventos) {
         // - Digital: Laranja marcante com texto preto
         const textoTransmissao = isAoVivo ? '🔴 AO VIVO' : '🤖 DIGITAL';
         const estiloBadgeTransmissao = isAoVivo 
-            ? 'bg-green-600 text-white animate-pulse' 
-            : 'bg-yellow-600 text-black font-black';
+            ? 'bg-yellow-500 text-black font-black animate-pulse' 
+            : 'bg-gray-500 text-gray-300 font-black';
 
         // Lógica de exibição do Botão de Iniciar
         let btnIniciarHTML = '';
