@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "1.1";
+const VERSAO_ATUAL = "1.0";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -1428,14 +1428,12 @@ function renderizarListaEventos(eventos) {
         const isFinalizado = evt.status === 'finalizado';
         const temVendas = evt.tem_vendas === true;
 
-        // 📡 DEBUG & VERIFICAÇÃO DO TIPO DE TRANSMISSÃO
-        console.log(`🔍 [Locutor] Evento ${evt.id_evento} - tipo_transmissao cru:`, evt.tipo_transmissao);
-
+        // 📡 VERIFICAÇÃO DO TIPO DE TRANSMISSÃO
         const tipoRaw = evt.tipo_transmissao ? String(evt.tipo_transmissao).trim().toLowerCase().replace(/\s+/g, ' ') : 'digital';
         const isAoVivo = tipoRaw.includes('ao vivo') || tipoRaw.includes('aovivo');
         
-        // 🎨 Definição visual:
-        // - Ao Vivo: Verde com animação
+        // 🎨 Definição visual exata solicitada:
+        // - Ao Vivo: Verde com animação pulsante
         // - Digital: Laranja marcante com texto preto
         const textoTransmissao = isAoVivo ? '🔴 AO VIVO' : '🤖 DIGITAL';
         const estiloBadgeTransmissao = isAoVivo 
@@ -1452,24 +1450,25 @@ function renderizarListaEventos(eventos) {
             btnIniciarHTML = `<button onclick="carregarEvento('${evt.id_evento}')" class="px-1 py-3 rounded text-xs font-bold bg-green-700 text-white hover:bg-green-600 shadow">INICIAR SORTEIO</button>`;
         }
 
-        let statusBadge = '';
+        // 🏷️ Criação correta do Badge para aparecer no card do Locutor
+        let badgeVisual = '';
         if (isFinalizado) {
-            statusBadge = '<span class="absolute top-0 right-0 text-[10px] font-black bg-gray-600 text-gray-300 px-3 py-1 rounded-bl-lg">ENCERRADO</span>';
+            badgeVisual = '<span class="text-[10px] font-black bg-gray-600 text-gray-300 px-2 py-0.5 rounded">ENCERRADO</span>';
         } else {
-            // O badge superior assume o estilo dinâmico escolhido
-            statusBadge = `<span class="absolute top-0 right-0 text-[10px] font-black px-3 py-1 rounded-bl-lg shadow-sm ${estiloBadgeTransmissao}">${textoTransmissao}</span>`;
+            badgeVisual = `<span class="text-[10px] font-black px-2 py-0.5 rounded shadow-sm ${estiloBadgeTransmissao}">${textoTransmissao}</span>`;
         }
 
         const card = document.createElement('div');
         card.className = `p-3 rounded border border-gray-700 flex justify-between items-center transition-all ${isFinalizado ? 'bg-gray-800 opacity-60' : 'bg-gray-700 hover:bg-gray-600 hover:border-green-500 cursor-pointer'}`;
         card.innerHTML = `
             <div>
-                ${statusBadge}
-                <h4 class="font-bold text-yellow-500 text-sm mt-1">${evt.descricao}</h4>
+                <div class="flex items-center gap-2 mb-1">
+                    <h4 class="font-bold text-yellow-500 text-sm">${evt.descricao}</h4>
+                    ${badgeVisual}
+                </div>
                 <div class="text-xs text-gray-300 flex items-center gap-2 mt-1">
                     <span>📅 ${evt.data || 'Data N/D'}</span>
                     <span>⏰ ${evt.hora || '--:--'}</span>
-                    <span class="uppercase font-bold text-blue-300">[${evt.status}]</span>
                 </div>
             </div>     
             <div class="flex gap-2 items-center">
@@ -1486,7 +1485,6 @@ function renderizarListaEventos(eventos) {
         container.appendChild(card);
     });
 }
-
 
 // Adicionamos o parâmetro 'automatico = false'
 async function ativarNovoEvento(idNovoEvento, automatico = false) {
