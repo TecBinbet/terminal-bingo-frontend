@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.8";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.9";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -703,7 +703,6 @@ function renderEventsList(eventos) {
         // 📡 VERIFICAÇÃO DO TIPO DE TRANSMISSÃO
         const tipoRaw = evt.tipo_transmissao ? evt.tipo_transmissao.trim().toLowerCase() : '';
         const isAoVivo = (tipoRaw === 'ao vivo');
-        
         // Formatação Dinâmica da Transmissão
         const textoTransmissao = isAoVivo ? '🔴 AO VIVO' : '🤖 DIGITAL';
         const animacaoTransmissao = isAoVivo ? 'animate-pulse' : '';

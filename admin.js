@@ -2,7 +2,7 @@
 // === ADMIN.JS - SISTEMA COMPLETO V4 (FINAL) - DEBUG ATIVO ===
 // =========================================================
 
-const VERSAO_ATUAL = "1.6";
+const VERSAO_ATUAL = "1.9";
 let ws = null;
 
 // --- REFERÊNCIAS DE UI ---
@@ -1419,11 +1419,22 @@ async function abrirModalEventos() {
 function renderizarListaEventos(eventos) {
     const container = document.getElementById('lista-eventos-container');
     container.innerHTML = '';
-    if (!eventos || eventos.length === 0) { container.innerHTML = '<p class="text-center text-gray-500 py-4">Nenhum evento agendado.</p>'; return; }
+    if (!eventos || eventos.length === 0) { 
+        container.innerHTML = '<p class="text-center text-gray-500 py-4">Nenhum evento agendado.</p>'; 
+        return; 
+    }
 
     eventos.forEach(evt => {
         const isFinalizado = evt.status === 'finalizado';
         const temVendas = evt.tem_vendas === true; // Lê a nova flag do Python
+
+        // 📡 VERIFICAÇÃO DO TIPO DE TRANSMISSÃO (Padronizada)
+        const tipoRaw = evt.tipo_transmissao ? String(evt.tipo_transmissao).trim().toLowerCase().replace(/\s+/g, ' ') : '';
+        const isAoVivo = tipoRaw.includes('ao vivo') || tipoRaw.includes('aovivo');
+        
+        // Estilos e textos baseados no tipo
+        const textoTransmissao = isAoVivo ? '🔴 AO VIVO' : '🤖 DIGITAL';
+        const estiloTransmissao = isAoVivo ? 'text-red-400 font-extrabold animate-pulse' : 'text-blue-400 font-semibold';
 
         // Lógica de exibição do Botão de Iniciar
         let btnIniciarHTML = '';
@@ -1442,10 +1453,12 @@ function renderizarListaEventos(eventos) {
         card.innerHTML = `
             <div>
                 <h4 class="font-bold text-yellow-500 text-sm">${evt.descricao}</h4>
-                <div class="text-xs text-gray-300 flex gap-2 mt-1">
+                <div class="text-xs text-gray-300 flex items-center gap-2 mt-1">
                     <span>📅 ${evt.data || 'Data N/D'}</span>
                     <span>⏰ ${evt.hora || '--:--'}</span>
                     <span class="uppercase font-bold text-blue-300">[${evt.status}]</span>
+                    <span class="mx-1 opacity-40">|</span>
+                    <span class="text-[10px] uppercase tracking-wider ${estiloTransmissao}">${textoTransmissao}</span>
                 </div>
             </div>     
             <div class="flex gap-2 items-center">

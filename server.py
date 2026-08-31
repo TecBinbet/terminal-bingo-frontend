@@ -2132,6 +2132,7 @@ def proximos_eventos():
                     'valor_cartela': valor_safe,
                     'unidade_venda': evt.get('unidade_de_venda', 1),
                     'tipo_de_evento': str(evt.get('tipo_de_evento', '')).strip().lower(),
+                    'tipo_transmissao': evt.get('tipo_transmissao', 'Digital'),  
                     'premios_desc': lista_premios_dinamica,
                     'tem_vendas': tem_vendas,
                     'cliente_comprou': cliente_comprou,
