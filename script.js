@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.3";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.4";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -7851,52 +7851,58 @@ async function abrirModalCompra(idEventoEspecifico = 0, qtdJaCompradaParam = nul
 
     try {
         eventoSelecionadoParaCompra = idEventoEspecifico > 0 ? idEventoEspecifico : 0;
-        console.log("🛒 Evento selecionado para compra:", eventoSelecionadoParaCompra);
-
-        // 👉 DEFINIÇÃO INTELIGENTE DA QUANTIDADE JÁ COMPRADA
-        let qtdCompradaDisplay = 0;
-        if (qtdJaCompradaParam !== null && qtdJaCompradaParam !== undefined) {
-            // Veio do clique no evento agendado (passado via parâmetro)
-            qtdCompradaDisplay = parseInt(qtdJaCompradaParam) || 0;
-        } else {
-            // É a rodada atual ou clique genérico, pega da variável global
-            qtdCompradaDisplay = (typeof cartelasEmJogo !== 'undefined') ? parseInt(cartelasEmJogo) : 0;
-        }
 
         const modal = document.getElementById('modal-comprar-cartelas');
         if (!modal) return;
 
-        // Limpa estados anteriores
-        const elNum = document.getElementById('numeracao_atual_venda');
-        const elPrecoUnit = document.getElementById('preco-unitario-modal');
-        if (elNum) elNum.textContent = "......";
-        if (elPrecoUnit) elPrecoUnit.textContent = "Carregando preço...";
-
+        // 1. Mostrar Modal Imediatamente (Feedback tátil)
         modal.classList.remove('hidden');
         modal.classList.add('flex');
         modal.style.zIndex = "10000"; 
+        
+        // Pega os elementos da tela e coloca um aviso de "carregando"
+        const elNum = document.getElementById('numeracao_atual_venda');
+        const elPrecoUnit = document.getElementById('preco-unitario-modal');
+        const elQtdJaComprada = document.getElementById('qtd-ja-comprada-modal');
+        const elLimites = document.getElementById('limites-compra-modal');
 
-        // --- BUSCA DADOS DO EVENTO (Atualiza min/max globais automaticamente) ---
+        if (elNum) elNum.textContent = "......";
+        if (elPrecoUnit) elPrecoUnit.textContent = "Carregando...";
+        if (elQtdJaComprada) elQtdJaComprada.innerHTML = `Calculando...`;
+        if (elLimites) elLimites.innerHTML = `Buscando regras...`;
+
+        // 2. BUSCA DADOS DO EVENTO E LIMITES
         const dadosEvento = await atualizarPrecoDoEvento(idEventoEspecifico);
    
         if (!dadosEvento || dadosEvento.status === 'nao_encontrado') {
             modal.classList.add('hidden'); 
-            if (typeof showCustomAlert === 'function') {
-                showCustomAlert("Este evento não está disponível no momento.", "Aviso", "⚠️");
-            }
+            if (typeof showCustomAlert === 'function') showCustomAlert("Este evento não está disponível no momento.", "Aviso", "⚠️");
             return; 
         }
 
-        // 6. ATUALIZAÇÃO DE PREÇOS
+        // 3. BUSCA SEGURA DA QUANTIDADE JÁ COMPRADA NO SERVIDOR
+        // Esta é a trava de segurança que impede que exiba "0" se ele já comprou 30.
+        let qtdCompradaDisplay = 0;
+        if (typeof clienteLogadoId !== 'undefined' && clienteLogadoId) {
+            try {
+                const resCartelas = await fetch(`${API_BASE_URL}/api/consultar_cartelas_evento?id_evento=${eventoSelecionadoParaCompra}&id_cliente=${clienteLogadoId}`);
+                const dataCartelas = await resCartelas.json();
+                qtdCompradaDisplay = dataCartelas.cartelas ? dataCartelas.cartelas.length : 0;
+            } catch (e) {
+                console.warn("Aviso: Falha ao buscar qtd via API. Usando fallback.", e);
+                // Fallback para as variáveis caso a rede falhe
+                qtdCompradaDisplay = parseInt(qtdJaCompradaParam) || ((typeof cartelasEmJogo !== 'undefined') ? parseInt(cartelasEmJogo) : 0);
+            }
+        }
+
+        // 4. ATUALIZAÇÃO DE PREÇOS E UNIDADES
         const precoEncontrado = dadosEvento.valor_de_venda ?? dadosEvento.preco_cartela;
         const unidadeEncontrada = dadosEvento.unidade_de_venda ?? 1;
 
-        if (precoEncontrado !== undefined) {
-            globalPrecoCartela = parseFloat(precoEncontrado);
-        }
+        if (precoEncontrado !== undefined) globalPrecoCartela = parseFloat(precoEncontrado);
         globalUnidadeVenda = parseInt(unidadeEncontrada);
 
-        // 7. PREPARAÇÃO DA INTERFACE 
+        // 5. ATUALIZA A INTERFACE VISUAL
         if (elNum && dadosEvento.numeracao_atual_venda !== undefined) {
             elNum.textContent = dadosEvento.numeracao_atual_venda.toString().padStart(6, '0');
         }
@@ -7908,25 +7914,27 @@ async function abrirModalCompra(idEventoEspecifico = 0, qtdJaCompradaParam = nul
                 : `Preço Unitário: R$ ${precoFormatado}`;
         }
 
-        // 👉 EXIBE A QUANTIDADE JÁ COMPRADA
-        const elQtdJaComprada = document.getElementById('qtd-ja-comprada-modal');
+        // 👉 PREENCHE A QUANTIDADE REAL CONFIRMADA PELO SERVIDOR
         if (elQtdJaComprada) {
             elQtdJaComprada.innerHTML = `Já possuo: <b class="text-blue-400">${qtdCompradaDisplay}</b>`;
         }
 
-        // 👉 EXIBE OS LIMITES DE COMPRA
-        const elLimites = document.getElementById('limites-compra-modal');
+        // 👉 PREENCHE OS LIMITES REAIS 
+        // Lemos as variáveis "window.minCartelas" para garantir que pegamos o valor global atualizado
         if (elLimites) {
             let txtLimites = "";
-            if (minCartelas > 0 && maxCartelas > 0) txtLimites = `Mín: ${minCartelas} | Máx: ${maxCartelas}`;
-            else if (minCartelas > 0) txtLimites = `Mín: ${minCartelas} cartelas`;
-            else if (maxCartelas > 0) txtLimites = `Máx: ${maxCartelas} cartelas`;
+            let vMin = window.minCartelas || (typeof minCartelas !== 'undefined' ? minCartelas : 0);
+            let vMax = window.maxCartelas || (typeof maxCartelas !== 'undefined' ? maxCartelas : 0);
+            
+            if (vMin > 0 && vMax > 0) txtLimites = `Mín: ${vMin} | Máx: ${vMax}`;
+            else if (vMin > 0) txtLimites = `Mín: ${vMin} cartelas`;
+            else if (vMax > 0) txtLimites = `Máx: ${vMax} cartelas`;
             else txtLimites = "Sem limites";
             
             elLimites.innerHTML = `Regra: <b class="text-yellow-500">${txtLimites}</b>`;
         }
 
-        // Preenche Saldo
+        // Preenche Saldo do Cliente
         const saldoModal = document.getElementById('saldo-modal-compra');
         if (saldoModal) {
             const saldoAtual = (typeof globalUserSaldo !== 'undefined') ? globalUserSaldo : 0;
@@ -7941,22 +7949,20 @@ async function abrirModalCompra(idEventoEspecifico = 0, qtdJaCompradaParam = nul
             }
         }
 
-        // Limpa inputs de quantidade
+        // Limpa os inputs numéricos de compra para não manter a quantidade da compra anterior
         const inputQtd = document.getElementById('qtd-manual');
         const totalDisplay = document.getElementById('total-compra-display');
         if (inputQtd) inputQtd.value = '';
         if (totalDisplay) totalDisplay.textContent = 'R$ 0,00';
 
-        // 8. EXIBIÇÃO FINAL
+        // 6. FINALIZA E CALCULA O BOTÃO
         if (typeof calcularTotalCompra === 'function') calcularTotalCompra();
 
     } catch (error) {
         console.error("❌ Erro ao abrir modal de compra:", error);
-        if (typeof showCustomAlert === 'function') {
-            showCustomAlert("Erro ao carregar dados. Tente novamente.", "Erro", "❌");
-        }
+        if (typeof showCustomAlert === 'function') showCustomAlert("Erro ao carregar dados. Tente novamente.", "Erro", "❌");
     } finally {
-        // 9. RESTAURAÇÃO DO BOTÃO
+        // Restaura o botão original que abriu o modal
         if (btnCompra && btnCompra.tagName === "BUTTON") {
             btnCompra.style.pointerEvents = "auto";
             btnCompra.style.opacity = "1";
@@ -7964,7 +7970,6 @@ async function abrirModalCompra(idEventoEspecifico = 0, qtdJaCompradaParam = nul
         }
     }
 }
-
 
 async function abrirModalCompra_old(idEventoEspecifico = 0) {
     // 1. Identifica o botão para feedback visual
