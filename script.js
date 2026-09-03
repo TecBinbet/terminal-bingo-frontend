@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.2";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.3";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -6464,8 +6464,101 @@ function abrirModalCarteira() {
 }
 
 
+// --- FUNÇÃO NOVA: TRAVA DE SEGURANÇA DO PIX ---
+function verificarTravaPix() {
+    // Busca os elementos de input e os botões
+    const inputValor = document.getElementById('valor-saque') || document.getElementById('saque-valor');
+    const btnConfirmar = document.querySelector('button[onclick="confirmarSaque()"]');
+    const btnUsarTotal = document.querySelector('button[onclick="usarSaldoTotal()"]');
+
+    // Verifica se existe o PIX na memória do cliente logado
+    const pixValido = clienteLogado && (clienteLogado.chave_pix || clienteLogado.pix);
+
+    if (!pixValido) {
+        // 🔒 BLOQUEIA TUDO
+        if (inputValor) {
+            inputValor.disabled = true;
+            inputValor.value = "";
+            inputValor.placeholder = "Bloqueado: PIX ausente";
+            inputValor.classList.add('bg-red-900/30', 'cursor-not-allowed', 'border-red-500');
+        }
+        if (btnUsarTotal) {
+            btnUsarTotal.disabled = true;
+            btnUsarTotal.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+        if (btnConfirmar) {
+            btnConfirmar.disabled = true;
+            btnConfirmar.classList.add('opacity-50', 'cursor-not-allowed', 'bg-gray-600');
+            btnConfirmar.classList.remove('bg-green-600', 'hover:bg-green-500');
+            btnConfirmar.innerText = "CADASTRAR PIX PARA SACAR";
+            
+            // Redireciona o botão de saque para abrir o cadastro do PIX
+            btnConfirmar.onclick = () => {
+                fecharModal('modal-carteira');
+                abrirEdicaoCadastro();
+            };
+        }
+    } else {
+        // 🔓 LIBERA TUDO
+        if (inputValor) {
+            inputValor.disabled = false;
+            inputValor.placeholder = "0,00";
+            inputValor.classList.remove('bg-red-900/30', 'cursor-not-allowed', 'border-red-500');
+        }
+        if (btnUsarTotal) {
+            btnUsarTotal.disabled = false;
+            btnUsarTotal.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+        if (btnConfirmar) {
+            btnConfirmar.disabled = false;
+            btnConfirmar.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-600');
+            btnConfirmar.classList.add('bg-green-600', 'hover:bg-green-500');
+            btnConfirmar.innerText = "SOLICITAR SAQUE";
+            
+            // Restaura a função original
+            btnConfirmar.onclick = confirmarSaque;
+        }
+    }
+}
+
 // --- FUNÇÃO 2: Gerenciar Abas (Saque vs Extrato) ---
 function mudarAbaCarteira(aba) {
+    const tabSaque = document.getElementById('tab-saque');
+    const tabExtrato = document.getElementById('tab-extrato');
+    const contSaque = document.getElementById('conteudo-saque');
+    const contExtrato = document.getElementById('conteudo-extrato');
+
+    if (aba === 'saque') {
+        // Ativa Saque
+        contSaque.classList.remove('hidden');
+        contExtrato.classList.add('hidden');
+        
+        tabSaque.classList.add('text-white', 'border-green-500', 'bg-gray-700/50');
+        tabSaque.classList.remove('text-gray-400', 'border-transparent');
+        
+        tabExtrato.classList.remove('text-white', 'border-green-500', 'bg-gray-700/50');
+        tabExtrato.classList.add('text-gray-400', 'border-transparent');
+
+        // 👉 CHAMA A TRAVA DE SEGURANÇA AQUI
+        if (typeof verificarTravaPix === 'function') verificarTravaPix();
+
+    } else {
+        // Ativa Extrato
+        contSaque.classList.add('hidden');
+        contExtrato.classList.remove('hidden');
+        
+        tabExtrato.classList.add('text-white', 'border-green-500', 'bg-gray-700/50');
+        tabExtrato.classList.remove('text-gray-400', 'border-transparent');
+        
+        tabSaque.classList.remove('text-white', 'border-green-500', 'bg-gray-700/50');
+        tabSaque.classList.add('text-gray-400', 'border-transparent');
+        
+        if (typeof carregarExtrato === 'function') carregarExtrato(); 
+    }
+}
+
+// --- FUNÇÃO 2: Gerenciar Abas (Saque vs Extrato) ---
+function mudarAbaCarteira_old(aba) {
     const tabSaque = document.getElementById('tab-saque');
     const tabExtrato = document.getElementById('tab-extrato');
     const contSaque = document.getElementById('conteudo-saque');
@@ -6955,6 +7048,13 @@ async function atualizarDadosCliente() {
         if (!response.ok) return;
 
         const data = await response.json();
+
+        // 👉 INSERIR ISTO: Atualiza a global e checa a trava dinamicamente
+        if (typeof clienteLogado !== 'undefined') {
+            clienteLogado = data; // Garante que a memória tem o PIX mais recente
+        }
+        if (typeof verificarTravaPix === 'function') verificarTravaPix();
+        // -----------------------------------------------------------
 
         // 1. ATUALIZA SALDO GLOBAL E NA TELA
         globalUserSaldo = parseFloat(data.saldo || 0);

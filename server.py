@@ -5783,6 +5783,21 @@ def solicitar_saque():
             return jsonify({'erro': 'Cliente não encontrado.'}), 404
 
         print(f"DEBUG: ✅ Cliente encontrado: {cliente.get('nick')}")
+
+        # =========================================================
+        # 🛡️ TRAVA CRÍTICA DO PIX (NO BACKEND)
+        # =========================================================
+        chave_pix_cliente = str(cliente.get('chave_pix') or '').strip()
+        chave_pix_payload = str(data.get('chave_pix') or '').strip()
+        
+        # Prioriza o banco, se não tiver, olha o payload.
+        chave_pix_final = chave_pix_cliente if chave_pix_cliente else chave_pix_payload
+        
+        # Impede o saque se o PIX for vazio ou inválido
+        if not chave_pix_final or chave_pix_final.lower() in ['null', 'não informada', 'none']:
+            print(f"DEBUG: ❌ Saque bloqueado para {cliente.get('nick')} - Sem chave PIX.")
+            return jsonify({'erro': 'Você precisa cadastrar uma Chave PIX antes de solicitar o saque.'}), 400
+        # =========================================================
         
         # 3. CORREÇÃO DO DECIMAL128 E CÁLCULO DE SALDO
         raw_saldo = cliente.get('saldo_atual', 0.0)
@@ -5792,7 +5807,7 @@ def solicitar_saque():
         else:
             saldo_atual = float(raw_saldo)
 
-        # Validações
+        # Validações de Saldo
         if valor_solicitado <= 0:
             return jsonify({'erro': 'Valor inválido.'}), 400
             
@@ -5808,7 +5823,7 @@ def solicitar_saque():
             'id_cliente': id_sessao,
             'nick': cliente.get('nick', 'Desconhecido'),
             'nome_completo': cliente.get('nome_cliente', ''),
-            'chave_pix': cliente.get('chave_pix') or data.get('chave_pix', 'Não informada'),
+            'chave_pix': chave_pix_final, # Usa a chave verificada pela trava
             'data_requisicao': hora_brasil().strftime('%Y-%m-%d %H:%M:%S'),
             'valor_requerido': valor_solicitado,
             'saldo_no_momento': saldo_atual,
@@ -5879,7 +5894,6 @@ def solicitar_saque():
         import traceback
         traceback.print_exc()
         return jsonify({'erro': 'Erro interno ao processar saque.'}), 500
-
 
 @app.route('/api/historico_resultados', methods=['GET'])
 def api_historico_resultados():
