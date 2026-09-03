@@ -712,7 +712,7 @@ function renderEventsList(eventos) {
         // 🎨 Definição visual do Badge de Status conforme o tipo de transmissão
         const estiloBadgeStatus = isAoVivo 
             ? `bg-green-600 text-white ${animacaoTransmissao}` 
-            : 'bg-yellow-600 text-black font-black'; // Laranja com texto em preto para Digital
+            : 'bg-gray-500 text-black font-black'; // Laranja com texto em preto para Digital
 
         // --- 3. Definição de Estilos e Badges Dinâmicos ---
         let cardClass = 'rounded-xl p-3 border shadow-lg flex flex-col gap-1 relative overflow-hidden transition-all duration-300';
@@ -782,7 +782,7 @@ function renderEventsList(eventos) {
 
                 botoesAcaoHtml = `
                     <div class="-mt-0.5 grid grid-cols-3 gap-2 border-t border-gray-700/30 pt-0.5 -mb-1">  
-                        <button onclick="abrirModalCompra('${evt.id_evento}')" 
+                        <button onclick="abrirModalCompra('${evt.id_evento}', ${evt.qtd_cartelas_compradas || 0})" 
                                 class="bg-green-600 hover:bg-green-500 text-white col-span-1 text-[11px] font-bold py-2 px-1 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
                             <span>🛒</span> MAIS
                         </button>
@@ -795,7 +795,7 @@ function renderEventsList(eventos) {
             } else {
                 botoesAcaoHtml = `
                     <div class="-mt-0.5 grid grid-cols-1 border-t border-gray-700/30 pt-0.5 -mb-1">  
-                        <button onclick="abrirModalCompra('${evt.id_evento}')" 
+                        <button onclick="abrirModalCompra('${evt.id_evento}', ${evt.qtd_cartelas_compradas || 0})" 
                                 class="bg-green-600 hover:bg-green-500 text-white text-[12px] uppercase font-black py-2.5 px-4 rounded-lg shadow-md flex items-center justify-center gap-2 transition-all active:scale-95 animate-pulse-slow">
                             <span>🛒</span> ADQUIRIR CARTELAS PARA ESTE EVENTO
                         </button>
@@ -970,7 +970,7 @@ if (isEspecial) {
 
                 botoesAcaoHtml = `
                     <div class="-mt-0.5 grid grid-cols-3 gap-2 border-t border-gray-700/30 pt-0.5 -mb-1">  
-                        <button onclick="abrirModalCompra('${evt.id_evento}')" 
+                        <button onclick="abrirModalCompra('${evt.id_evento}', ${evt.qtd_cartelas_compradas || 0})" 
                                 class="bg-green-600 hover:bg-green-500 text-white col-span-1 text-[11px] font-bold py-2 px-1 rounded-lg shadow-md flex items-center justify-center gap-1 transition-all active:scale-95">
                             <span>🛒</span> MAIS
                         </button>
@@ -984,7 +984,7 @@ if (isEspecial) {
                 // 👉 CENÁRIO 2: CLIENTE AINDA NÃO COMPROU (Mostra apenas 1 botão de compra em destaque)
                 botoesAcaoHtml = `
                     <div class="-mt-0.5 grid grid-cols-1 border-t border-gray-700/30 pt-0.5 -mb-1">  
-                        <button onclick="abrirModalCompra('${evt.id_evento}')" 
+                        <button onclick="abrirModalCompra('${evt.id_evento}', ${evt.qtd_cartelas_compradas || 0})" 
                                 class="bg-green-600 hover:bg-green-500 text-white text-[12px] uppercase font-black py-2.5 px-4 rounded-lg shadow-md flex items-center justify-center gap-2 transition-all active:scale-95 animate-pulse-slow">
                             <span>🛒</span> ADQUIRIR CARTELAS PARA ESTE EVENTO
                         </button>
@@ -1054,9 +1054,8 @@ function closeEventsPanel() {
 
 // ======================================================
 // FUNÇÃO DE DECISÃO (O "Guarda de Trânsito")
-// Conectada ao botão: onclick="iniciarCompraCartelas()"
 // ======================================================
-function iniciarCompraCartelas(idEvento) {
+function iniciarCompraCartelas(idEvento, qtdJaComprada = null) {
     console.log("🛒 Botão de compra acionado. ID recebido:", idEvento);
 
     // 1. Limpa painéis anteriores (Fecha lista de eventos se estiver aberta)
@@ -1073,7 +1072,67 @@ function iniciarCompraCartelas(idEvento) {
 
     // 3. Lógica de Decisão
     if (idEvento) {
-        // CASO A: Já sabemos o ID (clicou num evento específico da lista)
+        // CASO A: Já sabemos o ID (clicou num evento específico)
+        abrirModalCompra(idEvento, qtdJaComprada); 
+
+    } else {
+        // CASO B: Clicou no botão flutuante genérico (sem ID)
+        // Precisamos perguntar pro servidor quem está ativo
+        
+        fetch(`${API_BASE_URL}/api/status_evento_ativo`)
+            .then(response => response.json())
+            .then(data => {
+                const statusReal = (data.status || '').toLowerCase().trim();
+                const idDoBanco = data.id_evento || data.id || data.numero; 
+
+                console.log(`📡 Status do Evento Ativo: ${statusReal} (ID: ${idDoBanco})`);
+
+                if (statusReal === 'ativo' && idDoBanco) {
+                    window.eventoAtivoID = String(idDoBanco).trim()
+                    if (typeof idEventoNaTela !== 'undefined') {
+                       idEventoNaTela = String(idDoBanco).trim();
+                    }
+                    
+                    // ✅ CENÁRIO 1: Existe evento rodando (Evento Atual)
+                    // Como é o evento da tela principal, usamos a variável global
+                    const qtdAtual = (typeof cartelasEmJogo !== 'undefined') ? parseInt(cartelasEmJogo) : 0;
+                    
+                    abrirModalCompra(idDoBanco, qtdAtual);
+                } else {
+                    // ❌ CENÁRIO 2: Não tem evento ativo
+                    // Abre a lista para o usuário escolher
+                    console.warn("⚠️ Nenhum evento ativo automático. Abrindo painel de escolha.");
+                    if (typeof openEventsPanel === 'function') {
+                        openEventsPanel();
+                    }
+                }
+            })
+            .catch(err => {
+                console.error("❌ Erro ao verificar status:", err);
+                // Na dúvida (erro de rede), abre a lista de eventos
+                if (typeof openEventsPanel === 'function') openEventsPanel();
+            });
+    }
+}
+
+function iniciarCompraCartelas_old(idEvento) {
+    console.log("🛒 Botão de compra acionado. ID recebido:", idEvento);
+
+    // 1. Limpa painéis anteriores (Fecha lista de eventos se estiver aberta)
+    if (typeof closeEventsPanel === 'function') closeEventsPanel();
+
+    // 2. Verifica Login (Segurança Básica)
+    if (!isUsuarioLogado()) {
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Você precisa fazer login para comprar cartelas.", "Login Necessário", "🔒");
+        }
+        if (typeof abrirModalLogin === 'function') abrirModalLogin();
+        return; 
+    }
+
+    // 3. Lógica de Decisão
+    if (idEvento) {
+        // xxx CASO A: Já sabemos o ID (clicou num evento específico da lista)
         // Chama direto a função que você mandou
         abrirModalCompra(idEvento); 
 
@@ -5397,7 +5456,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         console.log(`✅ Iniciando compra direta para o evento ${idServidor}`);
                         btnCompraMobile.style.opacity = "1";
                         btnCompraMobile.textContent = "🛒 Comprar";
-                        iniciarCompraCartelas(idServidor);
+                        
+                        // 👉 NOVO: Pega a quantidade de cartelas atuais da memória global
+                        const qtdAtual = (typeof cartelasEmJogo !== 'undefined') ? parseInt(cartelasEmJogo) : 0;
+                        
+                        // 👉 Envia o ID e a Quantidade para a função de decisão
+                        iniciarCompraCartelas(idServidor, qtdAtual);
                     }
                 } else {
                     console.log("ℹ️ Evento não está 'ativo' para venda direta. Abrindo painel.");
@@ -7758,7 +7822,151 @@ async function atualizarPrecoDoEvento(idForcado = 0) {
 }
 
 
-async function abrirModalCompra(idEventoEspecifico = 0) {
+async function abrirModalCompra(idEventoEspecifico = 0, qtdJaCompradaParam = null) {
+    // 1. Identifica o botão para feedback visual
+    const btnCompra = document.querySelector('.btn-comprar-principal') || document.activeElement;
+    const originalHTML = btnCompra ? btnCompra.innerHTML : "";
+
+    // 2. Verifica Login
+    if (typeof isUsuarioLogado === 'function' && !isUsuarioLogado()) {
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Você precisa fazer login para comprar cartelas.", "Login Necessário", "🔒");
+        }
+        if (typeof abrirModalLogin === 'function') abrirModalLogin();
+        return;
+    }
+
+    // 3. Ativa o estado de Loading no botão
+    if (btnCompra && btnCompra.tagName === "BUTTON") {
+        btnCompra.style.pointerEvents = "none"; 
+        btnCompra.style.opacity = "0.7";
+        btnCompra.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Carregando...`;
+    }
+
+    // 4. Fecha modais sobrepostos
+    if (typeof fecharModal === 'function') {
+        fecharModal('modal-carteira');
+        fecharModal('events-panel-container');
+    }
+
+    try {
+        eventoSelecionadoParaCompra = idEventoEspecifico > 0 ? idEventoEspecifico : 0;
+        console.log("🛒 Evento selecionado para compra:", eventoSelecionadoParaCompra);
+
+        // 👉 DEFINIÇÃO INTELIGENTE DA QUANTIDADE JÁ COMPRADA
+        let qtdCompradaDisplay = 0;
+        if (qtdJaCompradaParam !== null && qtdJaCompradaParam !== undefined) {
+            // Veio do clique no evento agendado (passado via parâmetro)
+            qtdCompradaDisplay = parseInt(qtdJaCompradaParam) || 0;
+        } else {
+            // É a rodada atual ou clique genérico, pega da variável global
+            qtdCompradaDisplay = (typeof cartelasEmJogo !== 'undefined') ? parseInt(cartelasEmJogo) : 0;
+        }
+
+        const modal = document.getElementById('modal-comprar-cartelas');
+        if (!modal) return;
+
+        // Limpa estados anteriores
+        const elNum = document.getElementById('numeracao_atual_venda');
+        const elPrecoUnit = document.getElementById('preco-unitario-modal');
+        if (elNum) elNum.textContent = "......";
+        if (elPrecoUnit) elPrecoUnit.textContent = "Carregando preço...";
+
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        modal.style.zIndex = "10000"; 
+
+        // --- BUSCA DADOS DO EVENTO (Atualiza min/max globais automaticamente) ---
+        const dadosEvento = await atualizarPrecoDoEvento(idEventoEspecifico);
+   
+        if (!dadosEvento || dadosEvento.status === 'nao_encontrado') {
+            modal.classList.add('hidden'); 
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert("Este evento não está disponível no momento.", "Aviso", "⚠️");
+            }
+            return; 
+        }
+
+        // 6. ATUALIZAÇÃO DE PREÇOS
+        const precoEncontrado = dadosEvento.valor_de_venda ?? dadosEvento.preco_cartela;
+        const unidadeEncontrada = dadosEvento.unidade_de_venda ?? 1;
+
+        if (precoEncontrado !== undefined) {
+            globalPrecoCartela = parseFloat(precoEncontrado);
+        }
+        globalUnidadeVenda = parseInt(unidadeEncontrada);
+
+        // 7. PREPARAÇÃO DA INTERFACE 
+        if (elNum && dadosEvento.numeracao_atual_venda !== undefined) {
+            elNum.textContent = dadosEvento.numeracao_atual_venda.toString().padStart(6, '0');
+        }
+
+        if (elPrecoUnit) {
+            const precoFormatado = globalPrecoCartela.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+            elPrecoUnit.textContent = globalUnidadeVenda > 1 
+                ? `Kit c/ ${globalUnidadeVenda} un: R$ ${precoFormatado}`
+                : `Preço Unitário: R$ ${precoFormatado}`;
+        }
+
+        // 👉 EXIBE A QUANTIDADE JÁ COMPRADA
+        const elQtdJaComprada = document.getElementById('qtd-ja-comprada-modal');
+        if (elQtdJaComprada) {
+            elQtdJaComprada.innerHTML = `Já possuo: <b class="text-blue-400">${qtdCompradaDisplay}</b>`;
+        }
+
+        // 👉 EXIBE OS LIMITES DE COMPRA
+        const elLimites = document.getElementById('limites-compra-modal');
+        if (elLimites) {
+            let txtLimites = "";
+            if (minCartelas > 0 && maxCartelas > 0) txtLimites = `Mín: ${minCartelas} | Máx: ${maxCartelas}`;
+            else if (minCartelas > 0) txtLimites = `Mín: ${minCartelas} cartelas`;
+            else if (maxCartelas > 0) txtLimites = `Máx: ${maxCartelas} cartelas`;
+            else txtLimites = "Sem limites";
+            
+            elLimites.innerHTML = `Regra: <b class="text-yellow-500">${txtLimites}</b>`;
+        }
+
+        // Preenche Saldo
+        const saldoModal = document.getElementById('saldo-modal-compra');
+        if (saldoModal) {
+            const saldoAtual = (typeof globalUserSaldo !== 'undefined') ? globalUserSaldo : 0;
+            saldoModal.textContent = `R$ ${saldoAtual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+            
+            if (saldoAtual <= 0) {
+                saldoModal.classList.add('text-red-400');
+                saldoModal.classList.remove('text-green-400');
+            } else {
+                saldoModal.classList.add('text-green-400');
+                saldoModal.classList.remove('text-red-400');
+            }
+        }
+
+        // Limpa inputs de quantidade
+        const inputQtd = document.getElementById('qtd-manual');
+        const totalDisplay = document.getElementById('total-compra-display');
+        if (inputQtd) inputQtd.value = '';
+        if (totalDisplay) totalDisplay.textContent = 'R$ 0,00';
+
+        // 8. EXIBIÇÃO FINAL
+        if (typeof calcularTotalCompra === 'function') calcularTotalCompra();
+
+    } catch (error) {
+        console.error("❌ Erro ao abrir modal de compra:", error);
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("Erro ao carregar dados. Tente novamente.", "Erro", "❌");
+        }
+    } finally {
+        // 9. RESTAURAÇÃO DO BOTÃO
+        if (btnCompra && btnCompra.tagName === "BUTTON") {
+            btnCompra.style.pointerEvents = "auto";
+            btnCompra.style.opacity = "1";
+            btnCompra.innerHTML = originalHTML;
+        }
+    }
+}
+
+
+async function abrirModalCompra_old(idEventoEspecifico = 0) {
     // 1. Identifica o botão para feedback visual
     const btnCompra = document.querySelector('.btn-comprar-principal') || document.activeElement;
     const originalHTML = btnCompra ? btnCompra.innerHTML : "";
