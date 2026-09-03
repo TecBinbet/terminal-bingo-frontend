@@ -214,6 +214,14 @@ def atualizar_status_treinamento():
         print(f"⚠️ Erro ao carregar status de treinamento: {e}")
         MODO_TREINAMENTO_ATIVO = False
 
+def clean_numeric_string(text):
+    """
+    Remove todos os caracteres que não sejam números de uma string.
+    """
+    if text is None:
+        return ""
+    return re.sub(r'\D', '', str(text))
+
 def formatar_telefone_padrao(sales_db, telefone_raw):
     """
     Formata o telefone para o padrão: (11) 66889-9885.
@@ -223,6 +231,7 @@ def formatar_telefone_padrao(sales_db, telefone_raw):
     if not telefone_raw:
         return ""
 
+    # Agora a função 'clean_numeric_string' existe e não vai causar Erro 500!
     digitos = clean_numeric_string(str(telefone_raw))
     
     if not digitos:
@@ -254,9 +263,9 @@ def formatar_telefone_padrao(sales_db, telefone_raw):
     # Retorna os dígitos limpos caso venha com tamanho atípico (ex: DDI +55 ou números internacionais)
     elif len(digitos) > 11 and digitos.startswith('55'):
         # Remove o 55 do Brasil se vier acoplado e tenta formatar novamente os últimos 11 dígitos
-            digitos_br = digitos[2:]
-            if len(digitos_br) == 11:
-                return f"({digitos_br[0:2]}) {digitos_br[2:7]}-{digitos_br[7:11]}"
+        digitos_br = digitos[2:]
+        if len(digitos_br) == 11:
+            return f"({digitos_br[0:2]}) {digitos_br[2:7]}-{digitos_br[7:11]}"
 
     return telefone_raw
 
@@ -5604,7 +5613,13 @@ def cadastrar_cliente():
         # ==============================================================================
 
         # 5. Montagem do Documento
-        celular_formatado = formatar_telefone_padrao(sales_db, celular)
+        # Tenta formatar o telefone. Se a função não existir, usa o original para não dar Erro 500.
+        try:
+            celular_formatado = formatar_telefone_padrao(sales_db, celular)
+        except Exception as e:
+            print(f"⚠️ Aviso: Função de formatar telefone falhou ou não existe ({e}). Usando celular bruto.")
+            celular_formatado = celular
+
         novo_cliente = {
             'id_cliente': novo_id_cliente, 
             'nome_cliente': nome,
