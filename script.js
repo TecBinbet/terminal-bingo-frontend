@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.2";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.3";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -9273,18 +9273,17 @@ function executarRenderizacao(payload) {
 
 // Função que você vai chamar quando receber o link do vídeo do seu servidor
 function carregarVideoSincronizado(videoId, isLoop = false) {
-    // 📝 LOG DE ENTRADA: Mostra o que veio do servidor
-    console.group("🔍 Diagnóstico de Vídeo");
-    console.log("🔗 URL Recebida:", linkDoYoutube);
-    console.log("🌐 Origem (globalOriginURL):", globalOriginURL);
-    console.log("🤖 Status API YT:", ytApiPronta ? "PRONTA" : "AGUARDANDO");
-    console.groupEnd();
+    // 📝 LOG DE ENTRADA
+     console.group("🔍 Diagnóstico de Vídeo");
+     console.log("🔗 ID/URL Recebida:", videoId); // <--- CORRIGIDO
+     console.log("🌐 Origem (globalOriginURL):", globalOriginURL);
+     console.log("🤖 Status API YT:", ytApiPronta ? "PRONTA" : "AGUARDANDO");
+     console.groupEnd();
     
     // 🛑 SEGURANÇA 1: Se a API já está pronta e o player existe
     if (ytApiPronta && playerYouTube) {
-        const videoId = extrairIdDoVideo(linkDoYoutube);
+        // Removida a linha que extraía novamente, pois videoId já chega limpo
         
-        // 🛠️ VALIDAÇÃO CRUCIAL: Só tenta usar o player se a função loadVideoById REALMENTE existir
         if (typeof playerYouTube.loadVideoById === 'function') {
             const videoData = playerYouTube.getVideoData ? playerYouTube.getVideoData() : null;
             const videoAtual = videoData ? videoData.video_id : null;
@@ -9294,7 +9293,6 @@ function carregarVideoSincronizado(videoId, isLoop = false) {
                 playerYouTube.loadVideoById(videoId);
             }
         } else {
-            // Se o objeto existe mas a função não, significa que ele está inicializando
             console.warn("⏳ Player detectado, mas métodos ainda não carregados. Aguardando...");
         }
         return;
@@ -9303,9 +9301,8 @@ function carregarVideoSincronizado(videoId, isLoop = false) {
     // 🛑 SEGURANÇA 2: Trava de Loop
     if (window.tentandoCarregarPlayer) return;
 
-    // const videoId = extrairIdDoVideo(linkDoYoutube);
     if (!videoId) {
-        console.error("❌ Erro: Não foi possível extrair um ID válido da URL:", linkDoYoutube);
+        console.error("❌ Erro: Não foi possível extrair um ID válido:", videoId); // <--- CORRIGIDO
         return;
     }
 
@@ -9319,31 +9316,28 @@ function carregarVideoSincronizado(videoId, isLoop = false) {
         window.tentandoCarregarPlayer = true;
         
         const timerResgate = setInterval(() => {
-            // Log discreto para não inundar o console
             if (Math.random() < 0.1) console.log("⏳ Ciclo de espera: Aguardando onYouTubeIframeAPIReady...");
             
             if (window.ytApiPronta) {
                 console.log("✅ API Detectada! Inicializando player para:", videoId);
                 window.tentandoCarregarPlayer = false;
                 clearInterval(timerResgate);
-                carregarVideoSincronizado(linkDoYoutube);
+                carregarVideoSincronizado(videoId, isLoop); // <--- CORRIGIDO
             }
         }, 2000);
         return;
     }
  
     window.tentandoCarregarPlayer = false;
-    // Se o player já existe (ex: usuário atualizou a página), apenas troca o vídeo
+    
+    // Se o player já existe, apenas troca o vídeo
     if (playerYouTube && typeof playerYouTube.loadVideoById === 'function') {
-        // Verifica se o vídeo mudou para não ficar reiniciando o mesmo vídeo à toa
         const videoAtual = playerYouTube.getVideoData ? playerYouTube.getVideoData().video_id : null;
         if (videoAtual !== videoId) {
             playerYouTube.loadVideoById(videoId);
         }
     } else {
         // Se é a primeira vez, cria o player do zero
-
-        // Ajuste nos playerVars
         let playerVars = {
             'autoplay': 1,
             'controls': 1,
@@ -9361,11 +9355,11 @@ function carregarVideoSincronizado(videoId, isLoop = false) {
             height: '100%',
             width: '100%',
             videoId: videoId,
-            playerVars: playerVars, // Aqui é uma vírgula, não fecha o objeto!
+            playerVars: playerVars,
             events: {
                 'onReady': () => console.log("🎬 [VÍDEO] Player renderizado e pronto para sincronia!")
             }
-        }); // <--- Aqui fecha o objeto do player e a função YT.Player
+        }); 
     }
 }
 
