@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.4";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.0";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -8599,19 +8599,16 @@ function ocultarBotoesSorteExtra(alvo = 'ambos') {
 
 // --- FUNÇÃO PRINCIPAL: Controlar a visibilidade com regras independentes ---
 function mostrarBotoesSorteExtra() {
-    // 1. Busca o status REAL do banco
-    let statusReal = 'ativo';
+    // 1. Busca o status REAL do banco de forma segura
+    let statusReal = 'intervalo'; // 💡 Padrão seguro caso venha vazio
     if (typeof eventoCarregadoAtual !== 'undefined' && eventoCarregadoAtual && eventoCarregadoAtual.status) {
-        statusReal = eventoCarregadoAtual.status.toLowerCase();
+        statusReal = eventoCarregadoAtual.status.toLowerCase().trim();
     }
 
-    // A regra: Só é considerado intervalo se o banco disser que é "intervalo" (pré-jogo)
-    const noIntervalo = (statusReal === 'intervalo');
-
+    // 2. Trava de Segurança: Se não está ativa no banco, esconde tudo e aborta
     const btnMenu = document.getElementById('btn-open-extra');
     const btnFlutuante = document.getElementById('btn-floating-extra');
 
-    // 2. Trava de Segurança: Se não está ativa no banco, esconde tudo e aborta
     if (typeof sorteExtraAtivaNoBanco === 'undefined' || !sorteExtraAtivaNoBanco) {
         ocultarBotoesSorteExtra();
         return;
@@ -8621,19 +8618,23 @@ function mostrarBotoesSorteExtra() {
     // PROMOÇÃO ATIVA (Daqui para baixo, sorteExtraAtivaNoBanco é TRUE)
     // =================================================================
 
-    // 3. REGRA DO BOTÃO DO MENU: Aparece sempre (não depende do intervalo)
+    // 3. REGRA DO BOTÃO DO MENU: Aparece sempre que estiver ativa
     if (btnMenu) {
         btnMenu.classList.remove('hidden');
     }
 
-    // 4. REGRA DO BOTÃO FLUTUANTE: Aparece APENAS no intervalo
+    // 4. REGRA DO FLUTUANTE (LOBBY DE JOGOS): 
+    // Deve aparecer no pré-jogo / intervalo. Só some se o status for explicitamente de jogo rolando ou finalizado.
+    // Estados que ocultam o flutuante: 'andamento', 'jogando', 'finalizado', 'encerrado'
+    const jogoEmAndamentoOuFim = (statusReal.includes('andamento') || statusReal.includes('jogando') || statusReal.includes('finalizado') || statusReal.includes('encerrado'));
+
     if (btnFlutuante) {
-        if (noIntervalo) {
+        if (!jogoEmAndamentoOuFim) {
             btnFlutuante.classList.remove('hidden');
-            console.log("✨ Sorte Extra: Modo Intervalo. Exibindo botão Flutuante.");
+            console.log("✨ Sortes Extras: Modo Pré-Jogo/Intervalo (Status:", statusReal, "). Exibindo Lobby Flutuante.");
         } else {
             btnFlutuante.classList.add('hidden');
-            console.log("✨ Sorte Extra: Modo Jogo/Fim. Escondendo botão Flutuante.");
+            console.log("✨ Sortes Extras: Modo Jogo/Fim (Status:", statusReal, "). Escondendo Lobby Flutuante.");
         }
     }
 }
@@ -10150,6 +10151,31 @@ function dispararEfeitoAcumulado() {
         div.style.opacity = '0';
         setTimeout(() => div.remove(), 500);
     }, 3000);
+}
+
+// Função genérica temporária para os jogos que ainda serão desenvolvidos
+function abrirModalJogo(tipoJogo) {
+    if (tipoJogo === 'gold-roleta') {
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("A 'Gold Roleta' está em fase de estruturação da base da plataforma. Em breve disponível!", "Em Breve", "🎡");
+        } else {
+            alert("Gold Roleta em breve!");
+        }
+    } else if (tipoJogo === 'cup-keno') {
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert("O 'Cup Keno' (com seleção de times) será desenvolvido na próxima fase.", "Em Breve", "⚽");
+        } else {
+            alert("Cup Keno em breve!");
+        }
+    }
+}
+
+// Opcional: Recolher ou expandir a barra de jogos em telas menores
+function toggleGameLobby() {
+    const list = document.getElementById('game-icons-list');
+    if (list) {
+        list.classList.toggle('hidden');
+    }
 }
 
 

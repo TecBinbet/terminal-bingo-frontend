@@ -1176,11 +1176,6 @@
 </div>
 
 
-<button id="btn-floating-extra" onclick="abrirTelaSorteExtra()" class="hidden fixed bottom-24 right-4 z-40 bg-yellow-500 hover:bg-yellow-400 text-black font-black border-2 border-white rounded-full p-3 shadow-2xl animate-bounce transition-all flex flex-col items-center leading-none">
-    <span class="text-3xl">🍀</span>
-    <span class="text-[10px] mt-1">SORTE EXTRA</span>
-</button>
-
 <button id="btn-cortesia-flutuante" onclick="resgatarCortesias()" class="hidden fixed bottom-44 right-4 z-40 bg-emerald-600 hover:bg-emerald-500 text-white font-black border-2 border-white rounded-full p-3 shadow-2xl animate-pulse transition-all flex flex-col items-center leading-none">
     <span class="text-3xl">🎁</span>
     <span class="text-[10px] mt-1 text-center uppercase">Carregar<br>Cortesias</span>
@@ -1203,8 +1198,40 @@
         </div>
 </div>
 
+<!-- 🎮 CONTAINER FLUTUANTE DE SELEÇÃO DE JOGOS (SORTES EXTRAS) -->
+<div id="btn-floating-extra" class="hidden fixed bottom-4 left-4 z-40 flex items-center gap-2 bg-gray-900/95 border-2 border-yellow-500/60 backdrop-blur-md p-2 rounded-2xl shadow-2xl transition-all duration-300 animate-bounce">
+    
+    <!-- Botão Minimizar / Expandir -->
+    <button onclick="toggleGameLobby()" id="btn-toggle-lobby" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 p-2 rounded-xl flex items-center justify-center transition-colors" title="Sortes Extras">
+        🎮
+    </button>
+
+    <!-- Lista de Ícones de Jogos / Sortes Extras -->
+    <div id="game-icons-list" class="flex items-center gap-2 overflow-x-auto max-w-[280px] sm:max-w-none custom-scrollbar">
+        
+        <!-- Jogo 1: Gold Dezenas -->
+        <button onclick="abrirTelaSorteExtra()" class="group relative flex flex-col items-center bg-gray-800 hover:bg-yellow-600/20 border border-yellow-500/40 hover:border-yellow-400 p-2 rounded-xl transition-all active:scale-95 shrink-0">
+            <span class="text-2xl group-hover:scale-110 transition-transform">🍀</span>
+            <span class="text-[9px] font-bold text-yellow-400 uppercase mt-0.5 tracking-wider">Gold Dezenas</span>
+        </button>
+
+        <!-- Jogo 2: Gold Roleta -->
+        <button onclick="abrirModalJogo('gold-roleta')" class="group relative flex flex-col items-center bg-gray-800 hover:bg-amber-600/20 border border-amber-500/40 hover:border-amber-400 p-2 rounded-xl transition-all active:scale-95 shrink-0">
+            <span class="text-2xl group-hover:scale-110 transition-transform">🎡</span>
+            <span class="text-[9px] font-bold text-amber-400 uppercase mt-0.5 tracking-wider">Gold Roleta</span>
+        </button>
+
+        <!-- Jogo 3: Cup Keno (Futebol) -->
+        <button onclick="abrirModalJogo('cup-keno')" class="group relative flex flex-col items-center bg-gray-800 hover:bg-green-600/20 border border-green-500/40 hover:border-green-400 p-2 rounded-xl transition-all active:scale-95 shrink-0">
+            <span class="text-2xl group-hover:scale-110 transition-transform">⚽</span>
+            <span class="text-[9px] font-bold text-green-400 uppercase mt-0.5 tracking-wider">Cup Keno</span>
+        </button>
+
+    </div>
+</div>
+
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script> 
-    <script src="config.js?v=1.4"></script>
-    <script src="script.js?v=1.4"></script>
+    <script src="config.js?v=1.0"></script>
+    <script src="script.js?v=1.0"></script>
 </body>
 </html>
