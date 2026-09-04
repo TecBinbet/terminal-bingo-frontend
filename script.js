@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.1";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.2";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -5565,7 +5565,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const isHidden = videoContainer.classList.toggle('hidden');
-            abrirYoutubeBtn.textContent = isHidden ? '📺 Abrir YouTube' : '❌ Fechar YouTube';
+            abrirYoutubeBtn.textContent = isHidden ? '📺 Ver Live ao Vivo' : '❌ Fechar Transmissão';
             
             // Se abriu e a URL existe, injeta o vídeo com a nova API
             if (!isHidden && currentVideoUrl) {
@@ -9274,11 +9274,11 @@ function executarRenderizacao(payload) {
 // Função que você vai chamar quando receber o link do vídeo do seu servidor
 function carregarVideoSincronizado(videoId, isLoop = false) {
     // 📝 LOG DE ENTRADA: Mostra o que veio do servidor
-    //console.group("🔍 Diagnóstico de Vídeo");
-    //console.log("🔗 URL Recebida:", linkDoYoutube);
-    //console.log("🌐 Origem (globalOriginURL):", globalOriginURL);
-    //console.log("🤖 Status API YT:", ytApiPronta ? "PRONTA" : "AGUARDANDO");
-    //console.groupEnd();
+    console.group("🔍 Diagnóstico de Vídeo");
+    console.log("🔗 URL Recebida:", linkDoYoutube);
+    console.log("🌐 Origem (globalOriginURL):", globalOriginURL);
+    console.log("🤖 Status API YT:", ytApiPronta ? "PRONTA" : "AGUARDANDO");
+    console.groupEnd();
     
     // 🛑 SEGURANÇA 1: Se a API já está pronta e o player existe
     if (ytApiPronta && playerYouTube) {
