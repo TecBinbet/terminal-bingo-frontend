@@ -276,7 +276,9 @@
             
         </div>
     </div>
-
+     
+    <script src="config.js"></script>
+     
     <!-- =========================================
          SCRIPTS - MOTOR DO PAINEL TV (CONECTADO À API)
          ========================================= -->
@@ -426,7 +428,7 @@
             // 2. ÁUDIO SÍNTESE DE VOZ (Agora disparado no exato momento da batida)
             // Usa o nome do prêmio de forma fluida. Ex: "Atenção! Temos ganhador para LINHA..."
             if (typeof falarTextoTV === 'function') {
-                falarTextoTV(`Temos ganhador para ${premio}!`);
+                falarTextoTV(`Temos ganhador para ${t(premio)}!`);
             }
 
             // 3. EFEITO VISUAL PARA TV (Disparo duplo lateral para telas largas)
@@ -495,7 +497,7 @@
 
                 let displayFaltam = '';
                 if (haGanhador) {
-                    displayFaltam = `<span class="text-xl bg-red-600 text-white px-2 py-1 rounded border border-red-400 animate-pulse uppercase tracking-widest">${winnerPremio}</span>`;
+                    displayFaltam = `<span class="text-xl bg-red-600 text-white px-2 py-1 rounded border border-red-400 animate-pulse uppercase tracking-widest">${t(winnerPremio)}</span>`;
                     celebrarPremioTV(`${item.cartela}-${winnerPremio}`, item.cartela, nomeFormatado, winnerPremio);
                 } else {
                     displayFaltam = `<span class="text-2xl fonte-digital text-green-400">${dezenasTexto}</span>`;
@@ -543,7 +545,7 @@
 
                     const rowHtml = `
                         <div class="flex justify-between items-center bg-gray-800/60 p-2 rounded border border-gray-700/50">
-                            <span class="text-xl font-semibold text-gray-300 uppercase">${premio.tipo_premio}</span>
+                            <span class="text-xl font-semibold text-gray-300 uppercase">${t(premio.tipo_premio)}</span>
                             <span class="text-xl font-semibold text-green-400 tracking-wider">${valorFormatado}</span>
                         </div>
                     `;
@@ -551,7 +553,7 @@
                 });
             }
 
-            // 2. LÓGICA DO "VALENDO AGORA" (Baseado no seu displayPrizeInfo)
+            // 2. LÓGICA DO "VALENDO AGORA"
             const buscandoElement = document.getElementById('buscando-premio-tv');
             if (!buscandoElement) return;
 
@@ -563,12 +565,21 @@
             const qtdeLinhas = dadosBuscando.qtde_linha || '';
             let prizeToFind = cleanTextForComparison(buscandoValue);
 
+            // 👉 AQUI: Traduz o nome base antes de aplicar regras específicas
+            if (buscandoValue) {
+                buscandoValue = t(buscandoValue);
+            }
+
             // Ajuste de Linhas e Falta Um
-            if (qtdeLinhas === 3 && (buscandoValue === "LINHA" || buscandoValue === "L I N H A"))  {
-                buscandoValue = `LINHAS: ( ${linhasTaisLinhas.toUpperCase()} )`;
+            if (qtdeLinhas === 3 && (prizeToFind === "LINHA" || prizeToFind === "LINHAS"))  {
+                // Traduz o 3 LINHAS dinamicamente
+                buscandoValue = `${t('3 LINHAS')}: ( ${linhasTaisLinhas.toUpperCase()} )`;
                 prizeToFind = '3LINHAS';
             }
-            if (prizeToFind === 'FALTAUM') prizeToFind = 'FALTA1';
+            if (prizeToFind === 'FALTAUM') {
+                prizeToFind = 'FALTA1';
+                buscandoValue = t('FALTA 1'); // Traduz o Falta Um
+            }
 
             // Busca Valor do Prêmio Atual
             let valorPremioAtual = '';
@@ -992,8 +1003,9 @@
 
                 const headerDiv = document.createElement('div');
                 headerDiv.className = 'flex justify-between items-center border-b border-gray-600 pb-1 mb-2';
+                // 👉 AQUI: Envolvemos o grupo.premio no t()
                 headerDiv.innerHTML = `
-                    <span class="text-green-400 font-black text-lg uppercase tracking-wider">${grupo.premio}</span>
+                    <span class="text-green-400 font-black text-lg uppercase tracking-wider">${t(grupo.premio)}</span>
                     <span class="text-white font-black bg-green-700 px-3 py-1 rounded text-lg shadow-md">${grupo.valor_total_premio}</span>
                 `;
                 groupDiv.appendChild(headerDiv);

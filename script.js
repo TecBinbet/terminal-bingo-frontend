@@ -3,41 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "0.8";   // Mude isso sempre que atualizar o JS
-
-// =================================================================
-// 📖 DICIONÁRIO DE TERMOS (WHITE-LABEL / JURÍDICO)
-// =================================================================
-const DICIONARIO = {
-    "LINHA": "KINA",
-    "BINGO": "KENO",
-    "DUPLO BINGO": "2º KENO",
-    "TRIPLO BINGO": "3º KENO",
-    "SUPER BINGO": "SUPER KENO",
-    "ACUMULADO": "KENO ACUMULADO",
-    "3 LINHAS": "3 KINAS",
-    "CARTELA": "BILHETE" // Opcional, caso queira mudar no futuro
-};
-
-function t(texto) {
-    if (!texto) return "";
-    let txt = texto.toString();
-    let upper = txt.toUpperCase();
-    
-    // 1. Tradução Exata (Mais rápida)
-    if (DICIONARIO[upper]) return DICIONARIO[upper];
-
-    // 2. Tradução de Frases Compostas (Ex: "LINHA - R$ 100,00" -> "KINA - R$ 100,00")
-    let traduzido = txt;
-    // Ordena da maior string para a menor para evitar que "BINGO" traduza metade de "SUPER BINGO"
-    const chaves = Object.keys(DICIONARIO).sort((a, b) => b.length - a.length);
-    
-    for (const chave of chaves) {
-        const regex = new RegExp(`\\b${chave}\\b`, 'gi');
-        traduzido = traduzido.replace(regex, DICIONARIO[chave]);
-    }
-    return traduzido;
-}
+const VERSAO_ATUAL = "0.9";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -8217,12 +8183,14 @@ function criarCardHistorico(evento) {
         ganhadoresHTML = evento.ganhadores.map(g => `
             <div class="flex justify-between items-center bg-gray-900/50 p-1 rounded border border-gray-700/50 mb-1 last:mb-0">
                 <div class="flex flex-col">
-                    <span class="text-xs text-yellow-500 font-bold uppercase tracking-wider">${g.premio}</span>
+                    <!-- AQUI: Traduz o nome do prêmio (ex: BINGO -> KENO) -->
+                    <span class="text-xs text-yellow-500 font-bold uppercase tracking-wider">${t(g.premio)}</span>
                     <span class="text-sm text-gray-200 font-medium -mt-0.5 truncate max-w-[150px]">👤 ${g.nome}</span>
                 </div>
                 <div class="text-right">
                     <div class="text-green-400 font-bold text-sm">${g.valor}</div>
-                    <div class="text-[12px] text-gray-150 -mt-0.5">Cartela: ${g.cartela}</div>
+                    <!-- AQUI: Traduz a palavra 'Cartela' usando o dicionário -->
+                    <div class="text-[12px] text-gray-150 -mt-0.5">${t('CARTELA')}: ${g.cartela}</div>
                 </div>
             </div>
         `).join('');
