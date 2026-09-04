@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.4";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.5";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -1174,6 +1174,33 @@ function iniciarCompraCartelas_old(idEvento) {
 }
 
 
+// =================================================================
+// 🛡️ TRAVA CRÍTICA: FILTRO DE CARTELAS INVÁLIDAS
+// =================================================================
+function sanitizarCartelasDaRodada(listaBruta) {
+    if (!window.periodosOficiais || window.periodosOficiais.length === 0) {
+        // Se ainda não carregou os períodos oficiais, deixa passar por segurança (o WebSocket resolve logo a seguir)
+        return listaBruta; 
+    }
+    
+    const listaLimpa = listaBruta.filter(item => {
+        // A cartela pode ser um inteiro direto ou um objeto com a chave 'numero'
+        const cartelaNum = typeof item === 'object' && item.numero ? parseInt(item.numero) : parseInt(item);
+        
+        if (isNaN(cartelaNum)) return false;
+
+        // Verifica se a cartela está dentro de PELO MENOS UM dos períodos oficiais (Lote 1 ou Lote 2)
+        return window.periodosOficiais.some(p => cartelaNum >= p.min && cartelaNum <= p.max);
+    });
+    
+    const descartadas = listaBruta.length - listaLimpa.length;
+    if (descartadas > 0) {
+        console.error(`🚨 [EXPURGO DE SEGURANÇA] ${descartadas} cartelas ignoradas! Estavam fora dos períodos oficiais:`, window.periodosOficiais);
+    }
+    
+    return listaLimpa;
+}
+
 // Funções de busca de cartelas compradas - p1
 // 👉 Adicionado o parâmetro 'forcarSincronia'
 async function carregarCartelasAutomaticas(idEvento, forcarSincronia = false) {
@@ -1217,15 +1244,32 @@ async function carregarCartelasAutomaticas(idEvento, forcarSincronia = false) {
         }
 
         if (data.cartelas && data.cartelas.length > 0) {
-            eventoCarregadoAtual = idEvento;
             
-            cartelasDoJogador = data.cartelas;
-            cartelaRanges = converterListaParaRanges(data.cartelas); 
-            cartelasEmJogo = data.cartelas.length; 
-            renderizarListaMinhasCartelas(data);
-            
-            ultima_bola_render = -1;
-            await fetchAndProcessCards(); 
+            // 👉 APLICA O EXPURGO DE SEGURANÇA AQUI
+            const cartelasFiltradas = sanitizarCartelasDaRodada(data.cartelas);
+
+            if (cartelasFiltradas.length > 0) {
+                eventoCarregadoAtual = idEvento;
+                
+                cartelasDoJogador = cartelasFiltradas; // Usa apenas as válidas!
+                cartelaRanges = converterListaParaRanges(cartelasFiltradas); 
+                cartelasEmJogo = cartelasFiltradas.length; 
+                
+                // Sobrescreve no pacote 'data' para não renderizar as falsas no Menu de Minhas Cartelas
+                data.cartelas = cartelasFiltradas;
+                renderizarListaMinhasCartelas(data);
+                
+                ultima_bola_render = -1;
+                await fetchAndProcessCards(); 
+            } else {
+                // Caiu na malha fina! O cliente tem cartelas no banco, mas NENHUMA é desta rodada.
+                const container = document.getElementById('my-cards-list');
+                if(container) container.innerHTML = '<p class="text-center text-red-500 font-bold py-4">⚠️ ATENÇÃO<br>Suas cartelas pertencem a outra rodada e foram bloqueadas.</p>';
+                cartelasEmJogo = 0;
+                cartelaRanges = []; 
+                loadedCards = [];
+                displayLoadedCards([]);
+            }
 
         } else {
             const container = document.getElementById('my-cards-list');
@@ -1873,6 +1917,8 @@ async function openMyCardsPanel(idEventoParam = null, descricaoParam = null) {
         }
         
         const data = await response.json();
+
+        if (data.cartelas) data.cartelas = sanitizarCartelasDaRodada(data.cartelas); 
 
         const elSubtitulo = document.getElementById('minhas_apostas_evento');
         if (elSubtitulo) {
@@ -4841,13 +4887,22 @@ async function renderMainContent(data) {
     displayConferencePanel(confereData, bolasCantadas);
 
     // =================================================================
-    // 👉 INJEÇÃO DINÂMICA DOS LIMITES (ATUALIZADO VIA WEBSOCKET/INIT)
+    // 👉 INJEÇÃO DINÂMICA DOS LIMITES E PERÍODOS OFICIAIS
     // =================================================================
     if (premioInfo) {
         minCartelas = premioInfo.minimo_de_cartelas || 0;
         maxCartelas = premioInfo.maximo_de_cartelas || 0;
-        //console.log(`🔎 Limites Atualizados - Mín: ${minCartelas} | Máx: ${maxCartelas}`);
         
+        // 🛡️ GRAVA OS PERÍODOS OFICIAIS GLOBALMENTE PARA A TRAVA DE SEGURANÇA
+        window.periodosOficiais = [];
+        const i1 = parseInt(premioInfo.inicial1 || 0);
+        const f1 = parseInt(premioInfo.final1 || 0);
+        if (i1 > 0 && f1 > 0) window.periodosOficiais.push({min: i1, max: f1});
+        
+        const i2 = parseInt(premioInfo.inicial2 || 0);
+        const f2 = parseInt(premioInfo.final2 || 0);
+        if (i2 > 0 && f2 > 0) window.periodosOficiais.push({min: i2, max: f2});
+            
         if (typeof premioInfo.preco === 'number') {
             const preco = premioInfo.preco  / premioInfo.multiplo;
             ValorSerie = preco;
@@ -5251,27 +5306,36 @@ function connectWebSocket() {
             }
 
             // =========================================================
-            // 🛡️ CAMADA 2: GATILHO DA GUILHOTINA (INÍCIO DO SORTEIO)
+            // 🛡️ CAMADA 2: GATILHO DA GUILHOTINA (INÍCIO DO SORTEIO) E EXPURGO
             // =========================================================
-            // O Python envia os dados da rodada dentro de um array 'rodadaData'
             const rodada = payload.rodadaData && payload.rodadaData.length > 0 ? payload.rodadaData[0] : null;
             const statusRodada = rodada ? rodada.estado : null;
 
             if (statusRodada === 'sorteio' || statusRodada === 'em andamento') {
                 
-                // O Python envia os ranges do banco na chave 'cardRanges'
-                if (payload.cardRanges && window.cartelasAtivas && window.cartelasAtivas.length > 0) {
+                // 1. Atualiza os períodos pela via ultra-rápida do Socket
+                if (payload.premioInfo) {
+                    window.periodosOficiais = [];
+                    const i1 = parseInt(payload.premioInfo.inicial1 || 0);
+                    const f1 = parseInt(payload.premioInfo.final1 || 0);
+                    if (i1 > 0 && f1 > 0) window.periodosOficiais.push({min: i1, max: f1});
                     
-                    // Traduz de {inicial, final} (Python) para {min, max} (JS)
-                    const periodosFormatados = payload.cardRanges.map(r => ({
-                        min: r.inicial,
-                        max: r.final
-                    }));
+                    const i2 = parseInt(payload.premioInfo.inicial2 || 0);
+                    const f2 = parseInt(payload.premioInfo.final2 || 0);
+                    if (i2 > 0 && f2 > 0) window.periodosOficiais.push({min: i2, max: f2});
+                }
 
-                    const auditoriaAprovada = auditarCartelasContraPeriodosOficiais(window.cartelasAtivas, periodosFormatados);
+                // 2. Bate a matriz com a nossa mão de cartelas atual
+                if (typeof cartelasDoJogador !== 'undefined' && cartelasDoJogador.length > 0 && window.periodosOficiais && window.periodosOficiais.length > 0) {
+                    const qtyOriginal = cartelasDoJogador.length;
+                    const validas = sanitizarCartelasDaRodada(cartelasDoJogador);
                     
-                    if (!auditoriaAprovada) {
-                        return; // Aborta para proteger a tela
+                    if (validas.length < qtyOriginal) {
+                        console.error("🚫 [WS AUDITORIA] Invasão fantasma detetada no sorteio! Limpando a mesa...");
+                        if (typeof carregarCartelasAutomaticas === 'function') {
+                            carregarCartelasAutomaticas(idRodada, true);
+                        }
+                        return; // Corta a renderização desta bola imediatamente para impedir conferência errada!
                     }
                 }
             }
@@ -9269,8 +9333,55 @@ function iniciarMotorSincronia() {
     }, 200); // Corre a cada 200 milissegundos para não engasgar
 }
 
+// =========================================================
+// 🕵️‍♂️ VIGILANTE DE VENDAS (Proteção contra Condição de Corrida)
+// =========================================================
+function vigilanteDeVendas(payload) {
+    // Só prossegue se recebermos dados reais da rodada atual
+    if (!payload || !payload.rodadaData || payload.rodadaData.length === 0) return;
+
+    const rodadaAtual = payload.rodadaData[0];
+    const idEventoPayload = parseInt(rodadaAtual.id_evento || rodadaAtual.rodada);
+    const statusPayload = (rodadaAtual.estado || rodadaAtual.status || '').toLowerCase().trim();
+
+    // Quais status bloqueiam a venda na hora?
+    const statusBloqueados = ['sorteio', 'em andamento', 'finalizado', 'encerrado'];
+
+    if (statusBloqueados.includes(statusPayload)) {
+        
+        // 1. VERIFICAR MODAL DE CARTELAS NORMAIS
+        const modalCartelas = document.getElementById('modal-comprar-cartelas');
+        if (modalCartelas && !modalCartelas.classList.contains('hidden')) {
+            // Só bloqueia se o cliente estiver a comprar EXATAMENTE para o evento que trancou
+            if (parseInt(eventoSelecionadoParaCompra) === idEventoPayload) {
+                if (typeof fecharModal === 'function') fecharModal('modal-comprar-cartelas');
+                
+                if (typeof showCustomAlert === 'function') {
+                    showCustomAlert(`As vendas para esta rodada foram encerradas, pois o sorteio mudou para: <b>${statusPayload.toUpperCase()}</b>. Acompanhe a transmissão!`, "Vendas Encerradas", "🛑", true);
+                }
+            }
+        }
+
+        // 2. VERIFICAR MODAL DO SORTE EXTRA
+        const modalSorteExtra = document.getElementById('modal-sorte-extra');
+        if (modalSorteExtra && !modalSorteExtra.classList.contains('hidden')) {
+            // Só bloqueia se o cupom extra for exatamente do evento que trancou
+            if (parseInt(configSorteExtra.idEvento) === idEventoPayload) {
+                if (typeof fecharModalSorteExtra === 'function') fecharModalSorteExtra();
+                
+                if (typeof showCustomAlert === 'function') {
+                    showCustomAlert(`A venda de Cupons Extras para esta rodada foi encerrada (Status: <b>${statusPayload.toUpperCase()}</b>). Boa sorte!`, "Sorte Extra Encerrada", "🛑", true);
+                }
+            }
+        }
+    }
+}
+
 // Extraímos a lógica de renderização para uma função separada
 function executarRenderizacao(payload) {
+    // 👉 GATILHO DO VIGILANTE: Corre antes de qualquer renderização visual!
+    if (typeof vigilanteDeVendas === 'function') vigilanteDeVendas(payload);
+
     // 1. ATUALIZAÇÃO GERAL DO JOGO (Bolas, Ranking, etc)
     if (payload.type === 'UPDATE') {
         const melhoresData = payload.melhoresData;
