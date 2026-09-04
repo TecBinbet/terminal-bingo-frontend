@@ -3,7 +3,41 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "0.7";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "0.8";   // Mude isso sempre que atualizar o JS
+
+// =================================================================
+// 📖 DICIONÁRIO DE TERMOS (WHITE-LABEL / JURÍDICO)
+// =================================================================
+const DICIONARIO = {
+    "LINHA": "KINA",
+    "BINGO": "KENO",
+    "DUPLO BINGO": "2º KENO",
+    "TRIPLO BINGO": "3º KENO",
+    "SUPER BINGO": "SUPER KENO",
+    "ACUMULADO": "KENO ACUMULADO",
+    "3 LINHAS": "3 KINAS",
+    "CARTELA": "BILHETE" // Opcional, caso queira mudar no futuro
+};
+
+function t(texto) {
+    if (!texto) return "";
+    let txt = texto.toString();
+    let upper = txt.toUpperCase();
+    
+    // 1. Tradução Exata (Mais rápida)
+    if (DICIONARIO[upper]) return DICIONARIO[upper];
+
+    // 2. Tradução de Frases Compostas (Ex: "LINHA - R$ 100,00" -> "KINA - R$ 100,00")
+    let traduzido = txt;
+    // Ordena da maior string para a menor para evitar que "BINGO" traduza metade de "SUPER BINGO"
+    const chaves = Object.keys(DICIONARIO).sort((a, b) => b.length - a.length);
+    
+    for (const chave of chaves) {
+        const regex = new RegExp(`\\b${chave}\\b`, 'gi');
+        traduzido = traduzido.replace(regex, DICIONARIO[chave]);
+    }
+    return traduzido;
+}
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -2558,140 +2592,6 @@ function processCards90(cards, bolasCantadas, premioBuscado, linhasAtivas) {
     finalizeProcessing(processedCards, premioBuscado);
 }
 
-// --- LÓGICA BINGO 90 (MANTIDA/REFATORADA) ---
-function processCards90b2(cards, bolasCantadas, premioBuscado, linhasAtivas) {
-    const textoBuscando = (premioBuscado || '').toString().toUpperCase();
-    // O sistema só permite avisos de linha se a palavra "LINHA" estiver no painel.
-    const isFaseDeLinhas = textoBuscando.includes('LINHA');
-
-    let avisarFesta = false;
-    // 📸 [CÂMERA 1] O que a função acha que está buscando logo que liga?
-    console.log(`[LOG 1] Iniciando processCards90 | Prêmio Atual: ${textoBuscando} | Fase de Linhas? ${isFaseDeLinhas}`);
-
-    const processedCards = [];
-    if (premioBuscado === 'BINGO') bingoWinners.clear();
-
-    const isMultiLinePrize = premioBuscado.includes('LINHA') && linhasAtivas;
-    const activeLinesArray = isMultiLinePrize ? linhasAtivas.split(',') : [];
-
-    cards.forEach(card => {
-        // Lógica de Parsing 90 (Sup, Cen, Inf)
-        let superior = typeof card.superior === 'string' ? card.superior.split(',').map(Number) : (card.superior || []);
-        let central = typeof card.central === 'string' ? card.central.split(',').map(Number) : (card.central || []);
-        let inferior = typeof card.inferior === 'string' ? card.inferior.split(',').map(Number) : (card.inferior || []);
-        
-        let emOrdem = [...superior, ...central, ...inferior];
-        let layoutGrid = emOrdem; // Para 90 bolas, o grid é linear (3 linhas)
-
-        let count = { geral: 0, superior: 0, central: 0, inferior: 0 };
-
-        bolasCantadas.forEach(bola => {
-            if (emOrdem.includes(bola)) count.geral++;
-            if (superior.includes(bola)) count.superior++;
-            if (central.includes(bola)) count.central++;
-            if (inferior.includes(bola)) count.inferior++;
-        });
-
-        if (premioBuscado.includes('BINGO') && count.geral === 15) bingoWinners.add(card.cartao);
-
-        let cardObj = {
-            cartao: card.cartao,
-            linhaId: null,
-            counts: { geral: count.geral },
-            premioEncontrado: null,
-            originalData: { geral: emOrdem, linha: [] },
-            layoutGrid: layoutGrid,
-            missingNumbers: emOrdem.filter(n => !bolasCantadas.includes(n)),
-            type: 90 // Tag para renderização
-        };
-
-        //x 🛡️ O Freio Mestre (Fase de Linhas)
-        if ((isFaseDeLinhas || premioBuscado.includes('QUADRA')) && count.geral < 15) {
-            
-            const lines = [
-                { id: 'SUP', numbers: superior, count: count.superior, ativa: window.linhasAtivasNoJogo.SUP },
-                { id: 'CEN', numbers: central, count: count.central, ativa: window.linhasAtivasNoJogo.CEN },
-                { id: 'INF', numbers: inferior, count: count.inferior, ativa: window.linhasAtivasNoJogo.INF }
-            ];
-
-            let ganhouLinhaInedita = false;
-            let linhaPremiadaId = null;
-            let linhaPremiadaNumbers = []; // Guarda os números da linha que bateu
-            
-            // Variáveis para o Ranking
-            let maxHitsLinhaAtiva = -1; // Começa em -1 para garantir que ele pegue pelo menos a 1ª linha vazia
-            let melhorLinhaIdParaRanking = null;
-            let melhorLinhaNumbers = []; // Guarda os números da linha que está quase lá
-
-            lines.forEach(line => {
-                if (line.ativa) {
-                    
-                    // 1. GRAVA A MELHOR LINHA (Pega os números dela também!)
-                    if (line.count > maxHitsLinhaAtiva) {
-                        maxHitsLinhaAtiva = line.count;
-                        melhorLinhaIdParaRanking = line.id;
-                        melhorLinhaNumbers = line.numbers; 
-                    }
-
-                    // 2. VERIFICA SE BATEU OS 5 PONTOS
-                    if (line.count === 5) {
-                        ganhouLinhaInedita = true;
-                        linhaPremiadaId = line.id;
-                        linhaPremiadaNumbers = line.numbers;
-                        avisarFesta = true;
-                    }
-                }
-            });
-
-            // ====================================================================
-            // 🛑 AJUSTE FINAL: SOBRESCREVE OS NÚMEROS FALTANTES 
-            // ====================================================================
-            if (ganhouLinhaInedita) {
-                // A cartela BATEU!
-                cardObj.premioEncontrado = 'LINHA';
-                cardObj.linhaId = linhaPremiadaId; 
-                cardObj.counts.linha = 5; 
-                cardObj.originalData.linha = linhaPremiadaNumbers;
-                // Como bateu, os faltantes serão ZERO, mas mantemos o filtro por segurança visual
-                cardObj.missingNumbers = linhaPremiadaNumbers.filter(n => !bolasCantadas.includes(n)); 
-            } else {
-                // NÃO BATEU, mostra as faltantes apenas da melhor linha!
-                cardObj.linhaId = melhorLinhaIdParaRanking;
-                cardObj.counts.linha = maxHitsLinhaAtiva; 
-                cardObj.originalData.linha = melhorLinhaNumbers;
-                // 👉 O Segredo: Filtra só as 5 bolas dessa linha contra as bolas cantadas
-                cardObj.missingNumbers = melhorLinhaNumbers.filter(n => !bolasCantadas.includes(n)); 
-            }
-            
-            processedCards.push(cardObj);
-
-        } else {
-            // Lógica de Bingo / Falta 1
-            if (count.geral === 15) {
-                cardObj.premioEncontrado = 'BINGO';
-                avisarFesta = true;
-            } else {
-                if (premioBuscado.includes('FALTA') && count.geral === 14) {
-                    cardObj.premioEncontrado = 'FALTA 1';
-                    avisarFesta = true;
-                }
-            } 
-            // Para o bingo, a missingNumbers já foi calculada lá no topo usando as 15 dezenas
-            processedCards.push(cardObj);
-        }
-
-    });
-
-    if (avisarFesta) {
-        // A função vai tocar o som e travar o cadeado para este prêmio específico
-        celebrarPremioIntermediario(premioBuscado);
-    }
-
-    // Ordenação e Atualização Global
-    // 📸 [CÂMERA 3] Resumo do que está saindo da função
-    console.log(`[LOG 3] Fim do processCards90. Enviando ${processedCards.length} cartelas processadas para a tela.`);
-    finalizeProcessing(processedCards, premioBuscado);
-}
 
 // --- LÓGICA BINGO 75 (CORRIGIDA: VISUALIZAÇÃO, ORDENAÇÃO E FESTA) ---
 function processCards75(cards, bolasCantadas, premioBuscado) {
@@ -2987,7 +2887,8 @@ function displayLoadedCards(bolasCantadas) {
             if (card.premioEncontrado) {
                numbersContainer.className = 'flex-1 ml-2 p-0 bg-gray-900 rounded-lg flex flex-wrap gap-1 justify-start';
 
-                const premioTexto = card.premioEncontrado === 'DUPLO BINGO' ? 'DUPLO BINGO' : card.premioEncontrado;
+                // newp const premioTexto = card.premioEncontrado === 'DUPLO BINGO' ? 'DUPLO BINGO' : card.premioEncontrado;
+                const premioTexto = t(card.premioEncontrado); 
                 const premioSpan = document.createElement('span');
                 premioSpan.className = 'text-sm bg-red-500 text-white font-bold w-full text-center p-1 rounded-lg animate-blink-red-white';
                 premioSpan.textContent = premioTexto;
@@ -3332,8 +3233,9 @@ function displayPrizeInfo(buscandoData, premioData = null) {
     // Cria o elemento (igual ao seu código)
     const prizeItem = document.createElement('span');
     prizeItem.className = 'text-3xl text-gray-200 font-semibold';
-    prizeItem.innerHTML = textoFinal; // Usa o texto calculado
-
+    //newp prizeItem.innerHTML = textoFinal; 
+    prizeItem.innerHTML = t(textoFinal);
+ 
     // Limpa e insere
     prizeInfoContainerCurrent.innerHTML = ''; 
     prizeInfoContainerCurrent.appendChild(prizeItem);
@@ -3431,7 +3333,8 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
             maximumFractionDigits: 2
         }).format(numLimpo);
 
-        htmlEsquerda += criarCaixaDigital(premio.tipo_premio, valorFormatado, 'text-yellow-600', 'text-green-500');
+        // newp htmlEsquerda += criarCaixaDigital(premio.tipo_premio, valorFormatado, 'text-yellow-600', 'text-green-500');
+        htmlEsquerda += criarCaixaDigital(t(premio.tipo_premio), valorFormatado, 'text-yellow-600', 'text-green-500');  
     });
     htmlEsquerda += '</div>';
 
@@ -3453,7 +3356,8 @@ function displayPrizeValues(premioData, topeData = null, rawData = null) {
             maximumFractionDigits: 2
         }).format(numLimpo);
 
-        htmlDireita += criarCaixaDigital(titulo, valorFormatado, 'text-purple-500', 'text-yellow-500');
+        // newp htmlDireita += criarCaixaDigital(titulo, valorFormatado, 'text-purple-500', 'text-yellow-500');
+        htmlDireita += criarCaixaDigital(t(titulo), valorFormatado, 'text-purple-500', 'text-yellow-500');
     });
 
     // --- DEBUG: LOGS PARA RASTREAR O ERRO ---
@@ -3838,9 +3742,9 @@ function displayWinnersPanel(ganhadoresData) {
         // Cabeçalho do Prêmio
         const headerDiv = document.createElement('div');
         headerDiv.className = 'flex justify-between items-center border-b border-gray-600 pb-1 mb-1';
-
+        // newp <span class="text-green-400 font-bold text-lg">${grupo.premio}</span>   
         headerDiv.innerHTML = `
-            <span class="text-green-400 font-bold text-lg">${grupo.premio}</span>
+            <span class="text-green-400 font-bold text-lg">${t(grupo.premio)}</span>
             <span class="text-white font-bold bg-green-700 px-1 py-0.5 rounded text-sm">${grupo.valor_total_premio}</span>
         `;
         groupDiv.appendChild(headerDiv);
@@ -4021,7 +3925,8 @@ function renderMelhores(melhoresData) {
  
         if (haGanhador) {
             // Guarda o nome do prêmio para falarmos depois
-            premiosDestaAtualizacao.push(winnerPremio);
+            // newp premiosDestaAtualizacao.push(winnerPremio);
+            premiosDestaAtualizacao.push(t(winnerPremio));
             
             // Verifica se esta cartela vencedora é minha
             const numCartelaRanking = parseInt(item.cartela);
@@ -4044,7 +3949,8 @@ function renderMelhores(melhoresData) {
         const primeiros24 = listaLimpa.slice(0, 24);
         const numerosFormatados = primeiros24.map(n => n.toString().padStart(2, '0')).join(' . ');
         
-        numerosFaltantes.textContent = `${numerosFormatados} ${winnerPremio || ''}`;
+        //newp numerosFaltantes.textContent = `${numerosFormatados} ${winnerPremio || ''}`;
+        numerosFaltantes.textContent = `${numerosFormatados} ${t(winnerPremio) || ''}`;
         numerosFaltantes.className = 'text-[9px] text-green-600 truncate whitespace-nowrap overflow-hidden'; 
 
         // 4. Nome (Player)
@@ -4304,7 +4210,7 @@ function renderOscartoes90(bolasInput) {
                 if (cardData.premioEncontrado) {
                     const footer = document.createElement('div');
                     footer.className = 'mt-0.5 text-center text-[8px] font-bold rounded py-0.5 animate-prize-blink bg-yellow-600 text-black uppercase';
-                    footer.textContent = `${cardData.premioEncontrado}`;
+                    footer.textContent = `${t(cardData.premioEncontrado)}`;
                     cardDiv.appendChild(footer);
                 }
                 
@@ -4430,7 +4336,8 @@ function renderOscartoes75(bolasInput) {
                 if (cardData.premioEncontrado) {
                     const footer = document.createElement('div');
                     footer.className = 'mt-0.5 text-center text-[8px] font-bold rounded py-0.5 animate-prize-blink bg-yellow-600 text-black uppercase';
-                    footer.textContent = `${cardData.premioEncontrado}`;
+                    // newp footer.textContent = `${cardData.premioEncontrado}`;
+                    footer.textContent = `${t(cardData.premioEncontrado)}`;
                     cardDiv.appendChild(footer);
                 }
                 fragment.appendChild(cardDiv);
@@ -10106,19 +10013,20 @@ function celebrarPremioIntermediario(identificadorDoPremio) {
     let textoVoz = "";
     const premioUpper = (identificadorDoPremio || "").toUpperCase();
     
-    // Identifica o género da palavra para soar gramaticalmente correto
+    // Identifica o gênero da palavra do sistema (Original) para soar gramaticalmente correto
     if (premioUpper.includes('FALTA')) {
-        textoVoz = "Parabéns! ${FALTA UM} contemplado";
+        // Fixado o erro de sintaxe e aplicado o tradutor
+        textoVoz = `Parabéns! ${t('FALTA 1')} contemplado!`;
     } else if (premioUpper.includes('LINHA') || premioUpper.includes('QUADRA')) {
-        textoVoz = `Parabéns! ${identificadorDoPremio} contemplada!`;
+        // Aplica o t() na palavra final
+        textoVoz = `Parabéns! ${t(identificadorDoPremio)} contemplada!`;
     } else {
-        textoVoz = `Parabéns! ${identificadorDoPremio} contemplado!`;
-    }
-    
+        // Aplica o t() na palavra final
+        textoVoz = `Parabéns! ${t(identificadorDoPremio)} contemplado!`;
+    }    
     // Dispara a voz
     falarTexto(textoVoz, true);
-    // ==========================================================
-
+    
     // 3. DISPARO DO ÁUDIO SINTETIZADO (Nativo e super leve)
     tocarCampainhaAlegre();
 
