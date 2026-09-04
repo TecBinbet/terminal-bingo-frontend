@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.5";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.0";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -1177,25 +1177,25 @@ function iniciarCompraCartelas_old(idEvento) {
 // =================================================================
 // 🛡️ TRAVA CRÍTICA: FILTRO DE CARTELAS INVÁLIDAS
 // =================================================================
-function sanitizarCartelasDaRodada(listaBruta) {
+function sanitizarCartelasDaRodada(listaBruta, idEventoDaLista) {
+    // 👉 A CHAVE DE OURO: Só expurga se o evento que estamos a carregar for EXATAMENTE a Rodada Atual!
+    if (typeof idRodada !== 'undefined' && parseInt(idEventoDaLista) !== parseInt(idRodada)) {
+        return listaBruta; // Deixa as cartelas passarem intactas, pois são de um evento futuro
+    }
+
     if (!window.periodosOficiais || window.periodosOficiais.length === 0) {
-        // Se ainda não carregou os períodos oficiais, deixa passar por segurança (o WebSocket resolve logo a seguir)
         return listaBruta; 
     }
     
     const listaLimpa = listaBruta.filter(item => {
-        // A cartela pode ser um inteiro direto ou um objeto com a chave 'numero'
         const cartelaNum = typeof item === 'object' && item.numero ? parseInt(item.numero) : parseInt(item);
-        
         if (isNaN(cartelaNum)) return false;
-
-        // Verifica se a cartela está dentro de PELO MENOS UM dos períodos oficiais (Lote 1 ou Lote 2)
         return window.periodosOficiais.some(p => cartelaNum >= p.min && cartelaNum <= p.max);
     });
     
     const descartadas = listaBruta.length - listaLimpa.length;
     if (descartadas > 0) {
-        console.error(`🚨 [EXPURGO DE SEGURANÇA] ${descartadas} cartelas ignoradas! Estavam fora dos períodos oficiais:`, window.periodosOficiais);
+        console.error(`🚨 [EXPURGO] ${descartadas} cartelas ignoradas no evento ${idEventoDaLista}! Fora dos limites:`, window.periodosOficiais);
     }
     
     return listaLimpa;
@@ -1246,7 +1246,7 @@ async function carregarCartelasAutomaticas(idEvento, forcarSincronia = false) {
         if (data.cartelas && data.cartelas.length > 0) {
             
             // 👉 APLICA O EXPURGO DE SEGURANÇA AQUI
-            const cartelasFiltradas = sanitizarCartelasDaRodada(data.cartelas);
+            const cartelasFiltradas = sanitizarCartelasDaRodada(data.cartelas, idEvento);
 
             if (cartelasFiltradas.length > 0) {
                 eventoCarregadoAtual = idEvento;
@@ -1918,7 +1918,9 @@ async function openMyCardsPanel(idEventoParam = null, descricaoParam = null) {
         
         const data = await response.json();
 
-        if (data.cartelas) data.cartelas = sanitizarCartelasDaRodada(data.cartelas); 
+        if (data.cartelas) {
+            data.cartelas = sanitizarCartelasDaRodada(data.cartelas, idEvt);
+        } 
 
         const elSubtitulo = document.getElementById('minhas_apostas_evento');
         if (elSubtitulo) {
