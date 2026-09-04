@@ -6175,53 +6175,6 @@ function abrirEdicaoCadastro() {
 }
 
 // --- FUNÇÃO FINAL: Gravar Atualização no Servidor ---
-async function salvarEdicaoCadastro() {
-    // Busca os valores atualizados (Ajuste os IDs conforme seu formulário)
-    const nomeAtualizado = document.getElementById('cad-nome') ? document.getElementById('cad-nome').value.trim() : '';
-    const pixAtualizado = document.getElementById('cad-pix') ? document.getElementById('cad-pix').value.trim() : '';
-    
-    if (!pixAtualizado) {
-        if (typeof showCustomAlert === 'function') showCustomAlert("A Chave PIX é obrigatória para realizar saques.", "Campo Obrigatório", "⚠️");
-        return;
-    }
-
-    if (typeof showFullLoading === 'function') showFullLoading("Salvando alterações...");
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/atualizar_cadastro`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include', 
-            body: JSON.stringify({
-                nome: nomeAtualizado,
-                chave_pix: pixAtualizado
-            })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.status === 'sucesso') {
-            if (typeof showCustomAlert === 'function') showCustomAlert("Seus dados foram atualizados com sucesso!", "Atualizado", "✅");
-            
-            // Atualiza a memória local para liberar o saque imediatamente
-            if (typeof clienteLogado !== 'undefined') clienteLogado.chave_pix = pixAtualizado;
-            
-            if (typeof fecharModal === 'function') fecharModal('modal-cadastro');
-            
-            // Opcional: Reabrir a carteira para o cliente terminar o saque
-            // setTimeout(() => abrirModalCarteira(), 500); 
-
-        } else {
-            if (typeof showCustomAlert === 'function') showCustomAlert(data.erro || "Falha ao atualizar dados.", "Erro", "❌");
-        }
-    } catch (error) {
-        console.error("Erro ao atualizar cadastro:", error);
-        if (typeof showCustomAlert === 'function') showCustomAlert("Erro de conexão ao salvar os dados.", "Falha", "🌐");
-    } finally {
-        if (typeof hideFullLoading === 'function') hideFullLoading();
-    }
-}
-
 async function autocadastro() {
     // 1. Fecha o modal de login se estiver aberto
     fecharModal('modal-login');

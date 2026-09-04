@@ -5676,6 +5676,96 @@ def cadastrar_cliente():
         return jsonify({'erro': 'Erro interno ao salvar cadastro.'}), 500
 
 
+@app.route('/api/atualizar_cadastro', methods=['POST'])
+def atualizar_cadastro():
+    """
+    Atualiza os dados de um cliente existente.
+    """
+    try:
+        # 1. Verifica autenticação
+        id_sessao = session.get('id_cliente') or session.get('id')
+        if not id_sessao:
+            return jsonify({'status': 'erro', 'erro': 'Sessão expirada. Faça login novamente.'}), 401
+
+        # 2. Captura os dados enviados pelo Front-end
+        data = request.json
+        if not data:
+            return jsonify({'status': 'erro', 'erro': 'Nenhum dado recebido.'}), 400
+
+        # Tratamento idêntico ao do cadastro
+        nome = data.get('nome_cliente', '').strip().upper() 
+        nick = data.get('nick', '').strip().lower() 
+        celular = data.get('telefone', '').strip()
+        cidade = data.get('cidade', '').strip().title()
+        chave_pix = data.get('chave_pix', '').strip()
+        senha_raw = data.get('senha', '').strip()
+
+        # 3. Conexão com o Banco de Dados
+        sales_db = get_sales_db_connection()
+        if sales_db is None:
+            return jsonify({'erro': 'Erro interno: Banco inacessível'}), 500
+
+        # 4. Prepara o documento com os campos que vieram preenchidos
+        campos_atualizar = {}
+        
+        if nome: campos_atualizar['nome_cliente'] = nome
+        if cidade: campos_atualizar['cidade'] = cidade
+        if chave_pix: campos_atualizar['chave_pix'] = chave_pix
+        
+        if nick:
+            # Valida o nick usando a sua função padrão
+            valido, erro_msg = nick_eh_valido(nick)
+            if not valido:
+                return jsonify({'status': 'erro', 'erro': erro_msg}), 400
+            campos_atualizar['nick'] = nick
+
+        if celular:
+            try:
+                celular_formatado = formatar_telefone_padrao(sales_db, celular)
+            except Exception as e:
+                print(f"⚠️ Aviso: formatar_telefone_padrao falhou ({e}).")
+                celular_formatado = celular
+            campos_atualizar['telefone'] = celular_formatado
+
+        # Se o cliente enviou uma senha nova, processa a criptografia
+        if senha_raw:
+            if senha_raw.lower() == "senha":
+                return jsonify({'status': 'erro', 'erro': "Você não pode usar a senha padrão 'Senha'. Escolha outra."}), 400
+            
+            senha_formatada = senha_raw.capitalize()
+            senha_hash = bcrypt.hashpw(senha_formatada.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            campos_atualizar['senha'] = senha_hash
+
+        # Verifica se há algo para atualizar
+        if not campos_atualizar:
+            return jsonify({'status': 'erro', 'erro': 'Nenhum dado válido para atualizar.'}), 400
+
+        # 5. ATUALIZAÇÃO NO MONGODB
+        # Garante que o ID do cliente seja tratado como Inteiro (Int32)
+        id_cliente_int = int(id_sessao)
+        
+        resultado = sales_db.clientes.update_one(
+            {'id_cliente': id_cliente_int},
+            {'$set': campos_atualizar}
+        )
+
+        # Verifica se realmente encontrou o usuário no banco
+        if resultado.matched_count == 0:
+            return jsonify({'status': 'erro', 'erro': 'Cliente não encontrado no banco de dados.'}), 404
+
+        print(f"✅ Dados atualizados com sucesso para o cliente ID: {id_cliente_int}")
+
+        return jsonify({
+            'status': 'sucesso', 
+            'msg': 'Cadastro atualizado com sucesso!'
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Erro ao atualizar cadastro: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'erro', 'erro': 'Falha interna ao salvar os dados.'}), 500
+
 # ==============================================================================
 #  FUNÇÃO AUXILIAR: NOTIFICAÇÃO TELEGRAM
 # ==============================================================================
