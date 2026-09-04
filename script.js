@@ -4664,7 +4664,7 @@ async function renderMainContent(data) {
 
         tipoDoSorteio = tipoSorteio;
     
-        let videoID = '';
+       let videoID = '';
         const rawVideoID = parametrosInfo.url_live || parametrosInfo.url_padrao || '';
         video_local = parametrosInfo.video_local;
         
@@ -4672,8 +4672,9 @@ async function renderMainContent(data) {
         const isPromocional = (rawVideoID === parametrosInfo.url_padrao);
 
         if (tipoSorteio === "manual") {           // --- INÍCIO SE MANUAL ---          
-            const plataformaStreaming = parametrosInfo.plataforma_streaming || 'youtube';
+            const plataformaStreaming = (parametrosInfo.plataforma_streaming || 'youtube').toLowerCase().trim();
             
+            // 1. YOUTUBE
             if (plataformaStreaming === 'youtube') {
                 const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
                 const match = rawVideoID.match(regExp);
@@ -4689,23 +4690,22 @@ async function renderMainContent(data) {
                 if (currentVideoUrl !== rawVideoID) {
                     currentVideoUrl = rawVideoID;
                     
-                    // 🔄 LÓGICA DE REPETIÇÃO: Se for promocional, enviamos com playlist
                     if (videoID) {
                         if (isPromocional) {
-                            // Carrega com loop ativado
                             carregarVideoSincronizado(videoID, true); 
                         } else {
                             carregarVideoSincronizado(videoID, false);
                         }
                     }
 
-                    const videoContainer = document.getElementById('video-container') || document.getElementById('youtube-panel') || document.getElementById('youtube-placeholder');
+                    const videoContainer = document.getElementById('video-container');
             
                     if (videoContainer && videoContainer.classList.contains('hidden')) {
-                        abrirYoutubeBtn.click();
+                        if (typeof abrirYoutubeBtn !== 'undefined' && abrirYoutubeBtn) abrirYoutubeBtn.click();
                     }
                 }
             } 
+            // 2. ANT MEDIA SERVER
             else if (plataformaStreaming === 'ant_media' || plataformaStreaming === 'antmedia') {
                 if (currentVideoUrl !== rawVideoID) {
                     currentVideoUrl = rawVideoID;
@@ -4715,7 +4715,23 @@ async function renderMainContent(data) {
                     
                     const videoContainer = document.getElementById('video-container'); 
                     if (videoContainer && videoContainer.classList.contains('hidden')) {
-                         abrirYoutubeBtn.click();
+                        if (typeof abrirYoutubeBtn !== 'undefined' && abrirYoutubeBtn) abrirYoutubeBtn.click();
+                    }
+                }
+            }
+            // 3. MEDIAMTX (WHEP / WHIP) - 🚀 NOVO!
+            else if (plataformaStreaming === 'whip' || plataformaStreaming === 'whep' || plataformaStreaming === 'mediamtx') {
+                if (currentVideoUrl !== rawVideoID) {
+                    currentVideoUrl = rawVideoID;
+                    
+                    // Passa exatamente o valor digitado no campo de URL (ex: "sala_001") como streamPath
+                    if (typeof carregarVideoWHEP === 'function') {
+                        carregarVideoWHEP(rawVideoID);
+                    }
+                    
+                    const videoContainer = document.getElementById('video-container'); 
+                    if (videoContainer && videoContainer.classList.contains('hidden')) {
+                        if (typeof abrirYoutubeBtn !== 'undefined' && abrirYoutubeBtn) abrirYoutubeBtn.click();
                     }
                 }
             }
@@ -9353,6 +9369,92 @@ function carregarVideoSincronizado(videoId, isLoop = false) {
     }
 }
 
+// Função preparada para expansão futura para Ant Media Server
+function carregarVideoAntMedia(url) {
+    console.log("📺 Tentando conectar ao Ant Media Server:", url);
+    // showCustomAlert("O player Ant Media será integrado nesta área em breve.", "Aviso", "🚀");
+    
+    // Aqui entrará o SDK da Ant Media (webrtc_adaptor.js) quando você contratar o serviço.
+    // Por enquanto, o sistema apenas reconhece a mudança sem quebrar.
+}
+
+// =========================================================================
+// 🚀 GERENCIADOR DE STREAMING: WHIP / WHEP (MediaMTX - Latência Zero)
+// =========================================================================
+let whepPeerConnection = null;
+
+function carregarVideoWHEP(streamPath) {
+    console.log("⚡ [WHEP] Conectando ao fluxo MediaMTX:", streamPath);
+
+    const playerYouTubeDiv = document.getElementById('player-transmissao');
+    const videoWhep = document.getElementById('video-whep-player');
+    const whepLoader = document.getElementById('whep-loader');
+
+    // 1. Esconde o player do YouTube e exibe a tag de vídeo nativa WHEP
+    if (playerYouTubeDiv) {
+        // Se houver iframe do YT rodando, limpa para não gastar banda
+        playerYouTubeDiv.innerHTML = '';
+        playerYouTubeDiv.classList.add('hidden');
+    }
+    if (videoWhep) videoWhep.classList.remove('hidden');
+    if (whepLoader) whepLoader.classList.remove('hidden');
+
+    // 2. Fecha conexão anterior se já estiver aberta
+    if (whepPeerConnection) {
+        whepPeerConnection.close();
+        whepPeerConnection = null;
+    }
+
+    // 3. Inicializa o WebRTC PeerConnection
+    whepPeerConnection = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    // 4. Quando a faixa de mídia chegar, joga direto na tag <video>
+    whepPeerConnection.ontrack = (event) => {
+        if (videoWhep) {
+            videoWhep.srcObject = event.streams[0];
+            videoWhep.play().catch(e => console.warn("Autoplay bloqueado pelo browser:", e));
+        }
+        if (whepLoader) whepLoader.classList.add('hidden');
+    };
+
+    // Adiciona transceivers para receber apenas (recvonly) áudio e vídeo
+    whepPeerConnection.addTransceiver('video', { direction: 'recvonly' });
+    whepPeerConnection.addTransceiver('audio', { direction: 'recvonly' });
+
+    // 5. Cria a oferta SDP para o WHEP
+    whepPeerConnection.createOffer().then(offer => {
+        return whepPeerConnection.setLocalDescription(offer).then(() => {
+            // Endpoint WHEP padrão do MediaMTX (porta 8889)
+            // Se estiver em produção com HTTPS, lembre-se que o WHEP deve responder em HTTPS/WSS
+            const urlWHEP = `http://${window.location.hostname}:8889/${streamPath}/whep`;
+
+            return fetch(urlWHEP, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/sdp' },
+                body: offer.sdp
+            });
+        });
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(`Erro HTTP no WHEP: ${response.status}`);
+        return response.text();
+    })
+    .then(answerSDP => {
+        return whepPeerConnection.setRemoteDescription({ type: 'answer', sdp: answerSDP });
+    })
+    .then(() => {
+        console.log("🟢 [WHEP] Transmissão sub-second conectada com sucesso!");
+    })
+    .catch(err => {
+        console.error("❌ [WHEP] Erro na négociação WebRTC:", err);
+        if (whepLoader) {
+            whepLoader.innerHTML = `<span class="text-xs text-red-400 font-bold">Erro ao conectar stream ao vivo</span>`;
+        }
+    });
+}
+
 // ============================================================================
 // 💸 MÓDULO DE PAGAMENTOS PIX
 // ============================================================================
@@ -9872,15 +9974,6 @@ window.addEventListener('appinstalled', () => {
 if (window.matchMedia('(display-mode: standalone)').matches) {
     const btnInstalar = document.getElementById('btn-instalar-app');
     if (btnInstalar) btnInstalar.parentElement.classList.add('hidden');
-}
-
-// Função preparada para expansão futura para Ant Media Server
-function carregarVideoAntMedia(url) {
-    console.log("📺 Tentando conectar ao Ant Media Server:", url);
-    // showCustomAlert("O player Ant Media será integrado nesta área em breve.", "Aviso", "🚀");
-    
-    // Aqui entrará o SDK da Ant Media (webrtc_adaptor.js) quando você contratar o serviço.
-    // Por enquanto, o sistema apenas reconhece a mudança sem quebrar.
 }
 
 // =========================================================

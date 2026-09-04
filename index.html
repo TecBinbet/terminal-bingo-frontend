@@ -112,8 +112,17 @@
 
 </section>
 
-    <div id="video-container" class="hidden mt-0 mb-1 w-full h-[200px] bg-gray-900 rounded-lg shadow-xl overflow-hidden">
+    <div id="video-container" class="hidden mt-0 mb-1 w-full h-[200px] bg-gray-900 rounded-lg shadow-xl overflow-hidden relative flex items-center justify-center">
+        <!-- Player Antigo (YouTube / Ant Media) -->
         <div id="player-transmissao" class="w-full h-full"></div>  
+        
+        <!-- Novo Player Nativou WHEP (Sub-second latency) -->
+        <video id="video-whep-player" autoplay playsinline muted class="w-full h-full object-cover hidden"></video>
+        
+        <!-- Indicador de loading do WebRTC -->
+        <div id="whep-loader" class="absolute inset-0 flex items-center justify-center bg-black/60 hidden">
+            <span class="text-xs text-green-400 font-bold animate-pulse">Conectando Transmissão Ao Vivo...</span>
+        </div>
     </div>
 
     <script src="https://www.youtube.com/iframe_api?enablejsapi=1"></script>    
