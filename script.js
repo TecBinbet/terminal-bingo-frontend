@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.2";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "0.7";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -6297,7 +6297,7 @@ async function salvarNovoUsuario() {
     // Identifica se estamos editando (se o título ou o botão mudaram para edição)
     const tituloModal = document.getElementById('titulo-modal-cadastro');
     const isEdicao = tituloModal && tituloModal.textContent.includes("Atualizar");
-    console.log(`[DEBUG] Modo detectado -> isEdicao: ${isEdicao}`);
+    //console.log(`[DEBUG] Modo detectado -> isEdicao: ${isEdicao}`);
 
     // 1. Coleta os dados comuns
     const nome = document.getElementById('cad-nome') ? document.getElementById('cad-nome').value.trim() : '';
@@ -6311,7 +6311,7 @@ async function salvarNovoUsuario() {
     const senha = document.getElementById('cad-senha') ? document.getElementById('cad-senha').value : '';
     const confirma = document.getElementById('cad-confirma') ? document.getElementById('cad-confirma').value : '';
 
-    console.log("[DEBUG] Dados coletados:", { nome, celular, cidade, pix: pix ? "***PREENCHIDO***" : "VAZIO", usuario });
+    //console.log("[DEBUG] Dados coletados:", { nome, celular, cidade, pix: pix ? "***PREENCHIDO***" : "VAZIO", usuario });
 
     // 2. Validações básicas
     if (!nome || !celular || !usuario || !pix || !cidade) {
