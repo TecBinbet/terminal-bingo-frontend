@@ -16,19 +16,34 @@ const DICIONARIO = {
 function t(texto) {
     if (!texto) return "";
     let txt = texto.toString();
-    let upper = txt.toUpperCase();
     
-    // 1. Tradução Exata
+    // 1. Tradução Direta Exata (Mais rápida)
+    let upper = txt.toUpperCase().trim();
     if (DICIONARIO[upper]) return DICIONARIO[upper];
 
-    // 2. Tradução de Frases Compostas
+    // 2. Tratamento Inteligente para Plurais Comuns (Ex: LINHAS -> KINAS)
+    // Se terminar com 'S' e a raiz existir no dicionário
+    if (upper.endsWith('S')) {
+        let singular = upper.slice(0, -1);
+        if (DICIONARIO[singular]) {
+            return DICIONARIO[singular] + 'S';
+        }
+    }
+
+    // 3. Tradução de Frases Compostas (Substituição de palavras isoladas)
     let traduzido = txt;
     const chaves = Object.keys(DICIONARIO).sort((a, b) => b.length - a.length);
     
     for (const chave of chaves) {
-        const regex = new RegExp(`\\b${chave}\\b`, 'gi');
-        traduzido = traduzido.replace(regex, DICIONARIO[chave]);
+        // Regex flexível que pega tanto o singular quanto o plural básico
+        const regex = new RegExp(`\\b${chave}S?\\b`, 'gi');
+        traduzido = traduzido.replace(regex, (match) => {
+            // Se o match original estava no plural, mantém o 'S' no termo traduzido
+            let trad = DICIONARIO[chave];
+            return match.toUpperCase() === chave + 'S' ? trad + 'S' : trad;
+        });
     }
+    
     return traduzido;
 }
 
