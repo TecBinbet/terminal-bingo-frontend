@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.3";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.4";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -9420,9 +9420,33 @@ function carregarVideoWHEP(streamPath) {
     // 5. Cria a oferta SDP para o WHEP
     whepPeerConnection.createOffer().then(offer => {
         return whepPeerConnection.setLocalDescription(offer).then(() => {
-            // Endpoint WHEP padrão do MediaMTX (porta 8889)
-            // Se estiver em produção com HTTPS, lembre-se que o WHEP deve responder em HTTPS/WSS
-            const urlWHEP = `http://${window.location.hostname}:8889/${streamPath}/whep`;
+            
+            // 👇 LÓGICA INTELIGENTE DE URL 👇
+            let urlWHEP = "";
+            let pathLimpo = streamPath.trim();
+            
+            // Verifica se o locutor colou um link completo
+            if (pathLimpo.startsWith("http")) {
+                urlWHEP = pathLimpo;
+                
+                // Garante que o link termina obrigatoriamente com /whep
+                if (!urlWHEP.endsWith("whep")) {
+                    // Remove barra final se houver e adiciona /whep
+                    urlWHEP = urlWHEP.replace(/\/$/, '') + '/whep';
+                }
+                
+                // 🔒 TRAVA DE SEGURANÇA: Navegadores bloqueiam HTTP dentro de sites HTTPS
+                if (window.location.protocol === 'https:' && urlWHEP.startsWith('http:')) {
+                    console.warn("🔒 [WHEP] Convertendo HTTP para HTTPS forçadamente devido à segurança do navegador.");
+                    urlWHEP = urlWHEP.replace('http:', 'https:');
+                }
+            } else {
+                // Se digitou apenas o nome da sala (ex: "live" ou "sala_001")
+                const protocolo = window.location.protocol;
+                urlWHEP = `${protocol}//${window.location.hostname}:8889/${pathLimpo}/whep`;
+            }
+            
+            console.log("🔗 [WHEP] Link final de conexão:", urlWHEP);
 
             return fetch(urlWHEP, {
                 method: 'POST',
@@ -9443,6 +9467,7 @@ function carregarVideoWHEP(streamPath) {
     })
     .catch(err => {
         console.error("❌ [WHEP] Erro na négociação WebRTC:", err);
+        const whepLoader = document.getElementById('whep-loader');
         if (whepLoader) {
             whepLoader.innerHTML = `<span class="text-xs text-red-400 font-bold">Erro ao conectar stream ao vivo</span>`;
         }
