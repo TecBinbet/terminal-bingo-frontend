@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "2.0";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.1";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -3124,11 +3124,14 @@ function displayPrizeInfo(buscandoData, premioData = null) {
     let prizeToFind = cleanTextForComparison(buscandoValue);
 
     // Lógica de 3 Linhas
-    if (qtdeLinhas === 3 && (buscandoValue === "LINHA" || buscandoValue === "L I N H A"))  {
-        const linhasEmJogo = `L I N H A S: ( ${linhasTaisLinhas.toUpperCase()} )`  
+    if (qtdeLinhas === 3 && (prizeToFind === "LINHA" || prizeToFind === "LINHAS"))  {
+        // Traduz a palavra LINHAS dinamicamente para o plural juridiquês (ex: KINAS)
+        const palavraKinaPlural = t("LINHAS"); 
+        const linhasEmJogo = `${palavraKinaPlural}: ( ${linhasTaisLinhas.toUpperCase()} )`;  
+        
         buscandoValue = linhasEmJogo;
         sincronizarDisjuntoresComServidor(dadosBuscando);
-        prizeToFind = '3LINHAS'
+        prizeToFind = '3LINHAS';
     }
     // Ajuste Falta Um
     if (prizeToFind === 'FALTAUM') {
