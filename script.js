@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.0";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.1";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -1318,9 +1318,9 @@ async function verificarNovasCompras() {
             if (qtdNoServidor !== qtdLocal) {
                 console.log(`♻️ Sincronia: Mudança de ${qtdLocal} para ${qtdNoServidor} cartelas.`);
                 
-                if (qtdNoServidor > qtdLocal) {
-                    if (typeof showCustomAlert === 'function') showCustomAlert(`Você recebeu novas cartelas!`, "Nova Compra", "🎟️");
-                }
+                //if (qtdNoServidor > qtdLocal) {
+                //    if (typeof showCustomAlert === 'function') showCustomAlert(`Você recebeu novas cartelas!`, "Nova Compra", "🎟️");
+                //}
 
                 // 5. ATUALIZAÇÃO FORÇADA (O 'true' destrói o cache fantasma e renderiza as cartelas novas)
                 await carregarCartelasAutomaticas(idRodada, true);
@@ -6609,15 +6609,15 @@ function verificarTravaPix() {
         if (inputValor) {
             inputValor.disabled = true;
             inputValor.value = "";
-            inputValor.placeholder = "Bloqueado: PIX ausente";
-            inputValor.classList.add('bg-red-900/30', 'cursor-not-allowed', 'border-red-500');
+            inputValor.placeholder = "Chave PIX ausente";
+            inputValor.classList.add('bg-red-900/30', 'cursor-not-allowed', 'border-red-500', 'text-xs');
         }
         if (btnUsarTotal) {
             btnUsarTotal.disabled = true;
             btnUsarTotal.classList.add('opacity-50', 'cursor-not-allowed');
         }
         if (btnConfirmar) {
-            btnConfirmar.disabled = true;
+            btnConfirmar.disabled = false;
             btnConfirmar.classList.add('opacity-50', 'cursor-not-allowed', 'bg-gray-600');
             btnConfirmar.classList.remove('bg-green-600', 'hover:bg-green-500');
             btnConfirmar.innerText = "CADASTRAR PIX PARA SACAR";
@@ -6633,7 +6633,7 @@ function verificarTravaPix() {
         if (inputValor) {
             inputValor.disabled = false;
             inputValor.placeholder = "0,00";
-            inputValor.classList.remove('bg-red-900/30', 'cursor-not-allowed', 'border-red-500');
+            inputValor.classList.remove('bg-red-900/30', 'cursor-not-allowed', 'border-red-500', 'text-xs');
         }
         if (btnUsarTotal) {
             btnUsarTotal.disabled = false;
