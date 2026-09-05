@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.3";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.0";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
@@ -9409,7 +9409,15 @@ function carregarVideoWHEP(streamPath) {
     whepPeerConnection.ontrack = (event) => {
         if (videoWhep) {
             videoWhep.srcObject = event.streams[0];
-            videoWhep.play().catch(e => console.warn("Autoplay bloqueado pelo browser:", e));
+            
+            videoWhep.play().then(() => {
+                // Tenta tirar do mudo automaticamente
+                videoWhep.muted = false;
+                console.log("🔊 Áudio liberado com sucesso!");
+            }).catch(e => {
+                console.warn("⚠️ Autoplay com som bloqueado pelo browser. O usuário precisa interagir (clicar na tela).", e);
+                // Opcional: Se quiser que o botão de som do menu atue aqui, avisamos o usuário
+            });
         }
         if (whepLoader) whepLoader.classList.add('hidden');
     };
