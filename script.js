@@ -3,7 +3,7 @@
 // ======================================================
 // linhasAtivasNoJogo
 
-const VERSAO_ATUAL = "1.2";   // Mude isso sempre que atualizar o JS
+const VERSAO_ATUAL = "1.3";   // Mude isso sempre que atualizar o JS
 
 // --- INÍCIO DA CONFIGURAÇÃO AUTOMÁTICA (MODO SERVIDOR INDEPENDENTE) ---
 
